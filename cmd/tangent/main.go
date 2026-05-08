@@ -100,7 +100,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: build mcp server: %v\n", err)
 		os.Exit(1)
 	}
-	roomURLBase := fmt.Sprintf("http://localhost:%d", *port)
+	// Use 127.0.0.1 to match the listener's actual bind so the URL
+	// hint we log when triage creates a room resolves correctly even
+	// on IPv6-preferring systems where "localhost" lands on ::1.
+	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
 	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
 	if regErr := mcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register triage handler: %v\n", regErr)
@@ -135,7 +138,7 @@ func main() {
 	}()
 
 	logger.Info("tangent ready",
-		"url", fmt.Sprintf("http://localhost:%d/", *port),
+		"url", fmt.Sprintf("http://127.0.0.1:%d/", *port),
 	)
 
 	sigCh := make(chan os.Signal, 1)
