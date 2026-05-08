@@ -20,8 +20,11 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
+	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
 const (
@@ -67,12 +70,27 @@ func main() {
 	}
 	logger.Info("loaded envelope types", "count", envSvc.Len())
 
-	// Dispatcher is shared across transports. PR 3 leaves it empty (no
-	// handlers registered); PR 4 will register the triage handler that
-	// bridges to the WebSocket-connected client. Constructing it here
-	// keeps the MCP server and the future WS bridge behind a single
-	// dispatch table.
+	// Plugin-extension registration. Triage isn't in go-envelopes core
+	// in v0.1.0 (planned for v0.3); we register the in-tree manifest
+	// fragment here via the plugin extension API so envelope validation
+	// in Dispatcher.Dispatch succeeds for triage envelopes. When core
+	// learns about triage upstream, this call goes away — handler
+	// registration below is unaffected.
+	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register triage extension: %v\n", regErr)
+		os.Exit(1)
+	}
+	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
+
+	// Dispatcher is shared across transports. PR 4 registers the
+	// triage handler that bridges to a WebSocket-connected room.
 	dispatcher := envelope.NewDispatcher(envSvc)
+
+	// Room manager + WS handler — the bridge between MCP envelopes and
+	// browser tabs. Created before the MCP server so the triage
+	// handler has somewhere to push.
+	roomMgr := room.NewManager()
+	wsHandler := tangentws.New(roomMgr, logger)
 
 	mcpSrv, err := mcp.New(envSvc, dispatcher)
 	if err != nil {
@@ -82,6 +100,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: build mcp server: %v\n", err)
 		os.Exit(1)
 	}
+	roomURLBase := fmt.Sprintf("http://localhost:%d", *port)
+	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
+	if regErr := mcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register triage handler: %v\n", regErr)
+		os.Exit(1)
+	}
 
 	srv, err := server.New(server.Config{
 		Port:           *port,
@@ -89,6 +113,8 @@ func main() {
 		Logger:         logger,
 		Envelope:       envSvc,
 		MCP:            mcpSrv,
+		WSHandler:      wsHandler,
+		RoomManager:    roomMgr,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

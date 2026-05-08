@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/room"
 )
 
 // Config controls Server construction.
@@ -41,6 +42,20 @@ type Config struct {
 	// It's optional in Config so test code can spin up a server without
 	// the full MCP wiring; production main always passes a non-nil value.
 	MCP MCPServer
+
+	// WSHandler is the constructed WebSocket bridge handler (PR 4).
+	// When non-nil the HTTP server mounts /ws. Optional in Config so
+	// test code can spin up a server without the full WS wiring;
+	// production main always passes a non-nil value.
+	WSHandler http.Handler
+
+	// RoomManager is the in-memory multi-room session model (PR 4).
+	// When non-nil the HTTP server uses it to validate /r/<roomID>
+	// links — unknown ids return 404 immediately, before the SPA
+	// loads (which would otherwise show a confusing blank room).
+	// Optional in Config; when nil all /r/ requests fall through to
+	// the SPA which renders its own "room not found" view client-side.
+	RoomManager *room.Manager
 }
 
 // MCPServer is the minimal contract internal/mcp satisfies. Declared as
@@ -101,9 +116,26 @@ func New(cfg Config) (*Server, error) {
 		)
 	}
 
+	if cfg.WSHandler != nil {
+		// /ws upgrades to WebSocket. Mounted before the catch-all so
+		// the SPA (or dev proxy) never sees the upgrade request.
+		mux.Handle("GET /ws", cfg.WSHandler)
+		logger.Info("WebSocket bridge ready",
+			"ws_url", fmt.Sprintf("ws://localhost:%d/ws", cfg.Port),
+		)
+	}
+
 	rootHandler, err := buildRootHandler(cfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("build root handler: %w", err)
+	}
+
+	// /r/{roomID} → SPA. The SPA's React Router picks up the roomID
+	// from the path. When a RoomManager is configured we pre-validate
+	// the id so unknown rooms get a 404 before the SPA bundle loads;
+	// keeps the dev experience honest about ephemeral state.
+	if cfg.RoomManager != nil {
+		mux.Handle("GET /r/{roomID}", roomFallbackHandler(cfg.RoomManager, rootHandler))
 	}
 	mux.Handle("/", rootHandler)
 
@@ -208,6 +240,26 @@ func buildRootHandler(cfg Config, logger *slog.Logger) (http.Handler, error) {
 func handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
+}
+
+// roomFallbackHandler validates the {roomID} path variable against the
+// live room manager and either delegates to the SPA handler (allowing
+// the React Router to pick up the route) or returns a 404. We don't
+// rewrite the request path — the SPA receives /r/<id> and chooses what
+// to render.
+func roomFallbackHandler(mgr *room.Manager, fallback http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("roomID")
+		if id == "" {
+			http.Error(w, "missing roomID", http.StatusBadRequest)
+			return
+		}
+		if _, ok := mgr.Get(id); !ok {
+			http.Error(w, "room not found", http.StatusNotFound)
+			return
+		}
+		fallback.ServeHTTP(w, r)
+	})
 }
 
 // loggingMiddleware emits a single structured log entry per request.

@@ -22,7 +22,9 @@ const (
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +
 // dispatcher. One Server instance backs both the streamable-HTTP and the
 // SSE transports — the same MCP server is reused per-request, so tool
-// registration is global.
+// registration is global. The triage room URL prefix is plumbed through
+// NewTriageHandler in cmd/tangent/main.go (see internal/mcp/triage_handler.go),
+// not stored on the Server.
 type Server struct {
 	envSvc     *envelope.Service
 	dispatcher *envelope.Dispatcher

@@ -10,12 +10,22 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/room"
 )
 
-// errorCodeNotWired is the v0.1 sentinel for "MCP layer is up, dispatcher
-// has no handler for this envelope type yet." Surfaced by tangent.triage
-// in PR 3; PR 4 replaces the path with a real WebSocket-bridge dispatch.
+// errorCodeNotWired is the legacy sentinel surfaced by PR 3 when no
+// handler was registered for triage. PR 4 wires a real handler so the
+// dispatcher path no longer collapses to NOT_WIRED in production; we
+// keep the constant for tests that still pin against it (the pure
+// dispatcher-only wiring path: env+dispatcher with no triage handler
+// installed).
 const errorCodeNotWired = "NOT_WIRED"
+
+// errorCodeRoomDisconnected is surfaced when the WS-bridged Room loses
+// its peer mid-envelope (tab closed, network drop). Distinct from
+// host-error so MCP clients can tell "your UI went away" from
+// generic server failures.
+const errorCodeRoomDisconnected = "ROOM_DISCONNECTED"
 
 // workflowEntry is the per-workflow record returned from
 // tangent.list_workflows. Mirrors envelopes.TypeSpec but flattens
@@ -133,29 +143,37 @@ func (s *Server) handleTriage(
 }
 
 // triageErrorResult maps a dispatcher error into a structured tool
-// result. The mapping is intentionally conservative — every dispatcher
-// error becomes a tool-level isError=true response carrying an error
-// envelope payload — so MCP clients can treat the surface uniformly.
+// result. Every dispatcher error becomes a tool-level isError=true
+// response carrying an error envelope payload — clients see one
+// surface regardless of whether the failure was schema, routing, or
+// transport.
 //
 // Mapping:
-//   - ErrNoHandler                -> NOT_WIRED (v0.1 sentinel; PR 4 replaces)
-//   - ErrUnknownType (envelope)   -> NOT_WIRED for `triage` specifically,
-//     since `triage` is not in go-envelopes v0.1.0 core (the kind is
-//     scheduled for v0.3 upstreaming;
-//     followups.tangent.v01.triage_kind_in_go_envelopes). Treating
-//     "registry doesn't know triage yet" as NOT_WIRED keeps the v0.1
-//     contract uniform — clients see the same sentinel for both
-//     "kind missing from registry" and "kind present, no handler"
-//     until PR 4 makes both paths trivially reachable.
+//   - ErrNoHandler                -> NOT_WIRED (legacy; only reachable in
+//     test setups that omit handler registration. Production wires the
+//     handler in main; the path here keeps the v0.1 PR 3 contract test
+//     passing without forcing test-only branches in the handler.)
+//   - ErrUnknownType (envelope)   -> NOT_WIRED for `triage`. Once the
+//     plugin extension API registers triage at boot this is unreachable
+//     too, but it remains a defensive belt for misconfigured boots.
+//   - room.ErrRoomDisconnected /
+//     room.ErrRoomClosed          -> ROOM_DISCONNECTED
+//   - context.DeadlineExceeded    -> envelopes.ErrorCodeTimeout
+//   - context.Canceled            -> user-cancelled
 //   - ErrSchemaValidation         -> validation-failed
 //   - everything else             -> host-error (with the verbatim message)
 func triageErrorResult(err error) *mcpsdk.CallToolResult {
 	switch {
 	case errors.Is(err, envelope.ErrNoHandler):
-		return toolErrorResult(errorCodeNotWired, fmt.Sprintf("no handler registered for triage envelope (PR 4 will wire this): %v", err))
+		return toolErrorResult(errorCodeNotWired, fmt.Sprintf("no handler registered for triage envelope: %v", err))
 	case errors.Is(err, envelopes.ErrUnknownType):
-		// v0.1: collapse to NOT_WIRED; see godoc above.
-		return toolErrorResult(errorCodeNotWired, fmt.Sprintf("triage envelope type not yet registered (PR 4 will wire this; v0.3 upstreams triage to go-envelopes core): %v", err))
+		return toolErrorResult(errorCodeNotWired, fmt.Sprintf("triage envelope type not registered (boot did not load the triage extension): %v", err))
+	case errors.Is(err, room.ErrRoomDisconnected) || errors.Is(err, room.ErrRoomClosed):
+		return toolErrorResult(errorCodeRoomDisconnected, err.Error())
+	case errors.Is(err, context.DeadlineExceeded):
+		return toolErrorResult(envelopes.ErrorCodeTimeout, err.Error())
+	case errors.Is(err, context.Canceled):
+		return toolErrorResult(envelopes.ErrorCodeUserCancelled, err.Error())
 	case errors.Is(err, envelopes.ErrSchemaValidation):
 		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	default:
