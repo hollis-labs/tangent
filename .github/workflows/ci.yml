@@ -9,14 +9,29 @@ jobs:
   go:
     name: Go (lint + build + test)
     runs-on: ubuntu-latest
+    env:
+      # hollis-labs/go-envelopes is a private module. GOPRIVATE skips the
+      # public module proxy + sumdb; GH_PAT (classic PAT with `repo` scope,
+      # set as a repo secret) authenticates `git` against github.com.
+      GOPRIVATE: "github.com/hollis-labs/*"
+      GONOSUMDB: "github.com/hollis-labs/*"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure git for private hollis-labs modules
+        run: |
+          git config --global url."https://${{ secrets.GH_PAT }}@github.com/hollis-labs/".insteadOf "https://github.com/hollis-labs/"
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"
           cache: true
+
+      - name: Set up Node (for envelope codegen check)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v8
@@ -35,6 +50,9 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+      - name: Check envelope types are not stale
+        run: make check-envelopes
 
       - name: Build (skip frontend; placeholder ui_dist embed)
         run: go build ./...

@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/server"
 )
 
@@ -50,10 +51,26 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
+	// Boot context governs envelope-registry load. Cancellation tears
+	// down the schema-compile loop cleanly; we rebind it once the
+	// service is up.
+	bootCtx, cancelBoot := context.WithCancel(context.Background())
+	envSvc, err := envelope.New(bootCtx)
+	cancelBoot()
+	if err != nil {
+		// Fail fast: a half-loaded registry would let unknown envelope
+		// types through silently. Without an envelope substrate the
+		// rest of Tangent is meaningless.
+		fmt.Fprintf(os.Stderr, "tangent: load envelope registry: %v\n", err)
+		os.Exit(1)
+	}
+	logger.Info("loaded envelope types", "count", envSvc.Len())
+
 	srv, err := server.New(server.Config{
 		Port:           *port,
 		DevFrontendURL: os.Getenv(envDevFrontendURL),
 		Logger:         logger,
+		Envelope:       envSvc,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

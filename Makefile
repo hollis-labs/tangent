@@ -1,4 +1,4 @@
-.PHONY: help build build-ui build-go dev dev-go dev-ui test test-go test-frontend lint lint-go lint-frontend clean install-hooks
+.PHONY: help build build-ui build-go dev dev-go dev-ui test test-go test-frontend lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -9,7 +9,7 @@ help: ## Show this help
 
 # ── Build ──────────────────────────────────────────────────────────────
 
-build: build-ui build-go ## Build frontend + Go binary (production)
+build: generate-envelopes build-ui build-go ## Regenerate envelope types, then build frontend + Go binary (production)
 
 build-ui: ## Build frontend (Vite production build)
 	cd ui && npm run build
@@ -17,6 +17,19 @@ build-ui: ## Build frontend (Vite production build)
 
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
+
+# ── Codegen ────────────────────────────────────────────────────────────
+#
+# Envelope types are derived from the go-envelopes manifest: the dump
+# binary prints the catalog as JSON, the Node script transforms it into
+# TypeScript at ui/src/generated/envelope-types.ts. The generated file
+# is committed; CI's check-envelopes target gates on staleness.
+
+generate-envelopes: ## Regenerate ui/src/generated/envelope-types.ts from go-envelopes
+	node scripts/generate-envelope-types.mjs
+
+check-envelopes: ## Fail if committed envelope types are stale
+	node scripts/generate-envelope-types.mjs --check
 
 # ── Dev ────────────────────────────────────────────────────────────────
 
