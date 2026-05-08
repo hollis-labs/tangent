@@ -7,8 +7,8 @@ see [`mcp-integration.md`](./mcp-integration.md).
 ## Prerequisites
 
 - **Go 1.26.1** (matches `go-envelopes`; see `go.mod`).
-- **Node 22+** (Vite 7 prefers 22.12+; older 22.x emits a warning but
-  still builds).
+- **Node 22.12.0**. The repo pins this via [`mise.toml`](../mise.toml);
+  run `mise install` after cloning.
 - **`lefthook`** for the pre-commit / pre-push hooks:
   `brew install lefthook`.
 - Optional: `golangci-lint` (lint target skips it cleanly if missing),
@@ -19,6 +19,7 @@ see [`mcp-integration.md`](./mcp-integration.md).
 ```bash
 git clone git@github.com:hollis-labs/tangent.git
 cd tangent
+mise install
 make install-hooks      # lefthook install — sets up pre-commit/pre-push
 cd ui && npm install && cd ..
 ```

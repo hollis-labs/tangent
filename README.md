@@ -129,11 +129,12 @@ A few things Tangent deliberately is not, to keep scope honest:
 Prerequisites:
 
 - Go 1.26.1 (matches `go-envelopes`)
-- Node 22 (Vite 7 prefers 22.12+; older 22.x emits a warning but still builds)
+- Node 22.12.0 (`mise.toml` pins the repo toolchain)
 - `lefthook` (`brew install lefthook`) for the pre-commit / pre-push hooks
 
 ```bash
 # One-time
+mise install
 make install-hooks
 cd ui && npm install && cd ..
 
@@ -154,7 +155,7 @@ make test            # go test -race + vitest
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
-- [`docs/developing.md`](./docs/developing.md) — contributor onboarding
+- [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
 - [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
 
