@@ -119,15 +119,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// readLoop runs until the conn closes or the context is cancelled.
 	h.readLoop(r.Context(), rm, conn)
 
-	// On read-loop exit: detach this specific conn (a refresh may have
-	// already replaced it; DetachConn is a no-op in that case) and
-	// close the Room — this rejects all pending envelopes with
-	// ErrRoomDisconnected. v0.1 contract: tab close hangs no one.
-	rm.DetachConn(conn)
-	if !rm.IsClosed() {
+	// On read-loop exit: try to detach this specific conn. If it
+	// returned true, this conn really was the active one and the WS
+	// genuinely disconnected — close the Room so pending envelopes
+	// surface ErrRoomDisconnected (v0.1 contract: tab close hangs no
+	// one). If it returned false, AttachConn already replaced this
+	// conn with a fresh one (refresh-tab semantics) — closing the Room
+	// here would defeat the reconnect path and kill the new conn's
+	// pending envelopes, so we leave the Room alone.
+	wasActive := rm.DetachConn(conn)
+	if wasActive && !rm.IsClosed() {
 		rm.Close("ws disconnected")
 	}
-	h.logger.Info("ws: room detached", "room", roomID)
+	h.logger.Info("ws: room detached", "room", roomID, "was_active", wasActive)
 }
 
 // readLoop reads frames until error/close. Each frame is parsed as

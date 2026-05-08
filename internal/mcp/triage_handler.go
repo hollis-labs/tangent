@@ -15,9 +15,10 @@ import (
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
-// TriageRoomURLBase is the format string used when logging the "open
+// triageRoomURLPath is the format string used when logging the "open
 // this URL" hint after creating a triage Room. The %s is replaced by
-// the room id; the prefix is taken from Server.triageRoomURL when set.
+// the room id; the prefix comes from the roomURLBase argument passed
+// to NewTriageHandler.
 const triageRoomURLPath = "/r/%s"
 
 // envTriageTimeout is the env var clients use to override the default
@@ -51,8 +52,10 @@ type TriageHandler struct {
 }
 
 // NewTriageHandler constructs a TriageHandler. logger may be nil
-// (defaults to slog.Default). timeoutOverride may be zero to use the
-// envTriageTimeout env var or the package default.
+// (defaults to slog.Default); roomURLBase may be empty to disable the
+// "open this URL" log hint. The per-call timeout is resolved from the
+// TANGENT_TRIAGE_TIMEOUT env var (Go duration string), falling back to
+// the package default — there's no constructor argument for it.
 func NewTriageHandler(manager *room.Manager, logger *slog.Logger, roomURLBase string) *TriageHandler {
 	if logger == nil {
 		logger = slog.Default()

@@ -38,6 +38,9 @@ export default function Room() {
       return;
     }
     const client = connect(roomID, {
+      onOpen: () => {
+        setStatus("connected");
+      },
       onEnvelope: (envelopeId, envelope) => {
         setPending({ envelopeId, envelope });
         setStatus("envelope received");
@@ -51,7 +54,6 @@ export default function Room() {
       },
     });
     clientRef.current = client;
-    setStatus("connected");
     return () => {
       client.close();
       clientRef.current = null;

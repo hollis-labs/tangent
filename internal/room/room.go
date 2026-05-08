@@ -175,15 +175,21 @@ func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) {
 	_ = ctx
 }
 
-// DetachConn clears the active conn (called on read-loop exit). Does
-// NOT touch pending entries — that's Close's job. Detach without close
-// keeps the Room "warm" so a quick refresh hits the same Pending.
-func (r *Room) DetachConn(conn *websocket.Conn) {
+// DetachConn clears the active conn if it matches the supplied one
+// (called on read-loop exit). Does NOT touch pending entries — that's
+// Close's job. Detach without close keeps the Room "warm" so a quick
+// refresh hits the same Pending. Returns true when the active conn was
+// actually cleared, false when this conn had already been replaced (the
+// caller must not close the Room in that case, or the new conn loses
+// its pending envelopes).
+func (r *Room) DetachConn(conn *websocket.Conn) bool {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
 	if r.conn == conn {
 		r.conn = nil
+		return true
 	}
+	return false
 }
 
 // HasConn reports whether the Room currently has an attached conn.

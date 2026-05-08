@@ -36,6 +36,15 @@ export type WSClientOptions = {
   onEnvelope: (envelopeId: string, envelope: unknown) => void;
 
   /**
+   * Called once the underlying WebSocket transitions to OPEN. Use
+   * this rather than treating the return of `connect()` as a
+   * connected signal — the WS may still be in CONNECTING when
+   * connect() returns and never reach OPEN if the URL is bad or
+   * the room has gone away on the server.
+   */
+  onOpen?: () => void;
+
+  /**
    * Called when the WebSocket closes. `reason` is best-effort — most
    * browsers redact the WS close reason for security, so callers
    * should treat it as a hint, not an authoritative signal.
@@ -87,6 +96,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
 
   ws.addEventListener("open", () => {
     connected = true;
+    opts.onOpen?.();
   });
 
   ws.addEventListener("message", (ev) => {
