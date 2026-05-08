@@ -9,8 +9,18 @@ jobs:
   go:
     name: Go (lint + build + test)
     runs-on: ubuntu-latest
+    env:
+      # hollis-labs/go-envelopes is a private module. GOPRIVATE skips the
+      # public module proxy + sumdb; GH_PAT (classic PAT with `repo` scope,
+      # set as a repo secret) authenticates `git` against github.com.
+      GOPRIVATE: "github.com/hollis-labs/*"
+      GONOSUMDB: "github.com/hollis-labs/*"
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure git for private hollis-labs modules
+        run: |
+          git config --global url."https://${{ secrets.GH_PAT }}@github.com/hollis-labs/".insteadOf "https://github.com/hollis-labs/"
 
       - name: Set up Go
         uses: actions/setup-go@v5
