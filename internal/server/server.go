@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -70,14 +72,34 @@ func New(cfg Config) (*Server, error) {
 	}, nil
 }
 
-// ListenAndServe starts the server. It blocks until the listener errors
-// out; callers should treat http.ErrServerClosed as a clean shutdown.
-func (s *Server) ListenAndServe() error {
+// Listen binds the server's TCP socket and returns the listener.
+// Callers can fail-fast on bind errors (e.g. EADDRINUSE) before logging
+// readiness. Pass the returned listener to Serve.
+func (s *Server) Listen() (net.Listener, error) {
+	return net.Listen("tcp", s.httpS.Addr)
+}
+
+// Serve runs the HTTP server on the given listener. Blocks until the
+// listener errors out; callers should treat http.ErrServerClosed as a
+// clean shutdown.
+func (s *Server) Serve(ln net.Listener) error {
 	s.logger.Info("tangent listening",
 		"addr", s.httpS.Addr,
 		"dev_frontend_url", s.cfg.DevFrontendURL,
 	)
-	return s.httpS.ListenAndServe()
+	return s.httpS.Serve(ln)
+}
+
+// ListenAndServe is a convenience for tests / non-production callers
+// that don't need to log readiness only after a successful bind.
+// Production main() uses Listen + Serve so bind failures surface before
+// the "tangent ready" log line.
+func (s *Server) ListenAndServe() error {
+	ln, err := s.Listen()
+	if err != nil {
+		return err
+	}
+	return s.Serve(ln)
 }
 
 // Shutdown gracefully drains in-flight requests with the given timeout.
@@ -95,6 +117,16 @@ func buildRootHandler(cfg Config, logger *slog.Logger) (http.Handler, error) {
 	target, err := url.Parse(cfg.DevFrontendURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse dev frontend url: %w", err)
+	}
+	// url.Parse is lenient: "localhost:5173" parses with scheme="" and
+	// host="" (it lands in Path), which would silently produce a broken
+	// reverse proxy. Reject anything that isn't an absolute http(s) URL
+	// so misconfigured TANGENT_DEV_FRONTEND_URL fails fast.
+	if scheme := strings.ToLower(target.Scheme); scheme != "http" && scheme != "https" {
+		return nil, fmt.Errorf("dev frontend url %q must use http or https scheme", cfg.DevFrontendURL)
+	}
+	if target.Host == "" {
+		return nil, fmt.Errorf("dev frontend url %q must include a host (e.g. http://localhost:5173)", cfg.DevFrontendURL)
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

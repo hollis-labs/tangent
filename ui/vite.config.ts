@@ -28,10 +28,13 @@ export default defineConfig({
   },
   build: {
     // Output directly into the Go embed target (see internal/server/static.go).
-    // emptyOutDir is disabled so the committed `.gitkeep` placeholder
-    // survives the build — without it `go build ./...` would fail on a
-    // fresh checkout where ui_dist/ contained no files at all.
+    // emptyOutDir is enabled so each build produces a clean embed
+    // directory — accumulated old hashed assets would otherwise inflate
+    // the binary and risk serving stale files. The build-ui Make target
+    // restores the committed `.gitkeep` placeholder after the build so
+    // `go build ./...` continues to work on a fresh checkout where the
+    // frontend hasn't been built yet.
     outDir: path.resolve(__dirname, "../internal/server/ui_dist"),
-    emptyOutDir: false,
+    emptyOutDir: true,
   },
 });
