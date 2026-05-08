@@ -33,6 +33,7 @@ collides. Expected startup logs:
 level=INFO msg="loaded envelope types" count=26
 level=INFO msg="registered tangent envelope extensions" plugin=tangent count=27
 level=INFO msg="MCP server ready" http_url=http://localhost:7842/mcp sse_url=http://localhost:7842/sse
+level=INFO msg="WebSocket bridge ready" ws_url=ws://localhost:7842/ws
 level=INFO msg="tangent ready" url=http://localhost:7842/
 level=INFO msg="tangent listening" addr=:7842 dev_frontend_url=""
 ```

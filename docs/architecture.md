@@ -43,8 +43,11 @@ the room to the agent's MCP call.
 
 `internal/server/` — a single `net/http` server on port `7842`
 (`TANGENT_HTTP_PORT` overrides). The Vite production build is embedded
-into the Go binary via `go:embed internal/server/ui_dist`, so a single
-`tangent` executable serves both API and frontend. In dev mode
+into the Go binary via a `//go:embed all:ui_dist` directive inside the
+`internal/server` package (the path is relative to that package, and
+the `all:` prefix is required so dotfiles like `.gitkeep` get included
+in the embedded FS). One `tangent` executable serves both API and
+frontend. In dev mode
 (`make dev`) the server proxies non-API routes to Vite at `:5173` for
 HMR. Rooms are exposed at `/r/<roomID>` and fall through to the SPA,
 which uses React Router to pick up the ID and connect over WS.
