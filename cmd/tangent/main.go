@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/server"
 )
 
@@ -66,11 +67,28 @@ func main() {
 	}
 	logger.Info("loaded envelope types", "count", envSvc.Len())
 
+	// Dispatcher is shared across transports. PR 3 leaves it empty (no
+	// handlers registered); PR 4 will register the triage handler that
+	// bridges to the WebSocket-connected client. Constructing it here
+	// keeps the MCP server and the future WS bridge behind a single
+	// dispatch table.
+	dispatcher := envelope.NewDispatcher(envSvc)
+
+	mcpSrv, err := mcp.New(envSvc, dispatcher)
+	if err != nil {
+		// MCP construction failure is fatal: the binary advertises an MCP
+		// surface as part of its v0.1 contract, so booting without it
+		// would silently strip a documented capability.
+		fmt.Fprintf(os.Stderr, "tangent: build mcp server: %v\n", err)
+		os.Exit(1)
+	}
+
 	srv, err := server.New(server.Config{
 		Port:           *port,
 		DevFrontendURL: os.Getenv(envDevFrontendURL),
 		Logger:         logger,
 		Envelope:       envSvc,
+		MCP:            mcpSrv,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

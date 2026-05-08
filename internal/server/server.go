@@ -35,6 +35,21 @@ type Config struct {
 	// is nil so misconfigured boots fail fast rather than at first
 	// envelope.
 	Envelope *envelope.Service
+
+	// MCP is the constructed MCP server (PR 3). When non-nil the HTTP
+	// server mounts /mcp (streamable HTTP) and /sse (legacy fallback).
+	// It's optional in Config so test code can spin up a server without
+	// the full MCP wiring; production main always passes a non-nil value.
+	MCP MCPServer
+}
+
+// MCPServer is the minimal contract internal/mcp satisfies. Declared as
+// an interface here (rather than importing the package directly) so
+// tests can inject a stub and to keep the import graph one-way: mcp
+// depends on envelope; server depends on mcp via this interface only.
+type MCPServer interface {
+	HTTPHandler() http.Handler
+	SSEHandler() http.Handler
 }
 
 // Server is the Tangent HTTP server. It wraps a *http.Server and the
@@ -67,6 +82,24 @@ func New(cfg Config) (*Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
+
+	if cfg.MCP != nil {
+		// Streamable-HTTP transport (modern MCP clients). The SDK's
+		// handler accepts POST + GET on the same URL — clients use POST
+		// to send JSON-RPC requests and may GET to subscribe to a
+		// session-scoped event stream. We mount it at the path level
+		// rather than per-method so both routes resolve to the same
+		// handler.
+		mux.Handle("/mcp", cfg.MCP.HTTPHandler())
+		// SSE fallback for legacy Claude Code / older MCP clients. GET
+		// opens the long-lived event stream; POST is used for outbound
+		// JSON-RPC frames keyed against the streamed session id.
+		mux.Handle("/sse", cfg.MCP.SSEHandler())
+		logger.Info("MCP server ready",
+			"http_url", fmt.Sprintf("http://localhost:%d/mcp", cfg.Port),
+			"sse_url", fmt.Sprintf("http://localhost:%d/sse", cfg.Port),
+		)
+	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)
 	if err != nil {
