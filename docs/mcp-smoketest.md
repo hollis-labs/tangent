@@ -66,10 +66,14 @@ Expected response:
 - `content[0].text` is a JSON envelope-error frame with
   `error.code == "NOT_WIRED"`.
 
-This is the v0.1 contract: the MCP layer accepts the call, the envelope
-service validates the input shape, the dispatcher reports "no handler",
-and the tool surfaces it as `NOT_WIRED`. PR 4 registers a handler that
-turns this path into a real triage flow.
+This is the v0.1 contract. In PR 3 the wire-shape gate is the MCP
+tool's hand-rolled JSON Schema (see `internal/mcp/triage_schema.go`):
+`triage` is not in go-envelopes v0.1.0's core registry, so
+`Service.Validate` returns `ErrUnknownType` and the tool collapses that
+(and the later `ErrNoHandler` case) into a single `NOT_WIRED` response
+so MCP clients see a stable contract regardless of which layer reports
+it. PR 4 registers `triage` via the plugin extension API and turns this
+path into a real triage flow.
 
 ## Optional — MCP Inspector
 

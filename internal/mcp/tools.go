@@ -90,16 +90,15 @@ func (s *Server) handleListWorkflows(
 }
 
 // handleTriage validates the inbound triage envelope through Tangent's
-// envelope service and dispatches it. In PR 3 there is no registered
-// handler for `triage`, so the dispatcher returns ErrNoHandler — we
-// translate that into a NOT_WIRED tool result so MCP clients can detect
-// "the wire shape works but the workflow isn't online yet."
-//
-// The dispatcher itself MIGHT also surface a registry-level
-// "ErrUnknownType" (because triage isn't in go-envelopes core in v0.1),
-// which we likewise surface as a tool error. Once PR 4 lands and
-// `triage` is registered (either via go-envelopes upstreaming in v0.3 or
-// a Tangent-side plugin manifest), this path becomes the real dispatch.
+// envelope service and dispatches it. In PR 3 the actual error path is
+// envelope.ErrUnknownType: triage is not in go-envelopes v0.1.0 core, so
+// Service.Validate (called by Dispatcher.Dispatch before any handler
+// lookup) rejects the envelope. We collapse both ErrUnknownType and the
+// later ErrNoHandler case into a single NOT_WIRED tool result so MCP
+// clients see a stable contract — "wire shape accepted, workflow not
+// online yet" — regardless of which layer reports it. PR 4 registers
+// `triage` via the plugin extension API and the same path becomes the
+// real dispatch.
 func (s *Server) handleTriage(
 	ctx context.Context,
 	_ *mcpsdk.CallToolRequest,

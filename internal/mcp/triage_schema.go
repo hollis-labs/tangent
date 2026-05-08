@@ -22,9 +22,9 @@ package mcp
 // for v0.1 — the WebSocket bridge in PR 4 narrows it once the real
 // handler exists.
 //
-// The shape mirrors the `Envelope` struct in go-envelopes/types.go: only
-// the fields a client must populate to get a triage flow off the ground
-// are required (v, id, type, data). Optional fields are listed but not
+// The shape mirrors the `Envelope` struct in go-envelopes/types.go: the
+// fields a client must populate to get a triage flow off the ground are
+// required (v, id, type, data). Optional fields are listed but not
 // required so future extensions don't break v0.1 callers.
 const triageEnvelopeType = "triage"
 
@@ -56,7 +56,7 @@ var triageInputSchemaJSON = []byte(`{
         "trace": {"type": "object"},
         "meta": {"type": "object"}
       },
-      "required": ["v", "id", "type"]
+      "required": ["v", "id", "type", "data"]
     }
   },
   "required": ["envelope"]
