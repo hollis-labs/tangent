@@ -1,0 +1,35 @@
+# Go binary (top-level build output)
+/tangent
+
+# Go build / test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Frontend
+/ui/dist/
+/ui/node_modules/
+/ui/.vite/
+/ui/*.tsbuildinfo
+
+# Vite build output is written here for go:embed; ignore everything
+# except the .gitkeep placeholder so the embed directive resolves on a
+# clean checkout.
+/internal/server/ui_dist/*
+!/internal/server/ui_dist/.gitkeep
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local scratch
+/tmp/

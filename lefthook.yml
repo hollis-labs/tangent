@@ -1,0 +1,58 @@
+# lefthook.yml — Tangent pre-commit/pre-push hooks.
+#
+# Lifted from the Fragments Engine portfolio shape (see Nanite's
+# lefthook.yml). Trimmed for v0.1: no migration-DDL purity check, no
+# plugin signature checks. Aim: every gate completes in <15s on staged
+# files.
+
+pre-commit:
+  parallel: true
+  commands:
+
+    # ── Go parallel group ─────────────────────────────────────────────
+
+    go-format:
+      glob: "*.go"
+      skip_empty: true
+      run: |
+        unformatted=$(gofmt -l {staged_files} 2>/dev/null)
+        if command -v goimports >/dev/null 2>&1; then
+          unformatted="$unformatted$(goimports -l {staged_files} 2>/dev/null)"
+        fi
+        if [ -n "$unformatted" ]; then
+          echo "Unformatted files:"
+          echo "$unformatted" | sort -u
+          exit 1
+        fi
+
+    go-lint:
+      glob: "*.go"
+      skip_empty: true
+      run: |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run --new --timeout 30s
+        else
+          echo "golangci-lint not installed — skipping"
+        fi
+
+    go-vet:
+      glob: "*.go"
+      skip_empty: true
+      run: go vet ./...
+
+    # ── Frontend ──────────────────────────────────────────────────────
+
+    frontend-lint:
+      glob: "*.{ts,tsx,js,jsx,mjs}"
+      skip_empty: true
+      run: cd ui && npx biome check --no-errors-on-unmatched {staged_files}
+      skip:
+        - run: "test ! -d ui"
+
+pre-push:
+  commands:
+
+    go-test:
+      glob: "*.go"
+      skip_empty: true
+      run: go test ./...
