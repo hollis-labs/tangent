@@ -36,14 +36,15 @@ slog text handler Tangent ships with):
 ```
 level=INFO msg="loaded envelope types" count=26
 level=INFO msg="registered tangent envelope extensions" plugin=tangent count=27
-level=INFO msg="MCP server ready" http_url=http://localhost:7842/mcp sse_url=http://localhost:7842/sse
-level=INFO msg="tangent ready" url=http://localhost:7842/
-level=INFO msg="tangent listening" addr=:7842 dev_frontend_url=""
+level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
+level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
+level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
+level=INFO msg="tangent listening" addr=127.0.0.1:7842 dev_frontend_url=""
 ```
 
 Note: triage room URLs are emitted by Tangent's MCP triage handler the
 moment a call arrives. Watch this terminal for `triage room created
-room=... url=http://localhost:7842/r/<roomID>`.
+room=... url=http://127.0.0.1:7842/r/<roomID>`.
 
 ## 2. Wire Tangent into Claude Code
 
