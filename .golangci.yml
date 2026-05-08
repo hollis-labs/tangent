@@ -1,0 +1,115 @@
+# Tangent golangci-lint config (v2 format).
+#
+# Trimmed from the Fragments Engine portfolio config (see Nanite's
+# .golangci.yml). v0.1 keeps the high-signal linters and drops the
+# Wave-1 adoption-surfacing rules (forbidigo for AtomicWriteFile /
+# ResolveUnder) — those primitives don't exist here yet.
+
+version: "2"
+
+run:
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    # Essential — catch real bugs.
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+
+    # Security.
+    - gosec
+
+    # Style — minimal; errors only, not opinions.
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+
+    # Correctness.
+    - errorlint
+    - nilerr
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Print
+        - fmt.Println
+        - fmt.Printf
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+
+    gosec:
+      excludes:
+        # G104: covered by errcheck; double-reporting is noise.
+        - G104
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    misspell:
+      locale: US
+
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: superfluous-else
+        - name: time-naming
+        - name: unexported-return
+        - name: unreachable-code
+        - name: var-declaration
+        - name: var-naming
+
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000"
+
+    unparam:
+      check-exported: false
+
+  exclusions:
+    generated: lax
+
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - path: _test\.go
+        linters:
+          - unparam
+
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+
+formatters:
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
