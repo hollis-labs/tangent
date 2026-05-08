@@ -101,8 +101,6 @@ func main() {
 		os.Exit(1)
 	}
 	roomURLBase := fmt.Sprintf("http://localhost:%d", *port)
-	mcpSrv.SetTriageRoomURL(roomURLBase)
-
 	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
 	if regErr := mcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register triage handler: %v\n", regErr)
