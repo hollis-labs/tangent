@@ -1,19 +1,18 @@
-// Room is the per-session view rendered at /r/:roomID. PR 4 wires it
-// to the WebSocket client and renders the inbound envelope as raw
-// JSON with two action buttons (submit-mock / cancel). PR 5 replaces
-// the placeholder body with the real EnvelopeRouter component map.
+// Room is the per-session view rendered at /r/:roomID. Connects to the
+// Tangent /ws endpoint and delegates rendering to EnvelopeRouter.
+//
+// PR 5 changes from PR 4:
+//   - Mock submit/cancel buttons removed; the registered envelope
+//     component owns its own UX (e.g. <Triage> renders Submit/Cancel
+//     buttons that call back through onSubmit/onCancel).
+//   - The Room only owns the WS transport; envelope-shape decisions
+//     live in the component layer.
 //
 // Lifecycle:
-//
 //   1. On mount, open WSClient(roomID).
 //   2. On `onEnvelope`, store the envelope id + payload in state.
-//   3. Submit/Cancel buttons call ws.submitResponse / ws.cancel and
-//      clear local state.
+//   3. EnvelopeRouter dispatches by type and fires onSubmit/onCancel.
 //   4. On unmount or onClose, close the WS.
-//
-// The component does NOT validate inbound envelopes beyond what
-// ws-client already enforces (zod). Per-type rendering and validation
-// is PR 5's responsibility.
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -59,16 +58,9 @@ export default function Room() {
     };
   }, [roomID]);
 
-  const handleSubmit = () => {
+  const handleSubmit = (response: unknown) => {
     if (!pending || !clientRef.current) return;
-    // PR 4 mock response — PR 5 wires the real form output.
-    clientRef.current.submitResponse(pending.envelopeId, {
-      v: 1,
-      envelopeId: pending.envelopeId,
-      kind: "data",
-      status: "submitted",
-      payload: { accepted: true },
-    });
+    clientRef.current.submitResponse(pending.envelopeId, response);
     setPending(null);
     setStatus("response submitted");
   };
@@ -90,24 +82,12 @@ export default function Room() {
 
       {pending ? (
         <section className="space-y-3">
-          <div className="text-xs text-zinc-400">envelope: {pending.envelopeId}</div>
-          <EnvelopeRouter envelope={pending.envelope} />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className="rounded bg-emerald-600 hover:bg-emerald-500 px-3 py-1 text-sm"
-            >
-              Submit (mock response)
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="rounded bg-zinc-800 hover:bg-zinc-700 px-3 py-1 text-sm"
-            >
-              Cancel
-            </button>
-          </div>
+          <div className="text-xs text-zinc-500">envelope: {pending.envelopeId}</div>
+          <EnvelopeRouter
+            envelope={pending.envelope}
+            onSubmit={handleSubmit}
+            onCancel={handleCancel}
+          />
         </section>
       ) : (
         <p className="text-sm text-zinc-500">waiting for envelope...</p>
