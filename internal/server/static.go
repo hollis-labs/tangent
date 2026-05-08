@@ -5,6 +5,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -68,13 +69,21 @@ func spaHandler() http.Handler {
 
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
-			path = "index.html"
+		reqPath := strings.TrimPrefix(r.URL.Path, "/")
+		if reqPath == "" {
+			reqPath = "index.html"
 		}
-		if _, err := fs.Stat(sub, path); err != nil {
-			// SPA fallback: rewrite to index.html so client-side
-			// routing renders for unknown paths.
+		if _, err := fs.Stat(sub, reqPath); err != nil {
+			// Path not in the embed. Distinguish two cases:
+			//   1. Static-asset miss (e.g. /assets/foo.js) — return
+			//      404 so cache busting and load-error handling work.
+			//   2. Client-side route (no file extension, e.g. /r/abc)
+			//      — rewrite to index.html so React Router can pick
+			//      it up.
+			if path.Ext(reqPath) != "" {
+				http.NotFound(w, r)
+				return
+			}
 			r.URL.Path = "/"
 		}
 		fileServer.ServeHTTP(w, r)

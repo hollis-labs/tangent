@@ -95,11 +95,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Run ListenAndServe in a goroutine so the main goroutine can
-	// listen for signals and call Shutdown.
+	// Bind synchronously so port-in-use surfaces before the readiness
+	// log line. Only after the listener is open do we declare ready.
+	ln, err := srv.Listen()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tangent: listen: %v\n", err)
+		os.Exit(1)
+	}
+
 	listenErr := make(chan error, 1)
 	go func() {
-		listenErr <- srv.ListenAndServe()
+		listenErr <- srv.Serve(ln)
 	}()
 
 	logger.Info("tangent ready",
