@@ -18,8 +18,13 @@ package mcp
 // reserved for core types. The MCP schema below pins envelope.type to
 // the same string so direct MCP calls and dispatcher validation agree.
 //
-// When go-envelopes upstreams a `triage` kind into core (v0.3 plan)
-// the wire name flips to the bare form; the schema constant and the
+// The shape mirrors the `Envelope` struct in go-envelopes/types.go: the
+// fields a client must populate to get a triage flow off the ground are
+// required (v, id, type, data). Optional fields are listed but not
+// required so future extensions don't break v0.1 callers.
+//
+// When go-envelopes upstreams a `triage` kind into core (v0.3 plan) the
+// wire name flips to the bare form; the schema constant and the
 // extension manifest both update together.
 const triageEnvelopeType = "tangent.triage"
 
@@ -51,7 +56,7 @@ var triageInputSchemaJSON = []byte(`{
         "trace": {"type": "object"},
         "meta": {"type": "object"}
       },
-      "required": ["v", "id", "type"]
+      "required": ["v", "id", "type", "data"]
     }
   },
   "required": ["envelope"]

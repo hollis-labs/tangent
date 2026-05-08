@@ -15,12 +15,9 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-Pre-implementation. The concept and protocol spec are drafted, but no code has been written yet. Implementation is gated on:
+v0.1 in progress — "prove the shape." The repo is no longer a placeholder; it has a working Go server, embedded React/TypeScript SPA, and tooling. See `Development` below for build/dev commands.
 
-1. `hollis-labs/go-envelopes` shipping v0.1.0 (the shared envelope schema package), and
-2. The Nanite chat runtime migrating to consume `go-envelopes`.
-
-This initial commit is a placeholder so future phase branches have a base to PR against. Expect this README to be the only artifact in the repo until v0.1 work begins.
+Note: Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical.
 
 ## How it works
 
@@ -97,8 +94,33 @@ A few things Tangent deliberately is not, to keep scope honest:
 
 ## Development
 
-Setup, build, and contribute instructions will land with the v0.1 phase PR. This README is the bootstrap baseline.
+Prerequisites:
+
+- Go 1.26.1 (matches `go-envelopes`)
+- Node 22 (Vite 7 prefers 22.12+; older 22.x emits a warning but still builds)
+- `lefthook` (`brew install lefthook`) for the pre-commit / pre-push hooks
+
+```bash
+# One-time
+make install-hooks
+cd ui && npm install && cd ..
+
+# Build (frontend → embedded into Go binary)
+make build           # produces ./tangent
+
+# Dev (Go server proxies non-API requests to Vite at :5173)
+make dev
+
+# Lint + test
+make lint
+make test            # go test -race + vitest
+
+# Run the binary
+./tangent            # serves on :7842 (override via TANGENT_HTTP_PORT)
+```
+
+Full v0.1 docs (architecture, MCP integration, manual e2e recipe) land with PR 6.
 
 ## License
 
-To be added in the v0.1 phase PR.
+MIT — see [LICENSE](./LICENSE).

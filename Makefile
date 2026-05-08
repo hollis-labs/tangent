@@ -13,6 +13,7 @@ build: generate-envelopes build-ui build-go ## Regenerate envelope types, then b
 
 build-ui: ## Build frontend (Vite production build)
 	cd ui && npm run build
+	@touch internal/server/ui_dist/.gitkeep
 
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
