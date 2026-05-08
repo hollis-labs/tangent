@@ -12,21 +12,16 @@ package mcp
 // triageInputSchema is the v0.1 hand-rolled JSON Schema for the
 // tangent.triage MCP tool's input.
 //
-// Why hand-rolled: triage is NOT in go-envelopes v0.1.0's core manifest
-// (verified by the implementer brief — `triage` will land in core during
-// the v0.3 visual-kinds work; tracked as
-// followups.tangent.v01.triage_kind_in_go_envelopes). Until then, Tangent
-// declares the tool surface here so MCP clients can call the tool today
-// even though the registry itself does not know about the type. The
-// envelope payload carried in `envelope.data` is intentionally permissive
-// for v0.1 — the WebSocket bridge in PR 4 narrows it once the real
-// handler exists.
+// PR 4 registers the type via the go-envelopes plugin extension API
+// (see internal/envelope/extensions/triage.go). The registered name is
+// "tangent.triage" — go-envelopes rejects un-namespaced names as
+// reserved for core types. The MCP schema below pins envelope.type to
+// the same string so direct MCP calls and dispatcher validation agree.
 //
-// The shape mirrors the `Envelope` struct in go-envelopes/types.go: only
-// the fields a client must populate to get a triage flow off the ground
-// are required (v, id, type, data). Optional fields are listed but not
-// required so future extensions don't break v0.1 callers.
-const triageEnvelopeType = "triage"
+// When go-envelopes upstreams a `triage` kind into core (v0.3 plan)
+// the wire name flips to the bare form; the schema constant and the
+// extension manifest both update together.
+const triageEnvelopeType = "tangent.triage"
 
 // triageInputSchemaJSON is the marshaled JSON Schema document advertised
 // to MCP clients via tools/list. The SDK ingests it into a
@@ -47,7 +42,7 @@ var triageInputSchemaJSON = []byte(`{
       "properties": {
         "v": {"type": "integer", "minimum": 1, "description": "Envelope protocol version."},
         "id": {"type": "string", "minLength": 1, "description": "Client-supplied envelope id (echoed in the Response)."},
-        "type": {"type": "string", "const": "triage", "description": "Must be 'triage' for this tool."},
+        "type": {"type": "string", "const": "tangent.triage", "description": "Must be 'tangent.triage' for this tool (registered via the plugin extension API)."},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
         "context": {"type": "string"},

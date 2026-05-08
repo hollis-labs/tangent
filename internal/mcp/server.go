@@ -23,11 +23,20 @@ const (
 // dispatcher. One Server instance backs both the streamable-HTTP and the
 // SSE transports — the same MCP server is reused per-request, so tool
 // registration is global.
+//
+// triageRoomURL is the prefix used to log "open this URL" hints when
+// tangent.triage creates a Room. PR 4 auto-creates a room per call;
+// future PRs may add tray-icon or auto-launch flows so the user never
+// needs to copy the URL by hand.
 type Server struct {
 	envSvc     *envelope.Service
 	dispatcher *envelope.Dispatcher
 
 	mcp *mcpsdk.Server
+
+	// triageRoomURL is the base URL for room links emitted by the
+	// triage handler. Optional; empty disables logging the hint.
+	triageRoomURL string
 }
 
 // New constructs a Server, registers the v0.1 tool surface
@@ -66,6 +75,12 @@ func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher) (*Server, er
 // MCP returns the underlying SDK server. Exposed for tests that need to
 // connect via NewInMemoryTransports; not intended for production callers.
 func (s *Server) MCP() *mcpsdk.Server { return s.mcp }
+
+// SetTriageRoomURL injects the base URL that the triage handler logs
+// when creating a room (e.g. "http://localhost:7842"). The handler
+// appends "/r/<roomID>" before logging. Optional — empty value
+// disables the hint.
+func (s *Server) SetTriageRoomURL(url string) { s.triageRoomURL = url }
 
 // HTTPHandler returns the streamable-HTTP handler suitable for mounting
 // at /mcp. The SDK reuses the same *mcp.Server for every request via the

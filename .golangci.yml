@@ -55,6 +55,11 @@ linters:
 
     misspell:
       locale: US
+      ignore-rules:
+        # The Envelope UI Protocol uses "cancelled" (UK spelling) as
+        # the canonical ResponseStatusCancelled value; treating it as
+        # a misspelling would force us to fork the protocol token.
+        - cancelled
 
     revive:
       rules:

@@ -200,7 +200,7 @@ func TestTriage_ReturnsNotWired(t *testing.T) {
 	envelopeArg := map[string]any{
 		"v":    envelopes.ProtocolVersion,
 		"id":   "triage-not-wired-1",
-		"type": "triage",
+		"type": "tangent.triage",
 		"data": map[string]any{},
 	}
 
@@ -278,7 +278,7 @@ func TestTriage_RejectsMissingRequiredField(t *testing.T) {
 	envelopeArg := map[string]any{
 		// missing "id" — required by the triage input schema.
 		"v":    envelopes.ProtocolVersion,
-		"type": "triage",
+		"type": "tangent.triage",
 		"data": map[string]any{},
 	}
 
