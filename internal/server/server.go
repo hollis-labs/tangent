@@ -110,9 +110,13 @@ func New(cfg Config) (*Server, error) {
 		// opens the long-lived event stream; POST is used for outbound
 		// JSON-RPC frames keyed against the streamed session id.
 		mux.Handle("/sse", cfg.MCP.SSEHandler())
+		// Logged URLs use 127.0.0.1 (matching the actual bind) rather
+		// than the human-friendly "localhost" alias — on systems where
+		// localhost resolves to ::1 first without an IPv4 fallback, a
+		// pasted link would dead-end against an IPv4-only listener.
 		logger.Info("MCP server ready",
-			"http_url", fmt.Sprintf("http://localhost:%d/mcp", cfg.Port),
-			"sse_url", fmt.Sprintf("http://localhost:%d/sse", cfg.Port),
+			"http_url", fmt.Sprintf("http://127.0.0.1:%d/mcp", cfg.Port),
+			"sse_url", fmt.Sprintf("http://127.0.0.1:%d/sse", cfg.Port),
 		)
 	}
 
@@ -121,7 +125,7 @@ func New(cfg Config) (*Server, error) {
 		// the SPA (or dev proxy) never sees the upgrade request.
 		mux.Handle("GET /ws", cfg.WSHandler)
 		logger.Info("WebSocket bridge ready",
-			"ws_url", fmt.Sprintf("ws://localhost:%d/ws", cfg.Port),
+			"ws_url", fmt.Sprintf("ws://127.0.0.1:%d/ws", cfg.Port),
 		)
 	}
 
@@ -139,12 +143,12 @@ func New(cfg Config) (*Server, error) {
 	}
 	mux.Handle("/", rootHandler)
 
-	// v0.1 is localhost-only by design (concept doc + boot prompt: "no
-	// auth in v1; localhost only"). Bind explicitly to 127.0.0.1 so a
-	// developer running `./tangent` on a coffee-shop wifi isn't
-	// inadvertently exposing MCP + WS to the LAN. v0.2+ may add an
-	// opt-in BindAll flag; until then the constraint is enforced here
-	// rather than relying on docs/firewall hygiene.
+	// v0.x is localhost-only by design (concept doc: single-user, no
+	// auth, no cloud). Bind explicitly to 127.0.0.1 so a developer
+	// running `./tangent` on a coffee-shop wifi isn't inadvertently
+	// exposing MCP + WS to the LAN. A future release may add an
+	// opt-in BindAll flag; until then the constraint is enforced
+	// here rather than relying on docs/firewall hygiene.
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	httpS := &http.Server{
 		Addr:              addr,
