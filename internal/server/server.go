@@ -10,6 +10,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"time"
+
+	"github.com/hollis-labs/tangent/internal/envelope"
 )
 
 // Config controls Server construction.
@@ -24,6 +26,13 @@ type Config struct {
 
 	// Logger receives structured logs. Defaults to slog.Default() when nil.
 	Logger *slog.Logger
+
+	// Envelope is the loaded go-envelopes service. PR 2 wires it through
+	// without consuming it; PR 3 (MCP) and PR 4 (WebSocket) attach
+	// validators and dispatchers to it. New returns an error if Envelope
+	// is nil so misconfigured boots fail fast rather than at first
+	// envelope.
+	Envelope *envelope.Service
 }
 
 // Server is the Tangent HTTP server. It wraps a *http.Server and the
@@ -34,13 +43,24 @@ type Server struct {
 	logger *slog.Logger
 	mux    *http.ServeMux
 	httpS  *http.Server
+
+	// envelope holds the registry-backed validation/dispatch service
+	// shared with future MCP and WebSocket subsystems.
+	envelope *envelope.Service
 }
 
 // New constructs a Server with the embedded-SPA or dev-proxy handler.
+//
+// cfg.Envelope must be non-nil. The envelope service is constructed at
+// startup in cmd/tangent/main.go; passing it through Config keeps the
+// server agnostic to manifest-load lifecycle.
 func New(cfg Config) (*Server, error) {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if cfg.Envelope == nil {
+		return nil, fmt.Errorf("server: envelope service is required")
 	}
 
 	mux := http.NewServeMux()
@@ -63,12 +83,18 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:    cfg,
-		logger: logger,
-		mux:    mux,
-		httpS:  httpS,
+		cfg:      cfg,
+		logger:   logger,
+		mux:      mux,
+		httpS:    httpS,
+		envelope: cfg.Envelope,
 	}, nil
 }
+
+// Envelope returns the wired envelope service. Exposed so future PRs
+// (MCP, WebSocket) can grab it after construction without revisiting
+// New's signature.
+func (s *Server) Envelope() *envelope.Service { return s.envelope }
 
 // ListenAndServe starts the server. It blocks until the listener errors
 // out; callers should treat http.ErrServerClosed as a clean shutdown.

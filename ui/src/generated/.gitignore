@@ -1,0 +1,6 @@
+# Generated files in this directory are committed; CI's check-envelopes
+# target keeps them honest. Regenerate via `make generate-envelopes`.
+#
+# This .gitignore exists so the directory survives a clean checkout even
+# when downstream tooling expects an empty marker — every file in here
+# is checked in.

@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "*.json", "*.js", "*.ts", "*.mjs"]
+    "includes": ["src/**", "*.json", "*.js", "*.ts", "*.mjs", "!src/generated"]
   },
   "css": {
     "parser": {

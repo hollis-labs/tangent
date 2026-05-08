@@ -18,6 +18,11 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
+      - name: Set up Node (for envelope codegen check)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -35,6 +40,9 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+      - name: Check envelope types are not stale
+        run: make check-envelopes
 
       - name: Build (skip frontend; placeholder ui_dist embed)
         run: go build ./...
