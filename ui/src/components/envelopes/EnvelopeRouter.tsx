@@ -27,6 +27,10 @@ export function EnvelopeRouter({ envelope, onSubmit, onCancel }: Props) {
     return <Component envelope={envelope} onSubmit={onSubmit} onCancel={onCancel} />;
   }
 
+  // Fallback: unknown / missing type. Render the raw JSON for
+  // debuggability AND a Cancel control so the user can release the
+  // server-side Push (otherwise the MCP caller waits until the room
+  // timeout, which is bad UX for a typo'd envelope type).
   return (
     <div className="space-y-2" data-testid="envelope-router-fallback">
       <p className="text-xs text-zinc-500">
@@ -37,6 +41,15 @@ export function EnvelopeRouter({ envelope, onSubmit, onCancel }: Props) {
       <pre className="whitespace-pre-wrap break-words rounded border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-200">
         {safeJson(envelope)}
       </pre>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded bg-zinc-800 hover:bg-zinc-700 px-3 py-1 text-xs"
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

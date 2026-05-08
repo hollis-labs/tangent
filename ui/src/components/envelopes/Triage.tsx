@@ -126,23 +126,25 @@ const ACTIONS: ReadonlyArray<{ id: TriageAction; label: string; cls: string }> =
  */
 function normalizeItems(items: RawTriageItem[] | undefined): NormalizedItem[] {
   if (!items || items.length === 0) return [];
+  const seenIds = new Set<string>();
   return items.map((item, index) => {
     if (typeof item === "string") {
       return {
-        itemId: `item-${index}`,
+        itemId: uniqueItemId(seenIds, `item-${index}`),
         label: item,
         isObject: false,
       };
     }
     if (item === null || typeof item !== "object") {
       return {
-        itemId: `item-${index}`,
+        itemId: uniqueItemId(seenIds, `item-${index}`),
         label: String(item),
         isObject: false,
       };
     }
     const rec = item as Record<string, unknown>;
-    const id = typeof rec.id === "string" && rec.id.length > 0 ? rec.id : `item-${index}`;
+    const candidate = typeof rec.id === "string" && rec.id.length > 0 ? rec.id : `item-${index}`;
+    const id = uniqueItemId(seenIds, candidate);
     const label = pickLabel(rec) ?? `Item ${index + 1}`;
     return {
       itemId: id,
@@ -151,6 +153,25 @@ function normalizeItems(items: RawTriageItem[] | undefined): NormalizedItem[] {
       isObject: true,
     };
   });
+}
+
+// uniqueItemId guarantees the returned id has not been used in this
+// envelope's items list. The triage envelope's data shape is permissive
+// (objects can repeat their `id` field), and a collision would silently
+// alias rows in the decisions map — one button press would overwrite
+// another. Disambiguate with an index suffix on the second+ occurrence.
+function uniqueItemId(seen: Set<string>, candidate: string): string {
+  if (!seen.has(candidate)) {
+    seen.add(candidate);
+    return candidate;
+  }
+  for (let suffix = 2; ; suffix++) {
+    const next = `${candidate}#${suffix}`;
+    if (!seen.has(next)) {
+      seen.add(next);
+      return next;
+    }
+  }
 }
 
 function pickLabel(rec: Record<string, unknown>): string | null {
@@ -166,7 +187,11 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
   const [decisions, setDecisions] = useState<Record<string, TriageAction>>({});
 
   const undecidedCount = items.length - Object.keys(decisions).length;
-  const allDecided = items.length > 0 && undecidedCount === 0;
+  // Submit is allowed when every item has a decision OR the envelope
+  // carried no items at all (an empty triage submits decisions: []).
+  // The earlier `items.length > 0` clause incorrectly disabled submit
+  // for empty payloads while the UI copy implied they were submittable.
+  const allDecided = undecidedCount === 0;
 
   const setDecision = (itemId: string, action: TriageAction) => {
     setDecisions((prev) => ({ ...prev, [itemId]: action }));

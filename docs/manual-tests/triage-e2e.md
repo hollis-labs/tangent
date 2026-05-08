@@ -6,9 +6,13 @@ MCP tool, the human responds in the browser, and the LLM receives a
 structured response payload.
 
 For a fully-automated mock-driven equivalent (no LLM involved), use
-`scripts/triage-mock-call.mjs` — it exercises the same WS round-trip via
-in-memory transports and is what CI relies on. The recipe below is the
-human-loop verification.
+`scripts/triage-mock-call.mjs` — it spawns `./tangent` as a subprocess
+and drives a real HTTP MCP call + real WebSocket round-trip from
+outside the binary. CI does not run this script today; the canonical
+in-process gate is `internal/server/integration_test.go`
+(`TestIntegration_TriageRoundTrip`), which uses the SDK's in-memory
+transports. The mock script is the human-runnable parity check for
+the same loop. The recipe below is the real-LLM verification.
 
 ## Prerequisites
 
@@ -26,13 +30,15 @@ cd ~/Projects-apps/tangent
 ./tangent
 ```
 
-Expected log lines (values approximate):
+Expected log lines (timestamps elided; key=value attributes match the
+slog text handler Tangent ships with):
 
 ```
-INFO loaded envelope types count=26
-INFO registered tangent envelope extensions plugin=tangent count=27
-INFO MCP server ready transports="streamable-http,sse" path=/mcp
-INFO tangent listening port=7842 url=http://localhost:7842
+level=INFO msg="loaded envelope types" count=26
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=27
+level=INFO msg="MCP server ready" http_url=http://localhost:7842/mcp sse_url=http://localhost:7842/sse
+level=INFO msg="tangent ready" url=http://localhost:7842/
+level=INFO msg="tangent listening" addr=:7842 dev_frontend_url=""
 ```
 
 Note: triage room URLs are emitted by Tangent's MCP triage handler the
