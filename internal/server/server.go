@@ -139,7 +139,13 @@ func New(cfg Config) (*Server, error) {
 	}
 	mux.Handle("/", rootHandler)
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	// v0.1 is localhost-only by design (concept doc + boot prompt: "no
+	// auth in v1; localhost only"). Bind explicitly to 127.0.0.1 so a
+	// developer running `./tangent` on a coffee-shop wifi isn't
+	// inadvertently exposing MCP + WS to the LAN. v0.2+ may add an
+	// opt-in BindAll flag; until then the constraint is enforced here
+	// rather than relying on docs/firewall hygiene.
+	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	httpS := &http.Server{
 		Addr:              addr,
 		Handler:           loggingMiddleware(logger, mux),
