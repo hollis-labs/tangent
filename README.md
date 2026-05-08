@@ -15,9 +15,41 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-v0.1 in progress — "prove the shape." The repo is no longer a placeholder; it has a working Go server, embedded React/TypeScript SPA, and tooling. See `Development` below for build/dev commands.
+v0.1.0 released. Triage workflow working end-to-end via MCP — a real Claude Code session can call `tangent.triage`, the user resolves it in the browser, and the LLM receives a structured response back. See [`CHANGELOG.md`](./CHANGELOG.md) for the full v0.1.0 entry.
 
-Note: Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical.
+Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
+
+## Quickstart
+
+Install:
+
+```bash
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.1.0
+```
+
+Run:
+
+```bash
+tangent
+# tangent listening addr=:7842
+# MCP server ready http_url=http://localhost:7842/mcp sse_url=http://localhost:7842/sse
+```
+
+Wire it into Claude Code (verified against `claude` CLI as of 2026-05-08):
+
+```bash
+claude mcp add --transport http tangent http://localhost:7842/mcp
+```
+
+If your `claude` rejects `--transport http`, fall back to SSE:
+
+```bash
+claude mcp add --transport sse tangent http://localhost:7842/sse
+```
+
+Then in any Claude Code session: ask Claude to use the `tangent.triage` tool. Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, decide each item, click Submit, and Claude receives the structured response.
+
+For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
 ## How it works
 
@@ -119,7 +151,12 @@ make test            # go test -race + vitest
 ./tangent            # serves on :7842 (override via TANGENT_HTTP_PORT)
 ```
 
-Full v0.1 docs (architecture, MCP integration, manual e2e recipe) land with PR 6.
+More docs:
+
+- [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
+- [`docs/developing.md`](./docs/developing.md) — contributor onboarding
+- [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
+- [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
 
 ## License
 
