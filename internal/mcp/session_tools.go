@@ -277,6 +277,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == whiteboardEnvelopeType {
 			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == spreadsheetReviewEnvelopeType {
+			return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)
+		}
 		return resp, nil
 	})
 	if err != nil {
@@ -335,6 +338,13 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidSpreadsheetTableID),
+		errors.Is(err, room.ErrInvalidSpreadsheetColumn),
+		errors.Is(err, room.ErrInvalidSpreadsheetRow),
+		errors.Is(err, room.ErrInvalidSpreadsheetSavedView),
+		errors.Is(err, room.ErrInvalidSpreadsheetRowAction),
+		errors.Is(err, room.ErrInvalidSpreadsheetActionID),
+		errors.Is(err, room.ErrInvalidSpreadsheetExportRef),
 		errors.Is(err, room.ErrInvalidWhiteboardBoardID),
 		errors.Is(err, room.ErrInvalidWhiteboardSceneSnapshot),
 		errors.Is(err, room.ErrInvalidWhiteboardAssetRef),

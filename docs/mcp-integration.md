@@ -7,13 +7,15 @@ for the full Claude Code e2e walkthrough see
 writing flow see
 [`manual-tests/writing-flow-e2e.md`](./manual-tests/writing-flow-e2e.md),
 and for the whiteboard flow see
-[`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for raw
-curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
+[`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for the
+spreadsheet-review flow see
+[`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
+for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Install
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.4.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.5.0
 ```
 
 Or build from source:
@@ -71,13 +73,13 @@ claude mcp list
 
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent.triage`, `tangent.feedback`, `tangent.design-iteration`,
-`tangent.whiteboard`, or the writing sequence via `tangent.session_*`,
-`tangent.interview_question`, `tangent.synthesis_notes`,
-`tangent.block_draft`, `tangent.prose_revision`, and
-`tangent.output_render`. Tangent prints a room URL, the browser resolves
-the workflow, and Claude receives the structured response back. Full
-walkthroughs live in the manual recipes under
-[`docs/manual-tests/`](./manual-tests/).
+`tangent.whiteboard`, `tangent.spreadsheet-review`, or the writing
+sequence via `tangent.session_*`, `tangent.interview_question`,
+`tangent.synthesis_notes`, `tangent.block_draft`,
+`tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
+room URL, the browser resolves the workflow, and Claude receives the
+structured response back. Full walkthroughs live in the manual recipes
+under [`docs/manual-tests/`](./manual-tests/).
 
 ## Cursor
 
@@ -119,7 +121,7 @@ shape, please contribute it back.
 
 ## Verification (no agent required)
 
-Confirm the MCP surface is up and advertises the v0.4 tools:
+Confirm the MCP surface is up and advertises the v0.5 tools:
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -145,6 +147,7 @@ Expected:
 "tangent.session_get"
 "tangent.session_list"
 "tangent.session_set_phase_output"
+"tangent.spreadsheet-review"
 "tangent.synthesis_notes"
 "tangent.triage"
 "tangent.whiteboard"
@@ -182,8 +185,10 @@ workflow-neutral phase substrate:
   blob shaped like `{"version":1,"data":{...}}`.
 - `spreadsheet_review`: when a room has persisted spreadsheet-review
   state, a dedicated projection with `table_id`, canonical `columns`
-  and `rows`, normalized `query_state`, `notes`, `updated_at`, and
-  room-backed `saved_views`.
+  and `rows`, normalized `query_state`, `notes`, `updated_at`,
+  room-backed `saved_views`, persisted `selected_row_ids`,
+  normalized `selected_rows`, optional bulk `action_id`, and
+  lightweight CSV `export_refs`.
 - `whiteboard`: when a room has persisted board state, a dedicated
   projection with `board_id`, `scene_snapshot`, referenced `assets`,
   `export_refs`, `notes`, `updated_at`, and append-only
@@ -193,9 +198,9 @@ workflow-neutral phase substrate:
 
 For persisted spreadsheet review, Tangent treats agent-provided rows as
 canonical table content and keeps `session_get` lightweight by
-projecting normalized query state plus named saved views directly off
-the room substrate rather than synthesizing them from browser-local
-state.
+projecting normalized query state, named saved views, selected rows,
+and export metadata directly off the room substrate rather than
+synthesizing them from browser-local state.
 
 For the shipped v0.4 whiteboard workflow, Tangent treats the full scene
 snapshot as canonical room state but expects image/file inputs to be
@@ -230,11 +235,11 @@ For deeper probes (calling a workflow, expected error frames) see
   serves both. Don't mix them within one client config.
 - **`claude mcp add` rejects `--transport http`.** Use
   `--transport sse` and the `/sse` URL. The two transports are
-  equivalent for v0.1's tool surface.
+  equivalent for the current tool surface.
 - **`go install` vs fresh-clone build.** `go install` is the simplest
-  path for a stable v0.4.0 binary; build-from-source is required if you
+  path for a stable v0.5.0 binary; build-from-source is required if you
   want unreleased fixes from `main`. The two are not API-compatible
-  across releases — pin via `@v0.4.0` until you have a reason not to.
+  across releases — pin via `@v0.5.0` until you have a reason not to.
 - **Browser shows "No component registered for ..."** The envelope
   `type` on the wire is not one of Tangent's registered workflow kinds.
   The bundled tools pin the type for you; if you're calling the session

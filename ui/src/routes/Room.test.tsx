@@ -127,6 +127,40 @@ describe("<Room>", () => {
     expect(cancel).not.toHaveBeenCalledWith("whiteboard-refresh-1");
   });
 
+  it("beforeunload does not cancel an active spreadsheet-review envelope", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.spreadsheet-review", SpreadsheetReviewProbeAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("spreadsheet-refresh-1", {
+        v: 1,
+        id: "spreadsheet-refresh-1",
+        type: "tangent.spreadsheet-review",
+        data: { table_id: "table-1" },
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    expect(cancel).not.toHaveBeenCalledWith("spreadsheet-refresh-1");
+  });
+
   it("enriches synthesis-notes envelopes with the gated session state", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(
@@ -533,6 +567,26 @@ function WhiteboardProbeAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompon
         submit
       </button>
       <button type="button" data-testid="whiteboard-probe-cancel" onClick={onCancel}>
+        cancel
+      </button>
+    </div>
+  );
+}
+
+function SpreadsheetReviewProbeAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <div>
+      <pre data-testid="spreadsheet-review-probe-state">
+        {JSON.stringify((envelope as { data?: unknown }).data ?? null)}
+      </pre>
+      <button
+        type="button"
+        data-testid="spreadsheet-review-probe-submit"
+        onClick={() => onSubmit({ ok: true })}
+      >
+        submit
+      </button>
+      <button type="button" data-testid="spreadsheet-review-probe-cancel" onClick={onCancel}>
         cancel
       </button>
     </div>

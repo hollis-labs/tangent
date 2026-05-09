@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-v0.4.0 released. Tangent now ships persistent rooms, multi-envelope sessions, three general workflows (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`), the full Interview Protocol writing path (`interview -> synthesis -> drafting -> revision -> output`), and the first shared whiteboard workflow (`tangent.whiteboard`). The whiteboard is single-user localhost first: one persistent room shared between user and agent, with explicit submit, local draft recovery, PNG export, artifact-backed reference images, and revision browsing. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
+v0.5.0 released. Tangent now ships persistent rooms, multi-envelope sessions, three general workflows (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`), the full Interview Protocol writing path (`interview -> synthesis -> drafting -> revision -> output`), the shared whiteboard workflow (`tangent.whiteboard`), and the first dense table workflow (`tangent.spreadsheet-review`). Spreadsheet review is room-backed and explicit-submit like whiteboard: one persistent room shared between user and agent, with canonical agent-provided rows, sort/filter/search state, row selection, saved views, local draft recovery, CSV export metadata, and reopen from the latest submitted room state. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -24,10 +24,10 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.4.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.5.0
 ```
 
-If you are reading this before the `v0.4.0` tag is published, use `@main`
+If you are reading this before the `v0.5.0` tag is published, use `@main`
 temporarily and switch back to the release tag once it lands.
 
 Run:
@@ -50,20 +50,20 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`, `tangent.whiteboard`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What changed since v0.3
+### What changed since v0.4
 
-- Tangent now ships `tangent.whiteboard`, a room-backed freeform collaboration surface using a tldraw canvas.
-- Whiteboard turns are explicit submit/cancel loops with server-issued `revision_id`s and full-scene payload normalization.
-- In-progress whiteboard edits autosave locally and recover across refresh for the active room + board.
-- Whiteboards can export PNGs, persist artifact-backed reference-image refs, and reopen cleanly after restart.
-- `tangent.session_get` now exposes persisted whiteboard state plus revision metadata, while the room UI exposes a revision browser for reopening or explicitly continuing from an older revision.
+- Tangent now ships `tangent.spreadsheet-review`, a room-backed dense table workflow for reviewing canonical agent-provided rows.
+- Spreadsheet-review turns are explicit submit/cancel loops with persisted sort/filter/search state, selected rows, bulk actions, saved views, and notes.
+- In-progress spreadsheet-review edits autosave locally and recover across refresh for the active room + table.
+- Spreadsheet reviews can export CSVs locally, persist lightweight export metadata on the room, and reopen cleanly from the latest submitted state.
+- `tangent.session_get` now exposes a dedicated `spreadsheet_review` projection alongside whiteboard and writing-flow room state.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -94,15 +94,19 @@ Wails shell, MCP server, one bundled workflow (triage). The goal is end-to-end: 
 
 Shipped. Tangent now includes a persistent, MCP-driven whiteboard workflow for layout, annotation, and spatial collaboration. The v0.4 whiteboard is single-user localhost first, shared between user and agent through one room, backed by tldraw scene JSON, explicit submit, local refresh recovery, PNG export, and revision browsing.
 
-### v0.5 — Additional workflow expansion
+### v0.5 — Spreadsheet review
 
-Spreadsheet review, form collect, approval queue, diff review, file picker, progress panel, dashboard, and wizard.
+Shipped. Tangent now includes a persistent, MCP-driven spreadsheet-review workflow for dense row review, canonical query state, saved views, local refresh recovery, CSV export metadata, and explicit submit in one room.
 
-### v0.6 — Nanite-native side-channel
+### v0.6 — Additional workflow expansion
+
+Form collect, approval queue, diff review, file picker, progress panel, dashboard, and wizard.
+
+### v0.7 — Nanite-native side-channel
 
 The premium transport tier with mid-turn event injection.
 
-### v0.7+ — Distribution and trust
+### v0.8+ — Distribution and trust
 
 Installation, capability gating, isolation, and the trust model for third-party workflow plugins.
 
@@ -172,6 +176,7 @@ More docs:
 - [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
 - [`docs/manual-tests/writing-flow-e2e.md`](./docs/manual-tests/writing-flow-e2e.md) — full Interview Protocol writing workflow
 - [`docs/manual-tests/whiteboard-e2e.md`](./docs/manual-tests/whiteboard-e2e.md) — full whiteboard workflow with autosave, export, and revision browser
+- [`docs/manual-tests/spreadsheet-review-e2e.md`](./docs/manual-tests/spreadsheet-review-e2e.md) — full spreadsheet-review workflow with recovery, saved views, and CSV export metadata
 
 ## License
 

@@ -218,6 +218,16 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
+	spreadsheetReviewSchema, err := buildSpreadsheetReviewInputSchema()
+	if err != nil {
+		return fmt.Errorf("build spreadsheet-review input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.spreadsheet-review",
+		Description: "Dispatch a spreadsheet-review envelope through Tangent. Persists canonical table state and renders a room-backed table host with explicit submit/cancel.",
+		InputSchema: spreadsheetReviewSchema,
+	}, s.handleSpreadsheetReview)
+
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
@@ -345,6 +355,10 @@ func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
 
 func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(whiteboardInputSchemaJSON, "whiteboard")
+}
+
+func buildSpreadsheetReviewInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(spreadsheetReviewInputSchemaJSON, "spreadsheet_review")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {

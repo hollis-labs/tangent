@@ -32,6 +32,11 @@ import {
   type ProseRevisionResponse,
 } from "./components/envelopes/ProseRevision";
 import {
+  SpreadsheetReview,
+  type SpreadsheetReviewEnvelope,
+  type SpreadsheetReviewResponse,
+} from "./components/envelopes/SpreadsheetReview";
+import {
   SynthesisNotes,
   type SynthesisNotesEnvelope,
   type SynthesisNotesResponse,
@@ -140,6 +145,22 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+function SpreadsheetReviewAdapter({
+  envelope,
+  onSubmit,
+  onCancel,
+  roomID,
+}: EnvelopeComponentProps) {
+  return (
+    <SpreadsheetReview
+      envelope={envelope as SpreadsheetReviewEnvelope}
+      onSubmit={onSubmit as (response: SpreadsheetReviewResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
 function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
   return (
     <SynthesisNotes
@@ -158,6 +179,7 @@ register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
+register("tangent.spreadsheet-review", SpreadsheetReviewAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");

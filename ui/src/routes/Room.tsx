@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  spreadsheet_review?: unknown;
   whiteboard?: unknown;
   synthesis_notes?: unknown;
   current_draft?: unknown;
@@ -94,7 +95,8 @@ export default function Room() {
       if (!pending || !clientRef.current) {
         return;
       }
-      if (readEnvelopeType(pending.envelope) === "tangent.whiteboard") {
+      const envelopeType = readEnvelopeType(pending.envelope);
+      if (envelopeType === "tangent.whiteboard" || envelopeType === "tangent.spreadsheet-review") {
         return;
       }
       clientRef.current.cancel(pending.envelopeId);
@@ -150,7 +152,8 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.block-draft" &&
     type !== "tangent.prose-revision" &&
     type !== "tangent.output-render" &&
-    type !== "tangent.whiteboard"
+    type !== "tangent.whiteboard" &&
+    type !== "tangent.spreadsheet-review"
   ) {
     return envelope;
   }
@@ -167,6 +170,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.output-render") {
       return attachFinalOutput(envelope, state.final_output);
+    }
+    if (type === "tangent.spreadsheet-review") {
+      return attachSpreadsheetReviewState(envelope, state.spreadsheet_review);
     }
     if (type === "tangent.whiteboard") {
       return attachWhiteboardState(envelope, state.whiteboard);
@@ -259,6 +265,40 @@ function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
   data.prior_variants = priorVariants;
+  return { ...typed, data };
+}
+
+function attachSpreadsheetReviewState(envelope: unknown, spreadsheetReview: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!spreadsheetReview || typeof spreadsheetReview !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = spreadsheetReview as Record<string, unknown>;
+  for (const key of [
+    "table_id",
+    "columns",
+    "rows",
+    "query_state",
+    "notes",
+    "updated_at",
+    "saved_views",
+    "row_actions",
+    "selected_row_ids",
+    "selected_rows",
+    "action_id",
+    "export_refs",
+  ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
   return { ...typed, data };
 }
 
