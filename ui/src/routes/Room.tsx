@@ -29,6 +29,7 @@ type SessionStatePayload = {
   envelopes_history?: unknown[];
   synthesis_notes?: unknown;
   current_draft?: unknown;
+  prose_revision_outcomes?: unknown[];
 };
 
 export default function Room() {
@@ -140,7 +141,8 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
   if (
     type !== "tangent.design-iteration" &&
     type !== "tangent.synthesis-notes" &&
-    type !== "tangent.block-draft"
+    type !== "tangent.block-draft" &&
+    type !== "tangent.prose-revision"
   ) {
     return envelope;
   }
@@ -150,6 +152,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
       return attachPriorVariants(envelope, state.envelopes_history ?? []);
     }
     if (type === "tangent.block-draft") {
+      return attachCurrentDraft(envelope, state.current_draft);
+    }
+    if (type === "tangent.prose-revision") {
       return attachCurrentDraft(envelope, state.current_draft);
     }
     return attachSynthesisState(envelope, state.synthesis_notes);

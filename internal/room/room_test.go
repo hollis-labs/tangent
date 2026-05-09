@@ -544,6 +544,92 @@ func TestRoom_AcceptedDraftBlocksRejectInvalidInput(t *testing.T) {
 	}
 }
 
+func TestRoom_ProseRevisionOutcomesPersistAndHydrate(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "revisionful"})
+
+	if err := rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "opening-pass",
+		EnvelopeID: "rev-1",
+		Lens:       "review",
+		BlockID:    "intro",
+		SourceText: "Original opening paragraph.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Lead with the claim."},
+			{ID: "s2", SuggestedText: "Cut the repeated example."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "accept"},
+			{SuggestionID: "s2", Decision: "comment", Comment: "Keep one example, just shorten it."},
+		},
+		GeneralComment: "Prefer structural fixes over more examples.",
+	}); err != nil {
+		t.Fatalf("AppendProseRevisionOutcome: %v", err)
+	}
+
+	state := rm.PhaseState()
+	outcomes := room.ProjectProseRevisionOutcomes(state)
+	if len(outcomes) != 1 {
+		t.Fatalf("outcomes len = %d, want 1", len(outcomes))
+	}
+	if got := outcomes[0].Outcomes[0].Decision; got != "accept" {
+		t.Fatalf("first decision = %q, want accept", got)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedOutcomes := room.ProjectProseRevisionOutcomes(reloaded.PhaseState())
+	if len(reloadedOutcomes) != 1 {
+		t.Fatalf("reloaded outcomes len = %d, want 1", len(reloadedOutcomes))
+	}
+	if got := reloadedOutcomes[0].Outcomes[1].Comment; got != "Keep one example, just shorten it." {
+		t.Fatalf("reloaded comment = %q, want preserved comment", got)
+	}
+}
+
+func TestRoom_ProseRevisionOutcomesRejectInvalidInput(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	err := rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "   ",
+		Lens:       "review",
+		SourceText: "Valid source.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Suggested text."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "accept"},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProseRevisionID) {
+		t.Fatalf("AppendProseRevisionOutcome invalid id err = %v, want ErrInvalidProseRevisionID", err)
+	}
+
+	err = rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "rev-1",
+		Lens:       "copy",
+		SourceText: "Valid source.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Suggested text."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "comment"},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProseRevisionOutcome) {
+		t.Fatalf("AppendProseRevisionOutcome invalid outcome err = %v, want ErrInvalidProseRevisionOutcome", err)
+	}
+}
+
 func TestRoom_TwoRoomsParallel(t *testing.T) {
 	rmA, clientA, _, cleanupA := newTestServer(t)
 	defer cleanupA()

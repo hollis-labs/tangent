@@ -8,6 +8,11 @@ import {
   type BlockDraftResponse,
 } from "../components/envelopes/BlockDraft";
 import {
+  ProseRevision,
+  type ProseRevisionEnvelope,
+  type ProseRevisionResponse,
+} from "../components/envelopes/ProseRevision";
+import {
   SynthesisNotes,
   type SynthesisNotesEnvelope,
   type SynthesisNotesResponse,
@@ -178,6 +183,60 @@ describe("<Room>", () => {
       "Accepted block so far.",
     );
   });
+
+  it("enriches prose-revision envelopes with the reconstructed current draft", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.prose-revision", ProseRevisionAdapter);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                current_draft: {
+                  block_count: 1,
+                  markdown: "Accepted block so far.",
+                  blocks: [{ block_id: "intro", content: "Accepted block so far." }],
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("rev-1", {
+        v: 1,
+        id: "rev-1",
+        type: "tangent.prose-revision",
+        data: {
+          lens: "copy",
+          source_text: "Candidate paragraph.",
+          suggestions: [{ id: "s1", suggested_text: "Tighter paragraph." }],
+        },
+      });
+    });
+
+    expect(await screen.findByTestId("prose-revision-current-draft")).toHaveTextContent(
+      "Accepted block so far.",
+    );
+  });
 });
 
 function renderAt(path: string, includeNavigator = false) {
@@ -237,6 +296,16 @@ function BlockDraftAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentPr
     <BlockDraft
       envelope={envelope as BlockDraftEnvelope}
       onSubmit={onSubmit as (response: BlockDraftResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function ProseRevisionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <ProseRevision
+      envelope={envelope as ProseRevisionEnvelope}
+      onSubmit={onSubmit as (response: ProseRevisionResponse) => void}
       onCancel={onCancel}
     />
   );

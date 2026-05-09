@@ -188,6 +188,16 @@ func (s *Server) registerTools() error {
 		InputSchema: blockDraftSchema,
 	}, s.handleBlockDraft)
 
+	proseRevisionSchema, err := buildProseRevisionInputSchema()
+	if err != nil {
+		return fmt.Errorf("build prose-revision input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.prose_revision",
+		Description: "Dispatch a prose-revision envelope through Tangent. Persists explicit accept/reject/comment outcomes per suggestion on the room.",
+		InputSchema: proseRevisionSchema,
+	}, s.handleProseRevision)
+
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
@@ -303,6 +313,10 @@ func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
 
 func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(blockDraftInputSchemaJSON, "block_draft")
+}
+
+func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(proseRevisionInputSchemaJSON, "prose_revision")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {

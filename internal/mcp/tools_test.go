@@ -46,6 +46,9 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	if regErr := extensions.RegisterBlockDraft(envSvc); regErr != nil {
 		t.Fatalf("RegisterBlockDraft: %v", regErr)
 	}
+	if regErr := extensions.RegisterProseRevision(envSvc); regErr != nil {
+		t.Fatalf("RegisterProseRevision: %v", regErr)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
@@ -77,10 +80,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsFourteenTools asserts the tool surface includes the legacy
+// TestServer_ListsFifteenTools asserts the tool surface includes the legacy
 // and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsFourteenTools(t *testing.T) {
+func TestServer_ListsFifteenTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -88,12 +91,12 @@ func TestServer_ListsFourteenTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 14 {
+	if len(res.Tools) != 15 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 14 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 15 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
@@ -103,6 +106,7 @@ func TestServer_ListsFourteenTools(t *testing.T) {
 		"tangent.design-iteration":         false,
 		"tangent.interview_question":       false,
 		"tangent.block_draft":              false,
+		"tangent.prose_revision":           false,
 		"tangent.synthesis_notes":          false,
 		"tangent.session_create":           false,
 		"tangent.session_advance":          false,

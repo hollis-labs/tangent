@@ -55,6 +55,9 @@ func newRig(t *testing.T) *rig {
 	if regErr := extensions.RegisterBlockDraft(envSvc); regErr != nil {
 		t.Fatalf("RegisterBlockDraft: %v", regErr)
 	}
+	if regErr := extensions.RegisterProseRevision(envSvc); regErr != nil {
+		t.Fatalf("RegisterProseRevision: %v", regErr)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
@@ -85,6 +88,9 @@ func newRig(t *testing.T) *rig {
 	}
 	if regErr := tangentmcp.RegisterBlockDraftOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterBlockDraftOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterProseRevisionOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterProseRevisionOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
