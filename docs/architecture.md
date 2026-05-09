@@ -113,6 +113,22 @@ agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
 `tangent.session_get` after process restart.
 
+The same substrate now also carries spreadsheet-review room state under
+the `spreadsheet-review` phase projection. `tangent.session_get`
+surfaces a dedicated `spreadsheet_review` view when present:
+
+- `table_id`
+- canonical `columns`
+- canonical `rows`
+- normalized `query_state`
+- `notes`
+- `updated_at`
+- room-backed `saved_views`
+
+This keeps the table-review workflow on the same persistence path as
+other room-backed workflows instead of introducing a parallel store just
+for tabular review.
+
 The shipped v0.4 whiteboard state is persisted on the same room
 state path rather than in a separate table. `tangent.session_get`
 projects a dedicated `whiteboard` payload when present:

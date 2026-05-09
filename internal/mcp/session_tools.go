@@ -61,19 +61,20 @@ type sessionCreateResult struct {
 }
 
 type sessionGetResult struct {
-	Status                string                      `json:"status"`
-	Phase                 string                      `json:"phase"`
-	CurrentPhase          string                      `json:"current_phase"`
-	PhasesVisited         []string                    `json:"phases_visited"`
-	PhaseOutputs          map[string]room.PhaseOutput `json:"phase_outputs"`
-	Whiteboard            *room.WhiteboardStateView   `json:"whiteboard,omitempty"`
-	SynthesisNotes        *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
-	AcceptedDraftBlocks   []room.DraftBlock           `json:"accepted_draft_blocks"`
-	CurrentDraft          *room.CurrentDraftView      `json:"current_draft,omitempty"`
-	ProseRevisionOutcomes []room.ProseRevisionOutcome `json:"prose_revision_outcomes"`
-	FinalOutput           *room.FinalOutputView       `json:"final_output,omitempty"`
-	EnvelopesHistory      []room.EnvelopeHistory      `json:"envelopes_history"`
-	CurrentEnvelope       *envelopes.Envelope         `json:"current_envelope,omitempty"`
+	Status                string                           `json:"status"`
+	Phase                 string                           `json:"phase"`
+	CurrentPhase          string                           `json:"current_phase"`
+	PhasesVisited         []string                         `json:"phases_visited"`
+	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
+	Whiteboard            *room.WhiteboardStateView        `json:"whiteboard,omitempty"`
+	SynthesisNotes        *room.SynthesisNotesView         `json:"synthesis_notes,omitempty"`
+	AcceptedDraftBlocks   []room.DraftBlock                `json:"accepted_draft_blocks"`
+	CurrentDraft          *room.CurrentDraftView           `json:"current_draft,omitempty"`
+	ProseRevisionOutcomes []room.ProseRevisionOutcome      `json:"prose_revision_outcomes"`
+	FinalOutput           *room.FinalOutputView            `json:"final_output,omitempty"`
+	EnvelopesHistory      []room.EnvelopeHistory           `json:"envelopes_history"`
+	CurrentEnvelope       *envelopes.Envelope              `json:"current_envelope,omitempty"`
 }
 
 type sessionPhaseStateResult struct {
@@ -149,6 +150,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
 		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
 		AcceptedDraftBlocks:   room.ProjectAcceptedDraftBlocks(phaseState),
