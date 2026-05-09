@@ -205,6 +205,12 @@ func RegisterInterviewQuestionOnDispatcher(dispatcher *envelope.Dispatcher, hand
 	return dispatcher.Register(interviewQuestionEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterBlockDraftOnDispatcher wires the same room-bridging handler
+// for tangent.block-draft envelopes.
+func RegisterBlockDraftOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(blockDraftEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterSynthesisNotesOnDispatcher wires the same room-bridging
 // handler for tangent.synthesis-notes envelopes.
 func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {

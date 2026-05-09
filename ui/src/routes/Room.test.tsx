@@ -3,6 +3,11 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BlockDraft,
+  type BlockDraftEnvelope,
+  type BlockDraftResponse,
+} from "../components/envelopes/BlockDraft";
+import {
   SynthesisNotes,
   type SynthesisNotesEnvelope,
   type SynthesisNotesResponse,
@@ -123,6 +128,56 @@ describe("<Room>", () => {
       "Private synthesis notes are saved on this room.",
     );
   });
+
+  it("enriches block-draft envelopes with the reconstructed current draft", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.block-draft", BlockDraftAdapter);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                current_draft: {
+                  block_count: 1,
+                  markdown: "Accepted block so far.",
+                  blocks: [{ block_id: "intro", content: "Accepted block so far." }],
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("draft-1", {
+        v: 1,
+        id: "draft-1",
+        type: "tangent.block-draft",
+        data: { block_id: "body", content: "New candidate block." },
+      });
+    });
+
+    expect(await screen.findByTestId("block-draft-current-draft")).toHaveTextContent(
+      "Accepted block so far.",
+    );
+  });
 });
 
 function renderAt(path: string, includeNavigator = false) {
@@ -172,6 +227,16 @@ function SynthesisAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentPro
     <SynthesisNotes
       envelope={envelope as SynthesisNotesEnvelope}
       onSubmit={onSubmit as (response: SynthesisNotesResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function BlockDraftAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <BlockDraft
+      envelope={envelope as BlockDraftEnvelope}
+      onSubmit={onSubmit as (response: BlockDraftResponse) => void}
       onCancel={onCancel}
     />
   );

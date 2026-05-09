@@ -178,6 +178,16 @@ func (s *Server) registerTools() error {
 		InputSchema: interviewQuestionSchema,
 	}, s.handleInterviewQuestion)
 
+	blockDraftSchema, err := buildBlockDraftInputSchema()
+	if err != nil {
+		return fmt.Errorf("build block-draft input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.block_draft",
+		Description: "Dispatch a block-draft envelope through Tangent. Accepted responses append durable draft blocks on the room.",
+		InputSchema: blockDraftSchema,
+	}, s.handleBlockDraft)
+
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
@@ -289,6 +299,10 @@ func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
 
 func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
+}
+
+func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(blockDraftInputSchemaJSON, "block_draft")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {

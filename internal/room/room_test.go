@@ -459,6 +459,91 @@ func TestRoom_PhaseStateRejectsInvalidPhaseID(t *testing.T) {
 	}
 }
 
+func TestRoom_AcceptedDraftBlocksPersistAndHydrate(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "draftful"})
+
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "intro",
+		EnvelopeID: "draft-1",
+		Label:      "Intro",
+		Mode:       "section",
+		Content:    "First accepted draft block.",
+		Decision:   "accept",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock intro: %v", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "body",
+		EnvelopeID: "draft-2",
+		Label:      "Body",
+		Mode:       "paragraph",
+		Content:    "Second accepted draft block.",
+		Decision:   "inline_edit",
+		Feedback:   "Tightened the middle.",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock body: %v", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "intro",
+		EnvelopeID: "draft-3",
+		Label:      "Intro",
+		Mode:       "section",
+		Content:    "First accepted draft block, revised.",
+		Decision:   "inline_edit",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock intro revision: %v", err)
+	}
+
+	state := rm.PhaseState()
+	accepted := room.ProjectAcceptedDraftBlocks(state)
+	if len(accepted) != 3 {
+		t.Fatalf("accepted blocks len = %d, want 3", len(accepted))
+	}
+	current := room.ProjectCurrentDraft(state)
+	if current == nil || current.BlockCount != 2 {
+		t.Fatalf("current draft = %#v, want 2 blocks", current)
+	}
+	if got := current.Blocks[0].Content; got != "First accepted draft block, revised." {
+		t.Fatalf("intro content = %q, want revised content", got)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedState := reloaded.PhaseState()
+	reloadedAccepted := room.ProjectAcceptedDraftBlocks(reloadedState)
+	if len(reloadedAccepted) != 3 {
+		t.Fatalf("reloaded accepted blocks len = %d, want 3", len(reloadedAccepted))
+	}
+	reloadedCurrent := room.ProjectCurrentDraft(reloadedState)
+	if reloadedCurrent == nil || reloadedCurrent.BlockCount != 2 {
+		t.Fatalf("reloaded current draft = %#v, want 2 blocks", reloadedCurrent)
+	}
+	if got := reloadedCurrent.Markdown; !strings.Contains(got, "First accepted draft block, revised.") || !strings.Contains(got, "Second accepted draft block.") {
+		t.Fatalf("reloaded markdown = %q, want both accepted blocks", got)
+	}
+}
+
+func TestRoom_AcceptedDraftBlocksRejectInvalidInput(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{BlockID: "   ", Content: "Valid text"}); !errors.Is(err, room.ErrInvalidDraftBlockID) {
+		t.Fatalf("AppendAcceptedDraftBlock invalid id err = %v, want ErrInvalidDraftBlockID", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{BlockID: "intro", Content: "   "}); !errors.Is(err, room.ErrInvalidDraftBlockContent) {
+		t.Fatalf("AppendAcceptedDraftBlock invalid content err = %v, want ErrInvalidDraftBlockContent", err)
+	}
+}
+
 func TestRoom_TwoRoomsParallel(t *testing.T) {
 	rmA, clientA, _, cleanupA := newTestServer(t)
 	defer cleanupA()

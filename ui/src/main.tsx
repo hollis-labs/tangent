@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import {
+  BlockDraft,
+  type BlockDraftEnvelope,
+  type BlockDraftResponse,
+} from "./components/envelopes/BlockDraft";
+import {
   DesignIteration,
   type DesignIterationEnvelope,
   type DesignIterationResponse,
@@ -79,6 +84,16 @@ function InterviewQuestionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComp
   );
 }
 
+function BlockDraftAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <BlockDraft
+      envelope={envelope as BlockDraftEnvelope}
+      onSubmit={onSubmit as (response: BlockDraftResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
   return (
     <SynthesisNotes
@@ -93,6 +108,7 @@ register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);
 register("tangent.interview-question", InterviewQuestionAdapter);
+register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");

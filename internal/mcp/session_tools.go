@@ -61,14 +61,16 @@ type sessionCreateResult struct {
 }
 
 type sessionGetResult struct {
-	Status           string                      `json:"status"`
-	Phase            string                      `json:"phase"`
-	CurrentPhase     string                      `json:"current_phase"`
-	PhasesVisited    []string                    `json:"phases_visited"`
-	PhaseOutputs     map[string]room.PhaseOutput `json:"phase_outputs"`
-	SynthesisNotes   *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
-	EnvelopesHistory []room.EnvelopeHistory      `json:"envelopes_history"`
-	CurrentEnvelope  *envelopes.Envelope         `json:"current_envelope,omitempty"`
+	Status              string                      `json:"status"`
+	Phase               string                      `json:"phase"`
+	CurrentPhase        string                      `json:"current_phase"`
+	PhasesVisited       []string                    `json:"phases_visited"`
+	PhaseOutputs        map[string]room.PhaseOutput `json:"phase_outputs"`
+	SynthesisNotes      *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
+	AcceptedDraftBlocks []room.DraftBlock           `json:"accepted_draft_blocks"`
+	CurrentDraft        *room.CurrentDraftView      `json:"current_draft,omitempty"`
+	EnvelopesHistory    []room.EnvelopeHistory      `json:"envelopes_history"`
+	CurrentEnvelope     *envelopes.Envelope         `json:"current_envelope,omitempty"`
 }
 
 type sessionPhaseStateResult struct {
@@ -139,13 +141,15 @@ func (s *Server) handleSessionGet(
 	}
 
 	result := sessionGetResult{
-		Status:           "closed",
-		Phase:            "closed",
-		CurrentPhase:     phaseState.CurrentPhase,
-		PhasesVisited:    phaseState.PhasesVisited,
-		PhaseOutputs:     phaseState.PhaseOutputs,
-		SynthesisNotes:   room.ProjectSynthesisNotes(phaseState),
-		EnvelopesHistory: history,
+		Status:              "closed",
+		Phase:               "closed",
+		CurrentPhase:        phaseState.CurrentPhase,
+		PhasesVisited:       phaseState.PhasesVisited,
+		PhaseOutputs:        phaseState.PhaseOutputs,
+		SynthesisNotes:      room.ProjectSynthesisNotes(phaseState),
+		AcceptedDraftBlocks: room.ProjectAcceptedDraftBlocks(phaseState),
+		CurrentDraft:        room.ProjectCurrentDraft(phaseState),
+		EnvelopesHistory:    history,
 	}
 	if ok {
 		result.Status = "active"
@@ -307,7 +311,10 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 	switch {
 	case errors.Is(err, room.ErrRoomNotFound):
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
-	case errors.Is(err, room.ErrInvalidPhaseID), errors.Is(err, room.ErrInvalidPhaseKey):
+	case errors.Is(err, room.ErrInvalidPhaseID),
+		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidDraftBlockID),
+		errors.Is(err, room.ErrInvalidDraftBlockContent):
 		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	default:
 		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error())
@@ -324,9 +331,10 @@ func emptySessionPhaseStateResult(roomID string) sessionPhaseStateResult {
 
 func emptySessionGetResult() sessionGetResult {
 	return sessionGetResult{
-		PhasesVisited:    []string{},
-		PhaseOutputs:     map[string]room.PhaseOutput{},
-		EnvelopesHistory: []room.EnvelopeHistory{},
+		PhasesVisited:       []string{},
+		PhaseOutputs:        map[string]room.PhaseOutput{},
+		AcceptedDraftBlocks: []room.DraftBlock{},
+		EnvelopesHistory:    []room.EnvelopeHistory{},
 	}
 }
 
