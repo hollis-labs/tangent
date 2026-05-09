@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Spreadsheet review envelope data",
+  "description": "Render an agent-provided table with persistent room state, explicit submit, saved views, and export metadata.",
+  "properties": {
+    "table_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "intent": { "type": "string" },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "sortable": { "type": "boolean" }
+        },
+        "required": ["id"],
+        "additionalProperties": true
+      }
+    },
+    "rows": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "query_state": { "type": "object", "additionalProperties": true },
+    "notes": { "type": "string" },
+    "updated_at": { "type": "string" },
+    "saved_views": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "query_state": { "type": "object", "additionalProperties": true }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    },
+    "row_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["id"],
+        "additionalProperties": false
+      }
+    },
+    "selected_row_ids": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "selected_rows": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "action_id": { "type": "string" },
+    "export_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "kind": { "type": "string" },
+          "created_at": { "type": "string" },
+          "row_count": { "type": "integer", "minimum": 0 },
+          "column_count": { "type": "integer", "minimum": 0 },
+          "size_bytes": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["table_id"],
+  "additionalProperties": false
+}

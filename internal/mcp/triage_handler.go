@@ -229,6 +229,12 @@ func RegisterWhiteboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tr
 	return dispatcher.Register(whiteboardEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterSpreadsheetReviewOnDispatcher wires the same room-bridging
+// handler for tangent.spreadsheet-review envelopes.
+func RegisterSpreadsheetReviewOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(spreadsheetReviewEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterSynthesisNotesOnDispatcher wires the same room-bridging
 // handler for tangent.synthesis-notes envelopes.
 func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
