@@ -11,6 +11,12 @@ _v0.2-bound work lands here. See `README.md` Roadmap for the planned
 shape: bundled `feedback` workflow, multi-tab per-session rooms, cancel
 handling, and verified multi-agent concurrency._
 
+### Changed
+
+- Fast-Triage is now the archived predecessor to Tangent. Added a migration
+  guide at `docs/migrating-from-fast-triage.md`, covering MCP config updates,
+  tool-name mapping, and the v0.2 behavior differences.
+
 ## [v0.1.0] - 2026-05-08
 
 First release. "Prove the shape." Any MCP-speaking agent can launch a

@@ -17,6 +17,8 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 v0.1.0 released. Triage workflow working end-to-end via MCP — a real Claude Code session can call `tangent.triage`, the user resolves it in the browser, and the LLM receives a structured response back. See [`CHANGELOG.md`](./CHANGELOG.md) for the full v0.1.0 entry.
 
+Fast-Triage has been folded into Tangent for v0.2. If you are migrating an existing Fast-Triage setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md).
+
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
 ## Quickstart
