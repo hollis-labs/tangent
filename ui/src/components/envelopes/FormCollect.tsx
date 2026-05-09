@@ -182,7 +182,7 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
       buildFormCollectCanonicalSeedKey({
         formID,
         schema,
-        answers: initialAnswers,
+        answers: sanitizeAnswersForSubmit(initialAnswers),
         notes: envelope.data?.notes ?? "",
         templates: envelope.data?.templates ?? [],
       }),
@@ -589,6 +589,28 @@ function FieldRenderer({
   }
 
   const currentValue = value ?? defaultFieldValue(field);
+  const isGrouped = isGroupedFieldType(field.type);
+
+  if (isGrouped) {
+    return (
+      <fieldset
+        className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4"
+        data-testid={`form-collect-field-${field.id}`}
+      >
+        <legend className="text-sm font-medium text-zinc-100">
+          {field.label}
+          {field.required ? <span className="ml-1 text-red-300">*</span> : null}
+        </legend>
+        {field.help ? <p className="text-xs text-zinc-400">{field.help}</p> : null}
+        <FieldControl
+          field={field}
+          controlId={controlId}
+          value={currentValue}
+          onChange={onChange}
+        />
+      </fieldset>
+    );
+  }
 
   return (
     <section
@@ -596,10 +618,10 @@ function FieldRenderer({
       data-testid={`form-collect-field-${field.id}`}
     >
       <div className="space-y-1">
-        <p className="text-sm font-medium text-zinc-100">
+        <label htmlFor={controlId} className="text-sm font-medium text-zinc-100">
           {field.label}
           {field.required ? <span className="ml-1 text-red-300">*</span> : null}
-        </p>
+        </label>
         {field.help ? <p className="text-xs text-zinc-400">{field.help}</p> : null}
       </div>
       <FieldControl field={field} controlId={controlId} value={currentValue} onChange={onChange} />
@@ -788,6 +810,7 @@ function FieldControl({
               <input
                 id={`${controlId}-${option.value}`}
                 type="radio"
+                name={controlId}
                 checked={String(value ?? "") === option.value}
                 onChange={() => onChange(option.value)}
                 data-testid={`form-collect-radio-${field.id}-${option.value}`}
@@ -895,7 +918,12 @@ function normalizeAnswers(
       const current = Array.isArray(next[section.id])
         ? (next[section.id] as Record<string, unknown>[])
         : [];
-      next[section.id] = current.map((row) => normalizeSectionRow(section, row));
+      const rows = current.map((row) => normalizeSectionRow(section, row));
+      const minItems = section.min_items ?? 0;
+      while (rows.length < minItems) {
+        rows.push(buildRow(section));
+      }
+      next[section.id] = rows;
     } else {
       const current =
         next[section.id] && typeof next[section.id] === "object" && !Array.isArray(next[section.id])
@@ -935,6 +963,10 @@ function defaultFieldValue(field: FormCollectField): unknown {
     default:
       return "";
   }
+}
+
+function isGroupedFieldType(type: FormCollectFieldType): boolean {
+  return type === "multiselect" || type === "radio" || type === "checkbox";
 }
 
 function evaluateCompletion(schema: FormCollectSchema, answers: Record<string, unknown>) {
