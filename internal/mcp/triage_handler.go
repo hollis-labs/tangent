@@ -136,10 +136,13 @@ func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, 
 		}
 		return nil, false, fmt.Errorf("triage: requested roomID %q does not exist", id)
 	}
-	rm := t.manager.Create(map[string]string{
+	rm, err := t.manager.CreateWithError(map[string]string{
 		"envelopeID":   env.ID,
 		"envelopeType": env.Type,
 	})
+	if err != nil {
+		return nil, false, fmt.Errorf("triage: create room: %w", err)
+	}
 	return rm, true, nil
 }
 
@@ -147,10 +150,10 @@ func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, 
 // dispatch-layer return. Cancel becomes a synthesized cancelled
 // Response; everything else propagates as an error.
 func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (*envelopes.Response, error) {
-	// User cancel: room.Push returns "user cancelled envelope %q" —
-	// match by message because the cancel hook is anonymous (it'd be
-	// cleaner with a sentinel; v0.2 refactor).
-	if err != nil && containsUserCancel(err) {
+	// User cancel is synthesized into an ack/cancelled response so MCP
+	// clients see the protocol-level cancel shape rather than a tool
+	// failure.
+	if errors.Is(err, room.ErrUserCancelled) {
 		return &envelopes.Response{
 			V:           envelopes.ProtocolVersion,
 			EnvelopeID:  env.ID,
@@ -216,24 +219,4 @@ func metaString(meta map[string]any, key string) (string, bool) {
 	}
 	s, ok := v.(string)
 	return s, ok
-}
-
-// containsUserCancel reports whether err originated from Pending.Cancel.
-// The hook formats a known message; v0.2 should replace this with a
-// sentinel error in the room package.
-func containsUserCancel(err error) bool {
-	return err != nil && stringHas(err.Error(), "user cancelled envelope")
-}
-
-// stringHas is strings.Contains without the import (one tiny call site).
-func stringHas(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

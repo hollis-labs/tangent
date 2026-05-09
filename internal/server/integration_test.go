@@ -44,7 +44,7 @@ func newRig(t *testing.T) *rig {
 		t.Fatalf("RegisterTriage: %v", regErr)
 	}
 	dispatcher := envelope.NewDispatcher(envSvc)
-	mgr := room.NewManager()
+	mgr := room.NewManager(nil)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	wsHandler := tangentws.New(mgr, logger)

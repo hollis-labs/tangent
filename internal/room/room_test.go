@@ -2,6 +2,7 @@ package room_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,27 +16,19 @@ import (
 	envelopes "github.com/hollis-labs/go-envelopes"
 	"go.uber.org/goleak"
 
+	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
-// TestMain wraps the package run in goleak.VerifyTestMain. Each test
-// is responsible for cleaning up its own connections and goroutines;
-// a failure here means the room package leaked a goroutine across the
-// package run. httptest.Server keeps background goroutines alive for
-// the duration of its NewServer, so we shut it down per test — any
-// leak surfaced is a real bug.
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// newTestServer wires a Room to a coder/websocket-connected pair using
-// httptest. Returns the Room (already attached, with a server-side
-// read loop running) and a cleanup. The helper hides the upgrade dance
-// so individual tests stay focused on the lifecycle they're verifying.
-func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, func()) {
+func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, *sql.DB, func()) {
 	t.Helper()
 
-	rm := newAnonRoom(t)
+	db := newTestDB(t)
+	rm := newAnonRoom(t, db)
 
 	connCh := make(chan *websocket.Conn, 1)
 	stopCh := make(chan struct{})
@@ -64,9 +57,6 @@ func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, func()) {
 	serverConn := <-connCh
 	rm.AttachConn(context.Background(), serverConn)
 
-	// Server-side read loop — mirrors what internal/ws/handler.go does
-	// in production. Without this Room.HandleResponse/HandleCancel
-	// never get called and Push appears to hang.
 	readDone := make(chan struct{})
 	readCtx, readCancel := context.WithCancel(context.Background())
 	go runRoomReadLoop(readCtx, rm, serverConn, readDone)
@@ -78,13 +68,11 @@ func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, func()) {
 		_ = serverConn.Close(websocket.StatusNormalClosure, "test done")
 		srv.Close()
 		<-readDone
+		_ = tangentdb.Close(db)
 	}
-	return rm, clientConn, cleanup
+	return rm, clientConn, db, cleanup
 }
 
-// runRoomReadLoop is the test-only mirror of the production WS read
-// loop. It exists so room_test can verify Room semantics without
-// pulling in internal/ws as a test dep (which would create a cycle).
 func runRoomReadLoop(ctx context.Context, rm *room.Room, conn *websocket.Conn, done chan<- struct{}) {
 	defer close(done)
 	for {
@@ -108,8 +96,6 @@ func runRoomReadLoop(ctx context.Context, rm *room.Room, conn *websocket.Conn, d
 			if msg.EnvelopeID == "" {
 				continue
 			}
-			// Re-marshal then unmarshal into the typed Response so
-			// Room sees the exact shape the production handler sends.
 			raw, _ := json.Marshal(msg.Response)
 			var resp envelopes.Response
 			_ = json.Unmarshal(raw, &resp)
@@ -120,19 +106,27 @@ func runRoomReadLoop(ctx context.Context, rm *room.Room, conn *websocket.Conn, d
 	}
 }
 
-// newAnonRoom creates a Room outside the manager so tests have direct
-// access to the lifecycle methods.
-func newAnonRoom(t *testing.T) *room.Room {
+func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	mgr := room.NewManager()
+	db, err := tangentdb.Open(t.TempDir() + "/tangent.db")
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	if err := tangentdb.RunMigrations(db); err != nil {
+		_ = tangentdb.Close(db)
+		t.Fatalf("db.RunMigrations: %v", err)
+	}
+	return db
+}
+
+func newAnonRoom(t *testing.T, db *sql.DB) *room.Room {
+	t.Helper()
+	mgr := room.NewManager(db)
 	return mgr.Create(map[string]string{"test": t.Name()})
 }
 
-// TestManager_CreateConcurrent asserts Create is race-free under
-// concurrent callers. Each goroutine creates a room; we tally the IDs
-// at the end and verify no collisions.
 func TestManager_CreateConcurrent(t *testing.T) {
-	mgr := room.NewManager()
+	mgr := room.NewManager(nil)
 	const n = 64
 
 	var wg sync.WaitGroup
@@ -163,9 +157,8 @@ func TestManager_CreateConcurrent(t *testing.T) {
 	}
 }
 
-// TestManager_Get returns false for unknown ids and true for known ones.
 func TestManager_Get(t *testing.T) {
-	mgr := room.NewManager()
+	mgr := room.NewManager(nil)
 	if _, ok := mgr.Get("nope"); ok {
 		t.Error("expected miss for unknown id")
 	}
@@ -176,10 +169,8 @@ func TestManager_Get(t *testing.T) {
 	}
 }
 
-// TestRoom_PushResponseRoundTrip pushes an envelope, has the client
-// respond, and asserts the Response flows back to the caller.
 func TestRoom_PushResponseRoundTrip(t *testing.T) {
-	rm, clientConn, cleanup := newTestServer(t)
+	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
 
 	env := &envelopes.Envelope{V: 1, ID: "e-1", Type: "triage"}
@@ -192,7 +183,6 @@ func TestRoom_PushResponseRoundTrip(t *testing.T) {
 		pushDone <- pushResult{resp: resp, err: err}
 	}()
 
-	// Read the envelope frame from the client side.
 	frame := readClientFrame(t, clientConn, 2*time.Second)
 	if frame["type"] != "envelope" {
 		t.Fatalf("expected envelope frame, got %+v", frame)
@@ -201,8 +191,7 @@ func TestRoom_PushResponseRoundTrip(t *testing.T) {
 		t.Fatalf("envelopeId mismatch: %v", frame["envelopeId"])
 	}
 
-	// Client sends a response.
-	respFrame := map[string]any{
+	writeClientFrame(t, clientConn, map[string]any{
 		"type":       "response",
 		"envelopeId": "e-1",
 		"response": map[string]any{
@@ -212,8 +201,7 @@ func TestRoom_PushResponseRoundTrip(t *testing.T) {
 			"status":     "submitted",
 			"payload":    map[string]any{"accepted": true},
 		},
-	}
-	writeClientFrame(t, clientConn, respFrame)
+	})
 
 	res := <-pushDone
 	if res.err != nil {
@@ -225,12 +213,12 @@ func TestRoom_PushResponseRoundTrip(t *testing.T) {
 	if res.resp.Kind != envelopes.ResponseKindData {
 		t.Errorf("response kind = %q, want data", res.resp.Kind)
 	}
+
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "submitted", "", true)
 }
 
-// TestRoom_PushCancel pushes an envelope, has the client send a
-// cancel, and asserts Push returns the cancel error.
 func TestRoom_PushCancel(t *testing.T) {
-	rm, clientConn, cleanup := newTestServer(t)
+	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
 
 	env := &envelopes.Envelope{V: 1, ID: "e-cancel", Type: "triage"}
@@ -244,7 +232,6 @@ func TestRoom_PushCancel(t *testing.T) {
 	}()
 
 	_ = readClientFrame(t, clientConn, 2*time.Second)
-
 	writeClientFrame(t, clientConn, map[string]any{
 		"type":       "cancel",
 		"envelopeId": "e-cancel",
@@ -254,15 +241,15 @@ func TestRoom_PushCancel(t *testing.T) {
 	if res.err == nil {
 		t.Fatalf("expected error from cancel, got resp=%+v", res.resp)
 	}
-	if !strings.Contains(res.err.Error(), "user cancelled") {
-		t.Errorf("expected user-cancelled error, got %v", res.err)
+	if !errors.Is(res.err, room.ErrUserCancelled) {
+		t.Errorf("expected ErrUserCancelled, got %v", res.err)
 	}
+
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "cancelled", envelopes.ErrorCodeUserCancelled, true)
 }
 
-// TestRoom_PushDisconnect pushes an envelope, then the client closes
-// the WS mid-push. Push must return ErrRoomDisconnected (not hang).
 func TestRoom_PushDisconnect(t *testing.T) {
-	rm, clientConn, cleanup := newTestServer(t)
+	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
 
 	env := &envelopes.Envelope{V: 1, ID: "e-drop", Type: "triage"}
@@ -276,12 +263,7 @@ func TestRoom_PushDisconnect(t *testing.T) {
 	}()
 
 	_ = readClientFrame(t, clientConn, 2*time.Second)
-
-	// Simulate user closing the tab.
 	_ = clientConn.Close(websocket.StatusGoingAway, "closing")
-
-	// Now close the room (in production this is what the WS handler
-	// does on read-loop exit).
 	rm.Close("client disconnected")
 
 	select {
@@ -295,12 +277,12 @@ func TestRoom_PushDisconnect(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Push hung after disconnect")
 	}
+
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "error", "ROOM_DISCONNECTED", true)
 }
 
-// TestRoom_PushCtxCancel asserts ctx.Done() during Push is honored
-// and the Pending entry is removed.
 func TestRoom_PushCtxCancel(t *testing.T) {
-	rm, clientConn, cleanup := newTestServer(t)
+	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
 
 	env := &envelopes.Envelope{V: 1, ID: "e-ctx", Type: "triage"}
@@ -323,14 +305,55 @@ func TestRoom_PushCtxCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Push did not honor ctx cancel")
 	}
+
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "error", envelopes.ErrorCodeUserCancelled, true)
 }
 
-// TestRoom_TwoRoomsParallel runs two Rooms in parallel and asserts
-// state isolation: an envelope on Room A does not bleed into Room B.
+func TestManager_Hydrate_StaleRoomsTimeout(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := db.Exec(`
+INSERT INTO rooms (id, meta, created_at, updated_at)
+VALUES (?, ?, ?, ?)`,
+		"room-stale",
+		`{"test":"hydrate"}`,
+		now,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("insert room: %v", err)
+	}
+	_, err = db.Exec(`
+INSERT INTO envelopes (room_id, envelope_id, type, request_payload, status, created_at)
+VALUES (?, ?, ?, ?, ?, ?)`,
+		"room-stale",
+		"env-stale",
+		"triage",
+		`{"prompt":"hi"}`,
+		"pending",
+		now,
+	)
+	if err != nil {
+		t.Fatalf("insert envelope: %v", err)
+	}
+
+	mgr := room.NewManager(db)
+	if err := mgr.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+
+	if _, ok := mgr.Get("room-stale"); !ok {
+		t.Fatal("expected hydrated room to be present")
+	}
+	assertEnvelopeStatus(t, db, "room-stale", "env-stale", "timeout", "SERVER_RESTART", true)
+}
+
 func TestRoom_TwoRoomsParallel(t *testing.T) {
-	rmA, clientA, cleanupA := newTestServer(t)
+	rmA, clientA, _, cleanupA := newTestServer(t)
 	defer cleanupA()
-	rmB, clientB, cleanupB := newTestServer(t)
+	rmB, clientB, _, cleanupB := newTestServer(t)
 	defer cleanupB()
 
 	envA := &envelopes.Envelope{V: 1, ID: "e-A", Type: "triage"}
@@ -360,8 +383,6 @@ func TestRoom_TwoRoomsParallel(t *testing.T) {
 		t.Errorf("client B got envelope %v, want e-B", frameB["envelopeId"])
 	}
 
-	// Cross-respond: A responds to A, B responds to B. If state was
-	// shared, one would resolve the other's Pending.
 	writeClientFrame(t, clientA, map[string]any{
 		"type":       "response",
 		"envelopeId": "e-A",
@@ -389,9 +410,10 @@ func TestRoom_TwoRoomsParallel(t *testing.T) {
 	}
 }
 
-// TestRoom_CloseIsIdempotent asserts repeated Close calls don't panic.
 func TestRoom_CloseIsIdempotent(t *testing.T) {
-	rm := newAnonRoom(t)
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+	rm := newAnonRoom(t, db)
 	rm.Close("first")
 	rm.Close("second")
 	rm.Close("third")
@@ -400,12 +422,8 @@ func TestRoom_CloseIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestRoom_ReplaceConn exercises refresh-tab semantics: AttachConn
-// while a Push is in-flight should not lose the Pending. We attach a
-// fresh conn, the read loop on the new conn handles a response, Push
-// returns successfully.
 func TestRoom_ReplaceConn(t *testing.T) {
-	rm, clientConn1, cleanup := newTestServer(t)
+	rm, clientConn1, _, cleanup := newTestServer(t)
 	defer cleanup()
 
 	env := &envelopes.Envelope{V: 1, ID: "e-replace", Type: "triage"}
@@ -417,10 +435,6 @@ func TestRoom_ReplaceConn(t *testing.T) {
 		pushDone <- pushResult{resp: resp, err: err}
 	}()
 
-	// First conn receives the envelope, replies. The reply path
-	// proves the read loop on the originally attached conn is alive
-	// AND that AttachConn is idempotent when called with the same conn
-	// during ordinary operation.
 	frame := readClientFrame(t, clientConn1, 2*time.Second)
 	if frame["envelopeId"] != "e-replace" {
 		t.Fatalf("frame mismatch: %v", frame)
@@ -436,7 +450,6 @@ func TestRoom_ReplaceConn(t *testing.T) {
 	}
 }
 
-// pushResult is the (resp, err) tuple Push returns; helper for chans.
 type pushResult struct {
 	resp *envelopes.Response
 	err  error
@@ -449,4 +462,38 @@ func responseShape(id, kind, status string) map[string]any {
 		"kind":       kind,
 		"status":     status,
 	}
+}
+
+func assertEnvelopeStatus(t *testing.T, db *sql.DB, roomID string, envelopeID string, wantStatus string, wantErrorCode string, expectResolved bool) {
+	t.Helper()
+
+	var status string
+	var errorCode sql.NullString
+	var resolvedAt sql.NullString
+	err := db.QueryRow(`
+SELECT status, error_code, resolved_at
+FROM envelopes
+WHERE room_id = ? AND envelope_id = ?`,
+		roomID,
+		envelopeID,
+	).Scan(&status, &errorCode, &resolvedAt)
+	if err != nil {
+		t.Fatalf("query envelope row: %v", err)
+	}
+	if status != wantStatus {
+		t.Fatalf("status = %q, want %q", status, wantStatus)
+	}
+	if got := nullableString(errorCode); got != wantErrorCode {
+		t.Fatalf("error_code = %q, want %q", got, wantErrorCode)
+	}
+	if resolvedAt.Valid != expectResolved {
+		t.Fatalf("resolved_at valid = %v, want %v", resolvedAt.Valid, expectResolved)
+	}
+}
+
+func nullableString(v sql.NullString) string {
+	if !v.Valid {
+		return ""
+	}
+	return v.String
 }

@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/mcp"
@@ -42,18 +43,54 @@ const (
 	// unset, the embedded SPA is served. `make dev` sets this; prod
 	// builds leave it empty.
 	envDevFrontendURL = "TANGENT_DEV_FRONTEND_URL"
+
+	// envDBPath overrides the default ~/.tangent/tangent.db location.
+	envDBPath = "TANGENT_DB_PATH"
 )
 
 func main() {
 	flagSet := flag.NewFlagSet("tangent", flag.ExitOnError)
 	port := flagSet.Int("port", resolvePort(), "HTTP listen port (overrides "+envPort+")")
+	migrateOnly := flagSet.Bool("migrate-only", false, "apply DB migrations and exit")
+	rollbackOne := flagSet.Bool("rollback-one", false, "roll back the most recent DB migration and exit")
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
+		os.Exit(2)
+	}
+	if *migrateOnly && *rollbackOne {
+		fmt.Fprintln(os.Stderr, "tangent: --migrate-only and --rollback-one are mutually exclusive")
 		os.Exit(2)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+
+	sqlDB, err := tangentdb.Open(resolveDBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tangent: open db: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if closeErr := tangentdb.Close(sqlDB); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: close db: %v\n", closeErr)
+		}
+	}()
+	if *rollbackOne {
+		if rollbackErr := tangentdb.RollbackOne(sqlDB); rollbackErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: rollback db: %v\n", rollbackErr)
+			os.Exit(1)
+		}
+		logger.Info("rolled back latest tangent migration")
+		return
+	}
+	if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
+		os.Exit(1)
+	}
+	if *migrateOnly {
+		logger.Info("applied tangent migrations")
+		return
+	}
 
 	// Boot context governs envelope-registry load. Cancellation tears
 	// down the schema-compile loop cleanly; we rebind it once the
@@ -89,7 +126,11 @@ func main() {
 	// Room manager + WS handler — the bridge between MCP envelopes and
 	// browser tabs. Created before the MCP server so the triage
 	// handler has somewhere to push.
-	roomMgr := room.NewManager()
+	roomMgr := room.NewManager(sqlDB)
+	if hydrateErr := roomMgr.Hydrate(context.Background()); hydrateErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: hydrate rooms: %v\n", hydrateErr)
+		os.Exit(1)
+	}
 	wsHandler := tangentws.New(roomMgr, logger)
 
 	mcpSrv, err := mcp.New(envSvc, dispatcher)
@@ -183,4 +224,8 @@ func resolvePort() int {
 		return defaultPort
 	}
 	return n
+}
+
+func resolveDBPath() string {
+	return os.Getenv(envDBPath)
 }

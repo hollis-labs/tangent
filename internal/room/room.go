@@ -1,37 +1,26 @@
-// Package room owns the in-memory multi-room session model that bridges
-// the MCP server (server-side envelope producers) to a per-session
-// browser tab over WebSocket.
+// Package room owns the live room/session model that bridges the MCP
+// server (server-side envelope producers) to a per-session browser tab
+// over WebSocket, while persisting room history in SQLite.
 //
 // Design notes:
 //
 //  1. Multi-room is the default. Each MCP triage call creates a new
 //     Room with its own Conn, pending-envelope map, and metadata. Two
-//     parallel callers never collide. This is the explicit rejection of
-//     Fast-Triage's single-tab model (~/Projects-apps/fast-triage/server/
-//     ws-server.ts: connecting a second client closes the first).
-//
-//  2. Conn is replaceable but not multiplexed. One WebSocket per Room at
-//     a time — refresh-tab semantics work because the new Conn replaces
-//     the old, but Pending entries live on the Room (not the Conn) so
-//     the in-flight envelope survives a reattach.
-//
-//  3. Disconnect rejects pending. Closing a Room (via Close or because
-//     the WS Conn died) MUST fail every Pending with ROOM_DISCONNECTED.
-//     Fast-Triage shipped without this and an MCP caller would hang
-//     forever when the user closed the tab; Tangent must not.
-//
-//  4. Ephemeral. No SQLite, no persistence. A server restart loses all
-//     Rooms. v0.1 acceptance per the WS-bridge implementer brief.
-//
-// The package depends only on go-envelopes types and coder/websocket;
-// it has no knowledge of MCP, HTTP, or the Tangent SPA. Transports wrap
-// it.
+//     parallel callers never collide.
+//  2. Conn is replaceable but not multiplexed. One WebSocket per Room
+//     at a time; refresh-tab semantics work because Pending entries
+//     live on the Room, not the Conn.
+//  3. Disconnect rejects pending. Closing a Room MUST fail every
+//     Pending with ROOM_DISCONNECTED so MCP callers never hang.
+//  4. Room metadata and resolved envelope state are persisted in
+//     SQLite. Active Pending entries still live in memory; restart
+//     hydration rebuilds active rooms and times out stale pending rows.
 package room
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -42,31 +31,9 @@ import (
 	envelopes "github.com/hollis-labs/go-envelopes"
 )
 
-// Sentinel errors used by Room.Push and the MCP-side translation layer.
-var (
-	// ErrRoomDisconnected indicates the Room's WebSocket peer went away
-	// before the pending envelope resolved. The MCP-side caller maps
-	// this onto a structured tool error so clients see a clean
-	// disconnect signal rather than a hang.
-	ErrRoomDisconnected = errors.New("room: disconnected")
-
-	// ErrRoomClosed indicates the Room was closed for reasons unrelated
-	// to a single connection (e.g. server shutdown). Currently surfaced
-	// alongside ErrRoomDisconnected via Close.
-	ErrRoomClosed = errors.New("room: closed")
-
-	// ErrPendingExists is returned by Push if the same envelope id is
-	// already in flight on this Room. Envelope ids are caller-supplied
-	// and assumed unique per session; this is a defensive guard.
-	ErrPendingExists = errors.New("room: pending envelope id already in flight")
-
-	// ErrNoConn is returned by Push when the Room has no active WS
-	// connection. The brief defaults to hold-server-side (see Push), so
-	// in normal operation Push waits for the Conn rather than failing —
-	// this error is reserved for Push paths that explicitly require a
-	// live conn (none in v0.1).
-	ErrNoConn = errors.New("room: no active websocket connection")
-)
+// ErrPendingExists is returned by Push if the same envelope id is
+// already in flight on this Room.
+var ErrPendingExists = fmt.Errorf("room: pending envelope id already in flight")
 
 // Pending is the in-flight record for a single envelope awaiting its
 // Response. It lives on Room.pending, keyed by envelope id, and is
@@ -75,25 +42,26 @@ type Pending struct {
 	EnvelopeID string
 	RespCh     chan *envelopes.Response
 	ErrCh      chan error
-	Cancel     func()
+	Cancel     func() error
 	Deadline   time.Time
+
+	settleOnce sync.Once
+}
+
+func (p *Pending) settle(fn func()) {
+	p.settleOnce.Do(func() {
+		fn()
+	})
 }
 
 // Room is one bridge between an MCP envelope producer and a browser tab.
 // One Room == one /r/<roomID> URL == (eventually) one WS connection.
-//
-// Concurrent use: all exported methods are safe to call from any
-// goroutine. Internally the Room takes connMu for Conn (de)attachment
-// and pendingMu for the pending map; they never overlap so deadlock is
-// impossible by construction.
 type Room struct {
 	ID        string
 	CreatedAt time.Time
+	Meta      map[string]string
 
-	// Meta is a free-form key/value bag (agentID, sessionID, hint
-	// metadata). Set at creation and not mutated thereafter; readers
-	// take a copy in MetaCopy when they need a stable snapshot.
-	Meta map[string]string
+	db *sql.DB
 
 	connMu sync.Mutex
 	conn   *websocket.Conn
@@ -104,62 +72,42 @@ type Room struct {
 	closed      atomic.Bool
 	closeReason atomic.Value // string
 
-	// connectedCh is closed every time a fresh conn is attached. Push
-	// uses this to wake when the user opens the tab AFTER the MCP call
-	// arrived (replay-on-reconnect: the envelope is held server-side
-	// until a conn is present, then sent).
 	connectedMu sync.Mutex
 	connectedCh chan struct{}
 }
 
-// outboundEnvelopeMessage is the WS frame Room.Push writes to push an
-// envelope to the connected client.
 type outboundEnvelopeMessage struct {
 	Type       string              `json:"type"`
 	EnvelopeID string              `json:"envelopeId"`
 	Envelope   *envelopes.Envelope `json:"envelope"`
 }
 
-// newRoom is unexported — Manager.Create is the public constructor so
-// every Room is registered in exactly one place.
-func newRoom(id string, meta map[string]string) *Room {
-	r := &Room{
+func newRoom(id string, createdAt time.Time, meta map[string]string, db *sql.DB) *Room {
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+	return &Room{
 		ID:          id,
-		CreatedAt:   time.Now(),
+		CreatedAt:   createdAt.UTC(),
 		Meta:        cloneMeta(meta),
+		db:          db,
 		pending:     make(map[string]*Pending),
 		connectedCh: make(chan struct{}),
 	}
-	return r
 }
 
-// MetaCopy returns a snapshot of the Room's metadata. Callers (e.g.
-// log lines, SPA hydration) get a stable map they can iterate without
-// holding any locks; the Room's Meta map is treated as immutable
-// post-construction so this copy is cheap and race-free.
+// MetaCopy returns a stable snapshot of the Room metadata.
 func (r *Room) MetaCopy() map[string]string {
 	return cloneMeta(r.Meta)
 }
 
 // AttachConn binds a WebSocket connection to the Room, replacing any
-// prior Conn. The previous Conn (if any) is gracefully closed with code
-// 1000 + reason "replaced". Pending entries are left intact — the
-// envelope is replayed on the new Conn by Push (or, if Push already
-// returned, the next push will use the new Conn).
-//
-// In v0.1 we ALSO replay any in-flight pending envelopes on attach so a
-// user who refreshes the tab gets the live envelope back without a
-// dance with the MCP caller. Reconnect semantics doc: replay-on-reconnect.
+// prior Conn.
 func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) {
 	r.connMu.Lock()
 	prev := r.conn
 	r.conn = conn
 
-	// Replay-on-reconnect: we don't iterate r.pending here because
-	// Pending intentionally does not hold the original envelope
-	// payload — Push owns the lifecycle and re-sends on the
-	// connectedCh wakeup below. Subsequent detach/reattach cycles
-	// continue to wake parked Push calls because we swap the channel.
 	r.connectedMu.Lock()
 	close(r.connectedCh)
 	r.connectedCh = make(chan struct{})
@@ -167,21 +115,12 @@ func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) {
 	r.connMu.Unlock()
 
 	if prev != nil {
-		// Best-effort close on the old conn. Ignore errors — the conn
-		// may already be dead, and we're racing the read loop's own
-		// close path.
 		_ = prev.Close(websocket.StatusNormalClosure, "replaced")
 	}
 	_ = ctx
 }
 
-// DetachConn clears the active conn if it matches the supplied one
-// (called on read-loop exit). Does NOT touch pending entries — that's
-// Close's job. Detach without close keeps the Room "warm" so a quick
-// refresh hits the same Pending. Returns true when the active conn was
-// actually cleared, false when this conn had already been replaced (the
-// caller must not close the Room in that case, or the new conn loses
-// its pending envelopes).
+// DetachConn clears the active conn if it matches the supplied one.
 func (r *Room) DetachConn(conn *websocket.Conn) bool {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
@@ -193,29 +132,14 @@ func (r *Room) DetachConn(conn *websocket.Conn) bool {
 }
 
 // HasConn reports whether the Room currently has an attached conn.
-// Used by HTTP probes and tests; Push never branches on this directly
-// because the conn-park path inside Push needs the same lock anyway.
 func (r *Room) HasConn() bool {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
 	return r.conn != nil
 }
 
-// Push registers a Pending for env, sends the envelope on the active
-// WebSocket conn, and blocks until one of:
-//
-//   - The client sends a matching response message → returns the
-//     Response (caller validates response shape; the Room is dumb).
-//   - The client sends a cancel message → returns a context.Canceled-
-//     style error wrapping ErrRoomDisconnected? No — cancel is its
-//     own error: see HandleCancel. Push surfaces it via ErrCh.
-//   - The Room is closed (Close() or WS disconnect followed by no
-//     reattach within ctx) → returns ErrRoomDisconnected.
-//   - ctx fires → cleans up the Pending and returns ctx.Err().
-//
-// If no WS conn is attached when Push is called, Push waits for one
-// (replay-on-reconnect). If ctx fires while waiting, Push returns
-// ctx.Err() and removes the Pending.
+// Push persists a pending envelope row, sends the envelope on the live
+// WebSocket conn, and blocks until response, cancel, close, or ctx.
 func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Response, error) {
 	if env == nil {
 		return nil, fmt.Errorf("room: push: nil envelope")
@@ -230,11 +154,8 @@ func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Re
 		ErrCh:      make(chan error, 1),
 		Deadline:   deadlineFromCtx(ctx),
 	}
-	pending.Cancel = func() {
-		select {
-		case pending.ErrCh <- fmt.Errorf("user cancelled envelope %q", env.ID):
-		default:
-		}
+	pending.Cancel = func() error {
+		return fmt.Errorf("%w: envelope %q", ErrUserCancelled, env.ID)
 	}
 
 	r.pendingMu.Lock()
@@ -245,34 +166,29 @@ func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Re
 	r.pending[env.ID] = pending
 	r.pendingMu.Unlock()
 
-	// Cleanup hook: always remove the Pending on return so a stray
-	// late response doesn't leak memory.
 	defer func() {
 		r.pendingMu.Lock()
 		delete(r.pending, env.ID)
 		r.pendingMu.Unlock()
 	}()
 
-	// Initial send. If no conn yet, park on connectedCh until one
-	// attaches OR ctx fires OR room closes.
+	if err := r.persistPendingEnvelope(env); err != nil {
+		return nil, fmt.Errorf("room: persist pending envelope %q: %w", env.ID, err)
+	}
 	if err := r.sendEnvelopeWithReconnect(ctx, env); err != nil {
-		return nil, err
+		return nil, r.finalizePushError(env.ID, pending, err)
 	}
 
-	// Wait for response, cancel, room close, or ctx.
 	select {
 	case resp := <-pending.RespCh:
 		return resp, nil
 	case err := <-pending.ErrCh:
 		return nil, err
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, r.finalizePushError(env.ID, pending, ctx.Err())
 	}
 }
 
-// sendEnvelopeWithReconnect tries to send env on the active conn. If
-// the conn is missing or the send fails, it parks on connectedCh and
-// retries when a new conn attaches. ctx and room-close break the loop.
 func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, env *envelopes.Envelope) error {
 	frame, err := json.Marshal(outboundEnvelopeMessage{
 		Type:       "envelope",
@@ -297,19 +213,14 @@ func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, env *envelopes.Env
 			if err == nil {
 				return nil
 			}
-			// Write failed — drop this conn and re-park; the read loop
-			// will surface the underlying error and call DetachConn.
 			r.DetachConn(conn)
-			// fall through to wait for a new conn
 		}
 
-		// Park on connectedCh for next attach.
 		r.connectedMu.Lock()
 		ch := r.connectedCh
 		r.connectedMu.Unlock()
 		select {
 		case <-ch:
-			// new conn attached — retry
 			continue
 		case <-ctx.Done():
 			return ctx.Err()
@@ -317,42 +228,42 @@ func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, env *envelopes.Env
 	}
 }
 
-// HandleResponse is called by the WS read loop when a "response"
-// frame arrives. Looks up the Pending and resolves it. If no Pending
-// exists for envelopeID, the response is silently dropped (a late
-// response after a cancel/timeout/close is expected, not an error).
+// HandleResponse resolves the matching pending envelope, if any.
 func (r *Room) HandleResponse(envelopeID string, resp *envelopes.Response) {
-	r.pendingMu.Lock()
-	p, ok := r.pending[envelopeID]
-	r.pendingMu.Unlock()
-	if !ok {
+	p := r.pendingByID(envelopeID)
+	if p == nil {
 		return
 	}
-	select {
-	case p.RespCh <- resp:
-	default:
-		// already resolved by another path — drop
-	}
+	p.settle(func() {
+		if err := r.persistResolvedEnvelope(envelopeID, resp); err != nil {
+			trySendErr(p.ErrCh, fmt.Errorf("room: persist resolved envelope %q: %w", envelopeID, err))
+			return
+		}
+		trySendResp(p.RespCh, resp)
+	})
 }
 
-// HandleCancel is called by the WS read loop when a "cancel" frame
-// arrives. Looks up the Pending and triggers its Cancel hook so Push
-// returns the cancel error to the MCP caller.
+// HandleCancel resolves the matching pending envelope as cancelled.
 func (r *Room) HandleCancel(envelopeID string) {
-	r.pendingMu.Lock()
-	p, ok := r.pending[envelopeID]
-	r.pendingMu.Unlock()
-	if !ok {
+	p := r.pendingByID(envelopeID)
+	if p == nil {
 		return
 	}
-	if p.Cancel != nil {
-		p.Cancel()
-	}
+	p.settle(func() {
+		cancelErr := ErrUserCancelled
+		if p.Cancel != nil {
+			cancelErr = p.Cancel()
+		}
+		if err := r.persistCancelledEnvelope(envelopeID, cancelErr); err != nil {
+			trySendErr(p.ErrCh, fmt.Errorf("room: persist cancelled envelope %q: %w", envelopeID, err))
+			return
+		}
+		trySendErr(p.ErrCh, cancelErr)
+	})
 }
 
-// Close marks the Room closed, fails every pending envelope with
-// ROOM_DISCONNECTED, and closes the WS conn (if any). Idempotent: a
-// second Close after the first is a no-op.
+// Close marks the Room closed, persists the room close, fails every
+// pending envelope, and closes the WS conn. Idempotent.
 func (r *Room) Close(reason string) {
 	if !r.closed.CompareAndSwap(false, true) {
 		return
@@ -364,15 +275,18 @@ func (r *Room) Close(reason string) {
 	for _, p := range r.pending {
 		pendings = append(pendings, p)
 	}
-	// Don't delete here — Push's defer handles it on return so we don't
-	// race with a concurrent Push add. Close just signals.
 	r.pendingMu.Unlock()
 
+	persistErr := r.persistRoomClose(reason)
 	for _, p := range pendings {
-		select {
-		case p.ErrCh <- fmt.Errorf("%w: %s", ErrRoomDisconnected, reason):
-		default:
-		}
+		pending := p
+		pending.settle(func() {
+			if persistErr != nil {
+				trySendErr(pending.ErrCh, fmt.Errorf("room: persist room close %q: %w", r.ID, persistErr))
+				return
+			}
+			trySendErr(pending.ErrCh, fmt.Errorf("%w: %s", ErrRoomDisconnected, reason))
+		})
 	}
 
 	r.connMu.Lock()
@@ -383,7 +297,6 @@ func (r *Room) Close(reason string) {
 		_ = conn.Close(websocket.StatusGoingAway, reason)
 	}
 
-	// Wake any sendEnvelopeWithReconnect parked on connectedCh.
 	r.connectedMu.Lock()
 	close(r.connectedCh)
 	r.connectedCh = make(chan struct{})
@@ -405,30 +318,85 @@ func (r *Room) closeReasonString() string {
 	return s
 }
 
-// Manager owns the live set of Rooms. Lookup is keyed by ID; the
-// internal map is RWMutex-protected so Get and Create are race-free.
-//
-// Removal happens explicitly via Remove. The Manager does not GC
-// closed rooms automatically — for v0.1 the MCP-call lifetime is the
-// natural cleanup window. v0.2+ may add an idle sweeper.
+func (r *Room) pendingByID(envelopeID string) *Pending {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	return r.pending[envelopeID]
+}
+
+func (r *Room) finalizePushError(envelopeID string, pending *Pending, err error) error {
+	if err == nil {
+		return nil
+	}
+	resolvedErr := err
+	pending.settle(func() {
+		if persistErr := r.persistTerminalEnvelopeError(envelopeID, err); persistErr != nil {
+			resolvedErr = fmt.Errorf("room: persist envelope %q final state: %w", envelopeID, persistErr)
+		}
+	})
+	return resolvedErr
+}
+
+// Manager owns the live set of Rooms plus the optional shared DB
+// handle backing persistence.
 type Manager struct {
+	db *sql.DB
+
 	mu    sync.RWMutex
 	rooms map[string]*Room
 }
 
-// NewManager constructs an empty Manager.
-func NewManager() *Manager {
-	return &Manager{rooms: make(map[string]*Room)}
+// NewManager constructs an empty Manager. The DB is optional for
+// legacy in-memory tests; production wiring should always pass one.
+func NewManager(db *sql.DB) *Manager {
+	return &Manager{
+		db:    db,
+		rooms: make(map[string]*Room),
+	}
 }
 
 // Create allocates a new Room with a fresh UUID and registers it.
-// Optional meta is shallow-copied onto the Room.
 func (m *Manager) Create(meta map[string]string) *Room {
-	r := newRoom(uuid.NewString(), meta)
+	r, err := m.CreateWithError(meta)
+	if err != nil {
+		panic(err)
+	}
+	return r
+}
+
+// CreateWithError allocates a new Room with a fresh UUID, persists it,
+// and registers it.
+func (m *Manager) CreateWithError(meta map[string]string) (*Room, error) {
+	r := newRoom(uuid.NewString(), time.Now().UTC(), meta, m.db)
+	if err := m.persistRoomCreate(r); err != nil {
+		return nil, fmt.Errorf("room: create %q: %w", r.ID, err)
+	}
 	m.mu.Lock()
 	m.rooms[r.ID] = r
 	m.mu.Unlock()
-	return r
+	return r, nil
+}
+
+// Hydrate loads all open rooms from the DB and times out any stale
+// pending envelopes left behind by a previous process.
+func (m *Manager) Hydrate(ctx context.Context) error {
+	if m.db == nil {
+		return nil
+	}
+	if err := m.timeoutStalePendingEnvelopes(ctx); err != nil {
+		return err
+	}
+	rooms, err := m.loadActiveRooms(ctx)
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, row := range rooms {
+		m.rooms[row.ID] = newRoom(row.ID, row.CreatedAt, row.Meta, m.db)
+	}
+	return nil
 }
 
 // Get returns the Room with the given id, or false if not found.
@@ -439,7 +407,7 @@ func (m *Manager) Get(id string) (*Room, bool) {
 	return r, ok
 }
 
-// Remove drops the Room from the manager and Closes it. Idempotent.
+// Remove drops the Room from the manager and closes it.
 func (m *Manager) Remove(id string) {
 	m.mu.Lock()
 	r, ok := m.rooms[id]
@@ -450,15 +418,14 @@ func (m *Manager) Remove(id string) {
 	}
 }
 
-// Len returns the number of registered rooms. Used by tests / probes.
+// Len returns the number of registered rooms.
 func (m *Manager) Len() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.rooms)
 }
 
-// IDs returns a snapshot of all current room ids. Allocation is
-// proportional to room count; not for hot paths.
+// IDs returns a snapshot of all current room ids.
 func (m *Manager) IDs() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -469,9 +436,7 @@ func (m *Manager) IDs() []string {
 	return ids
 }
 
-// CloseAll closes every Room in the manager (for graceful shutdown).
-// Does not remove them from the map — pair with explicit teardown if
-// the caller needs the map drained.
+// CloseAll closes every Room in the manager.
 func (m *Manager) CloseAll(reason string) {
 	m.mu.RLock()
 	rooms := make([]*Room, 0, len(m.rooms))
@@ -484,8 +449,6 @@ func (m *Manager) CloseAll(reason string) {
 	}
 }
 
-// cloneMeta returns a deep-enough copy of m for the Room's purposes.
-// Values are strings so a single map copy suffices.
 func cloneMeta(m map[string]string) map[string]string {
 	if len(m) == 0 {
 		return map[string]string{}
@@ -503,4 +466,18 @@ func deadlineFromCtx(ctx context.Context) time.Time {
 		return time.Time{}
 	}
 	return d
+}
+
+func trySendResp(ch chan *envelopes.Response, resp *envelopes.Response) {
+	select {
+	case ch <- resp:
+	default:
+	}
+}
+
+func trySendErr(ch chan error, err error) {
+	select {
+	case ch <- err:
+	default:
+	}
 }
