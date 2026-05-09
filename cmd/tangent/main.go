@@ -121,6 +121,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register feedback extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterFormCollect(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register form-collect extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register design-iteration extension: %v\n", regErr)
 		os.Exit(1)
@@ -188,6 +192,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterFeedbackOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register feedback handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterFormCollectOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register form-collect handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {

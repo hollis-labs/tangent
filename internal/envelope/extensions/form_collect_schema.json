@@ -1,0 +1,17 @@
+{
+  "type": "object",
+  "required": ["form_id", "schema"],
+  "properties": {
+    "form_id": { "type": "string", "minLength": 1 },
+    "intent": { "type": "string" },
+    "schema": { "type": "object" },
+    "answers": { "type": "object" },
+    "notes": { "type": "string" },
+    "actions": { "type": "array" },
+    "saved_drafts": { "type": "array" },
+    "templates": { "type": "array" },
+    "attachment_refs": { "type": "array" },
+    "submission_summary": { "type": "object" }
+  },
+  "additionalProperties": true
+}

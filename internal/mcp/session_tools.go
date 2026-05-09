@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	FormCollect           *room.FormStateView              `json:"form_collect,omitempty"`
 	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
 	Whiteboard            *room.WhiteboardStateView        `json:"whiteboard,omitempty"`
 	SynthesisNotes        *room.SynthesisNotesView         `json:"synthesis_notes,omitempty"`
@@ -150,6 +151,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		FormCollect:           room.ProjectFormState(phaseState),
 		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
 		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
@@ -280,6 +282,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == spreadsheetReviewEnvelopeType {
 			return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == formCollectEnvelopeType {
+			return s.normalizeFormCollectSubmitResponse(roomID, env, resp)
+		}
 		return resp, nil
 	})
 	if err != nil {
@@ -352,6 +357,13 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
 		errors.Is(err, room.ErrInvalidDraftBlockContent),
+		errors.Is(err, room.ErrInvalidFormID),
+		errors.Is(err, room.ErrInvalidFormSchema),
+		errors.Is(err, room.ErrInvalidFormAnswers),
+		errors.Is(err, room.ErrInvalidFormSavedDraft),
+		errors.Is(err, room.ErrInvalidFormTemplate),
+		errors.Is(err, room.ErrInvalidFormAction),
+		errors.Is(err, room.ErrInvalidFormAttachmentRef),
 		errors.Is(err, room.ErrInvalidProseRevisionID),
 		errors.Is(err, room.ErrInvalidProseRevisionLens),
 		errors.Is(err, room.ErrInvalidProseRevisionSourceText),

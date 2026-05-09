@@ -10,12 +10,14 @@ and for the whiteboard flow see
 [`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for the
 spreadsheet-review flow see
 [`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
+for the generalized form flow see
+[`manual-tests/form-collect-e2e.md`](./manual-tests/form-collect-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Install
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.5.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.6.0
 ```
 
 Or build from source:
@@ -72,8 +74,9 @@ claude mcp list
 ```
 
 Then in any Claude Code session, ask Claude to use one of the bundled
-tools: `tangent.triage`, `tangent.feedback`, `tangent.design-iteration`,
-`tangent.whiteboard`, `tangent.spreadsheet-review`, or the writing
+tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
+`tangent.design-iteration`, `tangent.whiteboard`,
+`tangent.spreadsheet-review`, or the writing
 sequence via `tangent.session_*`, `tangent.interview_question`,
 `tangent.synthesis_notes`, `tangent.block_draft`,
 `tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
@@ -121,7 +124,7 @@ shape, please contribute it back.
 
 ## Verification (no agent required)
 
-Confirm the MCP surface is up and advertises the v0.5 tools:
+Confirm the MCP surface is up and advertises the v0.6 tools:
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -135,6 +138,7 @@ Expected:
 ```
 "tangent.design-iteration"
 "tangent.feedback"
+"tangent.form-collect"
 "tangent.interview_question"
 "tangent.list_workflows"
 "tangent.block_draft"
@@ -193,6 +197,10 @@ workflow-neutral phase substrate:
   projection with `board_id`, `scene_snapshot`, referenced `assets`,
   `export_refs`, `notes`, `updated_at`, and append-only
   `revision_history` metadata.
+- `form_collect`: when a room has persisted generalized form state, a
+  dedicated projection with `form_id`, canonical `schema`, normalized
+  `answers`, room-backed `saved_drafts`, `templates`, lightweight
+  `attachment_refs`, and a durable `submission_summary`.
 - `final_output`: the persisted final markdown artifact once
   `tangent.output_render` runs.
 
@@ -237,14 +245,15 @@ For deeper probes (calling a workflow, expected error frames) see
   `--transport sse` and the `/sse` URL. The two transports are
   equivalent for the current tool surface.
 - **`go install` vs fresh-clone build.** `go install` is the simplest
-  path for a stable v0.5.0 binary; build-from-source is required if you
+  path for a stable v0.6.0 binary; build-from-source is required if you
   want unreleased fixes from `main`. The two are not API-compatible
-  across releases — pin via `@v0.5.0` until you have a reason not to.
+  across releases — pin via `@v0.6.0` until you have a reason not to.
 - **Browser shows "No component registered for ..."** The envelope
   `type` on the wire is not one of Tangent's registered workflow kinds.
   The bundled tools pin the type for you; if you're calling the session
   substrate directly, make sure the envelope `type` matches a registered
-  kind such as `tangent.triage`, `tangent.feedback`, or
+  kind such as `tangent.triage`, `tangent.feedback`,
+  `tangent.form-collect`, or
   `tangent.design-iteration`.
 - **Room URL hangs at "waiting for envelope..."** Each MCP call gets a
   fresh room unless you deliberately reuse one through

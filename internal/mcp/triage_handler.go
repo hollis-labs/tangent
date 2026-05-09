@@ -193,6 +193,12 @@ func RegisterFeedbackOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tria
 	return dispatcher.Register(feedbackEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterFormCollectOnDispatcher wires the same room-bridging handler for
+// tangent.form-collect envelopes.
+func RegisterFormCollectOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(formCollectEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterDesignIterationOnDispatcher wires the same room-bridging
 // handler for tangent.design-iteration envelopes.
 func RegisterDesignIterationOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {

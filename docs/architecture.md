@@ -1,4 +1,4 @@
-# Tangent architecture (v0.5 spreadsheet-review release)
+# Tangent architecture (v0.6 form-collect release)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,11 +63,12 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Eighteen tools are advertised in the current build:
+Nineteen tools are advertised in the current build:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
 - `tangent.feedback` — the bundled structured-form workflow.
+- `tangent.form-collect` — the bundled generalized schema-driven form workflow.
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
@@ -114,7 +115,23 @@ agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
 `tangent.session_get` after process restart.
 
-The same substrate now also carries spreadsheet-review room state under
+The same substrate now also carries form-collect room state under the
+`form-collect` phase projection. `tangent.session_get` surfaces a
+dedicated `form_collect` view when present:
+
+- `form_id`
+- `intent`
+- canonical `schema`
+- normalized `answers`
+- `notes`
+- `updated_at`
+- room-backed `saved_drafts`
+- room-backed `templates`
+- available `actions`
+- lightweight `attachment_refs`
+- durable `submission_summary`
+
+The same substrate also carries spreadsheet-review room state under
 the `spreadsheet-review` phase projection. `tangent.session_get`
 surfaces a dedicated `spreadsheet_review` view when present:
 

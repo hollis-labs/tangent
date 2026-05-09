@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  form_collect?: unknown;
   spreadsheet_review?: unknown;
   whiteboard?: unknown;
   synthesis_notes?: unknown;
@@ -96,7 +97,11 @@ export default function Room() {
         return;
       }
       const envelopeType = readEnvelopeType(pending.envelope);
-      if (envelopeType === "tangent.whiteboard" || envelopeType === "tangent.spreadsheet-review") {
+      if (
+        envelopeType === "tangent.whiteboard" ||
+        envelopeType === "tangent.spreadsheet-review" ||
+        envelopeType === "tangent.form-collect"
+      ) {
         return;
       }
       clientRef.current.cancel(pending.envelopeId);
@@ -152,6 +157,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.block-draft" &&
     type !== "tangent.prose-revision" &&
     type !== "tangent.output-render" &&
+    type !== "tangent.form-collect" &&
     type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
   ) {
@@ -170,6 +176,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.output-render") {
       return attachFinalOutput(envelope, state.final_output);
+    }
+    if (type === "tangent.form-collect") {
+      return attachFormCollectState(envelope, state.form_collect);
     }
     if (type === "tangent.spreadsheet-review") {
       return attachSpreadsheetReviewState(envelope, state.spreadsheet_review);
@@ -294,6 +303,39 @@ function attachSpreadsheetReviewState(envelope: unknown, spreadsheetReview: unkn
     "selected_rows",
     "action_id",
     "export_refs",
+  ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachFormCollectState(envelope: unknown, formCollect: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!formCollect || typeof formCollect !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = formCollect as Record<string, unknown>;
+  for (const key of [
+    "form_id",
+    "intent",
+    "schema",
+    "answers",
+    "notes",
+    "updated_at",
+    "saved_drafts",
+    "templates",
+    "actions",
+    "attachment_refs",
+    "submission_summary",
   ]) {
     if (persisted[key] !== undefined) {
       data[key] = persisted[key];

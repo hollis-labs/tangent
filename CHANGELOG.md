@@ -7,7 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Post-v0.5 work lands here. See `README.md` Roadmap for the next phase._
+_Post-v0.6 work lands here. See `README.md` Roadmap for the next phase._
+
+## [v0.6.0] - 2026-05-09
+
+Form collect. Tangent now ships a persistent room-backed generalized
+form workflow for schema-driven field collection, conditional sections,
+repeatable groups, saved drafts/templates, attachment refs, and durable
+submission summaries.
+
+### Added
+
+- **`tangent.form-collect`.** A bundled room-backed structured form
+  workflow with canonical agent-provided schema, explicit submit/cancel,
+  and room reuse via `meta.roomID`.
+- **Form room substrate.** `phase_outputs["form-collect"]` now
+  persists `form_id`, canonical `schema`, normalized `answers`,
+  `notes`, `updated_at`, room-backed `saved_drafts`, `templates`,
+  lightweight `attachment_refs`, and `submission_summary`.
+- **Conditional and repeatable sections.** The shipped form host
+  supports deterministic show/hide logic plus repeatable groups backed
+  by the persisted answer state.
+- **Local refresh recovery.** In-progress form state autosaves in the
+  browser for the active room + form and recovers across refresh until
+  submit/cancel.
+- **Form submit summary/export.** Submitted forms now persist a durable
+  summary/export payload so agents can reopen the room and inspect the
+  last canonical submission without parsing UI-local state.
+- **Form-collect e2e coverage.** Added
+  `docs/manual-tests/form-collect-e2e.md` and
+  `scripts/form-collect-mock-call.mjs`.
+
+### Changed
+
+- **`tangent.session_get` now projects form-collect state.** It exposes
+  a dedicated `form_collect` payload with schema, answers, room-backed
+  drafts/templates, attachments, and the last submission summary.
+- **Docs now describe form collect as the newest bundled workflow.**
+  README, MCP integration, architecture, and developer docs now reflect
+  the shipped v0.6 tool surface.
+
+### Fixed
+
+- **Refresh no longer cancels active form work by default.** The room
+  keeps the pending form alive while the browser restores its local
+  unsent draft state.
+
+### Security
+
+- **The trust model is unchanged.** Tangent remains localhost-only and
+  single-user. Form collect adds richer persisted room state and browser
+  draft recovery, but no auth, TLS, remote sync, or live multi-user
+  collaboration.
 
 ## [v0.5.0] - 2026-05-09
 

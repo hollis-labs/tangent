@@ -17,7 +17,7 @@ import (
 // clients pin against this string.
 const (
 	implementationName    = "tangent"
-	implementationVersion = "v0.1.0"
+	implementationVersion = "v0.6.0"
 )
 
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +
@@ -157,6 +157,16 @@ func (s *Server) registerTools() error {
 		Description: "Dispatch a feedback-kind envelope through Tangent. Creates or reuses a room and waits for a structured questionnaire response.",
 		InputSchema: feedbackSchema,
 	}, s.handleFeedback)
+
+	formCollectSchema, err := buildSchema(formCollectInputSchemaJSON, "form_collect")
+	if err != nil {
+		return fmt.Errorf("build form-collect input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.form-collect",
+		Description: "Dispatch a generalized schema-driven form through Tangent. Persists canonical form state on the room and waits for explicit submit/cancel.",
+		InputSchema: formCollectSchema,
+	}, s.handleFormCollect)
 
 	designIterationSchema, err := buildDesignIterationInputSchema()
 	if err != nil {
