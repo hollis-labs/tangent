@@ -57,7 +57,10 @@ func (r *Room) SaveSpreadsheetReviewSnapshot(snapshot SpreadsheetReviewSnapshot)
 	defer r.phaseMu.Unlock()
 
 	nextOutputs := clonePhaseOutputs(r.phaseOutputs)
-	blob := spreadsheetReviewBlobFromSnapshot(normalized)
+	blob, err := spreadsheetReviewBlobFromSnapshot(nextOutputs[SpreadsheetReviewPhaseID], normalized)
+	if err != nil {
+		return err
+	}
 	nextOutputs[SpreadsheetReviewPhaseID] = blob
 
 	nextVisited := cloneStringSlice(r.phasesVisited)
@@ -81,17 +84,24 @@ func (r *Room) SaveSpreadsheetReviewSavedViews(tableID string, savedViews []Spre
 	if strings.TrimSpace(tableID) != current.TableID {
 		return fmt.Errorf("%w: %q", ErrInvalidSpreadsheetTableID, tableID)
 	}
+	normalizedSavedViews, err := normalizeSpreadsheetSavedViews(savedViews)
+	if err != nil {
+		return err
+	}
 
 	nextOutputs := clonePhaseOutputs(r.phaseOutputs)
-	blob := spreadsheetReviewBlobFromSnapshot(SpreadsheetReviewSnapshot{
+	blob, err := spreadsheetReviewBlobFromSnapshot(nextOutputs[SpreadsheetReviewPhaseID], SpreadsheetReviewSnapshot{
 		TableID:    current.TableID,
 		Columns:    current.Columns,
 		Rows:       current.Rows,
 		QueryState: current.QueryState,
 		Notes:      current.Notes,
 		UpdatedAt:  current.UpdatedAt,
-		SavedViews: savedViews,
+		SavedViews: normalizedSavedViews,
 	})
+	if err != nil {
+		return err
+	}
 	nextOutputs[SpreadsheetReviewPhaseID] = blob
 
 	nextVisited := cloneStringSlice(r.phasesVisited)
@@ -180,19 +190,23 @@ func normalizeSpreadsheetReviewSnapshot(snapshot SpreadsheetReviewSnapshot) (Spr
 	}, nil
 }
 
-func spreadsheetReviewBlobFromSnapshot(snapshot SpreadsheetReviewSnapshot) PhaseOutput {
-	return PhaseOutput{
-		Version: phaseOutputVersion,
-		Data: map[string]any{
-			spreadsheetReviewTableIDKey:    snapshot.TableID,
-			spreadsheetReviewColumnsKey:    cloneObjectSlice(snapshot.Columns),
-			spreadsheetReviewRowsKey:       cloneObjectSlice(snapshot.Rows),
-			spreadsheetReviewQueryStateKey: cloneAnyMap(snapshot.QueryState),
-			spreadsheetReviewNotesKey:      snapshot.Notes,
-			spreadsheetReviewUpdatedAtKey:  snapshot.UpdatedAt,
-			spreadsheetReviewSavedViewsKey: spreadsheetReviewSavedViewsAny(snapshot.SavedViews),
-		},
+func spreadsheetReviewBlobFromSnapshot(blob PhaseOutput, snapshot SpreadsheetReviewSnapshot) (PhaseOutput, error) {
+	switch {
+	case blob.Version == 0:
+		blob.Version = phaseOutputVersion
+	case blob.Version != phaseOutputVersion:
+		return PhaseOutput{}, fmt.Errorf("room: unsupported phase output version %d for %q", blob.Version, SpreadsheetReviewPhaseID)
 	}
+	blob.Data = map[string]any{
+		spreadsheetReviewTableIDKey:    snapshot.TableID,
+		spreadsheetReviewColumnsKey:    cloneObjectSlice(snapshot.Columns),
+		spreadsheetReviewRowsKey:       cloneObjectSlice(snapshot.Rows),
+		spreadsheetReviewQueryStateKey: cloneAnyMap(snapshot.QueryState),
+		spreadsheetReviewNotesKey:      snapshot.Notes,
+		spreadsheetReviewUpdatedAtKey:  snapshot.UpdatedAt,
+		spreadsheetReviewSavedViewsKey: spreadsheetReviewSavedViewsAny(snapshot.SavedViews),
+	}
+	return blob, nil
 }
 
 func normalizeSpreadsheetObjectSlice(items []map[string]any, invalidErr error) ([]map[string]any, error) {

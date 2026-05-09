@@ -438,6 +438,61 @@ func TestRoom_SaveSpreadsheetReviewSavedViewsReplacesViews(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveSpreadsheetReviewSavedViewsRejectsInvalidView(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
+		TableID: "table-invalid-view",
+	}); err != nil {
+		t.Fatalf("seed SaveSpreadsheetReviewSnapshot: %v", err)
+	}
+
+	err := rm.SaveSpreadsheetReviewSavedViews("table-invalid-view", []room.SpreadsheetReviewSavedView{
+		{
+			Name: "   ",
+			QueryState: map[string]any{
+				"ignored": "should-not-persist",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidSpreadsheetSavedView) {
+		t.Fatalf("SaveSpreadsheetReviewSavedViews invalid err = %v, want ErrInvalidSpreadsheetSavedView", err)
+	}
+}
+
+func TestRoom_SaveSpreadsheetReviewSnapshotRejectsUnsupportedBlobVersion(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "spreadsheet-version"})
+
+	if _, err := db.Exec(`
+UPDATE rooms
+SET phase_outputs = ?
+WHERE id = ?`,
+		`{"spreadsheet-review":{"version":99,"data":{"table_id":"table-old"}}}`,
+		rm.ID,
+	); err != nil {
+		t.Fatalf("seed unsupported version: %v", err)
+	}
+	if err := mgr.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := mgr.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+
+	err := reloaded.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
+		TableID: "table-new",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported phase output version 99") {
+		t.Fatalf("SaveSpreadsheetReviewSnapshot unsupported version err = %v, want unsupported phase output version 99", err)
+	}
+}
+
 func TestRoom_PushDisconnect(t *testing.T) {
 	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
