@@ -14,7 +14,9 @@ const (
 	whiteboardNotesKey              = "notes"
 	whiteboardUpdatedAtKey          = "updated_at"
 	whiteboardRevisionHistoryKey    = "revision_history"
+	whiteboardRevisionSnapshotsKey  = "revision_snapshots"
 	whiteboardRevisionIDKey         = "revision_id"
+	whiteboardRevisionContinuedKey  = "continued_from_revision_id"
 	whiteboardRevisionSummaryKey    = "summary"
 	whiteboardRevisionSceneSizeKey  = "scene_size"
 	whiteboardRevisionAssetCountKey = "asset_count"
@@ -56,21 +58,36 @@ type WhiteboardExportRef struct {
 }
 
 type WhiteboardRevision struct {
-	RevisionID string `json:"revision_id"`
-	UpdatedAt  string `json:"updated_at,omitempty"`
-	Summary    string `json:"summary,omitempty"`
-	SceneSize  int    `json:"scene_size,omitempty"`
-	AssetCount int    `json:"asset_count,omitempty"`
+	RevisionID              string `json:"revision_id"`
+	ContinuedFromRevisionID string `json:"continued_from_revision_id,omitempty"`
+	UpdatedAt               string `json:"updated_at,omitempty"`
+	Summary                 string `json:"summary,omitempty"`
+	SceneSize               int    `json:"scene_size,omitempty"`
+	AssetCount              int    `json:"asset_count,omitempty"`
+}
+
+type WhiteboardRevisionSnapshot struct {
+	RevisionID              string
+	ContinuedFromRevisionID string
+	UpdatedAt               string
+	Summary                 string
+	SceneSize               int
+	AssetCount              int
+	SceneSnapshot           map[string]any
+	Assets                  []WhiteboardAssetRef
+	ExportRefs              []WhiteboardExportRef
+	Notes                   string
 }
 
 type WhiteboardStateView struct {
-	BoardID         string                `json:"board_id"`
-	SceneSnapshot   map[string]any        `json:"scene_snapshot"`
-	Assets          []WhiteboardAssetRef  `json:"assets"`
-	ExportRefs      []WhiteboardExportRef `json:"export_refs"`
-	Notes           string                `json:"notes,omitempty"`
-	UpdatedAt       string                `json:"updated_at,omitempty"`
-	RevisionHistory []WhiteboardRevision  `json:"revision_history"`
+	BoardID           string                       `json:"board_id"`
+	SceneSnapshot     map[string]any               `json:"scene_snapshot"`
+	Assets            []WhiteboardAssetRef         `json:"assets"`
+	ExportRefs        []WhiteboardExportRef        `json:"export_refs"`
+	Notes             string                       `json:"notes,omitempty"`
+	UpdatedAt         string                       `json:"updated_at,omitempty"`
+	RevisionHistory   []WhiteboardRevision         `json:"revision_history"`
+	RevisionSnapshots []WhiteboardRevisionSnapshot `json:"-"`
 }
 
 type WhiteboardSnapshot struct {
@@ -99,21 +116,36 @@ func (r *Room) SaveWhiteboardSnapshot(snapshot WhiteboardSnapshot) error {
 	}
 
 	revisionHistory := []WhiteboardRevision{}
+	revisionSnapshots := []WhiteboardRevisionSnapshot{}
 	if current.BoardID == normalized.BoardID {
 		revisionHistory = cloneWhiteboardRevisions(current.RevisionHistory)
+		revisionSnapshots = cloneWhiteboardRevisionSnapshots(current.RevisionSnapshots)
 	}
 
 	nextState := WhiteboardStateView{
-		BoardID:         normalized.BoardID,
-		SceneSnapshot:   normalized.SceneSnapshot,
-		Assets:          normalized.Assets,
-		ExportRefs:      normalized.ExportRefs,
-		Notes:           normalized.Notes,
-		UpdatedAt:       normalized.UpdatedAt,
-		RevisionHistory: revisionHistory,
+		BoardID:           normalized.BoardID,
+		SceneSnapshot:     normalized.SceneSnapshot,
+		Assets:            normalized.Assets,
+		ExportRefs:        normalized.ExportRefs,
+		Notes:             normalized.Notes,
+		UpdatedAt:         normalized.UpdatedAt,
+		RevisionHistory:   revisionHistory,
+		RevisionSnapshots: revisionSnapshots,
 	}
 	if normalized.Revision != nil {
 		nextState.RevisionHistory = append(nextState.RevisionHistory, *normalized.Revision)
+		nextState.RevisionSnapshots = append(nextState.RevisionSnapshots, WhiteboardRevisionSnapshot{
+			RevisionID:              normalized.Revision.RevisionID,
+			ContinuedFromRevisionID: normalized.Revision.ContinuedFromRevisionID,
+			UpdatedAt:               normalized.Revision.UpdatedAt,
+			Summary:                 normalized.Revision.Summary,
+			SceneSize:               normalized.Revision.SceneSize,
+			AssetCount:              normalized.Revision.AssetCount,
+			SceneSnapshot:           cloneAnyMap(normalized.SceneSnapshot),
+			Assets:                  cloneWhiteboardAssets(normalized.Assets),
+			ExportRefs:              cloneWhiteboardExportRefs(normalized.ExportRefs),
+			Notes:                   normalized.Notes,
+		})
 		if nextState.UpdatedAt == "" {
 			nextState.UpdatedAt = normalized.Revision.UpdatedAt
 		}
@@ -159,13 +191,14 @@ func projectWhiteboardStateFromBlob(blob PhaseOutput) *WhiteboardStateView {
 		return nil
 	}
 	view := &WhiteboardStateView{
-		BoardID:         boardID,
-		SceneSnapshot:   readWhiteboardSceneSnapshot(blob.Data[whiteboardSceneSnapshotKey]),
-		Assets:          readWhiteboardAssets(blob.Data[whiteboardAssetsKey]),
-		ExportRefs:      readWhiteboardExportRefs(blob.Data[whiteboardExportRefsKey]),
-		Notes:           readString(blob.Data, whiteboardNotesKey),
-		UpdatedAt:       readString(blob.Data, whiteboardUpdatedAtKey),
-		RevisionHistory: readWhiteboardRevisions(blob.Data[whiteboardRevisionHistoryKey]),
+		BoardID:           boardID,
+		SceneSnapshot:     readWhiteboardSceneSnapshot(blob.Data[whiteboardSceneSnapshotKey]),
+		Assets:            readWhiteboardAssets(blob.Data[whiteboardAssetsKey]),
+		ExportRefs:        readWhiteboardExportRefs(blob.Data[whiteboardExportRefsKey]),
+		Notes:             readString(blob.Data, whiteboardNotesKey),
+		UpdatedAt:         readString(blob.Data, whiteboardUpdatedAtKey),
+		RevisionHistory:   readWhiteboardRevisions(blob.Data[whiteboardRevisionHistoryKey]),
+		RevisionSnapshots: readWhiteboardRevisionSnapshots(blob.Data[whiteboardRevisionSnapshotsKey]),
 	}
 	if view.SceneSnapshot == nil {
 		view.SceneSnapshot = map[string]any{}
@@ -178,6 +211,9 @@ func projectWhiteboardStateFromBlob(blob PhaseOutput) *WhiteboardStateView {
 	}
 	if view.RevisionHistory == nil {
 		view.RevisionHistory = []WhiteboardRevision{}
+	}
+	if view.RevisionSnapshots == nil {
+		view.RevisionSnapshots = []WhiteboardRevisionSnapshot{}
 	}
 	return view
 }
@@ -298,11 +334,12 @@ func normalizeWhiteboardExportRef(ref WhiteboardExportRef) (WhiteboardExportRef,
 
 func normalizeWhiteboardRevision(revision WhiteboardRevision) (WhiteboardRevision, error) {
 	normalized := WhiteboardRevision{
-		RevisionID: strings.TrimSpace(revision.RevisionID),
-		UpdatedAt:  strings.TrimSpace(revision.UpdatedAt),
-		Summary:    strings.TrimSpace(revision.Summary),
-		SceneSize:  revision.SceneSize,
-		AssetCount: revision.AssetCount,
+		RevisionID:              strings.TrimSpace(revision.RevisionID),
+		ContinuedFromRevisionID: strings.TrimSpace(revision.ContinuedFromRevisionID),
+		UpdatedAt:               strings.TrimSpace(revision.UpdatedAt),
+		Summary:                 strings.TrimSpace(revision.Summary),
+		SceneSize:               revision.SceneSize,
+		AssetCount:              revision.AssetCount,
 	}
 	if normalized.RevisionID == "" || normalized.SceneSize < 0 || normalized.AssetCount < 0 {
 		return WhiteboardRevision{}, ErrInvalidWhiteboardRevisionID
@@ -334,15 +371,20 @@ func whiteboardBlobFromState(blob PhaseOutput, state WhiteboardStateView) (Phase
 	if err != nil {
 		return PhaseOutput{}, fmt.Errorf("room: normalize whiteboard revisions blob: %w", err)
 	}
+	revisionSnapshotsRaw, err := normalizeJSONValue(whiteboardRevisionSnapshotsAny(state.RevisionSnapshots))
+	if err != nil {
+		return PhaseOutput{}, fmt.Errorf("room: normalize whiteboard revision snapshots blob: %w", err)
+	}
 
 	blob.Data = map[string]any{
-		whiteboardBoardIDKey:         state.BoardID,
-		whiteboardSceneSnapshotKey:   sceneRaw,
-		whiteboardAssetsKey:          assetsRaw,
-		whiteboardExportRefsKey:      exportRefsRaw,
-		whiteboardNotesKey:           state.Notes,
-		whiteboardUpdatedAtKey:       state.UpdatedAt,
-		whiteboardRevisionHistoryKey: revisionsRaw,
+		whiteboardBoardIDKey:           state.BoardID,
+		whiteboardSceneSnapshotKey:     sceneRaw,
+		whiteboardAssetsKey:            assetsRaw,
+		whiteboardExportRefsKey:        exportRefsRaw,
+		whiteboardNotesKey:             state.Notes,
+		whiteboardUpdatedAtKey:         state.UpdatedAt,
+		whiteboardRevisionHistoryKey:   revisionsRaw,
+		whiteboardRevisionSnapshotsKey: revisionSnapshotsRaw,
 	}
 	return blob, nil
 }
@@ -431,11 +473,12 @@ func readWhiteboardRevisions(raw any) []WhiteboardRevision {
 			continue
 		}
 		revision, err := normalizeWhiteboardRevision(WhiteboardRevision{
-			RevisionID: readString(record, whiteboardRevisionIDKey),
-			UpdatedAt:  readString(record, whiteboardUpdatedAtKey),
-			Summary:    readString(record, whiteboardRevisionSummaryKey),
-			SceneSize:  readInt(record, whiteboardRevisionSceneSizeKey),
-			AssetCount: readInt(record, whiteboardRevisionAssetCountKey),
+			RevisionID:              readString(record, whiteboardRevisionIDKey),
+			ContinuedFromRevisionID: readString(record, whiteboardRevisionContinuedKey),
+			UpdatedAt:               readString(record, whiteboardUpdatedAtKey),
+			Summary:                 readString(record, whiteboardRevisionSummaryKey),
+			SceneSize:               readInt(record, whiteboardRevisionSceneSizeKey),
+			AssetCount:              readInt(record, whiteboardRevisionAssetCountKey),
 		})
 		if err != nil {
 			continue
@@ -443,6 +486,44 @@ func readWhiteboardRevisions(raw any) []WhiteboardRevision {
 		revisions = append(revisions, revision)
 	}
 	return revisions
+}
+
+func readWhiteboardRevisionSnapshots(raw any) []WhiteboardRevisionSnapshot {
+	items, ok := raw.([]any)
+	if !ok {
+		return []WhiteboardRevisionSnapshot{}
+	}
+	snapshots := make([]WhiteboardRevisionSnapshot, 0, len(items))
+	for _, item := range items {
+		record, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		revision, err := normalizeWhiteboardRevision(WhiteboardRevision{
+			RevisionID:              readString(record, whiteboardRevisionIDKey),
+			ContinuedFromRevisionID: readString(record, whiteboardRevisionContinuedKey),
+			UpdatedAt:               readString(record, whiteboardUpdatedAtKey),
+			Summary:                 readString(record, whiteboardRevisionSummaryKey),
+			SceneSize:               readInt(record, whiteboardRevisionSceneSizeKey),
+			AssetCount:              readInt(record, whiteboardRevisionAssetCountKey),
+		})
+		if err != nil {
+			continue
+		}
+		snapshots = append(snapshots, WhiteboardRevisionSnapshot{
+			RevisionID:              revision.RevisionID,
+			ContinuedFromRevisionID: revision.ContinuedFromRevisionID,
+			UpdatedAt:               revision.UpdatedAt,
+			Summary:                 revision.Summary,
+			SceneSize:               revision.SceneSize,
+			AssetCount:              revision.AssetCount,
+			SceneSnapshot:           readWhiteboardSceneSnapshot(record[whiteboardSceneSnapshotKey]),
+			Assets:                  readWhiteboardAssets(record[whiteboardAssetsKey]),
+			ExportRefs:              readWhiteboardExportRefs(record[whiteboardExportRefsKey]),
+			Notes:                   readString(record, whiteboardNotesKey),
+		})
+	}
+	return snapshots
 }
 
 func whiteboardAssetsAny(assets []WhiteboardAssetRef) []map[string]any {
@@ -532,6 +613,9 @@ func whiteboardRevisionsAny(revisions []WhiteboardRevision) []map[string]any {
 		record := map[string]any{
 			whiteboardRevisionIDKey: revision.RevisionID,
 		}
+		if revision.ContinuedFromRevisionID != "" {
+			record[whiteboardRevisionContinuedKey] = revision.ContinuedFromRevisionID
+		}
 		if revision.UpdatedAt != "" {
 			record[whiteboardUpdatedAtKey] = revision.UpdatedAt
 		}
@@ -549,12 +633,87 @@ func whiteboardRevisionsAny(revisions []WhiteboardRevision) []map[string]any {
 	return out
 }
 
+func whiteboardRevisionSnapshotsAny(snapshots []WhiteboardRevisionSnapshot) []map[string]any {
+	if len(snapshots) == 0 {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		record := map[string]any{
+			whiteboardRevisionIDKey:    snapshot.RevisionID,
+			whiteboardSceneSnapshotKey: cloneAnyMap(snapshot.SceneSnapshot),
+			whiteboardAssetsKey:        whiteboardAssetsAny(snapshot.Assets),
+			whiteboardExportRefsKey:    whiteboardExportRefsAny(snapshot.ExportRefs),
+		}
+		if snapshot.ContinuedFromRevisionID != "" {
+			record[whiteboardRevisionContinuedKey] = snapshot.ContinuedFromRevisionID
+		}
+		if snapshot.UpdatedAt != "" {
+			record[whiteboardUpdatedAtKey] = snapshot.UpdatedAt
+		}
+		if snapshot.Summary != "" {
+			record[whiteboardRevisionSummaryKey] = snapshot.Summary
+		}
+		if snapshot.SceneSize > 0 {
+			record[whiteboardRevisionSceneSizeKey] = snapshot.SceneSize
+		}
+		if snapshot.AssetCount > 0 {
+			record[whiteboardRevisionAssetCountKey] = snapshot.AssetCount
+		}
+		if snapshot.Notes != "" {
+			record[whiteboardNotesKey] = snapshot.Notes
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
 func cloneWhiteboardRevisions(in []WhiteboardRevision) []WhiteboardRevision {
 	if len(in) == 0 {
 		return []WhiteboardRevision{}
 	}
 	out := make([]WhiteboardRevision, len(in))
 	copy(out, in)
+	return out
+}
+
+func cloneWhiteboardAssets(in []WhiteboardAssetRef) []WhiteboardAssetRef {
+	if len(in) == 0 {
+		return []WhiteboardAssetRef{}
+	}
+	out := make([]WhiteboardAssetRef, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneWhiteboardExportRefs(in []WhiteboardExportRef) []WhiteboardExportRef {
+	if len(in) == 0 {
+		return []WhiteboardExportRef{}
+	}
+	out := make([]WhiteboardExportRef, len(in))
+	copy(out, in)
+	return out
+}
+
+func cloneWhiteboardRevisionSnapshots(in []WhiteboardRevisionSnapshot) []WhiteboardRevisionSnapshot {
+	if len(in) == 0 {
+		return []WhiteboardRevisionSnapshot{}
+	}
+	out := make([]WhiteboardRevisionSnapshot, 0, len(in))
+	for _, snapshot := range in {
+		out = append(out, WhiteboardRevisionSnapshot{
+			RevisionID:              snapshot.RevisionID,
+			ContinuedFromRevisionID: snapshot.ContinuedFromRevisionID,
+			UpdatedAt:               snapshot.UpdatedAt,
+			Summary:                 snapshot.Summary,
+			SceneSize:               snapshot.SceneSize,
+			AssetCount:              snapshot.AssetCount,
+			SceneSnapshot:           cloneAnyMap(snapshot.SceneSnapshot),
+			Assets:                  cloneWhiteboardAssets(snapshot.Assets),
+			ExportRefs:              cloneWhiteboardExportRefs(snapshot.ExportRefs),
+			Notes:                   snapshot.Notes,
+		})
+	}
 	return out
 }
 

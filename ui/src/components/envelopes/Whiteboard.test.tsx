@@ -153,6 +153,53 @@ describe("Whiteboard", () => {
     });
   });
 
+  it("supports previewing a prior revision and explicitly continuing from it", () => {
+    const onSubmit = vi.fn();
+    const envelope: WhiteboardEnvelope = {
+      ...baseEnvelope,
+      data: {
+        ...(baseEnvelope.data ?? { board_id: "board-1" }),
+        revision_id: "board-1-r2",
+        revisions: [
+          {
+            revision_id: "board-1-r1",
+            notes: "first revision",
+            scene: {
+              document: { pages: [{ id: "page:r1" }] },
+              session: { currentPageId: "page:r1" },
+            },
+          },
+          {
+            revision_id: "board-1-r2",
+            notes: "second revision",
+            scene: {
+              document: { pages: [{ id: "page:r2" }] },
+              session: { currentPageId: "page:r2" },
+            },
+          },
+        ],
+      },
+    };
+
+    render(
+      <Whiteboard envelope={envelope} onSubmit={onSubmit} onCancel={vi.fn()} roomID="room-a" />,
+    );
+
+    fireEvent.click(screen.getByTestId("whiteboard-preview-board-1-r1"));
+    expect(screen.getByTestId("whiteboard-submit")).toBeDisabled();
+    expect(screen.getByTestId("whiteboard-message")).toHaveTextContent(
+      "Previewing revision board-1-r1",
+    );
+    expect(screen.getByDisplayValue("first revision")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("whiteboard-continue-board-1-r1"));
+    expect(screen.getByTestId("whiteboard-submit")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("whiteboard-submit"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].payload.continued_from_revision_id).toBe("board-1-r1");
+  });
+
   it("exports the current board as PNG and carries export metadata on submit", async () => {
     const createObjectURL = vi.fn(() => "blob:png-export");
     const revokeObjectURL = vi.fn();

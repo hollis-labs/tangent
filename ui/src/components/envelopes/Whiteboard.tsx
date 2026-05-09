@@ -22,10 +22,19 @@ import {
 
 export interface WhiteboardRevisionHistoryItem {
   revision_id: string;
+  continued_from_revision_id?: string;
   updated_at?: string;
   summary?: string;
   scene_size?: number;
   asset_count?: number;
+}
+
+export interface WhiteboardRevisionSnapshotItem extends WhiteboardRevisionHistoryItem {
+  scene?: TLEditorSnapshot | Record<string, unknown>;
+  assets?: WhiteboardAssetRef[];
+  reference_images?: WhiteboardAssetRef[];
+  export_refs?: WhiteboardExportRef[];
+  notes?: string;
 }
 
 export interface WhiteboardSelectionSummary {
@@ -45,6 +54,7 @@ export interface WhiteboardEnvelopeData {
   updated_at?: string;
   revision_id?: string;
   revision_history?: WhiteboardRevisionHistoryItem[];
+  revisions?: WhiteboardRevisionSnapshotItem[];
   tool_mode?: "select" | "draw" | "text" | "shape" | "arrow" | "note";
   reference_images?: WhiteboardAssetRef[];
 }
@@ -73,6 +83,7 @@ export interface WhiteboardSubmitResponse {
     notes: string;
     tool_mode?: WhiteboardEnvelopeData["tool_mode"];
     selection_summary?: WhiteboardSelectionSummary;
+    continued_from_revision_id?: string;
     export_refs?: WhiteboardExportRef[];
   };
   completedAt: string;
@@ -90,6 +101,8 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
   const editorRef = useRef<Editor | null>(null);
   const boardID = data?.board_id ?? "";
   const assetRefs = mergeWhiteboardAssetRefs(data?.assets ?? [], data?.reference_images ?? []);
+  const revisions = data?.revisions ?? [];
+  const latestRevisionID = readRevisionID(data?.revision_id);
   const [initialState] = useState(() =>
     resolveInitialWhiteboardState({
       roomID,
@@ -101,9 +114,20 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       revisionId: readRevisionID(data?.revision_id),
     }),
   );
+  const [editorSeed, setEditorSeed] = useState<TLEditorSnapshot | undefined>(initialState.scene);
+  const [editorSeedKey, setEditorSeedKey] = useState(() =>
+    buildEditorSeedKey(initialState.revisionId, "latest"),
+  );
+  const [activeAssetRefs, setActiveAssetRefs] = useState<WhiteboardAssetRef[]>(assetRefs);
   const [notes, setNotes] = useState(initialState.notes);
   const [latestExportRef, setLatestExportRef] = useState<WhiteboardExportRef | null>(null);
   const [exportStatus, setExportStatus] = useState<"idle" | "done" | "failed">("idle");
+  const [selectedRevisionId, setSelectedRevisionId] = useState<string | null>(
+    initialState.revisionId,
+  );
+  const [activeRevisionId, setActiveRevisionId] = useState<string | null>(initialState.revisionId);
+  const [continuedFromRevisionId, setContinuedFromRevisionId] = useState<string | null>(null);
+  const [revisionMode, setRevisionMode] = useState<"latest" | "preview" | "continue">("latest");
   const [message, setMessage] = useState<string | null>(
     initialState.staleReferenceImages.length > 0
       ? buildStaleReferenceImageMessage(initialState.staleReferenceImages.length)
@@ -213,7 +237,13 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     if (!editor || !data?.board_id) {
       return;
     }
-    const submitScene = buildWhiteboardSubmitAssets(getSnapshot(editor.store), assetRefs);
+    if (revisionMode === "preview") {
+      setMessage(
+        `Revision ${activeRevisionId ?? "preview"} is open for inspection. Choose Continue from here before submitting.`,
+      );
+      return;
+    }
+    const submitScene = buildWhiteboardSubmitAssets(getSnapshot(editor.store), activeAssetRefs);
     if (submitScene.unsupportedLocalAssetIds.length > 0) {
       setMessage(
         `Remove ${submitScene.unsupportedLocalAssetIds.length} browser-only image asset(s) before submit. Tangent only persists artifact-backed image refs.`,
@@ -236,6 +266,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         notes,
         tool_mode: data.tool_mode,
         selection_summary: selectionSummary,
+        continued_from_revision_id: continuedFromRevisionId ?? undefined,
         export_refs: latestExportRefRef.current ? [latestExportRefRef.current] : [],
       },
       completedAt: new Date().toISOString(),
@@ -271,7 +302,10 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         format: "png",
         background: true,
       });
-      const filename = buildWhiteboardExportFilename(boardID, data?.revision_id);
+      const filename = buildWhiteboardExportFilename(
+        boardID,
+        activeRevisionId ?? data?.revision_id,
+      );
       const url = window.URL.createObjectURL(image.blob);
       const link = document.createElement("a");
       link.href = url;
@@ -300,6 +334,100 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     }
   };
 
+  const handlePreviewRevision = (revision: WhiteboardRevisionSnapshotItem) => {
+    const nextSeed = buildWhiteboardSeedState({
+      scene: normalizeSnapshot(revision.scene),
+      assetRefs: mergeWhiteboardAssetRefs(revision.assets ?? [], revision.reference_images ?? []),
+      notes: revision.notes ?? "",
+      revisionId: readRevisionID(revision.revision_id),
+    });
+    clearDraft();
+    setActiveAssetRefs(
+      mergeWhiteboardAssetRefs(revision.assets ?? [], revision.reference_images ?? []),
+    );
+    notesRef.current = nextSeed.notes;
+    setNotes(nextSeed.notes);
+    setEditorSeed(nextSeed.scene);
+    setEditorSeedKey(buildEditorSeedKey(nextSeed.revisionId, `preview-${Date.now()}`));
+    setSelectedRevisionId(nextSeed.revisionId);
+    setActiveRevisionId(nextSeed.revisionId);
+    setContinuedFromRevisionId(null);
+    setRevisionMode("preview");
+    canonicalSceneRef.current = nextSeed.canonicalScene;
+    canonicalNotesRef.current = nextSeed.canonicalNotes;
+    canonicalRevisionIdRef.current = nextSeed.revisionId;
+    canonicalSeedKeyRef.current = nextSeed.canonicalSeedKey;
+    lastPersistedPayloadRef.current = null;
+    latestExportRefRef.current = null;
+    setLatestExportRef(null);
+    setExportStatus("idle");
+    setMessage(
+      `Previewing revision ${revision.revision_id}. Continue from here to branch a new revision.`,
+    );
+  };
+
+  const handleContinueFromRevision = (revision: WhiteboardRevisionSnapshotItem) => {
+    const nextSeed = buildWhiteboardSeedState({
+      scene: normalizeSnapshot(revision.scene),
+      assetRefs: mergeWhiteboardAssetRefs(revision.assets ?? [], revision.reference_images ?? []),
+      notes: revision.notes ?? "",
+      revisionId: readRevisionID(revision.revision_id),
+    });
+    clearDraft();
+    setActiveAssetRefs(
+      mergeWhiteboardAssetRefs(revision.assets ?? [], revision.reference_images ?? []),
+    );
+    notesRef.current = nextSeed.notes;
+    setNotes(nextSeed.notes);
+    setEditorSeed(nextSeed.scene);
+    setEditorSeedKey(buildEditorSeedKey(nextSeed.revisionId, `continue-${Date.now()}`));
+    setSelectedRevisionId(nextSeed.revisionId);
+    setActiveRevisionId(nextSeed.revisionId);
+    setContinuedFromRevisionId(nextSeed.revisionId);
+    setRevisionMode(nextSeed.revisionId === latestRevisionID ? "latest" : "continue");
+    canonicalSceneRef.current = nextSeed.canonicalScene;
+    canonicalNotesRef.current = nextSeed.canonicalNotes;
+    canonicalRevisionIdRef.current = nextSeed.revisionId;
+    canonicalSeedKeyRef.current = nextSeed.canonicalSeedKey;
+    lastPersistedPayloadRef.current = null;
+    latestExportRefRef.current = null;
+    setLatestExportRef(null);
+    setExportStatus("idle");
+    setMessage(
+      nextSeed.revisionId === latestRevisionID
+        ? null
+        : `Continuing from revision ${revision.revision_id}. The next submit will append a new revision.`,
+    );
+  };
+
+  const handleReturnToLatest = () => {
+    const nextSeed = buildWhiteboardSeedState({
+      scene: initialState.canonicalScene,
+      assetRefs,
+      notes: initialState.canonicalNotes,
+      revisionId: initialState.revisionId,
+    });
+    clearDraft();
+    setActiveAssetRefs(assetRefs);
+    notesRef.current = nextSeed.notes;
+    setNotes(nextSeed.notes);
+    setEditorSeed(nextSeed.scene);
+    setEditorSeedKey(buildEditorSeedKey(nextSeed.revisionId, `latest-${Date.now()}`));
+    setSelectedRevisionId(nextSeed.revisionId);
+    setActiveRevisionId(nextSeed.revisionId);
+    setContinuedFromRevisionId(null);
+    setRevisionMode("latest");
+    canonicalSceneRef.current = nextSeed.canonicalScene;
+    canonicalNotesRef.current = nextSeed.canonicalNotes;
+    canonicalRevisionIdRef.current = nextSeed.revisionId;
+    canonicalSeedKeyRef.current = nextSeed.canonicalSeedKey;
+    lastPersistedPayloadRef.current = null;
+    latestExportRefRef.current = null;
+    setLatestExportRef(null);
+    setExportStatus("idle");
+    setMessage(null);
+  };
+
   return (
     <Card data-testid="whiteboard-root" className="w-full max-w-7xl">
       <CardHeader className="space-y-3">
@@ -319,7 +447,12 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
           ) : null}
           {data?.revision_id ? (
             <span className="rounded-full border border-zinc-700 px-2 py-1">
-              rev {data.revision_id}
+              rev {activeRevisionId ?? data.revision_id}
+            </span>
+          ) : null}
+          {continuedFromRevisionId ? (
+            <span className="rounded-full border border-amber-700 px-2 py-1 text-amber-300">
+              continuing from {continuedFromRevisionId}
             </span>
           ) : null}
           {data?.updated_at ? (
@@ -350,7 +483,8 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         ) : null}
         <div className="h-[640px] overflow-hidden rounded-xl border border-zinc-800 bg-white">
           <Tldraw
-            snapshot={initialState.scene}
+            key={editorSeedKey}
+            snapshot={editorSeed}
             onMount={(editor) => {
               editorRef.current = editor;
               if (!canonicalSceneRef.current && !initialState.recoveredDraft) {
@@ -378,6 +512,77 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
             data-testid="whiteboard-notes"
           />
         </section>
+
+        {revisions.length > 0 ? (
+          <section className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Revisions</p>
+              {revisionMode !== "latest" ? (
+                <Button type="button" variant="ghost" onClick={handleReturnToLatest}>
+                  Return to latest
+                </Button>
+              ) : null}
+            </div>
+            <div className="space-y-2" data-testid="whiteboard-revision-browser">
+              {revisions
+                .slice()
+                .reverse()
+                .map((revision) => {
+                  const isSelected = selectedRevisionId === revision.revision_id;
+                  const isActive = activeRevisionId === revision.revision_id;
+                  return (
+                    <div
+                      key={revision.revision_id}
+                      className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-200">
+                        <span className="font-medium">{revision.revision_id}</span>
+                        {isActive ? (
+                          <span className="rounded-full border border-emerald-700 px-2 py-0.5 text-[11px] text-emerald-300">
+                            open
+                          </span>
+                        ) : null}
+                        {revision.continued_from_revision_id ? (
+                          <span className="rounded-full border border-amber-700 px-2 py-0.5 text-[11px] text-amber-300">
+                            from {revision.continued_from_revision_id}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-400">
+                        {revision.updated_at ? `saved ${revision.updated_at}` : "saved"}
+                        {revision.scene_size ? ` • ${revision.scene_size} scene records` : ""}
+                        {revision.asset_count ? ` • ${revision.asset_count} asset refs` : ""}
+                      </p>
+                      {revision.summary ? (
+                        <p className="mt-1 text-sm text-zinc-300">{revision.summary}</p>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant={isSelected ? "default" : "outline"}
+                          onClick={() => {
+                            setSelectedRevisionId(revision.revision_id);
+                            handlePreviewRevision(revision);
+                          }}
+                          data-testid={`whiteboard-preview-${revision.revision_id}`}
+                        >
+                          Reopen snapshot
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => handleContinueFromRevision(revision)}
+                          data-testid={`whiteboard-continue-${revision.revision_id}`}
+                        >
+                          Continue from here
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </section>
+        ) : null}
       </CardContent>
 
       <CardFooter className="justify-end gap-3">
@@ -401,7 +606,12 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         >
           Cancel
         </Button>
-        <Button type="button" onClick={handleSubmit} data-testid="whiteboard-submit">
+        <Button
+          type="button"
+          onClick={handleSubmit}
+          data-testid="whiteboard-submit"
+          disabled={revisionMode === "preview"}
+        >
           Submit board
         </Button>
       </CardFooter>
@@ -448,35 +658,36 @@ function resolveInitialWhiteboardState(input: {
   recoveredDraft: boolean;
   staleReferenceImages: WhiteboardAssetRef[];
 } {
-  const hydratedCanonical = prepareWhiteboardSnapshotForEditor(input.scene, input.assetRefs);
-  const canonicalSeedKey = buildWhiteboardCanonicalSeedKey({
+  const canonical = buildWhiteboardSeedState({
+    scene: input.scene,
+    assetRefs: input.assetRefs,
     notes: input.notes,
-    scene: hydratedCanonical.snapshot,
+    revisionId: input.revisionId,
   });
   if (!input.roomID || !input.boardID) {
     return {
-      scene: hydratedCanonical.snapshot,
+      scene: canonical.scene,
       notes: input.notes,
-      canonicalScene: hydratedCanonical.snapshot,
+      canonicalScene: canonical.canonicalScene,
       canonicalNotes: input.notes,
-      canonicalSeedKey,
-      revisionId: input.revisionId,
+      canonicalSeedKey: canonical.canonicalSeedKey,
+      revisionId: canonical.revisionId,
       recoveredDraft: false,
-      staleReferenceImages: hydratedCanonical.staleReferenceImages,
+      staleReferenceImages: canonical.staleReferenceImages,
     };
   }
 
   const draft = loadWhiteboardDraft(input.roomID, input.boardID);
   if (!draft) {
     return {
-      scene: hydratedCanonical.snapshot,
+      scene: canonical.scene,
       notes: input.notes,
-      canonicalScene: hydratedCanonical.snapshot,
+      canonicalScene: canonical.canonicalScene,
       canonicalNotes: input.notes,
-      canonicalSeedKey,
-      revisionId: input.revisionId,
+      canonicalSeedKey: canonical.canonicalSeedKey,
+      revisionId: canonical.revisionId,
       recoveredDraft: false,
-      staleReferenceImages: hydratedCanonical.staleReferenceImages,
+      staleReferenceImages: canonical.staleReferenceImages,
     };
   }
 
@@ -484,30 +695,59 @@ function resolveInitialWhiteboardState(input: {
     !isCompatibleDraft(draft, {
       envelopeId: input.envelopeId,
       revisionId: input.revisionId,
-      canonicalSeedKey,
+      canonicalSeedKey: canonical.canonicalSeedKey,
     })
   ) {
     clearWhiteboardDraft(input.roomID, input.boardID);
     return {
-      scene: hydratedCanonical.snapshot,
+      scene: canonical.scene,
       notes: input.notes,
-      canonicalScene: hydratedCanonical.snapshot,
+      canonicalScene: canonical.canonicalScene,
       canonicalNotes: input.notes,
-      canonicalSeedKey,
-      revisionId: input.revisionId,
+      canonicalSeedKey: canonical.canonicalSeedKey,
+      revisionId: canonical.revisionId,
       recoveredDraft: false,
-      staleReferenceImages: hydratedCanonical.staleReferenceImages,
+      staleReferenceImages: canonical.staleReferenceImages,
     };
   }
 
   return {
     scene: prepareWhiteboardSnapshotForEditor(draft.scene, input.assetRefs).snapshot,
     notes: draft.notes,
+    canonicalScene: canonical.canonicalScene,
+    canonicalNotes: input.notes,
+    canonicalSeedKey: canonical.canonicalSeedKey,
+    revisionId: canonical.revisionId,
+    recoveredDraft: true,
+    staleReferenceImages: canonical.staleReferenceImages,
+  };
+}
+
+function buildWhiteboardSeedState(input: {
+  scene?: TLEditorSnapshot;
+  assetRefs: WhiteboardAssetRef[];
+  notes: string;
+  revisionId: string | null;
+}): {
+  scene?: TLEditorSnapshot;
+  notes: string;
+  canonicalScene?: TLEditorSnapshot;
+  canonicalNotes: string;
+  canonicalSeedKey: string;
+  revisionId: string | null;
+  staleReferenceImages: WhiteboardAssetRef[];
+} {
+  const hydratedCanonical = prepareWhiteboardSnapshotForEditor(input.scene, input.assetRefs);
+  return {
+    scene: hydratedCanonical.snapshot,
+    notes: input.notes,
     canonicalScene: hydratedCanonical.snapshot,
     canonicalNotes: input.notes,
-    canonicalSeedKey,
+    canonicalSeedKey: buildWhiteboardCanonicalSeedKey({
+      notes: input.notes,
+      scene: hydratedCanonical.snapshot,
+    }),
     revisionId: input.revisionId,
-    recoveredDraft: true,
     staleReferenceImages: hydratedCanonical.staleReferenceImages,
   };
 }
@@ -563,4 +803,8 @@ function buildStaleReferenceImageMessage(count: number): string {
   return count === 1
     ? "1 persisted reference image could not be reloaded from its artifact ref."
     : `${count} persisted reference images could not be reloaded from their artifact refs.`;
+}
+
+function buildEditorSeedKey(revisionId: string | null, suffix: string): string {
+  return `${revisionId ?? "draft"}:${suffix}`;
 }

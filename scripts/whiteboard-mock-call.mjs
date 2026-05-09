@@ -121,6 +121,9 @@ async function main() {
     if (reopened.envelope?.data?.revision_id !== firstResult.payload.revision_id) {
       throw new Error(`reopened revision_id mismatch: ${JSON.stringify(reopened.envelope?.data)}`);
     }
+    if ((reopened.envelope?.data?.revisions ?? []).length !== 1) {
+      throw new Error(`reopened revisions missing: ${JSON.stringify(reopened.envelope?.data)}`);
+    }
     ws.send(
       JSON.stringify({
         type: "response",
@@ -142,6 +145,7 @@ async function main() {
               },
             },
             notes: "revision two",
+            continued_from_revision_id: firstResult.payload.revision_id,
             export_refs: [
               {
                 artifact_id: "artifact-export-1",
@@ -158,6 +162,9 @@ async function main() {
     if (!secondResult.payload?.revision_id || secondResult.payload.revision_id === firstResult.payload.revision_id) {
       throw new Error(`second result missing new revision_id: ${JSON.stringify(secondResult)}`);
     }
+    if (secondResult.payload.continued_from_revision_id !== firstResult.payload.revision_id) {
+      throw new Error(`second result missing continuation marker: ${JSON.stringify(secondResult)}`);
+    }
 
     const state = await callSessionGet(roomID);
     if (state.whiteboard?.notes !== "revision two") {
@@ -165,6 +172,9 @@ async function main() {
     }
     if ((state.whiteboard?.revision_history ?? []).length !== 2) {
       throw new Error(`unexpected revision history: ${JSON.stringify(state.whiteboard)}`);
+    }
+    if (state.whiteboard?.revision_history?.[1]?.continued_from_revision_id !== firstResult.payload.revision_id) {
+      throw new Error(`unexpected continuation lineage: ${JSON.stringify(state.whiteboard)}`);
     }
     if ((state.whiteboard?.export_refs ?? []).length !== 1) {
       throw new Error(`unexpected export refs: ${JSON.stringify(state.whiteboard)}`);

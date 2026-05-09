@@ -35,24 +35,26 @@ type whiteboardExportRef struct {
 }
 
 type whiteboardSubmitDraft struct {
-	BoardID          string                      `json:"board_id"`
-	Scene            map[string]any              `json:"scene"`
-	Assets           []room.WhiteboardAssetRef   `json:"assets,omitempty"`
-	Notes            string                      `json:"notes,omitempty"`
-	ToolMode         string                      `json:"tool_mode,omitempty"`
-	SelectionSummary *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
-	ExportRefs       []whiteboardExportRef       `json:"export_refs,omitempty"`
+	BoardID                 string                      `json:"board_id"`
+	ContinuedFromRevisionID string                      `json:"continued_from_revision_id,omitempty"`
+	Scene                   map[string]any              `json:"scene"`
+	Assets                  []room.WhiteboardAssetRef   `json:"assets,omitempty"`
+	Notes                   string                      `json:"notes,omitempty"`
+	ToolMode                string                      `json:"tool_mode,omitempty"`
+	SelectionSummary        *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
+	ExportRefs              []whiteboardExportRef       `json:"export_refs,omitempty"`
 }
 
 type whiteboardSubmitPayload struct {
-	BoardID          string                      `json:"board_id"`
-	RevisionID       string                      `json:"revision_id"`
-	Scene            map[string]any              `json:"scene"`
-	Assets           []room.WhiteboardAssetRef   `json:"assets"`
-	Notes            string                      `json:"notes"`
-	ToolMode         string                      `json:"tool_mode,omitempty"`
-	SelectionSummary *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
-	ExportRefs       []whiteboardExportRef       `json:"export_refs,omitempty"`
+	BoardID                 string                      `json:"board_id"`
+	RevisionID              string                      `json:"revision_id"`
+	ContinuedFromRevisionID string                      `json:"continued_from_revision_id,omitempty"`
+	Scene                   map[string]any              `json:"scene"`
+	Assets                  []room.WhiteboardAssetRef   `json:"assets"`
+	Notes                   string                      `json:"notes"`
+	ToolMode                string                      `json:"tool_mode,omitempty"`
+	SelectionSummary        *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
+	ExportRefs              []whiteboardExportRef       `json:"export_refs,omitempty"`
 }
 
 func (s *Server) handleWhiteboard(
@@ -193,6 +195,9 @@ func buildVisibleWhiteboardEnvelope(env *envelopes.Envelope, view *room.Whiteboa
 	if len(view.RevisionHistory) > 0 {
 		data["revision_history"] = whiteboardRevisionHistoryAny(view.RevisionHistory)
 		data["revision_id"] = view.RevisionHistory[len(view.RevisionHistory)-1].RevisionID
+	}
+	if len(view.RevisionSnapshots) > 0 {
+		data["revisions"] = whiteboardRevisionSnapshotsAny(view.RevisionSnapshots)
 	}
 	clone.Data = data
 	return clone
@@ -423,12 +428,13 @@ func (s *Server) normalizeWhiteboardSubmitResponse(
 	completedAt := nowRFC3339()
 	revisionID := nextWhiteboardRevisionID(draft.BoardID, persisted)
 	payload := whiteboardSubmitPayload{
-		BoardID:    draft.BoardID,
-		RevisionID: revisionID,
-		Scene:      draft.Scene,
-		Assets:     assets,
-		Notes:      draft.Notes,
-		ToolMode:   draft.ToolMode,
+		BoardID:                 draft.BoardID,
+		RevisionID:              revisionID,
+		ContinuedFromRevisionID: draft.ContinuedFromRevisionID,
+		Scene:                   draft.Scene,
+		Assets:                  assets,
+		Notes:                   draft.Notes,
+		ToolMode:                draft.ToolMode,
 	}
 	if payload.Assets == nil {
 		payload.Assets = []room.WhiteboardAssetRef{}
@@ -448,11 +454,12 @@ func (s *Server) normalizeWhiteboardSubmitResponse(
 		Notes:         payload.Notes,
 		UpdatedAt:     completedAt,
 		Revision: &room.WhiteboardRevision{
-			RevisionID: revisionID,
-			UpdatedAt:  completedAt,
-			Summary:    whiteboardRevisionSummary(payload),
-			SceneSize:  whiteboardSceneSize(payload.Scene),
-			AssetCount: len(payload.Assets),
+			RevisionID:              revisionID,
+			ContinuedFromRevisionID: payload.ContinuedFromRevisionID,
+			UpdatedAt:               completedAt,
+			Summary:                 whiteboardRevisionSummary(payload),
+			SceneSize:               whiteboardSceneSize(payload.Scene),
+			AssetCount:              len(payload.Assets),
 		},
 	}); err != nil {
 		return nil, err
@@ -496,6 +503,9 @@ func nextWhiteboardRevisionID(boardID string, persisted *room.WhiteboardStateVie
 }
 
 func whiteboardRevisionSummary(payload whiteboardSubmitPayload) string {
+	if payload.ContinuedFromRevisionID != "" {
+		return fmt.Sprintf("continued from %s", payload.ContinuedFromRevisionID)
+	}
 	if payload.Notes != "" {
 		if len(payload.Notes) > 160 {
 			return payload.Notes[:160]
@@ -583,6 +593,71 @@ func whiteboardRoomExportRefs(refs []whiteboardExportRef) []room.WhiteboardExpor
 	return out
 }
 
+func whiteboardRevisionHistoryAny(revisions []room.WhiteboardRevision) []any {
+	if len(revisions) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(revisions))
+	for _, revision := range revisions {
+		record := map[string]any{
+			"revision_id": revision.RevisionID,
+		}
+		if revision.ContinuedFromRevisionID != "" {
+			record["continued_from_revision_id"] = revision.ContinuedFromRevisionID
+		}
+		if revision.UpdatedAt != "" {
+			record["updated_at"] = revision.UpdatedAt
+		}
+		if revision.Summary != "" {
+			record["summary"] = revision.Summary
+		}
+		if revision.SceneSize > 0 {
+			record["scene_size"] = revision.SceneSize
+		}
+		if revision.AssetCount > 0 {
+			record["asset_count"] = revision.AssetCount
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
+func whiteboardRevisionSnapshotsAny(snapshots []room.WhiteboardRevisionSnapshot) []any {
+	if len(snapshots) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		record := map[string]any{
+			"revision_id": snapshot.RevisionID,
+			"scene":       snapshot.SceneSnapshot,
+			"assets":      whiteboardAssetRefsAny(snapshot.Assets),
+			"reference_images": whiteboardAssetRefsAny(
+				room.WhiteboardReferenceImageRefs(snapshot.Assets),
+			),
+			"export_refs": whiteboardExportRefsAny(snapshot.ExportRefs),
+			"notes":       snapshot.Notes,
+		}
+		if snapshot.ContinuedFromRevisionID != "" {
+			record["continued_from_revision_id"] = snapshot.ContinuedFromRevisionID
+		}
+		if snapshot.UpdatedAt != "" {
+			record["updated_at"] = snapshot.UpdatedAt
+		}
+		if snapshot.Summary != "" {
+			record["summary"] = snapshot.Summary
+		}
+		if snapshot.SceneSize > 0 {
+			record["scene_size"] = snapshot.SceneSize
+		}
+		if snapshot.AssetCount > 0 {
+			record["asset_count"] = snapshot.AssetCount
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
 func whiteboardMCPExportRefsFromRoom(refs []room.WhiteboardExportRef) []whiteboardExportRef {
 	if len(refs) == 0 {
 		return []whiteboardExportRef{}
@@ -651,32 +726,6 @@ func whiteboardAssetRefKey(asset room.WhiteboardAssetRef) string {
 	default:
 		return ""
 	}
-}
-
-func whiteboardRevisionHistoryAny(revisions []room.WhiteboardRevision) []any {
-	if len(revisions) == 0 {
-		return []any{}
-	}
-	out := make([]any, 0, len(revisions))
-	for _, revision := range revisions {
-		record := map[string]any{
-			"revision_id": revision.RevisionID,
-		}
-		if revision.UpdatedAt != "" {
-			record["updated_at"] = revision.UpdatedAt
-		}
-		if revision.Summary != "" {
-			record["summary"] = revision.Summary
-		}
-		if revision.SceneSize > 0 {
-			record["scene_size"] = revision.SceneSize
-		}
-		if revision.AssetCount > 0 {
-			record["asset_count"] = revision.AssetCount
-		}
-		out = append(out, record)
-	}
-	return out
 }
 
 func compactStrings(items []string) []string {

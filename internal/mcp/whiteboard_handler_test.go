@@ -245,6 +245,10 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	if len(secondReferenceImages) != 1 {
 		t.Fatalf("reopened reference_images len = %d, want 1", len(secondReferenceImages))
 	}
+	secondRevisions, _ := secondData["revisions"].([]any)
+	if len(secondRevisions) != 1 {
+		t.Fatalf("reopened revisions len = %d, want 1", len(secondRevisions))
+	}
 	if got := secondData["revision_id"]; got != firstToolResp.Payload.RevisionID {
 		t.Fatalf("reopened revision_id = %v, want %q", got, firstToolResp.Payload.RevisionID)
 	}
@@ -267,7 +271,8 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 						},
 					},
 				},
-				"notes": "revision two",
+				"notes":                      "revision two",
+				"continued_from_revision_id": firstToolResp.Payload.RevisionID,
 				"export_refs": []any{
 					map[string]any{
 						"artifact_id": "artifact-export-1",
@@ -291,6 +296,9 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	if secondToolResp.Payload.RevisionID == "" || secondToolResp.Payload.RevisionID == firstToolResp.Payload.RevisionID {
 		t.Fatalf("second revision_id = %q, want a new revision id", secondToolResp.Payload.RevisionID)
 	}
+	if got := secondToolResp.Payload.ContinuedFromRevisionID; got != firstToolResp.Payload.RevisionID {
+		t.Fatalf("continued_from_revision_id = %q, want %q", got, firstToolResp.Payload.RevisionID)
+	}
 	if len(secondToolResp.Payload.ExportRefs) != 1 {
 		t.Fatalf("export_refs len = %d, want 1", len(secondToolResp.Payload.ExportRefs))
 	}
@@ -313,7 +321,8 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 				Kind string `json:"kind"`
 			} `json:"export_refs"`
 			RevisionHistory []struct {
-				RevisionID string `json:"revision_id"`
+				RevisionID              string `json:"revision_id"`
+				ContinuedFromRevisionID string `json:"continued_from_revision_id"`
 			} `json:"revision_history"`
 		} `json:"whiteboard"`
 		EnvelopesHistory []struct {
@@ -347,6 +356,9 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	}
 	if got := state.Whiteboard.RevisionHistory[1].RevisionID; got != secondToolResp.Payload.RevisionID {
 		t.Fatalf("revision_history[1].revision_id = %q, want %q", got, secondToolResp.Payload.RevisionID)
+	}
+	if got := state.Whiteboard.RevisionHistory[1].ContinuedFromRevisionID; got != firstToolResp.Payload.RevisionID {
+		t.Fatalf("revision_history[1].continued_from_revision_id = %q, want %q", got, firstToolResp.Payload.RevisionID)
 	}
 	if got := len(state.EnvelopesHistory); got != 2 {
 		t.Fatalf("envelopes_history len = %d, want 2", got)
@@ -517,10 +529,11 @@ func callWhiteboard(
 
 type whiteboardToolResult struct {
 	Payload struct {
-		BoardID          string `json:"board_id"`
-		RevisionID       string `json:"revision_id"`
-		Notes            string `json:"notes"`
-		SelectionSummary *struct {
+		BoardID                 string `json:"board_id"`
+		RevisionID              string `json:"revision_id"`
+		ContinuedFromRevisionID string `json:"continued_from_revision_id"`
+		Notes                   string `json:"notes"`
+		SelectionSummary        *struct {
 			Count int `json:"count"`
 		} `json:"selection_summary"`
 		ExportRefs []struct {

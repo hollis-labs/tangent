@@ -10,6 +10,7 @@ Manual smoke for the v0.4 whiteboard submit loop. This validates:
 - same-room reopen from the latest persisted snapshot
 - artifact-backed reference-image refs surviving room reload
 - append-only whiteboard revision history in `tangent.session_get`
+- prior-revision reopen + explicit `Continue from here` lineage
 
 ## 1. Boot Tangent
 
@@ -105,18 +106,42 @@ pointing at the same room.
 
 Confirm the reopened board starts from the submitted snapshot, not the
 original seed. The latest revision badge and notes should reflect the
-previous submit.
+previous submit, and the revision browser should list the prior saved
+revision(s).
 
 Submit again and verify Claude receives a new `revision_id`.
 
-## 7. Verify persisted room state
+## 7. Continue from revision N
+
+Inside the revision browser:
+
+- click `Reopen snapshot` on the older revision and confirm the board
+  loads that scene while submit is disabled
+- click `Continue from here` on that older revision
+- confirm the board becomes submittable again and shows a continuation
+  indicator for the selected prior revision
+- submit once more
+
+Claude should now receive a payload that includes:
+
+```json
+{
+  "payload": {
+    "revision_id": "board-1-r3",
+    "continued_from_revision_id": "board-1-r1"
+  }
+}
+```
+
+## 8. Verify persisted room state
 
 Have Claude call `tangent.session_get` for the room and confirm:
 
-- `whiteboard.notes` matches the second submit
+- `whiteboard.notes` matches the latest submit
 - `whiteboard.export_refs` contains the latest PNG export metadata
 - `whiteboard.assets` retains artifact-backed reference-image refs
-- `whiteboard.revision_history` has two entries
+- `whiteboard.revision_history` has the expected entries
+- the continued revision carries `continued_from_revision_id`
 - `envelopes_history` includes both whiteboard turns with their
   normalized submit payloads
 - reopening after the second submit starts from the canonical submitted

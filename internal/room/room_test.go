@@ -891,11 +891,12 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 		Notes:     "second board snapshot",
 		UpdatedAt: "2026-05-09T19:35:00Z",
 		Revision: &room.WhiteboardRevision{
-			RevisionID: "rev-2",
-			UpdatedAt:  "2026-05-09T19:35:00Z",
-			Summary:    "added shape",
-			SceneSize:  2,
-			AssetCount: 1,
+			RevisionID:              "rev-2",
+			ContinuedFromRevisionID: "rev-1",
+			UpdatedAt:               "2026-05-09T19:35:00Z",
+			Summary:                 "added shape",
+			SceneSize:               2,
+			AssetCount:              1,
 		},
 	}); err != nil {
 		t.Fatalf("SaveWhiteboardSnapshot rev-2: %v", err)
@@ -915,8 +916,14 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 	if got := len(board.RevisionHistory); got != 2 {
 		t.Fatalf("revision_history len = %d, want 2", got)
 	}
+	if got := len(board.RevisionSnapshots); got != 2 {
+		t.Fatalf("revision_snapshots len = %d, want 2", got)
+	}
 	if got := board.RevisionHistory[0].RevisionID; got != "rev-1" {
 		t.Fatalf("revision_history[0].revision_id = %q, want rev-1", got)
+	}
+	if got := board.RevisionHistory[1].ContinuedFromRevisionID; got != "rev-1" {
+		t.Fatalf("revision_history[1].continued_from_revision_id = %q, want rev-1", got)
 	}
 	if got := board.Assets[0].URI; got != "artifact://artifact-1" {
 		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
@@ -948,6 +955,15 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 	}
 	if got := reloadedBoard.RevisionHistory[1].RevisionID; got != "rev-2" {
 		t.Fatalf("reloaded revision_history[1].revision_id = %q, want rev-2", got)
+	}
+	if got := reloadedBoard.RevisionHistory[1].ContinuedFromRevisionID; got != "rev-1" {
+		t.Fatalf("reloaded revision_history[1].continued_from_revision_id = %q, want rev-1", got)
+	}
+	if got := len(reloadedBoard.RevisionSnapshots); got != 2 {
+		t.Fatalf("reloaded revision_snapshots len = %d, want 2", got)
+	}
+	if got := reloadedBoard.RevisionSnapshots[1].RevisionID; got != "rev-2" {
+		t.Fatalf("reloaded revision_snapshots[1].revision_id = %q, want rev-2", got)
 	}
 	if got := reloadedBoard.ExportRefs[0].Name; got != "board-1-r2.png" {
 		t.Fatalf("reloaded export_refs[0].name = %q, want board-1-r2.png", got)
