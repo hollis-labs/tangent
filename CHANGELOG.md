@@ -7,7 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Post-v0.4 work lands here. See `README.md` Roadmap for the next phase._
+_Post-v0.5 work lands here. See `README.md` Roadmap for the next phase._
+
+## [v0.5.0] - 2026-05-09
+
+Spreadsheet review. Tangent now ships a persistent room-backed
+spreadsheet-review workflow for dense tabular review, explicit submit,
+local refresh recovery, CSV export metadata, and saved query views.
+
+### Added
+
+- **`tangent.spreadsheet-review`.** A bundled room-backed table review
+  workflow with canonical agent-provided rows, row selection, bulk
+  actions, and explicit submit/cancel.
+- **Spreadsheet-review room substrate.** `phase_outputs["spreadsheet-review"]`
+  now persists canonical `columns` and `rows`, normalized `query_state`,
+  `notes`, selected rows, bulk `action_id`, saved views, and export
+  metadata.
+- **Saved views and local draft recovery.** Spreadsheet-review turns
+  support room-backed named query views plus host-local refresh recovery
+  for unsent browser state.
+- **CSV export metadata.** Exported CSVs stay browser-local as files,
+  while lightweight export refs persist on the room for later agent
+  reasoning.
+- **Spreadsheet-review e2e coverage.** Added
+  `docs/manual-tests/spreadsheet-review-e2e.md` and
+  `scripts/spreadsheet-review-mock-call.mjs` for submit -> reopen ->
+  cancel verification in one room.
+
+### Changed
+
+- **`tangent.session_get` now projects spreadsheet-review state.** It
+  exposes a dedicated `spreadsheet_review` payload with canonical table
+  state, normalized query metadata, saved views, selected rows, and
+  export refs.
+- **Docs now describe spreadsheet review as the current workflow
+  expansion surface.** README, MCP integration, architecture, and
+  developer docs now reflect the shipped v0.5 workflow set.
+- **The roadmap advances past the initial spreadsheet-review expansion.**
+  v0.5 is now the current shipped release rather than a future intent
+  section.
+
+### Deprecated
+
+_None._
+
+### Removed
+
+_None._
+
+### Fixed
+
+- **Saved-view persistence now reuses the same normalization and
+  validation path as full spreadsheet snapshots.** Invalid names and
+  stray `query_state` keys are rejected before room state is updated.
+- **Spreadsheet-review writes now reject unsupported persisted blob
+  versions before overwriting phase state.** This matches the room-state
+  guards used by other persisted workflow projections.
+
+### Security
+
+- **The trust model is unchanged.** Tangent remains localhost-only and
+  single-user. Spreadsheet review adds richer persisted room state and
+  browser draft recovery, but no auth, TLS, remote sync, or live
+  multi-user collaboration.
 
 ## [v0.4.0] - 2026-05-09
 
@@ -262,7 +325,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.2.0

@@ -1,4 +1,4 @@
-# Tangent architecture (v0.4 whiteboard release)
+# Tangent architecture (v0.5 spreadsheet-review release)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,13 +63,14 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Seventeen tools are advertised in the current build:
+Eighteen tools are advertised in the current build:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
 - `tangent.feedback` — the bundled structured-form workflow.
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
+- `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
 - `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
@@ -124,6 +125,10 @@ surfaces a dedicated `spreadsheet_review` view when present:
 - `notes`
 - `updated_at`
 - room-backed `saved_views`
+- `selected_row_ids`
+- normalized `selected_rows`
+- optional bulk `action_id`
+- lightweight CSV `export_refs`
 
 This keeps the table-review workflow on the same persistence path as
 other room-backed workflows instead of introducing a parallel store just
@@ -200,7 +205,7 @@ shape is deliberately chosen so the eventual Wails wrap is mechanical
 build is what the shell loads. v0.1 ships as the localhost binary so
 the shape can be proven before a desktop wrapper is added.
 
-## Limits (v0.4)
+## Limits (v0.5)
 
 - **Localhost only.** No remote access, no auth, no capability gating.
 - **Single-user.** Multiple concurrent agent sessions are supported
@@ -210,8 +215,11 @@ the shape can be proven before a desktop wrapper is added.
 - **Whiteboard is single-user localhost first.** The board is shared
   between one user and one agent through one persistent room, but there
   is no live multiplayer presence or conflict resolution yet.
+- **Spreadsheet review is review-only, not a spreadsheet editor.**
+  Agent-provided rows are canonical; there are no formulas, workbook
+  semantics, arbitrary cell editing, or remote spreadsheet connectors.
 - **Two transports, one envelope schema.** MCP today; the
-  Nanite-native side-channel (mid-turn event injection) is v0.5+.
+  Nanite-native side-channel (mid-turn event injection) is v0.6+.
 
 ## Sandboxing for design-iteration
 
