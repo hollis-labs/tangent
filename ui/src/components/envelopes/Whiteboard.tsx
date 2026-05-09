@@ -373,6 +373,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       notes: revision.notes ?? "",
       revisionId: readRevisionID(revision.revision_id),
     });
+    const isLatest = nextSeed.revisionId === latestRevisionID;
     clearDraft();
     setActiveAssetRefs(
       mergeWhiteboardAssetRefs(revision.assets ?? [], revision.reference_images ?? []),
@@ -383,8 +384,8 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     setEditorSeedKey(buildEditorSeedKey(nextSeed.revisionId, `continue-${Date.now()}`));
     setSelectedRevisionId(nextSeed.revisionId);
     setActiveRevisionId(nextSeed.revisionId);
-    setContinuedFromRevisionId(nextSeed.revisionId);
-    setRevisionMode(nextSeed.revisionId === latestRevisionID ? "latest" : "continue");
+    setContinuedFromRevisionId(isLatest ? null : nextSeed.revisionId);
+    setRevisionMode(isLatest ? "latest" : "continue");
     canonicalSceneRef.current = nextSeed.canonicalScene;
     canonicalNotesRef.current = nextSeed.canonicalNotes;
     canonicalRevisionIdRef.current = nextSeed.revisionId;
@@ -394,7 +395,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     setLatestExportRef(null);
     setExportStatus("idle");
     setMessage(
-      nextSeed.revisionId === latestRevisionID
+      isLatest
         ? null
         : `Continuing from revision ${revision.revision_id}. The next submit will append a new revision.`,
     );

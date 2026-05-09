@@ -200,6 +200,56 @@ describe("Whiteboard", () => {
     expect(onSubmit.mock.calls[0][0].payload.continued_from_revision_id).toBe("board-1-r1");
   });
 
+  it("does not set continued_from_revision_id when continuing from the latest revision", () => {
+    const onSubmit = vi.fn();
+    const envelope: WhiteboardEnvelope = {
+      ...baseEnvelope,
+      data: {
+        ...(baseEnvelope.data ?? { board_id: "board-1" }),
+        revision_id: "board-1-r2",
+        revisions: [
+          {
+            revision_id: "board-1-r1",
+            notes: "first revision",
+            scene: {
+              document: { pages: [{ id: "page:r1" }] },
+              session: { currentPageId: "page:r1" },
+            },
+          },
+          {
+            revision_id: "board-1-r2",
+            notes: "second revision",
+            scene: {
+              document: { pages: [{ id: "page:r2" }] },
+              session: { currentPageId: "page:r2" },
+            },
+          },
+        ],
+      },
+    };
+
+    render(
+      <Whiteboard envelope={envelope} onSubmit={onSubmit} onCancel={vi.fn()} roomID="room-a" />,
+    );
+
+    // Preview the latest revision then click Continue from here
+    fireEvent.click(screen.getByTestId("whiteboard-preview-board-1-r2"));
+    expect(screen.getByTestId("whiteboard-submit")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("whiteboard-continue-board-1-r2"));
+    expect(screen.getByTestId("whiteboard-submit")).not.toBeDisabled();
+    // No amber "continuing from" badge for the latest revision
+    expect(screen.queryByText(/continuing from board-1-r2/)).not.toBeInTheDocument();
+    // No "Continuing from revision" message
+    expect(screen.queryByTestId("whiteboard-message")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("whiteboard-submit"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    // continued_from_revision_id must not be set when continuing from the latest revision
+    expect(onSubmit.mock.calls[0][0].payload.continued_from_revision_id).toBeUndefined();
+  });
+
   it("exports the current board as PNG and carries export metadata on submit", async () => {
     const createObjectURL = vi.fn(() => "blob:png-export");
     const revokeObjectURL = vi.fn();
