@@ -280,7 +280,7 @@ func (m *Manager) listInMemory(activeOnly bool) []RoomSummary {
 	defer m.mu.RUnlock()
 	summaries := make([]RoomSummary, 0, len(m.rooms))
 	for _, rm := range m.rooms {
-		if !activeOnly && rm.IsClosed() {
+		if activeOnly && rm.IsClosed() {
 			continue
 		}
 		summary := RoomSummary{

@@ -169,6 +169,42 @@ func TestManager_Get(t *testing.T) {
 	}
 }
 
+func TestManager_ListInMemoryActiveOnlySkipsClosedRooms(t *testing.T) {
+	mgr := room.NewManager(nil)
+	openRoom := mgr.Create(map[string]string{"title": "open"})
+	closedRoom := mgr.Create(map[string]string{"title": "closed"})
+	closedRoom.Close("closed for test")
+
+	activeOnly, err := mgr.List(context.Background(), true)
+	if err != nil {
+		t.Fatalf("List(activeOnly=true): %v", err)
+	}
+	if len(activeOnly) != 1 {
+		t.Fatalf("List(activeOnly=true) len=%d, want 1", len(activeOnly))
+	}
+	if activeOnly[0].ID != openRoom.ID {
+		t.Fatalf("active room id=%q, want %q", activeOnly[0].ID, openRoom.ID)
+	}
+
+	allRooms, err := mgr.List(context.Background(), false)
+	if err != nil {
+		t.Fatalf("List(activeOnly=false): %v", err)
+	}
+	if len(allRooms) != 2 {
+		t.Fatalf("List(activeOnly=false) len=%d, want 2", len(allRooms))
+	}
+	foundClosed := false
+	for _, summary := range allRooms {
+		if summary.ID == closedRoom.ID {
+			foundClosed = true
+			break
+		}
+	}
+	if !foundClosed {
+		t.Fatalf("closed room %q missing from full list", closedRoom.ID)
+	}
+}
+
 func TestRoom_PushResponseRoundTrip(t *testing.T) {
 	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()

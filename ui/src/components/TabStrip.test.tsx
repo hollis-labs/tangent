@@ -80,6 +80,33 @@ describe("<TabStrip>", () => {
     });
     expect(screen.getByTestId("path-probe")).toHaveTextContent("/");
   });
+
+  it("surfaces refresh failures without throwing", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    } as Response);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="*" element={<TabStrip />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("tab-strip-error")).toHaveTextContent(
+      "tool tangent.session_list HTTP 503",
+    );
+
+    fireEvent.click(screen.getByText("Refresh"));
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-strip-error")).toHaveTextContent(
+        "tool tangent.session_list HTTP 503",
+      );
+    });
+  });
 });
 
 function room(id: string, title: string, currentType?: string) {

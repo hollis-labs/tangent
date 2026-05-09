@@ -100,11 +100,13 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   function openSocket(nextRoomID: string): WebSocket {
     const socket = new WebSocket(appendQuery(baseURL, "roomID", nextRoomID));
     socket.addEventListener("open", () => {
+      if (socket !== ws) return;
       connected = true;
       opts.onOpen?.();
     });
 
     socket.addEventListener("message", (ev) => {
+      if (socket !== ws) return;
       const raw = typeof ev.data === "string" ? ev.data : "";
       if (!raw) return;
       let parsed: unknown;
@@ -127,12 +129,14 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
     });
 
     socket.addEventListener("close", (ev) => {
+      if (socket !== ws) return;
       connected = false;
       const reason = ev.reason || `closed (code=${ev.code})`;
       opts.onClose?.(reason);
     });
 
     socket.addEventListener("error", () => {
+      if (socket !== ws) return;
       opts.onError?.(new Error("ws-client: transport error"));
     });
     return socket;

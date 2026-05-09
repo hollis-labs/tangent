@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	migrate "github.com/golang-migrate/migrate/v4"
+	migratedb "github.com/golang-migrate/migrate/v4/database"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	// Register the pure-Go SQLite driver for database/sql.
@@ -143,10 +144,21 @@ func withMigrator(db *sql.DB, fn func(*migrate.Migrate) error) (err error) {
 		return fmt.Errorf("build iofs migrate source: %w", err)
 	}
 
-	m, err := migrate.NewWithInstance("iofs", sourceDriver, driverName, driver)
+	m, err := migrate.NewWithInstance("iofs", sourceDriver, driverName, noCloseDriver{Driver: driver})
 	if err != nil {
 		return fmt.Errorf("create migrator: %w", err)
 	}
+	defer func() {
+		srcErr, dbErr := m.Close()
+		if err == nil {
+			switch {
+			case srcErr != nil:
+				err = fmt.Errorf("close migrator source: %w", srcErr)
+			case dbErr != nil:
+				err = fmt.Errorf("close migrator db: %w", dbErr)
+			}
+		}
+	}()
 
 	err = fn(m)
 	return err
@@ -154,4 +166,12 @@ func withMigrator(db *sql.DB, fn func(*migrate.Migrate) error) (err error) {
 
 func isMemoryPath(path string) bool {
 	return path == ":memory:" || strings.HasPrefix(path, "file::memory:")
+}
+
+type noCloseDriver struct {
+	migratedb.Driver
+}
+
+func (d noCloseDriver) Close() error {
+	return nil
 }

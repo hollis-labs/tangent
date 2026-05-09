@@ -19,6 +19,7 @@ export function TabStrip() {
   const location = useLocation();
   const [rooms, setRooms] = useState<SessionListRoom[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -27,6 +28,11 @@ export function TabStrip() {
         const next = await fetchRooms();
         if (!cancelled) {
           setRooms(next);
+          setError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError((err as Error).message);
         }
       } finally {
         if (!cancelled) {
@@ -47,11 +53,16 @@ export function TabStrip() {
   const activeRoomID = location.pathname.startsWith("/r/") ? location.pathname.slice(3) : "";
 
   const closeRoom = async (roomID: string) => {
-    await callTool("tangent.session_close", { roomID });
-    const next = await fetchRooms();
-    setRooms(next);
-    if (activeRoomID === roomID) {
-      navigate("/");
+    try {
+      await callTool("tangent.session_close", { roomID });
+      const next = await fetchRooms();
+      setRooms(next);
+      setError("");
+      if (activeRoomID === roomID) {
+        navigate("/");
+      }
+    } catch (err) {
+      setError((err as Error).message);
     }
   };
 
@@ -115,7 +126,17 @@ export function TabStrip() {
             })
           )}
         </div>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void refreshRooms(setRooms)}>
+        {error ? (
+          <div className="hidden text-xs text-red-300 sm:block" data-testid="tab-strip-error">
+            {error}
+          </div>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => void refreshRooms(setRooms, setError)}
+        >
           Refresh
         </Button>
       </div>
@@ -123,8 +144,16 @@ export function TabStrip() {
   );
 }
 
-async function refreshRooms(setRooms: (rooms: SessionListRoom[]) => void) {
-  setRooms(await fetchRooms());
+async function refreshRooms(
+  setRooms: (rooms: SessionListRoom[]) => void,
+  setError: (error: string) => void,
+) {
+  try {
+    setRooms(await fetchRooms());
+    setError("");
+  } catch (err) {
+    setError((err as Error).message);
+  }
 }
 
 export async function fetchRooms(): Promise<SessionListRoom[]> {
