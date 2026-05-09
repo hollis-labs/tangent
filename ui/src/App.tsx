@@ -1,18 +1,15 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
 
+import { TabStrip } from "./components/TabStrip";
+import Index from "./routes/Index";
 import Room from "./routes/Room";
 
-function Home() {
+function Layout() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-zinc-950 text-zinc-100">
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl font-medium tracking-wide">Tangent</h1>
-        <p className="text-sm text-zinc-400">v0.1.0-dev</p>
-        <p className="text-xs text-zinc-500">
-          Open a session at <code>/r/&lt;roomID&gt;</code>.
-        </p>
-      </div>
-    </main>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <TabStrip />
+      <Outlet />
+    </div>
   );
 }
 
@@ -20,8 +17,10 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/r/:roomID" element={<Room />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<Index />} />
+          <Route path="/r/:roomID" element={<Room />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );

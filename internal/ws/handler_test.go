@@ -23,7 +23,7 @@ import (
 // cleanup that shuts the server down.
 func newTestRig(t *testing.T) (*room.Manager, string, func()) {
 	t.Helper()
-	mgr := room.NewManager()
+	mgr := room.NewManager(nil)
 	h := tangentws.New(mgr, nil)
 	h.SetOriginPatterns([]string{"*"})
 	srv := httptest.NewServer(h)

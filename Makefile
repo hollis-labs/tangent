@@ -1,4 +1,4 @@
-.PHONY: help build build-ui build-go dev dev-go dev-ui test test-go test-frontend lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes
+.PHONY: help build build-ui build-go dev dev-go dev-ui test test-go test-frontend lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -17,6 +17,12 @@ build-ui: ## Build frontend (Vite production build)
 
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
+
+db-migrate: ## Apply local SQLite migrations and exit
+	go run ./cmd/tangent --migrate-only
+
+db-rollback: ## Roll back the most recent local SQLite migration and exit
+	go run ./cmd/tangent --rollback-one
 
 # ── Codegen ────────────────────────────────────────────────────────────
 #
@@ -78,6 +84,7 @@ clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output,
 	rm -f tangent
 	rm -rf ui/dist
 	rm -rf ui/node_modules
+	rm -rf .tangent
 	# Preserve the .gitkeep so go:embed still resolves.
 	find internal/server/ui_dist -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 

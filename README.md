@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-v0.1.0 released. Triage workflow working end-to-end via MCP — a real Claude Code session can call `tangent.triage`, the user resolves it in the browser, and the LLM receives a structured response back. See [`CHANGELOG.md`](./CHANGELOG.md) for the full v0.1.0 entry.
+v0.2.0 released. Tangent now ships persistent rooms, multi-envelope sessions, and three bundled workflows: `tangent.triage`, `tangent.feedback`, and `tangent.design-iteration`. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -24,7 +24,7 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.1.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.2.0
 ```
 
 Run:
@@ -49,7 +49,20 @@ claude mcp add --transport sse tangent http://localhost:7842/sse
 
 Then in any Claude Code session: ask Claude to use the `tangent.triage` tool. Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, decide each item, click Submit, and Claude receives the structured response.
 
+Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
+resolved session history survives a process bounce.
+
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
+
+### What changed since v0.1
+
+- Rooms now persist in SQLite and survive restart.
+- Tangent supports multi-envelope rooms through `tangent.session_*`.
+- Two workflows joined `triage`: `feedback` and `design-iteration`.
+- The SPA now includes a tab strip for switching active rooms.
+- Fast-Triage has been retired; use Tangent and the migration guide above.
+
+For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## How it works
 
@@ -74,13 +87,14 @@ The phases below are illustrative — they sketch the intended shape of releases
 
 Wails shell, MCP server, one bundled workflow (triage). The goal is end-to-end: any MCP-speaking agent can launch a rich workflow in Tangent and receive a structured response back.
 
-### v0.2 — Fast-Triage parity + archive
-
-Bundle the `triage` and `feedback` workflows. Add per-session rooms (multi-tab), cancel handling, and verified multi-agent concurrency.
-
 ### v0.3 — Visual / design kinds
 
 Add `mockup-board`, `comparison-split`, `annotated-image`, and `design-iteration` envelope kinds. These get contributed back to the core `go-envelopes` catalog so other hosts (Nanite, etc.) can render them too.
+
+The next phase is the Interview Protocol writing variant: more deliberate
+multi-step room workflows on top of the persistence and session substrate
+shipped in v0.2. The full forward outline lives outside the repo in the
+execution planning workspace; this README stays focused on the shipped app.
 
 ### v0.4 — New workflows
 
@@ -129,11 +143,12 @@ A few things Tangent deliberately is not, to keep scope honest:
 Prerequisites:
 
 - Go 1.26.1 (matches `go-envelopes`)
-- Node 22 (Vite 7 prefers 22.12+; older 22.x emits a warning but still builds)
+- Node 22.12.0 (`mise.toml` pins the repo toolchain)
 - `lefthook` (`brew install lefthook`) for the pre-commit / pre-push hooks
 
 ```bash
 # One-time
+mise install
 make install-hooks
 cd ui && npm install && cd ..
 
@@ -154,7 +169,7 @@ make test            # go test -race + vitest
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
-- [`docs/developing.md`](./docs/developing.md) — contributor onboarding
+- [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
 - [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
 

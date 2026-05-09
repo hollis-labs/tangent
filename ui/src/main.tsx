@@ -1,6 +1,16 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import {
+  DesignIteration,
+  type DesignIterationEnvelope,
+  type DesignIterationResponse,
+} from "./components/envelopes/DesignIteration";
+import {
+  Feedback,
+  type FeedbackEnvelope,
+  type FeedbackResponse,
+} from "./components/envelopes/Feedback";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -29,7 +39,29 @@ function TriageAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps)
   );
 }
 
+function FeedbackAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <Feedback
+      envelope={envelope as FeedbackEnvelope}
+      onSubmit={onSubmit as (response: FeedbackResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function DesignIterationAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <DesignIteration
+      envelope={envelope as DesignIterationEnvelope}
+      onSubmit={onSubmit as (response: DesignIterationResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
+register("tangent.feedback", FeedbackAdapter);
+register("tangent.design-iteration", DesignIterationAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

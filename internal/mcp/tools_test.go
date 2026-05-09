@@ -3,14 +3,15 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/room"
 )
 
 // connect spins up a Tangent MCP server and an in-memory MCP client
@@ -30,9 +31,19 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
+	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
+		t.Fatalf("RegisterTriage: %v", regErr)
+	}
+	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
+		t.Fatalf("RegisterFeedback: %v", regErr)
+	}
+	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
+		t.Fatalf("RegisterDesignIteration: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
+	manager := room.NewManager(nil)
 
-	srv, err := tangentmcp.New(envSvc, dispatcher)
+	srv, err := tangentmcp.New(envSvc, dispatcher, manager, "")
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
 	}
@@ -57,10 +68,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsTwoTools asserts the v0.1 tool surface — exactly two
-// tools, with the names callers integrate against. Treat this as a
+// TestServer_ListsNineTools asserts the tool surface includes the legacy
+// and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsTwoTools(t *testing.T) {
+func TestServer_ListsNineTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -68,17 +79,24 @@ func TestServer_ListsTwoTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 2 {
+	if len(res.Tools) != 9 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 2 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 9 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
-		"tangent.list_workflows": false,
-		"tangent.triage":         false,
+		"tangent.list_workflows":   false,
+		"tangent.triage":           false,
+		"tangent.feedback":         false,
+		"tangent.design-iteration": false,
+		"tangent.session_create":   false,
+		"tangent.session_advance":  false,
+		"tangent.session_get":      false,
+		"tangent.session_close":    false,
+		"tangent.session_list":     false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {
@@ -186,22 +204,18 @@ func TestListWorkflows_IncludesRegisteredHandlers(t *testing.T) {
 	}
 }
 
-// TestTriage_ReturnsNotWired asserts the PR 3 stub contract: a valid
-// triage envelope reaches the dispatcher, finds no registered handler,
-// and the MCP tool surfaces the failure as a NOT_WIRED error result.
-//
-// PR 4 will register a real handler, after which this test must be
-// updated to assert the handler's response. The presence of the
-// NOT_WIRED branch IS the v0.1 contract for this PR.
-func TestTriage_ReturnsNotWired(t *testing.T) {
+// TestTriage_UnknownRoomID asserts the v0.2 room-reuse contract:
+// tangent.triage accepts Meta.roomID, but the room must already exist.
+func TestTriage_UnknownRoomID(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
 	envelopeArg := map[string]any{
 		"v":    envelopes.ProtocolVersion,
-		"id":   "triage-not-wired-1",
+		"id":   "triage-missing-room-1",
 		"type": "tangent.triage",
 		"data": map[string]any{},
+		"meta": map[string]any{"roomID": "does-not-exist"},
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
@@ -212,16 +226,10 @@ func TestTriage_ReturnsNotWired(t *testing.T) {
 		t.Fatalf("CallTool triage: %v", err)
 	}
 	if !res.IsError {
-		t.Fatalf("expected IsError=true for unwired triage, got false; content: %v", res.Content)
+		t.Fatalf("expected IsError=true for unknown roomID, got false; content: %v", res.Content)
 	}
 
 	body := extractText(t, res)
-	if !strings.Contains(body, "NOT_WIRED") {
-		t.Errorf("expected NOT_WIRED in error body, got %q", body)
-	}
-	// Also assert the body parses as an envelope-style error frame so
-	// downstream clients can key off the structured shape, not just
-	// substring matches.
 	var parsed struct {
 		Kind  string `json:"kind"`
 		Error struct {
@@ -235,8 +243,8 @@ func TestTriage_ReturnsNotWired(t *testing.T) {
 	if parsed.Kind != string(envelopes.ResponseKindError) {
 		t.Errorf("error body kind = %q, want %q", parsed.Kind, envelopes.ResponseKindError)
 	}
-	if parsed.Error.Code != "NOT_WIRED" {
-		t.Errorf("error body code = %q, want NOT_WIRED", parsed.Error.Code)
+	if parsed.Error.Code != "ROOM_NOT_FOUND" {
+		t.Errorf("error body code = %q, want ROOM_NOT_FOUND", parsed.Error.Code)
 	}
 }
 

@@ -33,3 +33,4 @@ coverage.html
 
 # Local scratch
 /tmp/
+/.tangent/

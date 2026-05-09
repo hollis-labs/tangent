@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/mcp"
@@ -42,18 +43,54 @@ const (
 	// unset, the embedded SPA is served. `make dev` sets this; prod
 	// builds leave it empty.
 	envDevFrontendURL = "TANGENT_DEV_FRONTEND_URL"
+
+	// envDBPath overrides the default ~/.tangent/tangent.db location.
+	envDBPath = "TANGENT_DB_PATH"
 )
 
 func main() {
 	flagSet := flag.NewFlagSet("tangent", flag.ExitOnError)
 	port := flagSet.Int("port", resolvePort(), "HTTP listen port (overrides "+envPort+")")
+	migrateOnly := flagSet.Bool("migrate-only", false, "apply DB migrations and exit")
+	rollbackOne := flagSet.Bool("rollback-one", false, "roll back the most recent DB migration and exit")
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
+		os.Exit(2)
+	}
+	if *migrateOnly && *rollbackOne {
+		fmt.Fprintln(os.Stderr, "tangent: --migrate-only and --rollback-one are mutually exclusive")
 		os.Exit(2)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+
+	sqlDB, err := tangentdb.Open(resolveDBPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tangent: open db: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if closeErr := tangentdb.Close(sqlDB); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: close db: %v\n", closeErr)
+		}
+	}()
+	if *rollbackOne {
+		if rollbackErr := tangentdb.RollbackOne(sqlDB); rollbackErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: rollback db: %v\n", rollbackErr)
+			os.Exit(1)
+		}
+		logger.Info("rolled back latest tangent migration")
+		return
+	}
+	if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
+		os.Exit(1)
+	}
+	if *migrateOnly {
+		logger.Info("applied tangent migrations")
+		return
+	}
 
 	// Boot context governs envelope-registry load. Cancellation tears
 	// down the schema-compile loop cleanly; we rebind it once the
@@ -80,6 +117,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register triage extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register feedback extension: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register design-iteration extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
 
 	// Dispatcher is shared across transports. PR 4 registers the
@@ -89,10 +134,18 @@ func main() {
 	// Room manager + WS handler — the bridge between MCP envelopes and
 	// browser tabs. Created before the MCP server so the triage
 	// handler has somewhere to push.
-	roomMgr := room.NewManager()
+	roomMgr := room.NewManager(sqlDB)
+	if hydrateErr := roomMgr.Hydrate(context.Background()); hydrateErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: hydrate rooms: %v\n", hydrateErr)
+		os.Exit(1)
+	}
 	wsHandler := tangentws.New(roomMgr, logger)
 
-	mcpSrv, err := mcp.New(envSvc, dispatcher)
+	// Use 127.0.0.1 to match the listener's actual bind so the URL
+	// hint we log when triage creates a room resolves correctly even
+	// on IPv6-preferring systems where "localhost" lands on ::1.
+	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
+	mcpSrv, err := mcp.New(envSvc, dispatcher, roomMgr, roomURLBase)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
 		// surface as part of its v0.1 contract, so booting without it
@@ -100,13 +153,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: build mcp server: %v\n", err)
 		os.Exit(1)
 	}
-	// Use 127.0.0.1 to match the listener's actual bind so the URL
-	// hint we log when triage creates a room resolves correctly even
-	// on IPv6-preferring systems where "localhost" lands on ::1.
-	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
 	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
 	if regErr := mcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register triage handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterFeedbackOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register feedback handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register design-iteration handler: %v\n", regErr)
 		os.Exit(1)
 	}
 
@@ -183,4 +240,8 @@ func resolvePort() int {
 		return defaultPort
 	}
 	return n
+}
+
+func resolveDBPath() string {
+	return os.Getenv(envDBPath)
 }

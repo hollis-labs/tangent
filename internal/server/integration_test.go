@@ -43,14 +43,20 @@ func newRig(t *testing.T) *rig {
 	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
 		t.Fatalf("RegisterTriage: %v", regErr)
 	}
+	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
+		t.Fatalf("RegisterFeedback: %v", regErr)
+	}
+	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
+		t.Fatalf("RegisterDesignIteration: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
-	mgr := room.NewManager()
+	mgr := room.NewManager(nil)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
 	wsHandler := tangentws.New(mgr, logger)
 	wsHandler.SetOriginPatterns([]string{"*"})
 
-	mcpSrv, err := tangentmcp.New(envSvc, dispatcher)
+	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "")
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
 	}
@@ -58,6 +64,12 @@ func newRig(t *testing.T) *rig {
 	triageHandler := tangentmcp.NewTriageHandler(mgr, logger, "")
 	if regErr := tangentmcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterTriageOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterFeedbackOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterFeedbackOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterDesignIterationOnDispatcher: %v", regErr)
 	}
 
 	httpSrv, err := server.New(server.Config{

@@ -14,7 +14,7 @@
 //   3. EnvelopeRouter dispatches by type and fires onSubmit/onCancel.
 //   4. On unmount or onClose, close the WS.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
@@ -31,20 +31,25 @@ export default function Room() {
   const [status, setStatus] = useState<string>("connecting...");
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<WSClient | null>(null);
+  const activeRoomRef = useRef<string | null>(null);
+  const initialRoomRef = useRef<string | null>(roomID ?? null);
+  const handleEnvelope = useEffectEvent(async (envelopeId: string, envelope: unknown) => {
+    const targetRoomID = activeRoomRef.current;
+    const enriched = targetRoomID ? await enrichEnvelope(targetRoomID, envelope) : envelope;
+    setPending({ envelopeId, envelope: enriched });
+    setStatus("envelope received");
+  });
 
   useEffect(() => {
-    if (!roomID) {
+    if (!initialRoomRef.current) {
       setError("missing roomID in URL");
       return;
     }
-    const client = connect(roomID, {
+    const client = connect(initialRoomRef.current, {
       onOpen: () => {
         setStatus("connected");
       },
-      onEnvelope: (envelopeId, envelope) => {
-        setPending({ envelopeId, envelope });
-        setStatus("envelope received");
-      },
+      onEnvelope: handleEnvelope,
       onClose: (reason) => {
         setStatus(`disconnected: ${reason}`);
         setPending(null);
@@ -54,11 +59,37 @@ export default function Room() {
       },
     });
     clientRef.current = client;
+    activeRoomRef.current = initialRoomRef.current;
     return () => {
       client.close();
       clientRef.current = null;
+      activeRoomRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!roomID || !clientRef.current) {
+      return;
+    }
+    if (activeRoomRef.current === roomID) {
+      return;
+    }
+    clientRef.current.switchRoom(roomID);
+    activeRoomRef.current = roomID;
+    setPending(null);
+    setStatus("switching rooms...");
   }, [roomID]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (!pending || !clientRef.current) {
+        return;
+      }
+      clientRef.current.cancel(pending.envelopeId);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [pending]);
 
   const handleSubmit = (response: unknown) => {
     if (!pending || !clientRef.current) return;
@@ -96,4 +127,103 @@ export default function Room() {
       )}
     </main>
   );
+}
+
+async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknown> {
+  const type = readEnvelopeType(envelope);
+  if (type !== "tangent.design-iteration") {
+    return envelope;
+  }
+  try {
+    const history = await fetchRoomHistory(roomID);
+    return attachPriorVariants(envelope, history);
+  } catch {
+    return envelope;
+  }
+}
+
+function readEnvelopeType(envelope: unknown): string | null {
+  if (!envelope || typeof envelope !== "object") {
+    return null;
+  }
+  const type = (envelope as { type?: unknown }).type;
+  return typeof type === "string" ? type : null;
+}
+
+async function fetchRoomHistory(roomID: string): Promise<unknown[]> {
+  const response = await fetch("/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: {
+        name: "tangent.session_get",
+        arguments: { roomID },
+      },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`session_get HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  const text = payload?.result?.content?.[0]?.text;
+  if (typeof text !== "string") {
+    return [];
+  }
+  const parsed = JSON.parse(text) as { envelopes_history?: unknown[] };
+  return parsed.envelopes_history ?? [];
+}
+
+function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const priorVariants = history
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      if (record.type !== "tangent.design-iteration") {
+        return null;
+      }
+      const req = record.envelope;
+      if (!req || typeof req !== "object") {
+        return null;
+      }
+      const env = req as Record<string, unknown>;
+      const envData =
+        env.data && typeof env.data === "object" ? (env.data as Record<string, unknown>) : {};
+      const variantID = envData.variant_id;
+      const html = envData.html;
+      const envelopeID = env.id;
+      if (
+        typeof variantID !== "string" ||
+        typeof html !== "string" ||
+        typeof envelopeID !== "string"
+      ) {
+        return null;
+      }
+      return {
+        envelope_id: envelopeID,
+        variant_id: variantID,
+        title: typeof env.title === "string" ? env.title : undefined,
+        caption: typeof envData.caption === "string" ? envData.caption : undefined,
+        html,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  data.prior_variants = priorVariants;
+  return { ...typed, data };
 }

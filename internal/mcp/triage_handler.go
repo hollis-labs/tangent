@@ -32,11 +32,9 @@ const defaultTriageTimeout = 5 * time.Minute
 // envelopes to a per-call WebSocket Room. Registered against the
 // dispatcher at boot via NewTriageHandler + dispatcher.Register.
 //
-// One Room is created per triage call in v0.1; the optional metadata
-// "roomID" key on env.Meta allows a future client to reuse an existing
-// room, but for v0.1 we fail fast if the requested room is not present
-// (we do not implicitly create on demand from arbitrary input — that's
-// a v0.2 refinement so the contract stays predictable).
+// One Room is created per triage call by default; the optional metadata
+// "roomID" key on env.Meta allows reuse of an existing room. Unknown
+// room ids fail fast rather than implicitly creating on demand.
 type TriageHandler struct {
 	manager *room.Manager
 	logger  *slog.Logger
@@ -126,20 +124,23 @@ func (t *TriageHandler) Handle(ctx context.Context, env *envelopes.Envelope) (*e
 }
 
 // resolveRoom returns the Room env should target plus a bool indicating
-// whether it was newly created. v0.1 policy: server-issued IDs only;
-// a Meta["roomID"] referencing an unknown room is a hard error so
+// whether it was newly created. Policy: server-issued IDs only; a
+// Meta["roomID"] referencing an unknown room is a hard error so
 // arbitrary client input cannot smuggle rooms into existence.
 func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, error) {
-	if id, ok := metaString(env.Meta, "roomID"); ok && id != "" {
+	if id, ok := metaRoomID(env.Meta); ok && id != "" {
 		if rm, found := t.manager.Get(id); found {
 			return rm, false, nil
 		}
 		return nil, false, fmt.Errorf("triage: requested roomID %q does not exist", id)
 	}
-	rm := t.manager.Create(map[string]string{
+	rm, err := t.manager.CreateWithError(map[string]string{
 		"envelopeID":   env.ID,
 		"envelopeType": env.Type,
 	})
+	if err != nil {
+		return nil, false, fmt.Errorf("triage: create room: %w", err)
+	}
 	return rm, true, nil
 }
 
@@ -147,10 +148,10 @@ func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, 
 // dispatch-layer return. Cancel becomes a synthesized cancelled
 // Response; everything else propagates as an error.
 func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (*envelopes.Response, error) {
-	// User cancel: room.Push returns "user cancelled envelope %q" —
-	// match by message because the cancel hook is anonymous (it'd be
-	// cleaner with a sentinel; v0.2 refactor).
-	if err != nil && containsUserCancel(err) {
+	// User cancel is synthesized into an ack/cancelled response so MCP
+	// clients see the protocol-level cancel shape rather than a tool
+	// failure.
+	if errors.Is(err, room.ErrUserCancelled) {
 		return &envelopes.Response{
 			V:           envelopes.ProtocolVersion,
 			EnvelopeID:  env.ID,
@@ -185,6 +186,19 @@ func RegisterTriageOnDispatcher(dispatcher *envelope.Dispatcher, handler *Triage
 	return dispatcher.Register(triageEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterFeedbackOnDispatcher wires the same room-bridging handler for
+// tangent.feedback envelopes. Feedback uses the same room semantics as
+// triage; the MCP layer keeps separate tool entrypoints and schemas.
+func RegisterFeedbackOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(feedbackEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
+// RegisterDesignIterationOnDispatcher wires the same room-bridging
+// handler for tangent.design-iteration envelopes.
+func RegisterDesignIterationOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(designIterationEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // resolveTriageTimeout reads envTriageTimeout once at construction. A
 // malformed value silently falls back to the package default — v0.1
 // prefers "boots no matter what" over "fails fast on bad config" for
@@ -203,37 +217,17 @@ func resolveTriageTimeout() time.Duration {
 	return defaultTriageTimeout
 }
 
-// metaString returns the string value of env.Meta[key] if present and
-// of type string. Tangent's Meta is map[string]any (per the canonical
-// Envelope shape) so we type-assert here.
-func metaString(meta map[string]any, key string) (string, bool) {
+// metaRoomID returns env.Meta["roomID"] when present and string-typed.
+// Tangent's Meta is map[string]any (per the canonical Envelope shape)
+// so we type-assert here.
+func metaRoomID(meta map[string]any) (string, bool) {
 	if meta == nil {
 		return "", false
 	}
-	v, ok := meta[key]
+	v, ok := meta["roomID"]
 	if !ok {
 		return "", false
 	}
 	s, ok := v.(string)
 	return s, ok
-}
-
-// containsUserCancel reports whether err originated from Pending.Cancel.
-// The hook formats a known message; v0.2 should replace this with a
-// sentinel error in the room package.
-func containsUserCancel(err error) bool {
-	return err != nil && stringHas(err.Error(), "user cancelled envelope")
-}
-
-// stringHas is strings.Contains without the import (one tiny call site).
-func stringHas(s, sub string) bool {
-	if len(sub) == 0 {
-		return true
-	}
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }
