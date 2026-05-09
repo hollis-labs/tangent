@@ -68,6 +68,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
 		t.Fatalf("RegisterOutputRender: %v", regErr)
 	}
+	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
+		t.Fatalf("RegisterWhiteboard: %v", regErr)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
@@ -121,6 +124,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterOutputRenderOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterWhiteboardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterWhiteboardOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
@@ -613,6 +621,90 @@ func TestSession_TriageRegression(t *testing.T) {
 	}
 	if len(state.EnvelopesHistory) != 1 {
 		t.Fatalf("triage history len = %d, want 1", len(state.EnvelopesHistory))
+	}
+}
+
+func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "whiteboard")
+	if _, err := rg.mgr.SaveWhiteboardSnapshot(roomID, room.WhiteboardSnapshot{
+		BoardID: "board-1",
+		SceneSnapshot: map[string]any{
+			"document": map[string]any{
+				"pages": []any{
+					map[string]any{"id": "page:1"},
+				},
+			},
+		},
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID:    "asset-1",
+				ArtifactID: "artifact-1",
+				Source:     "https://assets.example.test/reference.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
+				MIMEType:   "image/png",
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r1.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:40:10Z",
+				Width:     1200,
+				Height:    800,
+			},
+		},
+		Notes:     "seed board",
+		UpdatedAt: "2026-05-09T19:40:00Z",
+		Revision: &room.WhiteboardRevision{
+			RevisionID: "rev-1",
+			UpdatedAt:  "2026-05-09T19:40:00Z",
+			Summary:    "seed",
+			SceneSize:  1,
+			AssetCount: 1,
+		},
+	}); err != nil {
+		t.Fatalf("SaveWhiteboardSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		Whiteboard *room.WhiteboardStateView `json:"whiteboard"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.Whiteboard == nil {
+		t.Fatal("whiteboard projection missing")
+	}
+	if got := state.Whiteboard.BoardID; got != "board-1" {
+		t.Fatalf("board_id = %q, want board-1", got)
+	}
+	if got := len(state.Whiteboard.RevisionHistory); got != 1 {
+		t.Fatalf("revision_history len = %d, want 1", got)
+	}
+	if got := state.Whiteboard.Assets[0].ArtifactID; got != "artifact-1" {
+		t.Fatalf("artifact_id = %q, want artifact-1", got)
+	}
+	if got := state.Whiteboard.Assets[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
+	}
+	if got := state.Whiteboard.ExportRefs[0].Kind; got != "png" {
+		t.Fatalf("export kind = %q, want png", got)
 	}
 }
 

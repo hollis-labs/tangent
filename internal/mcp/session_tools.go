@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                      `json:"current_phase"`
 	PhasesVisited         []string                    `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput `json:"phase_outputs"`
+	Whiteboard            *room.WhiteboardStateView   `json:"whiteboard,omitempty"`
 	SynthesisNotes        *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
 	AcceptedDraftBlocks   []room.DraftBlock           `json:"accepted_draft_blocks"`
 	CurrentDraft          *room.CurrentDraftView      `json:"current_draft,omitempty"`
@@ -148,6 +149,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
 		AcceptedDraftBlocks:   room.ProjectAcceptedDraftBlocks(phaseState),
 		CurrentDraft:          room.ProjectCurrentDraft(phaseState),
@@ -260,7 +262,21 @@ func (s *Server) advanceRoomEnvelope(
 		return toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
 	}
 
-	resp, err := rm.Push(ctx, env)
+	resp, err := rm.PushWithResponseTransform(ctx, env, func(resp *envelopes.Response) (*envelopes.Response, error) {
+		if resp == nil {
+			return nil, fmt.Errorf("room response is nil")
+		}
+		if resp.EnvelopeID != env.ID {
+			return nil, fmt.Errorf("%w: response envelopeId %q does not match pending envelope %q", envelopes.ErrSchemaValidation, resp.EnvelopeID, env.ID)
+		}
+		if err := s.envSvc.ValidateResponse(env.Type, resp); err != nil {
+			return nil, err
+		}
+		if env.Type == whiteboardEnvelopeType {
+			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
+		}
+		return resp, nil
+	})
 	if err != nil {
 		if errors.Is(err, room.ErrUserCancelled) {
 			cancelled := &envelopes.Response{
@@ -317,6 +333,11 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidWhiteboardBoardID),
+		errors.Is(err, room.ErrInvalidWhiteboardSceneSnapshot),
+		errors.Is(err, room.ErrInvalidWhiteboardAssetRef),
+		errors.Is(err, room.ErrInvalidWhiteboardExportRef),
+		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
 		errors.Is(err, room.ErrInvalidDraftBlockContent),
 		errors.Is(err, room.ErrInvalidProseRevisionID),

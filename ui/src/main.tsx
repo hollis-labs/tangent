@@ -37,6 +37,11 @@ import {
   type SynthesisNotesResponse,
 } from "./components/envelopes/SynthesisNotes";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
+import {
+  Whiteboard,
+  type WhiteboardEnvelope,
+  type WhiteboardSubmitResponse,
+} from "./components/envelopes/Whiteboard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
 
@@ -124,6 +129,17 @@ function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponent
   );
 }
 
+function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <Whiteboard
+      envelope={envelope as WhiteboardEnvelope}
+      onSubmit={onSubmit as (response: WhiteboardSubmitResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
 function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
   return (
     <SynthesisNotes
@@ -141,6 +157,7 @@ register("tangent.interview-question", InterviewQuestionAdapter);
 register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
+register("tangent.whiteboard", WhiteboardAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");

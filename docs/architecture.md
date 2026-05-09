@@ -1,4 +1,4 @@
-# Tangent architecture (v0.3)
+# Tangent architecture (v0.4 whiteboard release)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,12 +63,13 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Sixteen tools are advertised in v0.3:
+Seventeen tools are advertised in the current build:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
 - `tangent.feedback` — the bundled structured-form workflow.
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
+- `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
 - `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
@@ -111,6 +112,26 @@ This substrate is intentionally workflow-neutral. Built-in or external
 agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
 `tangent.session_get` after process restart.
+
+The shipped v0.4 whiteboard state is persisted on the same room
+state path rather than in a separate table. `tangent.session_get`
+projects a dedicated `whiteboard` payload when present:
+
+- `board_id`
+- `scene_snapshot` (canonical tldraw-style scene JSON)
+- `assets` (references/metadata only, not inline base64 blobs)
+- `export_refs` (latest export metadata, PNG-only in v0.4)
+- `notes`
+- `updated_at`
+- `revision_history` (append-only metadata, not full duplicated scenes)
+
+Full historical whiteboard snapshots are also retained on the room for
+the in-room revision browser, but `session_get` intentionally exposes
+only lightweight revision metadata so agent-side checkpoint reads do not
+need to load every scene blob eagerly.
+
+This keeps restart hydration and room replay simple while still
+supporting reopen/continue-from-revision inside the room UI.
 
 The bundled v0.3 writing flow uses the canonical sequence:
 
@@ -163,13 +184,16 @@ shape is deliberately chosen so the eventual Wails wrap is mechanical
 build is what the shell loads. v0.1 ships as the localhost binary so
 the shape can be proven before a desktop wrapper is added.
 
-## Limits (v0.2)
+## Limits (v0.4)
 
 - **Localhost only.** No remote access, no auth, no capability gating.
 - **Single-user.** Multiple concurrent agent sessions are supported
   (multi-room), but they share one machine, one process, one user.
 - **One active pending envelope per room.** History persists, but only one
   envelope at a time can be awaiting submission in a given room.
+- **Whiteboard is single-user localhost first.** The board is shared
+  between one user and one agent through one persistent room, but there
+  is no live multiplayer presence or conflict resolution yet.
 - **Two transports, one envelope schema.** MCP today; the
   Nanite-native side-channel (mid-turn event injection) is v0.5+.
 

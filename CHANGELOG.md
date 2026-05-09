@@ -7,7 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Post-v0.3 work lands here. See `README.md` Roadmap for the next phase._
+_Post-v0.4 work lands here. See `README.md` Roadmap for the next phase._
+
+## [v0.4.0] - 2026-05-09
+
+Shared Whiteboard. Tangent now supports a persistent MCP-driven
+whiteboard workflow in one room, with explicit submit/reopen turns,
+local refresh recovery, PNG export, artifact-backed reference images,
+and revision browsing for agent handoff from revision N.
+
+### Added
+
+- **`tangent.whiteboard`.** A bundled tldraw-backed whiteboard workflow
+  with room reuse via `meta.roomID`, blank/seeded board load, and a
+  full-scene submit contract.
+- **Whiteboard room substrate.** `phase_outputs["whiteboard"]` now
+  persists canonical scene JSON, lightweight asset refs, export refs,
+  notes, updated-at metadata, and append-only revision history.
+- **Local draft recovery.** Whiteboard edits autosave in the browser for
+  the active room + board and recover after refresh until submit/cancel.
+- **PNG export and artifact-backed refs.** Export metadata now persists
+  on the room, and reference-image assets survive reload through durable
+  artifact-style URIs instead of browser-only state.
+- **Revision browser.** The room UI now lists prior whiteboard
+  revisions, supports reopening a snapshot for inspection, and supports
+  explicit continuation from an older revision with recorded lineage.
+- **Whiteboard e2e coverage.** Added
+  `docs/manual-tests/whiteboard-e2e.md` and
+  `scripts/whiteboard-mock-call.mjs` for submit -> reopen -> continue
+  verification in one room.
+
+### Changed
+
+- **`tangent.session_get` now projects whiteboard state.** It exposes
+  the latest persisted board plus lightweight revision metadata for
+  agent reasoning, while full historical snapshots stay room-local to
+  the whiteboard browser UI.
+- **Docs now describe Tangent as a multi-workflow surface that includes
+  whiteboard collaboration.** README, MCP integration, architecture,
+  and developer docs now reflect the shipped v0.4 tool surface and
+  single-user localhost scope.
+- **The roadmap advances past the planned whiteboard phase.** v0.4 is
+  now the current shipped release rather than a future intent section.
+
+### Deprecated
+
+_None._
+
+### Removed
+
+_None._
+
+### Fixed
+
+- **Whiteboard submit normalization now rejects fake persistence on
+  invalid payloads.** Invalid board submits do not create bogus
+  revisions in room history.
+- **Refresh no longer cancels active whiteboard work by default.**
+  `beforeunload` preserves local draft recovery rather than treating a
+  refresh like an explicit cancel.
+
+### Security
+
+- **The trust model is unchanged.** Tangent remains localhost-only and
+  single-user. The whiteboard adds richer persisted local state and
+  browser draft recovery, but no auth, TLS, remote sync, or live
+  multi-user presence.
 
 ## [v0.3.0] - 2026-05-09
 
@@ -197,7 +262,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.4.0...HEAD
+[v0.4.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.1.0

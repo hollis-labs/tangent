@@ -45,6 +45,9 @@ func TestFeedback_RoundTrip(t *testing.T) {
 	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
 		t.Fatalf("RegisterOutputRender: %v", regErr)
 	}
+	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
+		t.Fatalf("RegisterWhiteboard: %v", regErr)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}

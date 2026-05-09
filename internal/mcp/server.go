@@ -208,6 +208,16 @@ func (s *Server) registerTools() error {
 		InputSchema: outputRenderSchema,
 	}, s.handleOutputRender)
 
+	whiteboardSchema, err := buildWhiteboardInputSchema()
+	if err != nil {
+		return fmt.Errorf("build whiteboard input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.whiteboard",
+		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
+		InputSchema: whiteboardSchema,
+	}, s.handleWhiteboard)
+
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
@@ -331,6 +341,10 @@ func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
 
 func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(outputRenderInputSchemaJSON, "output_render")
+}
+
+func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(whiteboardInputSchemaJSON, "whiteboard")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {

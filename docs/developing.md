@@ -59,6 +59,8 @@ Notable suites:
   the bundled triage component.
 - `scripts/triage-mock-call.mjs` — Node-from-the-outside variant. Not
   in CI; used to verify the wire shape with no LLM.
+- `scripts/whiteboard-mock-call.mjs` — end-to-end whiteboard submit ->
+  reopen -> continue verification, including revision lineage.
 
 ## Lint
 
@@ -86,16 +88,16 @@ For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
 go-envelopes registry) and the Wails-deferral note, see
 [`architecture.md`](./architecture.md).
 
-## Known limitations (v0.3)
+## Known limitations (v0.4)
 
 See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
 - Localhost only, single-user, no auth.
 - One active pending envelope per room.
-- Sixteen tools advertised; bundled workflows now include the full
+- Seventeen tools advertised; bundled workflows now include the full
   writing path (`interview_question`, `synthesis_notes`, `block_draft`,
   `prose_revision`, `output_render`) alongside `triage`, `feedback`,
-  and `design-iteration`.
+  `design-iteration`, and `whiteboard`.
 
 ## Persistence layer
 
@@ -122,10 +124,10 @@ land with both directions present.
 ## Adding a new envelope kind
 
 The current precedents are `triage`, `feedback`, `design-iteration`,
-`interview-question`, `synthesis-notes`, `block-draft`,
-`prose-revision`, and `output-render`. Use at least one simple workflow
-and one multi-phase writing workflow as references instead of assuming
-one shape fits every kind.
+`whiteboard`, `interview-question`, `synthesis-notes`, `block-draft`,
+`prose-revision`, and `output-render`. Use at least one simple workflow,
+the whiteboard's long-lived room surface, and one multi-phase writing
+workflow as references instead of assuming one shape fits every kind.
 
 **Go (registration + handler):**
 
@@ -161,8 +163,9 @@ one shape fits every kind.
 
 A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent.triage`,
-`tangent.feedback`, `tangent.design-iteration`, and the v0.3 writing
-workflow kinds are the worked examples. If the workflow is multi-step,
+`tangent.feedback`, `tangent.design-iteration`, `tangent.whiteboard`,
+and the writing workflow kinds are the worked examples. If the workflow
+is multi-step,
 prefer reusing the `tangent.session_*` substrate and the room phase
 state rather than inventing a parallel room lifecycle.
 

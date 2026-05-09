@@ -802,6 +802,261 @@ func TestRoom_SetFinalOutputRejectsInvalidData(t *testing.T) {
 	}
 }
 
+func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "boardful"})
+
+	if err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-1",
+		SceneSnapshot: map[string]any{
+			"document": map[string]any{
+				"pages": []any{
+					map[string]any{"id": "page:1", "name": "Page 1"},
+				},
+			},
+		},
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID:    "asset-1",
+				ArtifactID: "artifact-1",
+				Name:       "screenshot.png",
+				MIMEType:   "image/png",
+				Source:     "https://assets.example.test/screenshot.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
+				Width:      1200,
+				Height:     800,
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r1.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:30:10Z",
+				SizeBytes: 2048,
+				Width:     1200,
+				Height:    800,
+			},
+		},
+		Notes:     "first board snapshot",
+		UpdatedAt: "2026-05-09T19:30:00Z",
+		Revision: &room.WhiteboardRevision{
+			RevisionID: "rev-1",
+			UpdatedAt:  "2026-05-09T19:30:00Z",
+			Summary:    "initial snapshot",
+			SceneSize:  1,
+			AssetCount: 1,
+		},
+	}); err != nil {
+		t.Fatalf("SaveWhiteboardSnapshot rev-1: %v", err)
+	}
+	if err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-1",
+		SceneSnapshot: map[string]any{
+			"document": map[string]any{
+				"pages": []any{
+					map[string]any{"id": "page:1", "name": "Page 1"},
+					map[string]any{"id": "shape:1", "type": "geo"},
+				},
+			},
+		},
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID:    "asset-1",
+				ArtifactID: "artifact-1",
+				Name:       "screenshot.png",
+				MIMEType:   "image/png",
+				Source:     "https://assets.example.test/screenshot.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
+				Width:      1200,
+				Height:     800,
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r2.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:35:10Z",
+				SizeBytes: 3072,
+				Width:     1280,
+				Height:    900,
+			},
+		},
+		Notes:     "second board snapshot",
+		UpdatedAt: "2026-05-09T19:35:00Z",
+		Revision: &room.WhiteboardRevision{
+			RevisionID:              "rev-2",
+			ContinuedFromRevisionID: "rev-1",
+			UpdatedAt:               "2026-05-09T19:35:00Z",
+			Summary:                 "added shape",
+			SceneSize:               2,
+			AssetCount:              1,
+		},
+	}); err != nil {
+		t.Fatalf("SaveWhiteboardSnapshot rev-2: %v", err)
+	}
+
+	state := rm.PhaseState()
+	board := room.ProjectWhiteboardState(state)
+	if board == nil {
+		t.Fatal("ProjectWhiteboardState returned nil")
+	}
+	if board.BoardID != "board-1" {
+		t.Fatalf("board_id = %q, want board-1", board.BoardID)
+	}
+	if got := board.Notes; got != "second board snapshot" {
+		t.Fatalf("notes = %q, want second board snapshot", got)
+	}
+	if got := len(board.RevisionHistory); got != 2 {
+		t.Fatalf("revision_history len = %d, want 2", got)
+	}
+	if got := len(board.RevisionSnapshots); got != 2 {
+		t.Fatalf("revision_snapshots len = %d, want 2", got)
+	}
+	if got := board.RevisionHistory[0].RevisionID; got != "rev-1" {
+		t.Fatalf("revision_history[0].revision_id = %q, want rev-1", got)
+	}
+	if got := board.RevisionHistory[1].ContinuedFromRevisionID; got != "rev-1" {
+		t.Fatalf("revision_history[1].continued_from_revision_id = %q, want rev-1", got)
+	}
+	if got := board.Assets[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
+	}
+	if got := len(board.ExportRefs); got != 1 {
+		t.Fatalf("export_refs len = %d, want 1", got)
+	}
+
+	reloaded := room.NewManager(db)
+	if err := reloaded.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloadedState, found, err := reloaded.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState: %v", err)
+	}
+	if !found {
+		t.Fatalf("GetPhaseState found=false for room %q", rm.ID)
+	}
+	reloadedBoard := room.ProjectWhiteboardState(reloadedState)
+	if reloadedBoard == nil {
+		t.Fatal("reloaded ProjectWhiteboardState returned nil")
+	}
+	if got := reloadedBoard.UpdatedAt; got != "2026-05-09T19:35:00Z" {
+		t.Fatalf("updated_at = %q, want 2026-05-09T19:35:00Z", got)
+	}
+	if got := len(reloadedBoard.RevisionHistory); got != 2 {
+		t.Fatalf("reloaded revision_history len = %d, want 2", got)
+	}
+	if got := reloadedBoard.RevisionHistory[1].RevisionID; got != "rev-2" {
+		t.Fatalf("reloaded revision_history[1].revision_id = %q, want rev-2", got)
+	}
+	if got := reloadedBoard.RevisionHistory[1].ContinuedFromRevisionID; got != "rev-1" {
+		t.Fatalf("reloaded revision_history[1].continued_from_revision_id = %q, want rev-1", got)
+	}
+	if got := len(reloadedBoard.RevisionSnapshots); got != 2 {
+		t.Fatalf("reloaded revision_snapshots len = %d, want 2", got)
+	}
+	if got := reloadedBoard.RevisionSnapshots[1].RevisionID; got != "rev-2" {
+		t.Fatalf("reloaded revision_snapshots[1].revision_id = %q, want rev-2", got)
+	}
+	if got := reloadedBoard.ExportRefs[0].Name; got != "board-1-r2.png" {
+		t.Fatalf("reloaded export_refs[0].name = %q, want board-1-r2.png", got)
+	}
+}
+
+func TestRoom_WhiteboardStateSupportsEmptyBoard(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	if err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID:       "board-empty",
+		SceneSnapshot: map[string]any{},
+		Assets:        []room.WhiteboardAssetRef{},
+		Notes:         "",
+	}); err != nil {
+		t.Fatalf("SaveWhiteboardSnapshot empty: %v", err)
+	}
+
+	board := room.ProjectWhiteboardState(rm.PhaseState())
+	if board == nil {
+		t.Fatal("ProjectWhiteboardState returned nil")
+	}
+	if got := len(board.SceneSnapshot); got != 0 {
+		t.Fatalf("scene_snapshot len = %d, want 0", got)
+	}
+	if got := len(board.Assets); got != 0 {
+		t.Fatalf("assets len = %d, want 0", got)
+	}
+	if got := len(board.RevisionHistory); got != 0 {
+		t.Fatalf("revision_history len = %d, want 0", got)
+	}
+}
+
+func TestRoom_WhiteboardStateRejectsInlineAssetData(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-inline",
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID: "asset-inline",
+				Source:  "data:image/png;base64,AAA",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWhiteboardAssetRef) {
+		t.Fatalf("SaveWhiteboardSnapshot invalid asset err = %v, want ErrInvalidWhiteboardAssetRef", err)
+	}
+}
+
+func TestRoom_WhiteboardStateRejectsBrowserOnlyAssetURI(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-inline-uri",
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID: "asset-inline-uri",
+				URI:     "blob:local-image",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWhiteboardAssetRef) {
+		t.Fatalf("SaveWhiteboardSnapshot invalid asset URI err = %v, want ErrInvalidWhiteboardAssetRef", err)
+	}
+}
+
+func TestRoom_WhiteboardStateRejectsBrowserOnlyExportURI(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-inline-export-uri",
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name: "board-inline-export.png",
+				Kind: "png",
+				URI:  "data:image/png;base64,AAA",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWhiteboardExportRef) {
+		t.Fatalf("SaveWhiteboardSnapshot invalid export URI err = %v, want ErrInvalidWhiteboardExportRef", err)
+	}
+}
+
 type pushResult struct {
 	resp *envelopes.Response
 	err  error
