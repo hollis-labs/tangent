@@ -125,6 +125,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register design-iteration extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterInterviewQuestion(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register interview-question extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
 
 	// Dispatcher is shared across transports. PR 4 registers the
@@ -164,6 +168,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register design-iteration handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterInterviewQuestionOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register interview-question handler: %v\n", regErr)
 		os.Exit(1)
 	}
 

@@ -29,15 +29,16 @@ type hydratedRoomRow struct {
 }
 
 type EnvelopeHistory struct {
-	EnvelopeID string              `json:"envelope_id"`
-	Type       string              `json:"type"`
-	Envelope   *envelopes.Envelope `json:"envelope,omitempty"`
-	Response   *envelopes.Response `json:"response,omitempty"`
-	Status     string              `json:"status"`
-	ErrorCode  string              `json:"error_code,omitempty"`
-	ErrorMsg   string              `json:"error_message,omitempty"`
-	CreatedAt  string              `json:"created_at"`
-	ResolvedAt string              `json:"resolved_at,omitempty"`
+	EnvelopeID string                    `json:"envelope_id"`
+	Type       string                    `json:"type"`
+	Envelope   *envelopes.Envelope       `json:"envelope,omitempty"`
+	Response   *envelopes.Response       `json:"response,omitempty"`
+	Interview  *InterviewQuestionHistory `json:"interview_question,omitempty"`
+	Status     string                    `json:"status"`
+	ErrorCode  string                    `json:"error_code,omitempty"`
+	ErrorMsg   string                    `json:"error_message,omitempty"`
+	CreatedAt  string                    `json:"created_at"`
+	ResolvedAt string                    `json:"resolved_at,omitempty"`
 }
 
 type RoomSummary struct {
@@ -224,6 +225,7 @@ ORDER BY created_at ASC, envelope_id ASC`,
 		if item.Response, err = envelopeHistoryResponse(item.EnvelopeID, item.Status, responseKind, responseRaw, item.ErrorCode, item.ErrorMsg, resolvedRaw); err != nil {
 			return nil, fmt.Errorf("decode room %q envelope %q response: %w", roomID, item.EnvelopeID, err)
 		}
+		item.Interview = buildInterviewQuestionHistory(item.Envelope, item.Response)
 		if item.Response != nil && item.Response.CompletedAt != "" {
 			item.ResolvedAt = item.Response.CompletedAt
 		}

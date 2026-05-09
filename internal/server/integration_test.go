@@ -49,6 +49,9 @@ func newRig(t *testing.T) *rig {
 	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
 		t.Fatalf("RegisterDesignIteration: %v", regErr)
 	}
+	if regErr := extensions.RegisterInterviewQuestion(envSvc); regErr != nil {
+		t.Fatalf("RegisterInterviewQuestion: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(nil)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -70,6 +73,9 @@ func newRig(t *testing.T) *rig {
 	}
 	if regErr := tangentmcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterDesignIterationOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterInterviewQuestionOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterInterviewQuestionOnDispatcher: %v", regErr)
 	}
 
 	httpSrv, err := server.New(server.Config{

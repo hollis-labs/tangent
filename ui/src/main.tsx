@@ -11,6 +11,11 @@ import {
   type FeedbackEnvelope,
   type FeedbackResponse,
 } from "./components/envelopes/Feedback";
+import {
+  InterviewQuestion,
+  type InterviewQuestionEnvelope,
+  type InterviewQuestionResponse,
+} from "./components/envelopes/InterviewQuestion";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -59,9 +64,20 @@ function DesignIterationAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompon
   );
 }
 
+function InterviewQuestionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <InterviewQuestion
+      envelope={envelope as InterviewQuestionEnvelope}
+      onSubmit={onSubmit as (response: InterviewQuestionResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);
+register("tangent.interview-question", InterviewQuestionAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

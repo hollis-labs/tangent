@@ -168,6 +168,16 @@ func (s *Server) registerTools() error {
 		InputSchema: designIterationSchema,
 	}, s.handleDesignIteration)
 
+	interviewQuestionSchema, err := buildInterviewQuestionInputSchema()
+	if err != nil {
+		return fmt.Errorf("build interview-question input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.interview_question",
+		Description: "Dispatch an interview-question envelope through Tangent. Creates or reuses a room and waits for one long-form answer.",
+		InputSchema: interviewQuestionSchema,
+	}, s.handleInterviewQuestion)
+
 	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
@@ -265,6 +275,10 @@ func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
 
 func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(designIterationInputSchemaJSON, "design-iteration")
+}
+
+func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {
