@@ -205,6 +205,12 @@ func RegisterInterviewQuestionOnDispatcher(dispatcher *envelope.Dispatcher, hand
 	return dispatcher.Register(interviewQuestionEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterSynthesisNotesOnDispatcher wires the same room-bridging
+// handler for tangent.synthesis-notes envelopes.
+func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(synthesisNotesEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // resolveTriageTimeout reads envTriageTimeout once at construction. A
 // malformed value silently falls back to the package default — v0.1
 // prefers "boots no matter what" over "fails fast on bad config" for

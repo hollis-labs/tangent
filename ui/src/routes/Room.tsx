@@ -25,6 +25,11 @@ type Pending = {
   envelope: unknown;
 };
 
+type SessionStatePayload = {
+  envelopes_history?: unknown[];
+  synthesis_notes?: unknown;
+};
+
 export default function Room() {
   const { roomID } = useParams<{ roomID: string }>();
   const [pending, setPending] = useState<Pending | null>(null);
@@ -131,12 +136,15 @@ export default function Room() {
 
 async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknown> {
   const type = readEnvelopeType(envelope);
-  if (type !== "tangent.design-iteration") {
+  if (type !== "tangent.design-iteration" && type !== "tangent.synthesis-notes") {
     return envelope;
   }
   try {
-    const history = await fetchRoomHistory(roomID);
-    return attachPriorVariants(envelope, history);
+    const state = await fetchRoomState(roomID);
+    if (type === "tangent.design-iteration") {
+      return attachPriorVariants(envelope, state.envelopes_history ?? []);
+    }
+    return attachSynthesisState(envelope, state.synthesis_notes);
   } catch {
     return envelope;
   }
@@ -150,7 +158,7 @@ function readEnvelopeType(envelope: unknown): string | null {
   return typeof type === "string" ? type : null;
 }
 
-async function fetchRoomHistory(roomID: string): Promise<unknown[]> {
+async function fetchRoomState(roomID: string): Promise<SessionStatePayload> {
   const response = await fetch("/mcp", {
     method: "POST",
     headers: {
@@ -173,10 +181,9 @@ async function fetchRoomHistory(roomID: string): Promise<unknown[]> {
   const payload = await response.json();
   const text = payload?.result?.content?.[0]?.text;
   if (typeof text !== "string") {
-    return [];
+    return {};
   }
-  const parsed = JSON.parse(text) as { envelopes_history?: unknown[] };
-  return parsed.envelopes_history ?? [];
+  return JSON.parse(text) as SessionStatePayload;
 }
 
 function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {
@@ -225,5 +232,20 @@ function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 
   data.prior_variants = priorVariants;
+  return { ...typed, data };
+}
+
+function attachSynthesisState(envelope: unknown, synthesisNotes: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  if (synthesisNotes && typeof synthesisNotes === "object") {
+    Object.assign(data, synthesisNotes as Record<string, unknown>);
+  }
   return { ...typed, data };
 }

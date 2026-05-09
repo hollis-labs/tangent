@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Synthesis notes envelope data",
+  "description": "Either the authoring payload with private synthesis notes or the sanitized, phase-gated view sent to the room UI.",
+  "properties": {
+    "private_notes": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "outline_state": {
+      "type": "string",
+      "enum": [
+        "absent",
+        "present",
+        "skipped"
+      ]
+    },
+    "outline": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "hidden",
+        "visible"
+      ]
+    },
+    "has_private_notes": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "outline_state": {
+            "const": "present"
+          }
+        },
+        "required": [
+          "outline_state"
+        ]
+      },
+      "then": {
+        "required": [
+          "outline"
+        ]
+      }
+    }
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "private_notes"
+      ]
+    },
+    {
+      "required": [
+        "visibility"
+      ]
+    }
+  ],
+  "additionalProperties": false
+}

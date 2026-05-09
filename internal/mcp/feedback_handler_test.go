@@ -36,6 +36,9 @@ func TestFeedback_RoundTrip(t *testing.T) {
 	if regErr := extensions.RegisterInterviewQuestion(envSvc); regErr != nil {
 		t.Fatalf("RegisterInterviewQuestion: %v", regErr)
 	}
+	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
+		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
+	}
 
 	dispatcher := envelope.NewDispatcher(envSvc)
 	manager := room.NewManager(nil)

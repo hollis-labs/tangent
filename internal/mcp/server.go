@@ -178,6 +178,16 @@ func (s *Server) registerTools() error {
 		InputSchema: interviewQuestionSchema,
 	}, s.handleInterviewQuestion)
 
+	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
+	if err != nil {
+		return fmt.Errorf("build synthesis-notes input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.synthesis_notes",
+		Description: "Dispatch a synthesis-notes envelope through Tangent. Persists private notes on the room and only exposes the phase-gated preview to the user.",
+		InputSchema: synthesisNotesSchema,
+	}, s.handleSynthesisNotes)
+
 	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
@@ -279,6 +289,10 @@ func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
 
 func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
+}
+
+func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

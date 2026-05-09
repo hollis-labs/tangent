@@ -16,6 +16,11 @@ import {
   type InterviewQuestionEnvelope,
   type InterviewQuestionResponse,
 } from "./components/envelopes/InterviewQuestion";
+import {
+  SynthesisNotes,
+  type SynthesisNotesEnvelope,
+  type SynthesisNotesResponse,
+} from "./components/envelopes/SynthesisNotes";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -74,10 +79,21 @@ function InterviewQuestionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComp
   );
 }
 
+function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <SynthesisNotes
+      envelope={envelope as SynthesisNotesEnvelope}
+      onSubmit={onSubmit as (response: SynthesisNotesResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);
 register("tangent.interview-question", InterviewQuestionAdapter);
+register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

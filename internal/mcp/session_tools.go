@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase     string                      `json:"current_phase"`
 	PhasesVisited    []string                    `json:"phases_visited"`
 	PhaseOutputs     map[string]room.PhaseOutput `json:"phase_outputs"`
+	SynthesisNotes   *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
 	EnvelopesHistory []room.EnvelopeHistory      `json:"envelopes_history"`
 	CurrentEnvelope  *envelopes.Envelope         `json:"current_envelope,omitempty"`
 }
@@ -143,6 +144,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:     phaseState.CurrentPhase,
 		PhasesVisited:    phaseState.PhasesVisited,
 		PhaseOutputs:     phaseState.PhaseOutputs,
+		SynthesisNotes:   room.ProjectSynthesisNotes(phaseState),
 		EnvelopesHistory: history,
 	}
 	if ok {

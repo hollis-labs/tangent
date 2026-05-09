@@ -2,6 +2,16 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  SynthesisNotes,
+  type SynthesisNotesEnvelope,
+  type SynthesisNotesResponse,
+} from "../components/envelopes/SynthesisNotes";
+import {
+  _resetRegistryForTests,
+  type EnvelopeComponentProps,
+  register,
+} from "../lib/envelope-registry";
 import Room from "./Room";
 
 const switchRoom = vi.fn();
@@ -26,6 +36,7 @@ describe("<Room>", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
+    _resetRegistryForTests();
   });
 
   it("switches rooms on route change without remounting the client", async () => {
@@ -65,6 +76,52 @@ describe("<Room>", () => {
       window.dispatchEvent(new Event("beforeunload"));
     });
     expect(cancel).toHaveBeenCalledWith("env-1");
+  });
+
+  it("enriches synthesis-notes envelopes with the gated session state", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.synthesis-notes", SynthesisAdapter);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                envelopes_history: [],
+                synthesis_notes: {
+                  visibility: "hidden",
+                  outline_state: "present",
+                  has_private_notes: true,
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("synth-1", { v: 1, id: "synth-1", type: "tangent.synthesis-notes", data: {} });
+    });
+
+    expect(await screen.findByTestId("synthesis-notes-hidden")).toHaveTextContent(
+      "Private synthesis notes are saved on this room.",
+    );
   });
 });
 
@@ -107,5 +164,15 @@ function NavigateProbe() {
     <button type="button" onClick={() => navigate("/r/room-b")} data-testid="go-room-b">
       switch
     </button>
+  );
+}
+
+function SynthesisAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <SynthesisNotes
+      envelope={envelope as SynthesisNotesEnvelope}
+      onSubmit={onSubmit as (response: SynthesisNotesResponse) => void}
+      onCancel={onCancel}
+    />
   );
 }
