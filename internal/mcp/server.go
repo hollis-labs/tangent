@@ -9,6 +9,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/room"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
@@ -26,26 +27,31 @@ const (
 // NewTriageHandler in cmd/tangent/main.go (see internal/mcp/triage_handler.go),
 // not stored on the Server.
 type Server struct {
-	envSvc     *envelope.Service
-	dispatcher *envelope.Dispatcher
+	envSvc      *envelope.Service
+	dispatcher  *envelope.Dispatcher
+	manager     *room.Manager
+	roomURLBase string
 
 	mcp *mcpsdk.Server
 }
 
-// New constructs a Server, registers the v0.1 tool surface
-// (tangent.list_workflows + tangent.triage), and returns it ready to
+// New constructs a Server, registers the Tangent MCP tool surface,
+// and returns it ready to
 // expose via HTTPHandler / SSEHandler.
 //
 // Both envSvc and dispatcher are required. dispatcher is the same
 // instance future PRs (PR 4 WS bridge, PR 5+ kinds) attach handlers to;
 // passing it through here keeps the MCP layer agnostic to which
 // transport ultimately fulfills the envelope.
-func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher) (*Server, error) {
+func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher, manager *room.Manager, roomURLBase string) (*Server, error) {
 	if envSvc == nil {
 		return nil, fmt.Errorf("mcp: envelope service is required")
 	}
 	if dispatcher == nil {
 		return nil, fmt.Errorf("mcp: dispatcher is required")
+	}
+	if manager == nil {
+		return nil, fmt.Errorf("mcp: room manager is required")
 	}
 
 	mcpServer := mcpsdk.NewServer(&mcpsdk.Implementation{
@@ -54,9 +60,11 @@ func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher) (*Server, er
 	}, nil)
 
 	s := &Server{
-		envSvc:     envSvc,
-		dispatcher: dispatcher,
-		mcp:        mcpServer,
+		envSvc:      envSvc,
+		dispatcher:  dispatcher,
+		manager:     manager,
+		roomURLBase: roomURLBase,
+		mcp:         mcpServer,
 	}
 
 	if err := s.registerTools(); err != nil {
@@ -109,7 +117,7 @@ func (s *Server) SSEHandler() http.Handler {
 	}, nil)
 }
 
-// registerTools wires the v0.1 tool surface. Called once during
+// registerTools wires the Tangent MCP tool surface. Called once during
 // construction; the SDK's tool registry is mutex-protected so future
 // dynamic registration (PR 5+) is safe, but in v0.1 the surface is
 // fixed.
@@ -136,9 +144,49 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.triage",
-		Description: "Dispatch a triage-kind envelope through Tangent. Validates the envelope and routes it to the registered handler; returns the handler's Response. PR 4 wires the real handler — PR 3 returns NOT_WIRED.",
+		Description: "Dispatch a triage-kind envelope through Tangent. Public contract is unchanged from v0.1; internally this creates or reuses a room and advances the session.",
 		InputSchema: triageSchema,
 	}, s.handleTriage)
+
+	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
+	if err != nil {
+		return fmt.Errorf("build session_create input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_create",
+		Description: "Create a Tangent room and return its room ID plus SPA URL.",
+		InputSchema: sessionCreateSchema,
+	}, s.handleSessionCreate)
+
+	sessionAdvanceSchema, err := buildSchema(sessionAdvanceInputSchemaJSON, "session_advance")
+	if err != nil {
+		return fmt.Errorf("build session_advance input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_advance",
+		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it.",
+		InputSchema: sessionAdvanceSchema,
+	}, s.handleSessionAdvance)
+
+	sessionGetSchema, err := buildSchema(sessionGetInputSchemaJSON, "session_get")
+	if err != nil {
+		return fmt.Errorf("build session_get input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_get",
+		Description: "Read the current room state and persisted envelope history for a Tangent room.",
+		InputSchema: sessionGetSchema,
+	}, s.handleSessionGet)
+
+	sessionCloseSchema, err := buildSchema(sessionCloseInputSchemaJSON, "session_close")
+	if err != nil {
+		return fmt.Errorf("build session_close input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_close",
+		Description: "Close a Tangent room explicitly and remove its live UI tab.",
+		InputSchema: sessionCloseSchema,
+	}, s.handleSessionClose)
 
 	return nil
 }
@@ -158,9 +206,13 @@ func buildEmptyObjectSchema() (*jsonschema.Schema, error) {
 // buildTriageInputSchema parses the hand-rolled triage input schema (see
 // triage_schema.go for the rationale).
 func buildTriageInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(triageInputSchemaJSON, "triage")
+}
+
+func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {
 	var s jsonschema.Schema
-	if err := json.Unmarshal(triageInputSchemaJSON, &s); err != nil {
-		return nil, fmt.Errorf("unmarshal triage schema: %w", err)
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return nil, fmt.Errorf("unmarshal %s schema: %w", name, err)
 	}
 	return &s, nil
 }

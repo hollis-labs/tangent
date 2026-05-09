@@ -40,6 +40,7 @@ var ErrPendingExists = fmt.Errorf("room: pending envelope id already in flight")
 // removed by HandleResponse / HandleCancel / room close.
 type Pending struct {
 	EnvelopeID string
+	Envelope   *envelopes.Envelope
 	RespCh     chan *envelopes.Response
 	ErrCh      chan error
 	Cancel     func() error
@@ -68,6 +69,8 @@ type Room struct {
 
 	pendingMu sync.Mutex
 	pending   map[string]*Pending
+
+	advanceClaimed atomic.Bool
 
 	closed      atomic.Bool
 	closeReason atomic.Value // string
@@ -150,6 +153,7 @@ func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Re
 
 	pending := &Pending{
 		EnvelopeID: env.ID,
+		Envelope:   cloneEnvelope(env),
 		RespCh:     make(chan *envelopes.Response, 1),
 		ErrCh:      make(chan error, 1),
 		Deadline:   deadlineFromCtx(ctx),
@@ -306,6 +310,35 @@ func (r *Room) Close(reason string) {
 // IsClosed reports whether Close has been called on the Room.
 func (r *Room) IsClosed() bool { return r.closed.Load() }
 
+// HasPending reports whether the Room currently has one or more
+// envelopes in flight.
+func (r *Room) HasPending() bool {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	return len(r.pending) > 0
+}
+
+// CurrentEnvelope returns one in-flight envelope snapshot if present.
+func (r *Room) CurrentEnvelope() *envelopes.Envelope {
+	r.pendingMu.Lock()
+	defer r.pendingMu.Unlock()
+	for _, pending := range r.pending {
+		return cloneEnvelope(pending.Envelope)
+	}
+	return nil
+}
+
+// TryClaimAdvance reserves the room for a single session_advance-style
+// caller. Call ReleaseAdvance after Push returns.
+func (r *Room) TryClaimAdvance() bool {
+	return r.advanceClaimed.CompareAndSwap(false, true)
+}
+
+// ReleaseAdvance clears a prior TryClaimAdvance reservation.
+func (r *Room) ReleaseAdvance() {
+	r.advanceClaimed.Store(false)
+}
+
 func (r *Room) closeReasonString() string {
 	v := r.closeReason.Load()
 	if v == nil {
@@ -407,15 +440,25 @@ func (m *Manager) Get(id string) (*Room, bool) {
 	return r, ok
 }
 
-// Remove drops the Room from the manager and closes it.
-func (m *Manager) Remove(id string) {
+// Close closes the Room, persists its terminal state, and removes it
+// from the live-room registry.
+func (m *Manager) Close(id, status string) error {
 	m.mu.Lock()
 	r, ok := m.rooms[id]
-	delete(m.rooms, id)
-	m.mu.Unlock()
 	if ok {
-		r.Close("removed by manager")
+		delete(m.rooms, id)
 	}
+	m.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrRoomNotFound, id)
+	}
+	r.Close(status)
+	return nil
+}
+
+// Remove drops the Room from the manager and closes it.
+func (m *Manager) Remove(id string) {
+	_ = m.Close(id, "removed by manager")
 }
 
 // Len returns the number of registered rooms.
@@ -455,6 +498,35 @@ func cloneMeta(m map[string]string) map[string]string {
 	}
 	out := make(map[string]string, len(m))
 	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneEnvelope(env *envelopes.Envelope) *envelopes.Envelope {
+	if env == nil {
+		return nil
+	}
+	out := *env
+	if env.Data != nil {
+		out.Data = cloneAnyMap(env.Data)
+	}
+	if env.Meta != nil {
+		out.Meta = cloneAnyMap(env.Meta)
+	}
+	if env.Trace != nil {
+		traceCopy := *env.Trace
+		out.Trace = &traceCopy
+	}
+	return &out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
 		out[k] = v
 	}
 	return out

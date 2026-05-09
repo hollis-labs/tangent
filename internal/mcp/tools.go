@@ -125,21 +125,31 @@ func (s *Server) handleTriage(
 		), nil, nil
 	}
 
-	resp, err := s.dispatcher.Dispatch(ctx, &args.Envelope)
-	if err != nil {
-		return triageErrorResult(err), nil, nil
+	roomID, reused := metaString(args.Envelope.Meta, "roomID")
+	if !reused || roomID == "" {
+		createRes, _, err := s.handleSessionCreate(ctx, nil, sessionCreateInput{
+			Meta: map[string]any{
+				"envelopeID":   args.Envelope.ID,
+				"envelopeType": args.Envelope.Type,
+			},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		if createRes.IsError {
+			return createRes, nil, nil
+		}
+		var created sessionCreateResult
+		if err := json.Unmarshal([]byte(extractToolText(createRes)), &created); err != nil {
+			return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("decode session_create result: %v", err)), nil, nil
+		}
+		roomID = created.RoomID
+		s.logTriageRoomCreated(roomID, args.Envelope.ID)
+	} else {
+		s.logTriageRoomReused(roomID, args.Envelope.ID)
 	}
 
-	// Happy path (PR 4+): surface the Response as JSON text content. In
-	// v0.1 this branch is dead because the dispatcher always returns
-	// ErrNoHandler for `triage`; PR 4 brings it to life.
-	body, marshalErr := json.Marshal(resp)
-	if marshalErr != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("marshal triage response: %v", marshalErr)), nil, nil
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(body)}},
-	}, resp, nil
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
 }
 
 // triageErrorResult maps a dispatcher error into a structured tool
@@ -213,4 +223,15 @@ func toolErrorResult(code, message string) *mcpsdk.CallToolResult {
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(raw)}},
 		IsError: true,
 	}
+}
+
+func extractToolText(res *mcpsdk.CallToolResult) string {
+	if res == nil || len(res.Content) == 0 {
+		return ""
+	}
+	text, _ := res.Content[0].(*mcpsdk.TextContent)
+	if text == nil {
+		return ""
+	}
+	return text.Text
 }

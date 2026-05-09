@@ -133,7 +133,11 @@ func main() {
 	}
 	wsHandler := tangentws.New(roomMgr, logger)
 
-	mcpSrv, err := mcp.New(envSvc, dispatcher)
+	// Use 127.0.0.1 to match the listener's actual bind so the URL
+	// hint we log when triage creates a room resolves correctly even
+	// on IPv6-preferring systems where "localhost" lands on ::1.
+	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
+	mcpSrv, err := mcp.New(envSvc, dispatcher, roomMgr, roomURLBase)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
 		// surface as part of its v0.1 contract, so booting without it
@@ -141,10 +145,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: build mcp server: %v\n", err)
 		os.Exit(1)
 	}
-	// Use 127.0.0.1 to match the listener's actual bind so the URL
-	// hint we log when triage creates a room resolves correctly even
-	// on IPv6-preferring systems where "localhost" lands on ::1.
-	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
 	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
 	if regErr := mcp.RegisterTriageOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register triage handler: %v\n", regErr)

@@ -50,7 +50,7 @@ func newRig(t *testing.T) *rig {
 	wsHandler := tangentws.New(mgr, logger)
 	wsHandler.SetOriginPatterns([]string{"*"})
 
-	mcpSrv, err := tangentmcp.New(envSvc, dispatcher)
+	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "")
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
 	}

@@ -32,11 +32,9 @@ const defaultTriageTimeout = 5 * time.Minute
 // envelopes to a per-call WebSocket Room. Registered against the
 // dispatcher at boot via NewTriageHandler + dispatcher.Register.
 //
-// One Room is created per triage call in v0.1; the optional metadata
-// "roomID" key on env.Meta allows a future client to reuse an existing
-// room, but for v0.1 we fail fast if the requested room is not present
-// (we do not implicitly create on demand from arbitrary input — that's
-// a v0.2 refinement so the contract stays predictable).
+// One Room is created per triage call by default; the optional metadata
+// "roomID" key on env.Meta allows reuse of an existing room. Unknown
+// room ids fail fast rather than implicitly creating on demand.
 type TriageHandler struct {
 	manager *room.Manager
 	logger  *slog.Logger
@@ -126,8 +124,8 @@ func (t *TriageHandler) Handle(ctx context.Context, env *envelopes.Envelope) (*e
 }
 
 // resolveRoom returns the Room env should target plus a bool indicating
-// whether it was newly created. v0.1 policy: server-issued IDs only;
-// a Meta["roomID"] referencing an unknown room is a hard error so
+// whether it was newly created. Policy: server-issued IDs only; a
+// Meta["roomID"] referencing an unknown room is a hard error so
 // arbitrary client input cannot smuggle rooms into existence.
 func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, error) {
 	if id, ok := metaString(env.Meta, "roomID"); ok && id != "" {

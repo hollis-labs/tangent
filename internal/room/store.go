@@ -27,6 +27,18 @@ type hydratedRoomRow struct {
 	Meta      map[string]string
 }
 
+type EnvelopeHistory struct {
+	EnvelopeID string              `json:"envelope_id"`
+	Type       string              `json:"type"`
+	Envelope   *envelopes.Envelope `json:"envelope,omitempty"`
+	Response   *envelopes.Response `json:"response,omitempty"`
+	Status     string              `json:"status"`
+	ErrorCode  string              `json:"error_code,omitempty"`
+	ErrorMsg   string              `json:"error_message,omitempty"`
+	CreatedAt  string              `json:"created_at"`
+	ResolvedAt string              `json:"resolved_at,omitempty"`
+}
+
 func (m *Manager) persistRoomCreate(room *Room) error {
 	if m.db == nil {
 		return nil
@@ -120,6 +132,78 @@ ORDER BY created_at ASC`)
 		return nil, fmt.Errorf("iterate active rooms: %w", err)
 	}
 	return out, nil
+}
+
+// History returns the persisted envelope history for the given room,
+// ordered oldest-first.
+func (m *Manager) History(ctx context.Context, roomID string) ([]EnvelopeHistory, error) {
+	if m.db == nil {
+		return nil, nil
+	}
+	rows, err := m.db.QueryContext(ctx, `
+SELECT envelope_id, type, request_payload, response_kind, response_payload, status, error_code, error_message, created_at, resolved_at
+FROM envelopes
+WHERE room_id = ?
+ORDER BY created_at ASC, envelope_id ASC`,
+		roomID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query room %q history: %w", roomID, err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	history := make([]EnvelopeHistory, 0)
+	for rows.Next() {
+		var (
+			item           EnvelopeHistory
+			requestPayload string
+			responseKind   sql.NullString
+			responseRaw    sql.NullString
+			errorCode      sql.NullString
+			errorMessage   sql.NullString
+			createdRaw     any
+			resolvedRaw    any
+		)
+		if err := rows.Scan(
+			&item.EnvelopeID,
+			&item.Type,
+			&requestPayload,
+			&responseKind,
+			&responseRaw,
+			&item.Status,
+			&errorCode,
+			&errorMessage,
+			&createdRaw,
+			&resolvedRaw,
+		); err != nil {
+			return nil, fmt.Errorf("scan room %q history: %w", roomID, err)
+		}
+		item.ErrorCode = nullableString(errorCode)
+		item.ErrorMsg = nullableString(errorMessage)
+
+		createdAt, err := parseSQLiteTimestampValue(createdRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse room %q history created_at: %w", roomID, err)
+		}
+		item.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
+
+		if item.Envelope, err = envelopeHistoryRequest(item.EnvelopeID, item.Type, requestPayload); err != nil {
+			return nil, fmt.Errorf("decode room %q envelope %q request: %w", roomID, item.EnvelopeID, err)
+		}
+		if item.Response, err = envelopeHistoryResponse(item.EnvelopeID, item.Status, responseKind, responseRaw, item.ErrorCode, item.ErrorMsg, resolvedRaw); err != nil {
+			return nil, fmt.Errorf("decode room %q envelope %q response: %w", roomID, item.EnvelopeID, err)
+		}
+		if item.Response != nil && item.Response.CompletedAt != "" {
+			item.ResolvedAt = item.Response.CompletedAt
+		}
+		history = append(history, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate room %q history: %w", roomID, err)
+	}
+	return history, nil
 }
 
 func (r *Room) persistPendingEnvelope(env *envelopes.Envelope) error {
@@ -433,6 +517,113 @@ func parseSQLiteTimestamp(raw string) (time.Time, error) {
 		return ts.UTC(), nil
 	}
 	return time.Time{}, fmt.Errorf("unsupported sqlite timestamp %q", raw)
+}
+
+func envelopeHistoryRequest(envelopeID, envelopeType, requestPayload string) (*envelopes.Envelope, error) {
+	env := &envelopes.Envelope{
+		V:    envelopes.ProtocolVersion,
+		ID:   envelopeID,
+		Type: envelopeType,
+	}
+	if requestPayload == "" {
+		return env, nil
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(requestPayload), &data); err != nil {
+		return nil, err
+	}
+	env.Data = data
+	return env, nil
+}
+
+func envelopeHistoryResponse(
+	envelopeID string,
+	status string,
+	responseKind sql.NullString,
+	responseRaw sql.NullString,
+	errorCode string,
+	errorMessage string,
+	resolvedRaw any,
+) (*envelopes.Response, error) {
+	if !responseKind.Valid {
+		return nil, nil
+	}
+	resp := &envelopes.Response{
+		V:          envelopes.ProtocolVersion,
+		EnvelopeID: envelopeID,
+		Kind:       envelopes.ResponseKind(responseKind.String),
+		Status:     historyResponseStatus(status),
+	}
+	if resolvedRaw != nil {
+		resolvedAt, err := parseSQLiteTimestampValue(resolvedRaw)
+		if err != nil {
+			return nil, err
+		}
+		resp.CompletedAt = resolvedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if responseRaw.Valid && responseRaw.String != "" {
+		switch resp.Kind {
+		case envelopes.ResponseKindData:
+			var payload any
+			if err := json.Unmarshal([]byte(responseRaw.String), &payload); err != nil {
+				return nil, err
+			}
+			resp.Payload = payload
+		case envelopes.ResponseKindAck, envelopes.ResponseKindAsyncAck:
+			var handle envelopes.Handle
+			if err := json.Unmarshal([]byte(responseRaw.String), &handle); err != nil {
+				return nil, err
+			}
+			resp.Handle = &handle
+		case envelopes.ResponseKindUI:
+			var uiPayload map[string]any
+			if err := json.Unmarshal([]byte(responseRaw.String), &uiPayload); err != nil {
+				return nil, err
+			}
+			if action, ok := uiPayload["action"].(string); ok {
+				resp.Action = action
+			}
+		case envelopes.ResponseKindError:
+			var responseErr envelopes.ResponseError
+			if err := json.Unmarshal([]byte(responseRaw.String), &responseErr); err != nil {
+				return nil, err
+			}
+			resp.Error = &responseErr
+		default:
+			var payload any
+			if err := json.Unmarshal([]byte(responseRaw.String), &payload); err != nil {
+				return nil, err
+			}
+			resp.Payload = payload
+		}
+	}
+	if resp.Kind == envelopes.ResponseKindError && resp.Error == nil && (errorCode != "" || errorMessage != "") {
+		resp.Error = &envelopes.ResponseError{
+			Code:    errorCode,
+			Message: errorMessage,
+		}
+	}
+	return resp, nil
+}
+
+func historyResponseStatus(status string) envelopes.ResponseStatus {
+	switch status {
+	case string(envelopes.ResponseStatusSubmitted):
+		return envelopes.ResponseStatusSubmitted
+	case string(envelopes.ResponseStatusCancelled):
+		return envelopes.ResponseStatusCancelled
+	case string(envelopes.ResponseStatusPartial):
+		return envelopes.ResponseStatusPartial
+	default:
+		return envelopes.ResponseStatusError
+	}
+}
+
+func nullableString(v sql.NullString) string {
+	if !v.Valid {
+		return ""
+	}
+	return v.String
 }
 
 func parseSQLiteTimestampValue(v any) (time.Time, error) {

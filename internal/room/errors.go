@@ -7,4 +7,5 @@ var (
 	ErrRoomDisconnected = errors.New("room: disconnected")
 	ErrRoomClosed       = errors.New("room: closed")
 	ErrNoConn           = errors.New("room: no active websocket connection")
+	ErrRoomNotFound     = errors.New("room: not found")
 )
