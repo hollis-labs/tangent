@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-v0.2.0 released. Tangent now ships persistent rooms, multi-envelope sessions, and three bundled workflows: `tangent.triage`, `tangent.feedback`, and `tangent.design-iteration`. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
+v0.3.0 released. Tangent now ships persistent rooms, multi-envelope sessions, three general workflows (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`), and the first full Interview Protocol workflow for writing (`interview -> synthesis -> drafting -> revision -> output`). Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -24,7 +24,7 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.2.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.3.0
 ```
 
 Run:
@@ -47,20 +47,20 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use the `tangent.triage` tool. Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, decide each item, click Submit, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.design-iteration`) or the v0.3 writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What changed since v0.1
+### What changed since v0.2
 
-- Rooms now persist in SQLite and survive restart.
-- Tangent supports multi-envelope rooms through `tangent.session_*`.
-- Two workflows joined `triage`: `feedback` and `design-iteration`.
-- The SPA now includes a tab strip for switching active rooms.
-- Fast-Triage has been retired; use Tangent and the migration guide above.
+- Tangent now ships the first full Interview Protocol workflow for writing.
+- Rooms now track explicit workflow phases through `tangent.session_advance_phase` and `tangent.session_set_phase_output`.
+- The writing flow adds five new bundled workflow tools: `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, and `tangent.output_render`.
+- `tangent.session_get` now exposes phase metadata, structured interview history, synthesis projection, accepted draft blocks, revision outcomes, and the final output artifact.
+- The local Tangent skill/command docs now describe the canonical end-to-end writing choreography, including explicit jump-back from `revision` to `drafting`.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -87,24 +87,19 @@ The phases below are illustrative — they sketch the intended shape of releases
 
 Wails shell, MCP server, one bundled workflow (triage). The goal is end-to-end: any MCP-speaking agent can launch a rich workflow in Tangent and receive a structured response back.
 
-### v0.3 — Visual / design kinds
+### v0.4 — Shared whiteboard
 
-Add `mockup-board`, `comparison-split`, `annotated-image`, and `design-iteration` envelope kinds. These get contributed back to the core `go-envelopes` catalog so other hosts (Nanite, etc.) can render them too.
+The next phase is a Tangent-native shared whiteboard workflow: a persistent, MCP-driven freeform canvas for layout, annotation, and spatial collaboration. The planned MVP is single-user localhost first, shared between user and agent through one room, likely using a tldraw-backed canvas.
 
-The next phase is the Interview Protocol writing variant: more deliberate
-multi-step room workflows on top of the persistence and session substrate
-shipped in v0.2. The full forward outline lives outside the repo in the
-execution planning workspace; this README stays focused on the shipped app.
-
-### v0.4 — New workflows
+### v0.5 — Additional workflow expansion
 
 Spreadsheet review, form collect, approval queue, diff review, file picker, progress panel, dashboard, and wizard.
 
-### v0.5 — Nanite-native side-channel
+### v0.6 — Nanite-native side-channel
 
 The premium transport tier with mid-turn event injection.
 
-### v0.6+ — Distribution and trust
+### v0.7+ — Distribution and trust
 
 Installation, capability gating, isolation, and the trust model for third-party workflow plugins.
 
@@ -172,6 +167,7 @@ More docs:
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
 - [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
+- [`docs/manual-tests/writing-flow-e2e.md`](./docs/manual-tests/writing-flow-e2e.md) — full Interview Protocol writing workflow
 
 ## License
 
