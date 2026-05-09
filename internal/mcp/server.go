@@ -198,6 +198,16 @@ func (s *Server) registerTools() error {
 		InputSchema: proseRevisionSchema,
 	}, s.handleProseRevision)
 
+	outputRenderSchema, err := buildOutputRenderInputSchema()
+	if err != nil {
+		return fmt.Errorf("build output-render input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.output_render",
+		Description: "Dispatch an output-render envelope through Tangent. Persists the room's final markdown artifact and renders it with copy/export affordances.",
+		InputSchema: outputRenderSchema,
+	}, s.handleOutputRender)
+
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
@@ -317,6 +327,10 @@ func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
 
 func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(proseRevisionInputSchemaJSON, "prose_revision")
+}
+
+func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(outputRenderInputSchemaJSON, "output_render")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {

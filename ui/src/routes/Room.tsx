@@ -30,6 +30,7 @@ type SessionStatePayload = {
   synthesis_notes?: unknown;
   current_draft?: unknown;
   prose_revision_outcomes?: unknown[];
+  final_output?: unknown;
 };
 
 export default function Room() {
@@ -142,7 +143,8 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.design-iteration" &&
     type !== "tangent.synthesis-notes" &&
     type !== "tangent.block-draft" &&
-    type !== "tangent.prose-revision"
+    type !== "tangent.prose-revision" &&
+    type !== "tangent.output-render"
   ) {
     return envelope;
   }
@@ -156,6 +158,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.prose-revision") {
       return attachCurrentDraft(envelope, state.current_draft);
+    }
+    if (type === "tangent.output-render") {
+      return attachFinalOutput(envelope, state.final_output);
     }
     return attachSynthesisState(envelope, state.synthesis_notes);
   } catch {
@@ -274,6 +279,21 @@ function attachCurrentDraft(envelope: unknown, currentDraft: unknown): unknown {
       : {};
   if (currentDraft && typeof currentDraft === "object") {
     data.current_draft = currentDraft;
+  }
+  return { ...typed, data };
+}
+
+function attachFinalOutput(envelope: unknown, finalOutput: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  if (finalOutput && typeof finalOutput === "object") {
+    Object.assign(data, finalOutput as Record<string, unknown>);
   }
   return { ...typed, data };
 }

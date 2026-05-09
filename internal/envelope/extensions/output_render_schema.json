@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Output render envelope data",
+  "description": "Render the final markdown artifact and preserve it on the room for later retrieval.",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "markdown": {
+      "type": "string",
+      "minLength": 1
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "markdown"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "markdown"
+  ],
+  "additionalProperties": false
+}

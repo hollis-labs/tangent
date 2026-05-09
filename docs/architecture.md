@@ -1,4 +1,4 @@
-# Tangent architecture (v0.2)
+# Tangent architecture (v0.3)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,12 +63,17 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Eleven tools are advertised in v0.3:
+Sixteen tools are advertised in v0.3:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
 - `tangent.feedback` — the bundled structured-form workflow.
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
+- `tangent.interview_question` — one long-form question/answer turn inside a room.
+- `tangent.block_draft` — drafting-stage block review and accept/revise capture.
+- `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
+- `tangent.output_render` — final markdown renderer with copy/export affordances.
+- `tangent.synthesis_notes` — phase-gated synthesis handoff.
 - `tangent.session_create`
 - `tangent.session_advance`
 - `tangent.session_get`
@@ -106,6 +111,19 @@ This substrate is intentionally workflow-neutral. Built-in or external
 agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
 `tangent.session_get` after process restart.
+
+The bundled v0.3 writing flow uses the canonical sequence:
+
+- `interview`
+- `synthesis`
+- `drafting`
+- `revision`
+- `output`
+
+Jump-backs are explicit rather than implicit. If a revision pass uncovers a
+drafting problem, the agent calls `tangent.session_advance_phase` back to
+`drafting`, resolves the new block, and advances forward again. History remains
+append-only in `phases_visited`.
 
 ### Multi-envelope rooms
 

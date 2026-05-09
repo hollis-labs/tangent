@@ -137,6 +137,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register prose-revision extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register output-render extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register synthesis-notes extension: %v\n", regErr)
 		os.Exit(1)
@@ -192,6 +196,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterProseRevisionOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register prose-revision handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterOutputRenderOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register output-render handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {

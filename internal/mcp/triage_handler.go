@@ -217,6 +217,12 @@ func RegisterProseRevisionOnDispatcher(dispatcher *envelope.Dispatcher, handler 
 	return dispatcher.Register(proseRevisionEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterOutputRenderOnDispatcher wires the same room-bridging handler
+// for tangent.output-render envelopes.
+func RegisterOutputRenderOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(outputRenderEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterSynthesisNotesOnDispatcher wires the same room-bridging
 // handler for tangent.synthesis-notes envelopes.
 func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {

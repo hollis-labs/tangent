@@ -19,4 +19,6 @@ var (
 	ErrInvalidProseRevisionSuggestionText = errors.New("room: invalid prose revision suggestion text")
 	ErrInvalidProseRevisionDecision       = errors.New("room: invalid prose revision decision")
 	ErrInvalidProseRevisionOutcome        = errors.New("room: invalid prose revision outcome")
+	ErrInvalidFinalOutputMarkdown         = errors.New("room: invalid final output markdown")
+	ErrInvalidFinalOutputFormat           = errors.New("room: invalid final output format")
 )

@@ -22,6 +22,11 @@ import {
   type InterviewQuestionResponse,
 } from "./components/envelopes/InterviewQuestion";
 import {
+  OutputRender,
+  type OutputRenderEnvelope,
+  type OutputRenderResponse,
+} from "./components/envelopes/OutputRender";
+import {
   ProseRevision,
   type ProseRevisionEnvelope,
   type ProseRevisionResponse,
@@ -109,6 +114,16 @@ function ProseRevisionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponen
   );
 }
 
+function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <OutputRender
+      envelope={envelope as OutputRenderEnvelope}
+      onSubmit={onSubmit as (response: OutputRenderResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
   return (
     <SynthesisNotes
@@ -125,6 +140,7 @@ register("tangent.design-iteration", DesignIterationAdapter);
 register("tangent.interview-question", InterviewQuestionAdapter);
 register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
+register("tangent.output-render", OutputRenderAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");

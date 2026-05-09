@@ -70,6 +70,7 @@ type sessionGetResult struct {
 	AcceptedDraftBlocks   []room.DraftBlock           `json:"accepted_draft_blocks"`
 	CurrentDraft          *room.CurrentDraftView      `json:"current_draft,omitempty"`
 	ProseRevisionOutcomes []room.ProseRevisionOutcome `json:"prose_revision_outcomes"`
+	FinalOutput           *room.FinalOutputView       `json:"final_output,omitempty"`
 	EnvelopesHistory      []room.EnvelopeHistory      `json:"envelopes_history"`
 	CurrentEnvelope       *envelopes.Envelope         `json:"current_envelope,omitempty"`
 }
@@ -151,6 +152,7 @@ func (s *Server) handleSessionGet(
 		AcceptedDraftBlocks:   room.ProjectAcceptedDraftBlocks(phaseState),
 		CurrentDraft:          room.ProjectCurrentDraft(phaseState),
 		ProseRevisionOutcomes: room.ProjectProseRevisionOutcomes(phaseState),
+		FinalOutput:           room.ProjectFinalOutput(phaseState),
 		EnvelopesHistory:      history,
 	}
 	if ok {

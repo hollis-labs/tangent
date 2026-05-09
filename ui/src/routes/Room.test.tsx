@@ -8,6 +8,11 @@ import {
   type BlockDraftResponse,
 } from "../components/envelopes/BlockDraft";
 import {
+  OutputRender,
+  type OutputRenderEnvelope,
+  type OutputRenderResponse,
+} from "../components/envelopes/OutputRender";
+import {
   ProseRevision,
   type ProseRevisionEnvelope,
   type ProseRevisionResponse,
@@ -237,6 +242,56 @@ describe("<Room>", () => {
       "Accepted block so far.",
     );
   });
+
+  it("enriches output-render envelopes with the persisted final output", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.output-render", OutputRenderAdapter);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                final_output: {
+                  markdown: "# Final output\n\nAccepted final copy.",
+                  filename: "final.md",
+                  format: "markdown",
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("output-1", {
+        v: 1,
+        id: "output-1",
+        type: "tangent.output-render",
+        data: {},
+      });
+    });
+
+    expect(await screen.findByTestId("output-render-markdown")).toHaveTextContent(
+      "Accepted final copy.",
+    );
+  });
 });
 
 function renderAt(path: string, includeNavigator = false) {
@@ -306,6 +361,16 @@ function ProseRevisionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponen
     <ProseRevision
       envelope={envelope as ProseRevisionEnvelope}
       onSubmit={onSubmit as (response: ProseRevisionResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <OutputRender
+      envelope={envelope as OutputRenderEnvelope}
+      onSubmit={onSubmit as (response: OutputRenderResponse) => void}
       onCancel={onCancel}
     />
   );

@@ -730,6 +730,78 @@ func TestRoom_ReplaceConn(t *testing.T) {
 	}
 }
 
+func TestRoom_SetFinalOutputPersistsAndHydrates(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm, err := mgr.CreateWithError(map[string]string{"title": "Final output"})
+	if err != nil {
+		t.Fatalf("CreateWithError: %v", err)
+	}
+
+	err = rm.SetFinalOutput(room.FinalOutputView{
+		Title:     "Final draft",
+		Markdown:  "# Final draft\n\nTight final paragraph.",
+		Filename:  "final-draft.md",
+		Format:    "markdown",
+		Summary:   "Polished final copy.",
+		UpdatedAt: "2026-05-09T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SetFinalOutput: %v", err)
+	}
+
+	state := rm.PhaseState()
+	output := room.ProjectFinalOutput(state)
+	if output == nil {
+		t.Fatal("ProjectFinalOutput returned nil")
+	}
+	if output.Filename != "final-draft.md" {
+		t.Fatalf("filename = %q, want final-draft.md", output.Filename)
+	}
+	if output.WordCount == 0 {
+		t.Fatal("word_count should be populated")
+	}
+
+	reloaded := room.NewManager(db)
+	err = reloaded.Hydrate(context.Background())
+	if err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloadedState, found, err := reloaded.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState: %v", err)
+	}
+	if !found {
+		t.Fatalf("GetPhaseState found=false for room %q", rm.ID)
+	}
+	reloadedOutput := room.ProjectFinalOutput(reloadedState)
+	if reloadedOutput == nil {
+		t.Fatal("reloaded ProjectFinalOutput returned nil")
+	}
+	if reloadedOutput.Markdown != "# Final draft\n\nTight final paragraph." {
+		t.Fatalf("markdown = %q", reloadedOutput.Markdown)
+	}
+	if reloadedOutput.UpdatedAt != "2026-05-09T12:00:00Z" {
+		t.Fatalf("updated_at = %q", reloadedOutput.UpdatedAt)
+	}
+}
+
+func TestRoom_SetFinalOutputRejectsInvalidData(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+
+	if err := rm.SetFinalOutput(room.FinalOutputView{Markdown: "   "}); !errors.Is(err, room.ErrInvalidFinalOutputMarkdown) {
+		t.Fatalf("SetFinalOutput invalid markdown err = %v, want ErrInvalidFinalOutputMarkdown", err)
+	}
+	if err := rm.SetFinalOutput(room.FinalOutputView{Markdown: "valid", Format: "html"}); !errors.Is(err, room.ErrInvalidFinalOutputFormat) {
+		t.Fatalf("SetFinalOutput invalid format err = %v, want ErrInvalidFinalOutputFormat", err)
+	}
+}
+
 type pushResult struct {
 	resp *envelopes.Response
 	err  error

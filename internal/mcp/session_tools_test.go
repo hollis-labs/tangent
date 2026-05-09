@@ -65,6 +65,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterProseRevision(envSvc); regErr != nil {
 		t.Fatalf("RegisterProseRevision: %v", regErr)
 	}
+	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
+		t.Fatalf("RegisterOutputRender: %v", regErr)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
@@ -113,6 +116,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterProseRevisionOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterOutputRenderOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterOutputRenderOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
