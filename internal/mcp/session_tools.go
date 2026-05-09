@@ -334,6 +334,7 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
 		errors.Is(err, room.ErrInvalidWhiteboardBoardID),
+		errors.Is(err, room.ErrInvalidWhiteboardSceneSnapshot),
 		errors.Is(err, room.ErrInvalidWhiteboardAssetRef),
 		errors.Is(err, room.ErrInvalidWhiteboardExportRef),
 		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),

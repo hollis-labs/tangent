@@ -232,7 +232,7 @@ func normalizeWhiteboardSnapshot(snapshot WhiteboardSnapshot) (WhiteboardSnapsho
 		}
 		sceneMap, ok := rawScene.(map[string]any)
 		if !ok {
-			return WhiteboardSnapshot{}, ErrInvalidWhiteboardBoardID
+			return WhiteboardSnapshot{}, ErrInvalidWhiteboardSceneSnapshot
 		}
 		sceneSnapshot = sceneMap
 	}
@@ -299,6 +299,9 @@ func normalizeWhiteboardAssetRef(asset WhiteboardAssetRef) (WhiteboardAssetRef, 
 	if strings.HasPrefix(normalized.Source, "data:") || strings.HasPrefix(normalized.Source, "blob:") {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
 	}
+	if err := validateWhiteboardArtifactURI(normalized.URI); err != nil {
+		return WhiteboardAssetRef{}, err
+	}
 	if normalized.Kind != "" && normalized.Kind != "reference_image" {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
 	}
@@ -323,6 +326,9 @@ func normalizeWhiteboardExportRef(ref WhiteboardExportRef) (WhiteboardExportRef,
 	if normalized.Name == "" && normalized.ArtifactID == "" && normalized.MIMEType == "" && normalized.Kind == "" && normalized.URI == "" {
 		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
 	}
+	if err := validateWhiteboardExportURI(normalized.URI); err != nil {
+		return WhiteboardExportRef{}, err
+	}
 	if normalized.Kind != "" && normalized.Kind != "png" {
 		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
 	}
@@ -330,6 +336,32 @@ func normalizeWhiteboardExportRef(ref WhiteboardExportRef) (WhiteboardExportRef,
 		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
 	}
 	return normalized, nil
+}
+
+func validateWhiteboardArtifactURI(uri string) error {
+	if uri == "" {
+		return nil
+	}
+	if strings.HasPrefix(uri, "data:") || strings.HasPrefix(uri, "blob:") {
+		return ErrInvalidWhiteboardAssetRef
+	}
+	if !strings.HasPrefix(uri, "artifact://") {
+		return ErrInvalidWhiteboardAssetRef
+	}
+	return nil
+}
+
+func validateWhiteboardExportURI(uri string) error {
+	if uri == "" {
+		return nil
+	}
+	if strings.HasPrefix(uri, "data:") || strings.HasPrefix(uri, "blob:") {
+		return ErrInvalidWhiteboardExportRef
+	}
+	if !strings.HasPrefix(uri, "artifact://") {
+		return ErrInvalidWhiteboardExportRef
+	}
+	return nil
 }
 
 func normalizeWhiteboardRevision(revision WhiteboardRevision) (WhiteboardRevision, error) {

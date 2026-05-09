@@ -1018,6 +1018,45 @@ func TestRoom_WhiteboardStateRejectsInlineAssetData(t *testing.T) {
 	}
 }
 
+func TestRoom_WhiteboardStateRejectsBrowserOnlyAssetURI(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-inline-uri",
+		Assets: []room.WhiteboardAssetRef{
+			{
+				AssetID: "asset-inline-uri",
+				URI:     "blob:local-image",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWhiteboardAssetRef) {
+		t.Fatalf("SaveWhiteboardSnapshot invalid asset URI err = %v, want ErrInvalidWhiteboardAssetRef", err)
+	}
+}
+
+func TestRoom_WhiteboardStateRejectsBrowserOnlyExportURI(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+		BoardID: "board-inline-export-uri",
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name: "board-inline-export.png",
+				Kind: "png",
+				URI:  "data:image/png;base64,AAA",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWhiteboardExportRef) {
+		t.Fatalf("SaveWhiteboardSnapshot invalid export URI err = %v, want ErrInvalidWhiteboardExportRef", err)
+	}
+}
+
 type pushResult struct {
 	resp *envelopes.Response
 	err  error
