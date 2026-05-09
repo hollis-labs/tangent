@@ -25,6 +25,7 @@ export type EnvelopeComponentProps = {
   envelope: unknown;
   onSubmit: (response: unknown) => void;
   onCancel: () => void;
+  roomID?: string;
 };
 
 export type EnvelopeComponent = ComponentType<EnvelopeComponentProps>;

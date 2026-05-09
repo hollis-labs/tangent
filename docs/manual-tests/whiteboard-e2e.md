@@ -2,6 +2,8 @@
 
 Manual smoke for the v0.4 whiteboard submit loop. This validates:
 
+- host-local autosave for in-progress edits while the envelope is open
+- refresh recovery scoped to the active room + board
 - explicit `Submit board` vs `Cancel`
 - server-issued `revision_id` on submit
 - same-room reopen from the latest persisted snapshot
@@ -41,12 +43,25 @@ Example prompt:
 > Use `tangent.whiteboard` to open a board called `board-1` so I can sketch
 > a simple layout, then wait for my submit/cancel response.
 
-## 4. Submit once
+## 4. Refresh recovery before submit
 
 Open the `/r/<roomID>` URL. Confirm:
 
 - the board renders
-- the footer explains that submit saves a revision and cancel does not
+- the footer explains that drafts autosave locally until submit/cancel
+- editing the board changes the canvas and notes without returning an MCP response yet
+
+Refresh the page before clicking `Submit board`. Confirm:
+
+- the same whiteboard envelope reopens
+- the unsent canvas edits and notes recover from this browser
+- another room or another `board_id` does not pick up this draft
+
+## 5. Submit once
+
+Open the `/r/<roomID>` URL. Confirm:
+
+- the board renders
 - editing the board and clicking `Submit board` returns a `data` response
 
 Claude should receive a response shaped like:
@@ -70,7 +85,7 @@ Claude should receive a response shaped like:
 }
 ```
 
-## 5. Reopen the same room
+## 6. Reopen the same room
 
 Ask Claude Code to call `tangent.whiteboard` again with `meta.roomID`
 pointing at the same room.
@@ -81,7 +96,7 @@ previous submit.
 
 Submit again and verify Claude receives a new `revision_id`.
 
-## 6. Verify persisted room state
+## 7. Verify persisted room state
 
 Have Claude call `tangent.session_get` for the room and confirm:
 
@@ -89,6 +104,8 @@ Have Claude call `tangent.session_get` for the room and confirm:
 - `whiteboard.revision_history` has two entries
 - `envelopes_history` includes both whiteboard turns with their
   normalized submit payloads
+- reopening after the second submit starts from the canonical submitted
+  snapshot, not the stale pre-submit local draft
 
 ## Cancel check
 

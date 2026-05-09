@@ -1,10 +1,17 @@
-import { useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 import { type Editor, getSnapshot, type TLEditorSnapshot, Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildWhiteboardCanonicalSeedKey,
+  clearWhiteboardDraft,
+  loadWhiteboardDraft,
+  saveWhiteboardDraft,
+  WHITEBOARD_AUTOSAVE_DEBOUNCE_MS,
+} from "@/lib/whiteboard-draft-storage";
 
 export interface WhiteboardAssetRef {
   asset_id?: string;
@@ -85,12 +92,112 @@ export type WhiteboardProps = {
   envelope: WhiteboardEnvelope;
   onSubmit: (response: WhiteboardSubmitResponse) => void;
   onCancel: () => void;
+  roomID?: string;
 };
 
-export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
+export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardProps) {
   const data = envelope.data;
   const editorRef = useRef<Editor | null>(null);
-  const [notes, setNotes] = useState(data?.notes ?? "");
+  const boardID = data?.board_id ?? "";
+  const [initialState] = useState(() =>
+    resolveInitialWhiteboardState({
+      roomID,
+      boardID,
+      envelopeId: envelope.id,
+      scene: normalizeSnapshot(data?.scene),
+      notes: data?.notes ?? "",
+      revisionId: readRevisionID(data?.revision_id),
+    }),
+  );
+  const [notes, setNotes] = useState(initialState.notes);
+  const notesRef = useRef(initialState.notes);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const shouldFlushDraftRef = useRef(Boolean(roomID && boardID));
+  const canonicalSceneRef = useRef<TLEditorSnapshot | undefined>(initialState.canonicalScene);
+  const canonicalNotesRef = useRef(initialState.canonicalNotes);
+  const canonicalRevisionIdRef = useRef(initialState.revisionId);
+  const canonicalSeedKeyRef = useRef(initialState.canonicalSeedKey);
+  const lastPersistedPayloadRef = useRef<string | null>(
+    initialState.recoveredDraft
+      ? JSON.stringify({
+          notes: initialState.notes,
+          scene: initialState.scene,
+        })
+      : null,
+  );
+
+  const clearDraft = useEffectEvent(() => {
+    if (!roomID || !boardID) {
+      return;
+    }
+    clearWhiteboardDraft(roomID, boardID);
+    lastPersistedPayloadRef.current = null;
+  });
+
+  const persistDraft = useEffectEvent(() => {
+    if (!roomID || !boardID) {
+      return;
+    }
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    const scene = getSnapshot(editor.store);
+    const nextNotes = notesRef.current;
+    const payloadKey = JSON.stringify({ notes: nextNotes, scene });
+    if (payloadKey === lastPersistedPayloadRef.current) {
+      return;
+    }
+
+    const canonicalPayloadKey = JSON.stringify({
+      notes: canonicalNotesRef.current,
+      scene: canonicalSceneRef.current ?? null,
+    });
+    if (payloadKey === canonicalPayloadKey) {
+      clearDraft();
+      return;
+    }
+
+    saveWhiteboardDraft({
+      version: 1,
+      roomID,
+      boardID,
+      envelopeId: envelope.id,
+      baseRevisionId: canonicalRevisionIdRef.current,
+      baseSeedKey: canonicalSeedKeyRef.current,
+      notes: nextNotes,
+      scene,
+      savedAt: new Date().toISOString(),
+    });
+    lastPersistedPayloadRef.current = payloadKey;
+  });
+
+  const scheduleAutosave = useEffectEvent(() => {
+    if (!roomID || !boardID) {
+      return;
+    }
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+    autosaveTimerRef.current = window.setTimeout(() => {
+      autosaveTimerRef.current = null;
+      persistDraft();
+    }, WHITEBOARD_AUTOSAVE_DEBOUNCE_MS);
+  });
+
+  useEffect(() => {
+    return () => {
+      unsubscribeRef.current?.();
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+      if (shouldFlushDraftRef.current) {
+        persistDraft();
+      }
+    };
+  }, []);
 
   const handleSubmit = () => {
     const editor = editorRef.current;
@@ -98,6 +205,8 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
       return;
     }
     const selectionSummary = summarizeSelection(editor);
+    shouldFlushDraftRef.current = false;
+    clearDraft();
     onSubmit({
       v: 1,
       envelopeId: envelope.id,
@@ -113,6 +222,19 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
       },
       completedAt: new Date().toISOString(),
     });
+  };
+
+  const handleCancel = () => {
+    shouldFlushDraftRef.current = false;
+    clearDraft();
+    onCancel();
+  };
+
+  const handleNotesChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const nextNotes = event.target.value;
+    notesRef.current = nextNotes;
+    setNotes(nextNotes);
+    scheduleAutosave();
   };
 
   return (
@@ -151,9 +273,19 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
       <CardContent className="space-y-4">
         <div className="h-[640px] overflow-hidden rounded-xl border border-zinc-800 bg-white">
           <Tldraw
-            snapshot={normalizeSnapshot(data?.scene)}
+            snapshot={initialState.scene}
             onMount={(editor) => {
               editorRef.current = editor;
+              if (!canonicalSceneRef.current && !initialState.recoveredDraft) {
+                canonicalSceneRef.current = getSnapshot(editor.store);
+              }
+              unsubscribeRef.current?.();
+              unsubscribeRef.current = editor.store.listen(
+                () => {
+                  scheduleAutosave();
+                },
+                { source: "user", scope: "document" },
+              );
             }}
           />
         </div>
@@ -162,7 +294,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Notes</p>
           <Textarea
             value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={handleNotesChange}
             placeholder="Add context for the next whiteboard revision."
             rows={4}
             data-testid="whiteboard-notes"
@@ -172,9 +304,14 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
 
       <CardFooter className="justify-end gap-3">
         <p className="mr-auto text-xs text-zinc-500">
-          Submit saves a new room revision. Cancel closes without saving local edits.
+          Draft autosaves stay in this browser until you submit or cancel.
         </p>
-        <Button type="button" variant="ghost" onClick={onCancel} data-testid="whiteboard-cancel">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleCancel}
+          data-testid="whiteboard-cancel"
+        >
           Cancel
         </Button>
         <Button type="button" onClick={handleSubmit} data-testid="whiteboard-submit">
@@ -190,6 +327,105 @@ function normalizeSnapshot(scene: WhiteboardEnvelopeData["scene"]): TLEditorSnap
     return undefined;
   }
   return scene as TLEditorSnapshot;
+}
+
+function readRevisionID(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function resolveInitialWhiteboardState(input: {
+  roomID?: string;
+  boardID: string;
+  envelopeId: string;
+  scene?: TLEditorSnapshot;
+  notes: string;
+  revisionId: string | null;
+}): {
+  scene?: TLEditorSnapshot;
+  notes: string;
+  canonicalScene?: TLEditorSnapshot;
+  canonicalNotes: string;
+  canonicalSeedKey: string;
+  revisionId: string | null;
+  recoveredDraft: boolean;
+} {
+  const canonicalSeedKey = buildWhiteboardCanonicalSeedKey({
+    notes: input.notes,
+    scene: input.scene,
+  });
+  if (!input.roomID || !input.boardID) {
+    return {
+      scene: input.scene,
+      notes: input.notes,
+      canonicalScene: input.scene,
+      canonicalNotes: input.notes,
+      canonicalSeedKey,
+      revisionId: input.revisionId,
+      recoveredDraft: false,
+    };
+  }
+
+  const draft = loadWhiteboardDraft(input.roomID, input.boardID);
+  if (!draft) {
+    return {
+      scene: input.scene,
+      notes: input.notes,
+      canonicalScene: input.scene,
+      canonicalNotes: input.notes,
+      canonicalSeedKey,
+      revisionId: input.revisionId,
+      recoveredDraft: false,
+    };
+  }
+
+  if (
+    !isCompatibleDraft(draft, {
+      envelopeId: input.envelopeId,
+      revisionId: input.revisionId,
+      canonicalSeedKey,
+    })
+  ) {
+    clearWhiteboardDraft(input.roomID, input.boardID);
+    return {
+      scene: input.scene,
+      notes: input.notes,
+      canonicalScene: input.scene,
+      canonicalNotes: input.notes,
+      canonicalSeedKey,
+      revisionId: input.revisionId,
+      recoveredDraft: false,
+    };
+  }
+
+  return {
+    scene: draft.scene,
+    notes: draft.notes,
+    canonicalScene: input.scene,
+    canonicalNotes: input.notes,
+    canonicalSeedKey,
+    revisionId: input.revisionId,
+    recoveredDraft: true,
+  };
+}
+
+function isCompatibleDraft(
+  draft: {
+    envelopeId: string;
+    baseRevisionId: string | null;
+    baseSeedKey: string;
+  },
+  canonical: {
+    envelopeId: string;
+    revisionId: string | null;
+    canonicalSeedKey: string;
+  },
+): boolean {
+  if (draft.baseRevisionId || canonical.revisionId) {
+    return draft.baseRevisionId === canonical.revisionId;
+  }
+  return (
+    draft.envelopeId === canonical.envelopeId && draft.baseSeedKey === canonical.canonicalSeedKey
+  );
 }
 
 function summarizeSelection(editor: Editor): WhiteboardSelectionSummary | undefined {

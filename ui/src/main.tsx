@@ -129,12 +129,13 @@ function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponent
   );
 }
 
-function WhiteboardAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <Whiteboard
       envelope={envelope as WhiteboardEnvelope}
       onSubmit={onSubmit as (response: WhiteboardSubmitResponse) => void}
       onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }

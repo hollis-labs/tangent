@@ -93,6 +93,40 @@ describe("<Room>", () => {
     expect(cancel).toHaveBeenCalledWith("env-1");
   });
 
+  it("beforeunload does not cancel an active whiteboard envelope", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.whiteboard", WhiteboardProbeAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("whiteboard-refresh-1", {
+        v: 1,
+        id: "whiteboard-refresh-1",
+        type: "tangent.whiteboard",
+        data: { board_id: "board-1" },
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    expect(cancel).not.toHaveBeenCalledWith("whiteboard-refresh-1");
+  });
+
   it("enriches synthesis-notes envelopes with the gated session state", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(

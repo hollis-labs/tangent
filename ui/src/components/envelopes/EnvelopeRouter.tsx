@@ -17,14 +17,17 @@ type Props = {
   envelope: unknown;
   onSubmit: (response: unknown) => void;
   onCancel: () => void;
+  roomID?: string;
 };
 
-export function EnvelopeRouter({ envelope, onSubmit, onCancel }: Props) {
+export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID }: Props) {
   const type = readType(envelope);
   const Component = type ? lookup(type) : null;
 
   if (Component) {
-    return <Component envelope={envelope} onSubmit={onSubmit} onCancel={onCancel} />;
+    return (
+      <Component envelope={envelope} onSubmit={onSubmit} onCancel={onCancel} roomID={roomID} />
+    );
   }
 
   // Fallback: unknown / missing type. Render the raw JSON for

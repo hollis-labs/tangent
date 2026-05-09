@@ -94,6 +94,9 @@ export default function Room() {
       if (!pending || !clientRef.current) {
         return;
       }
+      if (readEnvelopeType(pending.envelope) === "tangent.whiteboard") {
+        return;
+      }
       clientRef.current.cancel(pending.envelopeId);
     };
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -129,6 +132,7 @@ export default function Room() {
             envelope={pending.envelope}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
+            roomID={roomID}
           />
         </section>
       ) : (
