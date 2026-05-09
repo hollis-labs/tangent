@@ -284,6 +284,160 @@ func TestRoom_PushCancel(t *testing.T) {
 	assertEnvelopeStatus(t, db, rm.ID, env.ID, "cancelled", envelopes.ErrorCodeUserCancelled, true)
 }
 
+func TestRoom_SaveSpreadsheetReviewSnapshotPersistsAndReloads(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "spreadsheet"})
+	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
+		TableID: "table-1",
+		Columns: []map[string]any{
+			{"id": "name", "label": "Name"},
+			{"id": "status", "label": "Status"},
+		},
+		Rows: []map[string]any{
+			{"id": "row-1", "name": "Alpha", "status": "open"},
+			{"id": "row-2", "name": "Beta", "status": "closed"},
+		},
+		QueryState: map[string]any{
+			"sort": []map[string]any{{"column_id": "status", "direction": "asc"}},
+			"filters": []map[string]any{
+				{"column_id": "status", "op": "eq", "value": "open"},
+			},
+			"search":          "Alpha  ",
+			"visible_columns": []string{"name", "status"},
+			"page":            map[string]any{"index": 2, "size": 25},
+			"ignored":         true,
+		},
+		Notes:     "  shortlist only  ",
+		UpdatedAt: "2026-05-09T20:05:00Z",
+		SavedViews: []room.SpreadsheetReviewSavedView{
+			{
+				Name: "Open items",
+				QueryState: map[string]any{
+					"filters": []map[string]any{
+						{"column_id": "status", "op": "eq", "value": "open"},
+					},
+					"ignored": "drop-me",
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSpreadsheetReviewSnapshot: %v", err)
+	}
+
+	state := rm.PhaseState()
+	review := room.ProjectSpreadsheetReviewState(state)
+	if review == nil {
+		t.Fatal("ProjectSpreadsheetReviewState returned nil")
+	}
+	if got := review.TableID; got != "table-1" {
+		t.Fatalf("table_id = %q, want table-1", got)
+	}
+	if got := review.Notes; got != "shortlist only" {
+		t.Fatalf("notes = %q, want shortlist only", got)
+	}
+	if got := len(review.QueryState); got != 5 {
+		t.Fatalf("query_state key count = %d, want 5", got)
+	}
+	if _, exists := review.QueryState["ignored"]; exists {
+		t.Fatalf("query_state unexpectedly retained ignored key: %+v", review.QueryState)
+	}
+	if got := len(review.SavedViews); got != 1 {
+		t.Fatalf("saved_views len = %d, want 1", got)
+	}
+
+	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState reload: %v", err)
+	}
+	if !found {
+		t.Fatalf("GetPhaseState found = false, want true")
+	}
+	reloadedReview := room.ProjectSpreadsheetReviewState(reloaded)
+	if reloadedReview == nil {
+		t.Fatal("reloaded ProjectSpreadsheetReviewState returned nil")
+	}
+	if got := len(reloadedReview.Rows); got != 2 {
+		t.Fatalf("reloaded rows len = %d, want 2", got)
+	}
+	if got := reloadedReview.SavedViews[0].Name; got != "Open items" {
+		t.Fatalf("reloaded saved view name = %q, want Open items", got)
+	}
+	if _, exists := reloadedReview.SavedViews[0].QueryState["ignored"]; exists {
+		t.Fatalf("saved view query_state unexpectedly retained ignored key: %+v", reloadedReview.SavedViews[0].QueryState)
+	}
+}
+
+func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
+		TableID:    "table-empty",
+		QueryState: map[string]any{},
+		SavedViews: []room.SpreadsheetReviewSavedView{},
+	}); err != nil {
+		t.Fatalf("SaveSpreadsheetReviewSnapshot empty: %v", err)
+	}
+
+	review := room.ProjectSpreadsheetReviewState(rm.PhaseState())
+	if review == nil {
+		t.Fatal("ProjectSpreadsheetReviewState returned nil")
+	}
+	if got := len(review.Columns); got != 0 {
+		t.Fatalf("columns len = %d, want 0", got)
+	}
+	if got := len(review.Rows); got != 0 {
+		t.Fatalf("rows len = %d, want 0", got)
+	}
+	if got := len(review.SavedViews); got != 0 {
+		t.Fatalf("saved_views len = %d, want 0", got)
+	}
+}
+
+func TestRoom_SaveSpreadsheetReviewSavedViewsReplacesViews(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
+		TableID: "table-views",
+		Columns: []map[string]any{{"id": "status"}},
+		Rows:    []map[string]any{{"id": "row-1", "status": "open"}},
+		QueryState: map[string]any{
+			"search": "open",
+		},
+	}); err != nil {
+		t.Fatalf("seed SaveSpreadsheetReviewSnapshot: %v", err)
+	}
+
+	if err := rm.SaveSpreadsheetReviewSavedViews("table-views", []room.SpreadsheetReviewSavedView{
+		{
+			Name: "Only open",
+			QueryState: map[string]any{
+				"filters": []map[string]any{
+					{"column_id": "status", "op": "eq", "value": "open"},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSpreadsheetReviewSavedViews: %v", err)
+	}
+
+	review := room.ProjectSpreadsheetReviewState(rm.PhaseState())
+	if review == nil {
+		t.Fatal("ProjectSpreadsheetReviewState returned nil")
+	}
+	if got := len(review.SavedViews); got != 1 {
+		t.Fatalf("saved_views len = %d, want 1", got)
+	}
+	if got := review.SavedViews[0].Name; got != "Only open" {
+		t.Fatalf("saved_views[0].name = %q, want Only open", got)
+	}
+	if got := review.QueryState["search"]; got != "open" {
+		t.Fatalf("query_state.search = %v, want open", got)
+	}
+}
+
 func TestRoom_PushDisconnect(t *testing.T) {
 	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()

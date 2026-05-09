@@ -708,6 +708,72 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 	}
 }
 
+func TestSession_GetIncludesSpreadsheetReviewProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "spreadsheet")
+	if _, err := rg.mgr.SaveSpreadsheetReviewSnapshot(roomID, room.SpreadsheetReviewSnapshot{
+		TableID: "table-1",
+		Columns: []map[string]any{
+			{"id": "name", "label": "Name"},
+			{"id": "status", "label": "Status"},
+		},
+		Rows: []map[string]any{
+			{"id": "row-1", "name": "Alpha", "status": "open"},
+		},
+		QueryState: map[string]any{
+			"search":          "Alpha",
+			"visible_columns": []string{"name"},
+		},
+		Notes:     "seed spreadsheet",
+		UpdatedAt: "2026-05-09T20:10:00Z",
+		SavedViews: []room.SpreadsheetReviewSavedView{
+			{
+				Name: "Focus",
+				QueryState: map[string]any{
+					"search": "Alpha",
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SaveSpreadsheetReviewSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		SpreadsheetReview *room.SpreadsheetReviewStateView `json:"spreadsheet_review"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.SpreadsheetReview == nil {
+		t.Fatal("spreadsheet_review projection missing")
+	}
+	if got := state.SpreadsheetReview.TableID; got != "table-1" {
+		t.Fatalf("table_id = %q, want table-1", got)
+	}
+	if got := len(state.SpreadsheetReview.Columns); got != 2 {
+		t.Fatalf("columns len = %d, want 2", got)
+	}
+	if got := state.SpreadsheetReview.QueryState["search"]; got != "Alpha" {
+		t.Fatalf("query_state.search = %v, want Alpha", got)
+	}
+	if got := state.SpreadsheetReview.SavedViews[0].Name; got != "Focus" {
+		t.Fatalf("saved_views[0].name = %q, want Focus", got)
+	}
+}
+
 type advanceResult struct {
 	result *mcpsdk.CallToolResult
 	err    error

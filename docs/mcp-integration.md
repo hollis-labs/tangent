@@ -180,12 +180,22 @@ workflow-neutral phase substrate:
   prior phase appends that phase again rather than rewriting history.
 - `phase_outputs`: a map keyed by phase ID. Each value is a versioned
   blob shaped like `{"version":1,"data":{...}}`.
+- `spreadsheet_review`: when a room has persisted spreadsheet-review
+  state, a dedicated projection with `table_id`, canonical `columns`
+  and `rows`, normalized `query_state`, `notes`, `updated_at`, and
+  room-backed `saved_views`.
 - `whiteboard`: when a room has persisted board state, a dedicated
   projection with `board_id`, `scene_snapshot`, referenced `assets`,
   `export_refs`, `notes`, `updated_at`, and append-only
   `revision_history` metadata.
 - `final_output`: the persisted final markdown artifact once
   `tangent.output_render` runs.
+
+For persisted spreadsheet review, Tangent treats agent-provided rows as
+canonical table content and keeps `session_get` lightweight by
+projecting normalized query state plus named saved views directly off
+the room substrate rather than synthesizing them from browser-local
+state.
 
 For the shipped v0.4 whiteboard workflow, Tangent treats the full scene
 snapshot as canonical room state but expects image/file inputs to be
