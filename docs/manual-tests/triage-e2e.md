@@ -1,7 +1,7 @@
-# Triage e2e — manual test recipe (v0.1)
+# Triage e2e — manual test recipe (v0.2)
 
 End-to-end smoke for `tangent.triage` driven by a real Claude Code
-session. Verifies the v0.1 acceptance gate: a real LLM client calls the
+session. Verifies the v0.2 acceptance gate: a real LLM client calls the
 MCP tool, the human responds in the browser, and the LLM receives a
 structured response payload.
 
@@ -35,7 +35,7 @@ slog text handler Tangent ships with):
 
 ```
 level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=27
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=29
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
@@ -160,6 +160,7 @@ node scripts/triage-mock-call.mjs
 The Go integration test
 (`internal/server/integration_test.go::TestIntegration_TriageRoundTrip`)
 exercises the same path in-process with the official MCP SDK in-memory
-transport — that is the canonical proof the loop closes; the mock script
-adds the Node-from-the-outside variant for parity with the real
-Claude-Code flow.
+transport. The mock script adds the Node-from-the-outside parity check
+for the same loop. In v0.2, the triage tool still preserves the v0.1
+public contract even though it now routes through the session substrate
+internally.

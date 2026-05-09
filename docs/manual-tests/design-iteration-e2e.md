@@ -75,4 +75,6 @@ node scripts/design-iteration-mock-call.mjs
 ```
 
 That script drives three iterations through one room and asserts all
-three responses plus room history.
+three responses plus room history. For a curl-first version of the same
+room reuse pattern, see
+[`multi-envelope-session-e2e.md`](./multi-envelope-session-e2e.md).

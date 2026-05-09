@@ -86,17 +86,42 @@ For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
 go-envelopes registry) and the Wails-deferral note, see
 [`architecture.md`](./architecture.md).
 
-## Known limitations (v0.1)
+## Known limitations (v0.2)
 
 See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
 - Localhost only, single-user, no auth.
-- Ephemeral state — restarts drop all rooms.
-- Two tools advertised (`tangent.list_workflows`, `tangent.triage`).
+- One active pending envelope per room.
+- Nine tools advertised; bundled workflows are `triage`, `feedback`,
+  and `design-iteration`.
+
+## Persistence layer
+
+Local state now lives in SQLite at `~/.tangent/tangent.db`
+(`TANGENT_DB_PATH` overrides).
+
+Useful commands:
+
+```bash
+make db-migrate
+make db-rollback
+sqlite3 ~/.tangent/tangent.db
+```
+
+When you add a migration, create matching files in
+`internal/db/migrations/`:
+
+- `000N_name.up.sql`
+- `000N_name.down.sql`
+
+Migrations are embedded into the Go binary, so every schema change must
+land with both directions present.
 
 ## Adding a new envelope kind
 
-The v0.1 reference shape — use `triage` as the precedent on both sides.
+The current precedents are `triage`, `feedback`, and
+`design-iteration`. Use all three as references instead of assuming one
+workflow shape fits every kind.
 
 **Go (registration + handler):**
 
@@ -105,9 +130,10 @@ The v0.1 reference shape — use `triage` as the precedent on both sides.
    alongside `triage` so `go-envelopes` validates it.
 2. If the kind drives an MCP tool, add the tool wiring under
    `internal/mcp/` — see `triage_handler.go` and `triage_schema.go`
-   for the hand-rolled JSON Schema pattern. The handler creates a room,
-   sends the envelope through the WS bridge, and returns the user's
-   response as the MCP tool result.
+   for the hand-rolled JSON Schema pattern. The handler either creates a
+   room directly or routes through the session substrate, sends the
+   envelope through the WS bridge, and returns the user's response as
+   the MCP tool result.
 
 **Frontend (rendering):**
 
@@ -122,10 +148,21 @@ The v0.1 reference shape — use `triage` as the precedent on both sides.
 5. Codegen TS types: `make generate-envelopes`. Commit the regenerated
    `ui/src/generated/envelope-types.ts`. CI fails the build if it's
    stale (`make check-envelopes`).
+6. At three extension kinds, hand-registration is still fine. Once a
+   fourth or fifth Tangent-specific kind lands, revisit
+   `followups.tangent.v01.dump_types_includes_extensions` and consider
+   codegen-driven auto-registration.
 
 ## Adding a new workflow
 
 A workflow is one envelope kind plus an MCP tool that creates a room
-and dispatches it. Follow the steps above; `tangent.triage` is the
-worked example. v0.2 will likely formalize this into a more declarative
-shape; for now the pattern is "follow triage."
+and dispatches it. Follow the steps above; `tangent.triage`,
+`tangent.feedback`, and `tangent.design-iteration` are the worked
+examples. If the workflow is multi-step, prefer reusing the
+`tangent.session_*` substrate rather than inventing a parallel room
+lifecycle.
+
+## Migration note
+
+If you are coming from the archived Fast-Triage repo or skill, start
+with [`migrating-from-fast-triage.md`](./migrating-from-fast-triage.md).

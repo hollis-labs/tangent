@@ -7,15 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_v0.2-bound work lands here. See `README.md` Roadmap for the planned
-shape: bundled `feedback` workflow, multi-tab per-session rooms, cancel
-handling, and verified multi-agent concurrency._
+_Post-v0.2 work lands here. See `README.md` Roadmap for the next phase._
+
+## [v0.2.0] - 2026-05-08
+
+Persistence, multi-envelope rooms, and three bundled workflows. Tangent now
+absorbs the Fast-Triage use case while remaining a single localhost binary
+with MCP and browser transports.
+
+### Added
+
+- **SQLite-backed persistence layer.** Rooms and resolved envelope history
+  now persist in `~/.tangent/tangent.db` and survive server restart.
+- **Multi-envelope-per-room session model.** Added the `tangent.session_*`
+  MCP tools: `tangent.session_create`, `tangent.session_advance`,
+  `tangent.session_get`, `tangent.session_close`, and
+  `tangent.session_list`.
+- **`tangent.feedback` workflow.** Bundled structured-form workflow with the
+  frontend `<Feedback>` component.
+- **`tangent.design-iteration` workflow.** Sandboxed HTML preview with the
+  bundled `<DesignIteration>` component and click-event capture.
+- **Multi-room tab strip UX.** The SPA can switch active rooms inside one
+  browser tab while preserving per-room state.
+- **Explicit cancel flow.** Active envelopes expose cancel, and browser
+  unload triggers a best-effort cancel back to the agent.
+- **`internal/room.ErrUserCancelled` sentinel.** Cancellation handling now
+  uses a typed sentinel instead of string matching.
 
 ### Changed
 
-- Fast-Triage is now the archived predecessor to Tangent. Added a migration
-  guide at `docs/migrating-from-fast-triage.md`, covering MCP config updates,
-  tool-name mapping, and the v0.2 behavior differences.
+- **`tangent.triage` now routes through the session substrate.** It is a
+  thin wrapper over `tangent.session_create` plus
+  `tangent.session_advance`; the public contract for v0.1 callers is
+  preserved.
+- **Fast-Triage has been retired in favor of Tangent.** The archived
+  predecessor repo is documented in
+  `docs/migrating-from-fast-triage.md`, and the local Nanite skill name
+  moves from `fast-triage` to `tangent`.
+
+### Deprecated
+
+- The old `fast-triage` skill/command name remains as a redirect stub for
+  v0.2 compatibility and is planned for removal in v0.3.
+
+### Removed
+
+- `triage_handler.containsUserCancel` string-match cancel detection,
+  replaced by `ErrUserCancelled`.
+
+### Fixed
+
+_None._
+
+### Security
+
+- **Localhost-only bind remains unchanged.** Tangent still assumes a
+  single-user trusted machine with no auth, TLS, or capability gating.
+- **Persistence is local-user scoped.** The new database lives at
+  `~/.tangent/tangent.db`; room state is no longer purely in-memory, but it
+  remains a local user-controlled file.
 
 ## [v0.1.0] - 2026-05-08
 
@@ -86,5 +136,6 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.2.0...HEAD
+[v0.2.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.1.0

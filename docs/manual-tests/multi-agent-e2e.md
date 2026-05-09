@@ -79,3 +79,7 @@ curl -fsS -X POST http://127.0.0.1:7842/mcp \
 ```
 
 The final call should return both active rooms.
+
+If you want a single-room non-LLM variant of the same persistence
+substrate, see
+[`multi-envelope-session-e2e.md`](./multi-envelope-session-e2e.md).

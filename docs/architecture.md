@@ -1,4 +1,4 @@
-# Tangent architecture (v0.1)
+# Tangent architecture (v0.2)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,21 +63,45 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Two tools advertised today:
+Nine tools are advertised in v0.2:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
 - `tangent.feedback` — the bundled structured-form workflow.
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
+- `tangent.session_create`
+- `tangent.session_advance`
+- `tangent.session_get`
+- `tangent.session_close`
+- `tangent.session_list`
 
 ### WebSocket bridge with per-room state
 
-`internal/server/ws_*.go` — every MCP workflow call creates a fresh
-room. The SPA opens a WS connection scoped to the room ID; the bridge
-sends the envelope, receives the user's response, and resolves the
-MCP call. Rooms are independent — multiple agent sessions can have
-active Tangent windows concurrently without cross-talk. State is
-in-memory and ephemeral; it does not survive a server restart.
+`internal/server/ws_*.go` — the SPA opens a WS connection scoped to the
+room ID; the bridge sends the active envelope, receives the user's
+response, and resolves the waiting MCP call. Rooms are independent, so
+multiple agent sessions can have active Tangent windows concurrently
+without cross-talk.
+
+### Persistence layer
+
+`internal/db/` + `internal/room/` — Tangent persists room rows and
+resolved envelope history in SQLite at `~/.tangent/tangent.db`
+(`TANGENT_DB_PATH` overrides). Schema changes are managed with embedded
+`golang-migrate` migrations. On startup Tangent opens the DB, applies
+migrations, hydrates prior room state into the manager, and keeps active
+in-memory `Pending` state only for envelopes that are currently awaiting
+a browser response.
+
+### Multi-envelope rooms
+
+v0.2 turns a room from a one-shot handoff into a longer-lived session.
+One room can receive many envelopes across its lifetime, and the agent
+contract for that is the `tangent.session_*` MCP surface. Bundled tools
+like `tangent.triage` still work, but now route internally through
+session creation plus session advance. Room reuse is driven by the
+`roomID` meta field on envelopes and by explicit room IDs in the session
+tools.
 
 ### Envelope dispatcher
 
@@ -107,13 +131,13 @@ shape is deliberately chosen so the eventual Wails wrap is mechanical
 build is what the shell loads. v0.1 ships as the localhost binary so
 the shape can be proven before a desktop wrapper is added.
 
-## Limits (v0.1)
+## Limits (v0.2)
 
 - **Localhost only.** No remote access, no auth, no capability gating.
 - **Single-user.** Multiple concurrent agent sessions are supported
   (multi-room), but they share one machine, one process, one user.
-- **Ephemeral state.** Rooms and envelopes live in memory; nothing
-  persists across restarts.
+- **One active pending envelope per room.** History persists, but only one
+  envelope at a time can be awaiting submission in a given room.
 - **Two transports, one envelope schema.** MCP today; the
   Nanite-native side-channel (mid-turn event injection) is v0.5+.
 
@@ -137,7 +161,7 @@ events to the agent. The lack of `allow-same-origin` is intentional;
 the parent never reaches into the iframe DOM directly, and the iframe
 does not get ambient access to the app origin.
 
-## Multi-room concurrency
+## Multi-room concurrency + tab strip
 
 v0.2 turns rooms into a persistent multi-room substrate rather than a
 single ephemeral handoff. The key pieces are:

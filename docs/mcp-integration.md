@@ -9,7 +9,7 @@ curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 ## Install
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.1.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.2.0
 ```
 
 Or build from source:
@@ -31,7 +31,7 @@ collides. Expected startup logs:
 
 ```
 level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=27
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=29
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
@@ -65,11 +65,12 @@ claude mcp list
 # tangent should appear with the URL above
 ```
 
-Then in any Claude Code session, ask Claude to use the `tangent.triage`
-tool. Watch Tangent's terminal for the room URL, open it, decide each
-item, and submit. Claude receives a structured response and narrates
-the decisions back. Full walkthrough:
-[`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md).
+Then in any Claude Code session, ask Claude to use one of the bundled
+tools: `tangent.triage`, `tangent.feedback`, or
+`tangent.design-iteration`. Tangent prints a room URL, the browser
+resolves the workflow, and Claude receives the structured response back.
+Full walkthroughs live in the manual recipes under
+[`docs/manual-tests/`](./manual-tests/).
 
 ## Cursor
 
@@ -111,7 +112,7 @@ shape, please contribute it back.
 
 ## Verification (no agent required)
 
-Confirm the MCP surface is up and advertises the v0.1 tools:
+Confirm the MCP surface is up and advertises the v0.2 tools:
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -123,12 +124,32 @@ curl -fsS -X POST http://localhost:7842/mcp \
 Expected:
 
 ```
+"tangent.design-iteration"
+"tangent.feedback"
 "tangent.list_workflows"
+"tangent.session_advance"
+"tangent.session_close"
+"tangent.session_create"
+"tangent.session_get"
+"tangent.session_list"
 "tangent.triage"
 ```
 
-For deeper probes (calling a tool, expected error frames) see
-[`mcp-smoketest.md`](./mcp-smoketest.md).
+One-shot probes for the new surfaces:
+
+```bash
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"doc-smoke"}}}'
+
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
+```
+
+For deeper probes (calling a workflow, expected error frames) see
+[`mcp-smoketest.md`](./mcp-smoketest.md) and
+[`manual-tests/multi-envelope-session-e2e.md`](./manual-tests/multi-envelope-session-e2e.md).
 
 ## Troubleshooting
 
@@ -141,16 +162,23 @@ For deeper probes (calling a tool, expected error frames) see
   `--transport sse` and the `/sse` URL. The two transports are
   equivalent for v0.1's tool surface.
 - **`go install` vs fresh-clone build.** `go install` is the simplest
-  path for a stable v0.1.0 binary; build-from-source is required if you
+  path for a stable v0.2.0 binary; build-from-source is required if you
   want unreleased fixes from `main`. The two are not API-compatible
-  across releases — pin via `@v0.1.0` until you have a reason not to.
+  across releases — pin via `@v0.2.0` until you have a reason not to.
 - **Browser shows "No component registered for ..."** The envelope
-  `type` on the wire isn't `tangent.triage`. The MCP tool's input
-  schema pins the type; if you're calling Tangent from outside the
-  bundled tools, make sure your envelope `type` matches a registered
-  kind.
+  `type` on the wire is not one of Tangent's registered workflow kinds.
+  The bundled tools pin the type for you; if you're calling the session
+  substrate directly, make sure the envelope `type` matches a registered
+  kind such as `tangent.triage`, `tangent.feedback`, or
+  `tangent.design-iteration`.
 - **Room URL hangs at "waiting for envelope..."** Each MCP call gets a
-  fresh room; stale URLs from a prior call won't replay. Trigger a new
-  call.
+  fresh room unless you deliberately reuse one through
+  `tangent.session_*`; stale URLs from a prior call will sit idle until
+  a new envelope is advanced into that room.
+- **Two Tangent processes point at the same DB.** SQLite WAL mode
+  tolerates concurrent readers and writers, but sharing one
+  `~/.tangent/tangent.db` between multiple long-lived Tangent processes
+  is still a coordination choice. If you want isolation for testing, set
+  `TANGENT_DB_PATH` per process.
 
 For more, see the manual e2e recipe's troubleshooting section.

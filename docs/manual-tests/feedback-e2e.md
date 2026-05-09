@@ -82,3 +82,7 @@ without Claude Code:
 ```bash
 node scripts/feedback-mock-call.mjs
 ```
+
+In v0.2, feedback also works as one step inside a longer-lived room via
+`tangent.session_advance`; see
+[`multi-envelope-session-e2e.md`](./multi-envelope-session-e2e.md).
