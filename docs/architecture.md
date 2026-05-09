@@ -1,4 +1,4 @@
-# Tangent architecture (v0.3)
+# Tangent architecture (v0.4 substrate)
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Sixteen tools are advertised in v0.3:
+Sixteen tools are advertised in the current build:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -111,6 +111,21 @@ This substrate is intentionally workflow-neutral. Built-in or external
 agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
 `tangent.session_get` after process restart.
+
+The first v0.4 whiteboard substrate is persisted on the same room
+state path rather than in a separate table. `tangent.session_get`
+projects a dedicated `whiteboard` payload when present:
+
+- `board_id`
+- `scene_snapshot` (canonical tldraw-style scene JSON)
+- `assets` (references/metadata only, not inline base64 blobs)
+- `notes`
+- `updated_at`
+- `revision_history` (append-only metadata, not full duplicated scenes)
+
+This keeps restart hydration and room replay simple while leaving room
+to move heavier asset/export payloads to artifact-backed storage later
+in the phase.
 
 The bundled v0.3 writing flow uses the canonical sequence:
 

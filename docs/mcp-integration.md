@@ -177,8 +177,17 @@ workflow-neutral phase substrate:
   prior phase appends that phase again rather than rewriting history.
 - `phase_outputs`: a map keyed by phase ID. Each value is a versioned
   blob shaped like `{"version":1,"data":{...}}`.
+- `whiteboard`: when a room has persisted board state, a dedicated
+  projection with `board_id`, `scene_snapshot`, referenced `assets`,
+  `notes`, `updated_at`, and append-only `revision_history` metadata.
 - `final_output`: the persisted final markdown artifact once
   `tangent.output_render` runs.
+
+For v0.4's whiteboard substrate, Tangent treats the full scene snapshot
+as canonical room state but expects image/file inputs to be referenced
+through lightweight asset metadata rather than inlined base64 payloads.
+That keeps `session_get` rehydration cheap and leaves artifact-backed
+storage/export details to the whiteboard follow-up PRs.
 
 The bundled writing workflow's canonical phase sequence is:
 

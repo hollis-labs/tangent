@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                      `json:"current_phase"`
 	PhasesVisited         []string                    `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput `json:"phase_outputs"`
+	Whiteboard            *room.WhiteboardStateView   `json:"whiteboard,omitempty"`
 	SynthesisNotes        *room.SynthesisNotesView    `json:"synthesis_notes,omitempty"`
 	AcceptedDraftBlocks   []room.DraftBlock           `json:"accepted_draft_blocks"`
 	CurrentDraft          *room.CurrentDraftView      `json:"current_draft,omitempty"`
@@ -148,6 +149,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
 		AcceptedDraftBlocks:   room.ProjectAcceptedDraftBlocks(phaseState),
 		CurrentDraft:          room.ProjectCurrentDraft(phaseState),
