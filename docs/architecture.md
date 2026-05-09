@@ -136,3 +136,23 @@ at all: without it, the iteration loop cannot return in-iframe click
 events to the agent. The lack of `allow-same-origin` is intentional;
 the parent never reaches into the iframe DOM directly, and the iframe
 does not get ambient access to the app origin.
+
+## Multi-room concurrency
+
+v0.2 turns rooms into a persistent multi-room substrate rather than a
+single ephemeral handoff. The key pieces are:
+
+- per-room state in `internal/room`, keyed by room ID
+- room history persisted in SQLite and surfaced through
+  `tangent.session_get`
+- room listing surfaced through `tangent.session_list`
+- a browser tab strip that polls the room list and lets the user switch
+  between `/r/<roomID>` routes without losing the shared SPA shell
+
+Each room still owns exactly one active WebSocket attachment at a time.
+Switching rooms in the SPA closes the current socket and reattaches to
+the next room. If the browser tab is closed mid-envelope, the SPA makes
+a best-effort cancel during `beforeunload`; browsers do not guarantee
+that async work completes there, so the hook is a UX improvement rather
+than a hard delivery guarantee. The server-side room timeout/cancel path
+remains the correctness backstop for abandoned envelopes.

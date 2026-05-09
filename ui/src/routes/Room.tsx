@@ -14,7 +14,7 @@
 //   3. EnvelopeRouter dispatches by type and fires onSubmit/onCancel.
 //   4. On unmount or onClose, close the WS.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
@@ -31,21 +31,25 @@ export default function Room() {
   const [status, setStatus] = useState<string>("connecting...");
   const [error, setError] = useState<string | null>(null);
   const clientRef = useRef<WSClient | null>(null);
+  const activeRoomRef = useRef<string | null>(null);
+  const initialRoomRef = useRef<string | null>(roomID ?? null);
+  const handleEnvelope = useEffectEvent(async (envelopeId: string, envelope: unknown) => {
+    const targetRoomID = activeRoomRef.current;
+    const enriched = targetRoomID ? await enrichEnvelope(targetRoomID, envelope) : envelope;
+    setPending({ envelopeId, envelope: enriched });
+    setStatus("envelope received");
+  });
 
   useEffect(() => {
-    if (!roomID) {
+    if (!initialRoomRef.current) {
       setError("missing roomID in URL");
       return;
     }
-    const client = connect(roomID, {
+    const client = connect(initialRoomRef.current, {
       onOpen: () => {
         setStatus("connected");
       },
-      onEnvelope: async (envelopeId, envelope) => {
-        const enriched = await enrichEnvelope(roomID, envelope);
-        setPending({ envelopeId, envelope: enriched });
-        setStatus("envelope received");
-      },
+      onEnvelope: handleEnvelope,
       onClose: (reason) => {
         setStatus(`disconnected: ${reason}`);
         setPending(null);
@@ -55,11 +59,37 @@ export default function Room() {
       },
     });
     clientRef.current = client;
+    activeRoomRef.current = initialRoomRef.current;
     return () => {
       client.close();
       clientRef.current = null;
+      activeRoomRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    if (!roomID || !clientRef.current) {
+      return;
+    }
+    if (activeRoomRef.current === roomID) {
+      return;
+    }
+    clientRef.current.switchRoom(roomID);
+    activeRoomRef.current = roomID;
+    setPending(null);
+    setStatus("switching rooms...");
   }, [roomID]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (!pending || !clientRef.current) {
+        return;
+      }
+      clientRef.current.cancel(pending.envelopeId);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [pending]);
 
   const handleSubmit = (response: unknown) => {
     if (!pending || !clientRef.current) return;

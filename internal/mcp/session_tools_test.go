@@ -220,6 +220,46 @@ func TestSession_Create_Advance_Get_Close(t *testing.T) {
 	}
 }
 
+func TestSession_List(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomA, _ := createSession(t, rg, "room-A")
+	_, _ = createSession(t, rg, "room-B")
+
+	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_list",
+		Arguments: map[string]any{"active_only": true},
+	})
+	if err != nil {
+		t.Fatalf("session_list: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("session_list IsError=true: %s", extractText(t, res))
+	}
+	var listed struct {
+		Rooms []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"rooms"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, res)), &listed); err != nil {
+		t.Fatalf("unmarshal session_list: %v", err)
+	}
+	if len(listed.Rooms) != 2 {
+		t.Fatalf("room count = %d, want 2", len(listed.Rooms))
+	}
+	foundA := false
+	for _, item := range listed.Rooms {
+		if item.ID == roomA && item.Title == "room-A" {
+			foundA = true
+		}
+	}
+	if !foundA {
+		t.Fatalf("room-A not found in session_list: %+v", listed.Rooms)
+	}
+}
+
 func TestSession_Advance_Busy(t *testing.T) {
 	rg := newSessionRig(t)
 	defer rg.cleanup()

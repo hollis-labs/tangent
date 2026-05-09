@@ -52,3 +52,11 @@ var sessionCloseInputSchemaJSON = []byte(`{
   },
   "required": ["roomID"]
 }`)
+
+var sessionListInputSchemaJSON = []byte(`{
+  "type": "object",
+  "title": "tangent.session_list input",
+  "properties": {
+    "active_only": {"type": "boolean"}
+  }
+}`)

@@ -39,6 +39,14 @@ type EnvelopeHistory struct {
 	ResolvedAt string              `json:"resolved_at,omitempty"`
 }
 
+type RoomSummary struct {
+	ID                  string `json:"id"`
+	Title               string `json:"title,omitempty"`
+	CurrentEnvelopeType string `json:"current_envelope_type,omitempty"`
+	CreatedAt           string `json:"created_at"`
+	UpdatedAt           string `json:"updated_at"`
+}
+
 func (m *Manager) persistRoomCreate(room *Room) error {
 	if m.db == nil {
 		return nil
@@ -204,6 +212,89 @@ ORDER BY created_at ASC, envelope_id ASC`,
 		return nil, fmt.Errorf("iterate room %q history: %w", roomID, err)
 	}
 	return history, nil
+}
+
+// List returns room summaries, optionally limited to active rooms. DB-backed
+// production callers get durable created/updated timestamps from SQLite; tests
+// without a DB fall back to the live in-memory registry snapshot.
+func (m *Manager) List(ctx context.Context, activeOnly bool) ([]RoomSummary, error) {
+	if m.db == nil {
+		return m.listInMemory(activeOnly), nil
+	}
+	query := `
+SELECT id, meta, created_at, updated_at
+FROM rooms`
+	if activeOnly {
+		query += "\nWHERE closed_at IS NULL"
+	}
+	query += "\nORDER BY updated_at DESC, created_at DESC"
+	rows, err := m.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("query room list: %w", err)
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	summaries := make([]RoomSummary, 0)
+	for rows.Next() {
+		var (
+			summary RoomSummary
+			metaRaw string
+			created any
+			updated any
+		)
+		if err := rows.Scan(&summary.ID, &metaRaw, &created, &updated); err != nil {
+			return nil, fmt.Errorf("scan room list: %w", err)
+		}
+		meta := map[string]string{}
+		if err := json.Unmarshal([]byte(metaRaw), &meta); err != nil {
+			return nil, fmt.Errorf("unmarshal room %q meta: %w", summary.ID, err)
+		}
+		summary.Title = meta["title"]
+		createdAt, err := parseSQLiteTimestampValue(created)
+		if err != nil {
+			return nil, fmt.Errorf("parse room %q created_at: %w", summary.ID, err)
+		}
+		updatedAt, err := parseSQLiteTimestampValue(updated)
+		if err != nil {
+			return nil, fmt.Errorf("parse room %q updated_at: %w", summary.ID, err)
+		}
+		summary.CreatedAt = createdAt.UTC().Format(time.RFC3339Nano)
+		summary.UpdatedAt = updatedAt.UTC().Format(time.RFC3339Nano)
+		if rm, ok := m.Get(summary.ID); ok {
+			if env := rm.CurrentEnvelope(); env != nil {
+				summary.CurrentEnvelopeType = env.Type
+			}
+		}
+		summaries = append(summaries, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate room list: %w", err)
+	}
+	return summaries, nil
+}
+
+func (m *Manager) listInMemory(activeOnly bool) []RoomSummary {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	summaries := make([]RoomSummary, 0, len(m.rooms))
+	for _, rm := range m.rooms {
+		if !activeOnly && rm.IsClosed() {
+			continue
+		}
+		summary := RoomSummary{
+			ID:        rm.ID,
+			Title:     rm.MetaCopy()["title"],
+			CreatedAt: rm.CreatedAt.UTC().Format(time.RFC3339Nano),
+			UpdatedAt: rm.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if env := rm.CurrentEnvelope(); env != nil {
+			summary.CurrentEnvelopeType = env.Type
+		}
+		summaries = append(summaries, summary)
+	}
+	return summaries
 }
 
 func (r *Room) persistPendingEnvelope(env *envelopes.Envelope) error {

@@ -75,6 +75,9 @@ export type WSClient = {
   /** Sends a cancel frame for the given envelope id. */
   cancel: (envelopeId: string) => void;
 
+  /** Switches the underlying socket to a different room. */
+  switchRoom: (roomID: string) => void;
+
   /** Closes the underlying WebSocket cleanly. */
   close: () => void;
 };
@@ -90,49 +93,50 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   }
 
   const baseURL = opts.wsURL ?? defaultWSURL();
-  const url = appendQuery(baseURL, "roomID", roomID);
-  const ws = new WebSocket(url);
   let connected = false;
+  let currentRoomID = roomID;
+  let ws = openSocket(currentRoomID);
 
-  ws.addEventListener("open", () => {
-    connected = true;
-    opts.onOpen?.();
-  });
+  function openSocket(nextRoomID: string): WebSocket {
+    const socket = new WebSocket(appendQuery(baseURL, "roomID", nextRoomID));
+    socket.addEventListener("open", () => {
+      connected = true;
+      opts.onOpen?.();
+    });
 
-  ws.addEventListener("message", (ev) => {
-    const raw = typeof ev.data === "string" ? ev.data : "";
-    if (!raw) return;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      opts.onError?.(new Error(`ws-client: bad JSON: ${(err as Error).message}`));
-      return;
-    }
-    const result = InboundSchema.safeParse(parsed);
-    if (!result.success) {
-      opts.onError?.(new Error(`ws-client: schema rejected frame: ${result.error.message}`));
-      return;
-    }
-    const msg: InboundMessage = result.data;
-    if (msg.type === "envelope") {
-      const env = msg as EnvelopeMessage;
-      opts.onEnvelope(env.envelopeId, env.envelope);
-    }
-  });
+    socket.addEventListener("message", (ev) => {
+      const raw = typeof ev.data === "string" ? ev.data : "";
+      if (!raw) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (err) {
+        opts.onError?.(new Error(`ws-client: bad JSON: ${(err as Error).message}`));
+        return;
+      }
+      const result = InboundSchema.safeParse(parsed);
+      if (!result.success) {
+        opts.onError?.(new Error(`ws-client: schema rejected frame: ${result.error.message}`));
+        return;
+      }
+      const msg: InboundMessage = result.data;
+      if (msg.type === "envelope") {
+        const env = msg as EnvelopeMessage;
+        opts.onEnvelope(env.envelopeId, env.envelope);
+      }
+    });
 
-  ws.addEventListener("close", (ev) => {
-    connected = false;
-    const reason = ev.reason || `closed (code=${ev.code})`;
-    opts.onClose?.(reason);
-  });
+    socket.addEventListener("close", (ev) => {
+      connected = false;
+      const reason = ev.reason || `closed (code=${ev.code})`;
+      opts.onClose?.(reason);
+    });
 
-  ws.addEventListener("error", () => {
-    // The browser deliberately gives us no detail on WS errors.
-    // Surface a generic error so callers know to act; the close
-    // event that follows carries the canonical reason.
-    opts.onError?.(new Error("ws-client: transport error"));
-  });
+    socket.addEventListener("error", () => {
+      opts.onError?.(new Error("ws-client: transport error"));
+    });
+    return socket;
+  }
 
   return {
     isConnected: () => connected,
@@ -141,6 +145,19 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
     },
     cancel: (envelopeId) => {
       send(ws, { type: "cancel", envelopeId });
+    },
+    switchRoom: (roomID) => {
+      if (!roomID || roomID === currentRoomID) {
+        return;
+      }
+      try {
+        ws.close(1000, "switch room");
+      } catch {
+        // ignore close errors during handoff
+      }
+      connected = false;
+      currentRoomID = roomID;
+      ws = openSocket(roomID);
     },
     close: () => {
       try {

@@ -38,6 +38,10 @@ type sessionCloseInput struct {
 	Status string `json:"status"`
 }
 
+type sessionListInput struct {
+	ActiveOnly bool `json:"active_only"`
+}
+
 type sessionCreateResult struct {
 	RoomID string `json:"roomID"`
 	URL    string `json:"url"`
@@ -53,6 +57,10 @@ type sessionCloseResult struct {
 	OK     bool   `json:"ok"`
 	RoomID string `json:"roomID"`
 	Status string `json:"status"`
+}
+
+type sessionListResult struct {
+	Rooms []room.RoomSummary `json:"rooms"`
 }
 
 func (s *Server) handleSessionCreate(
@@ -133,6 +141,19 @@ func (s *Server) handleSessionClose(
 		RoomID: args.RoomID,
 		Status: status,
 	})
+	return toolRes, payload, nil
+}
+
+func (s *Server) handleSessionList(
+	ctx context.Context,
+	_ *mcpsdk.CallToolRequest,
+	args sessionListInput,
+) (*mcpsdk.CallToolResult, sessionListResult, error) {
+	rooms, err := s.manager.List(ctx, args.ActiveOnly)
+	if err != nil {
+		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("list rooms: %v", err)), sessionListResult{}, nil
+	}
+	toolRes, payload := toolJSONResult(sessionListResult{Rooms: rooms})
 	return toolRes, payload, nil
 }
 

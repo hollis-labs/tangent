@@ -208,6 +208,16 @@ func (s *Server) registerTools() error {
 		InputSchema: sessionCloseSchema,
 	}, s.handleSessionClose)
 
+	sessionListSchema, err := buildSchema(sessionListInputSchemaJSON, "session_list")
+	if err != nil {
+		return fmt.Errorf("build session_list input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_list",
+		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present.",
+		InputSchema: sessionListSchema,
+	}, s.handleSessionList)
+
 	return nil
 }
 
