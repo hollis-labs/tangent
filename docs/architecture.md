@@ -67,6 +67,8 @@ Two tools advertised today:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
+- `tangent.feedback` — the bundled structured-form workflow.
+- `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 
 ### WebSocket bridge with per-room state
 
@@ -114,3 +116,23 @@ the shape can be proven before a desktop wrapper is added.
   persists across restarts.
 - **Two transports, one envelope schema.** MCP today; the
   Nanite-native side-channel (mid-turn event injection) is v0.5+.
+
+## Sandboxing for design-iteration
+
+`tangent.design-iteration` renders agent-authored HTML in an iframe
+using `srcdoc`. That HTML is untrusted display content, so Tangent
+keeps the sandbox deliberately narrow:
+
+- `sandbox="allow-scripts"` only.
+- No `allow-same-origin`, `allow-forms`, `allow-popups`,
+  `allow-top-navigation`, or `allow-modals`.
+- A CSP inside the `srcdoc` blocks network (`connect-src 'none'`),
+  nested frames, workers, objects, forms, and base-uri changes.
+
+The only active code Tangent permits is one injected inline shim that
+binds click-region selectors and forwards the selected action to the
+parent window via `postMessage`. This is why `allow-scripts` is present
+at all: without it, the iteration loop cannot return in-iframe click
+events to the agent. The lack of `allow-same-origin` is intentional;
+the parent never reaches into the iframe DOM directly, and the iframe
+does not get ambient access to the app origin.

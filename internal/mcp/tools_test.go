@@ -37,6 +37,9 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
 		t.Fatalf("RegisterFeedback: %v", regErr)
 	}
+	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
+		t.Fatalf("RegisterDesignIteration: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	manager := room.NewManager(nil)
 
@@ -65,10 +68,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsSevenTools asserts the tool surface includes the legacy
+// TestServer_ListsEightTools asserts the tool surface includes the legacy
 // and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsSevenTools(t *testing.T) {
+func TestServer_ListsEightTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -76,22 +79,23 @@ func TestServer_ListsSevenTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 7 {
+	if len(res.Tools) != 8 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 7 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 8 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
-		"tangent.list_workflows":  false,
-		"tangent.triage":          false,
-		"tangent.feedback":        false,
-		"tangent.session_create":  false,
-		"tangent.session_advance": false,
-		"tangent.session_get":     false,
-		"tangent.session_close":   false,
+		"tangent.list_workflows":   false,
+		"tangent.triage":           false,
+		"tangent.feedback":         false,
+		"tangent.design-iteration": false,
+		"tangent.session_create":   false,
+		"tangent.session_advance":  false,
+		"tangent.session_get":      false,
+		"tangent.session_close":    false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {

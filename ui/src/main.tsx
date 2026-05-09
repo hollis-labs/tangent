@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import {
+  DesignIteration,
+  type DesignIterationEnvelope,
+  type DesignIterationResponse,
+} from "./components/envelopes/DesignIteration";
+import {
   Feedback,
   type FeedbackEnvelope,
   type FeedbackResponse,
@@ -44,8 +49,19 @@ function FeedbackAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProp
   );
 }
 
+function DesignIterationAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <DesignIteration
+      envelope={envelope as DesignIterationEnvelope}
+      onSubmit={onSubmit as (response: DesignIterationResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
+register("tangent.design-iteration", DesignIterationAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

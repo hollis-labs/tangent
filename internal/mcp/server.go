@@ -158,6 +158,16 @@ func (s *Server) registerTools() error {
 		InputSchema: feedbackSchema,
 	}, s.handleFeedback)
 
+	designIterationSchema, err := buildDesignIterationInputSchema()
+	if err != nil {
+		return fmt.Errorf("build design-iteration input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.design-iteration",
+		Description: "Dispatch a design-iteration envelope through Tangent. Renders sandboxed HTML and returns the user's selected action for each iteration.",
+		InputSchema: designIterationSchema,
+	}, s.handleDesignIteration)
+
 	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
@@ -221,6 +231,10 @@ func buildTriageInputSchema() (*jsonschema.Schema, error) {
 
 func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(feedbackInputSchemaJSON, "feedback")
+}
+
+func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(designIterationInputSchemaJSON, "design-iteration")
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

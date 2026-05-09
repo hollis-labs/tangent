@@ -49,6 +49,12 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
 		t.Fatalf("RegisterTriage: %v", regErr)
 	}
+	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
+		t.Fatalf("RegisterFeedback: %v", regErr)
+	}
+	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
+		t.Fatalf("RegisterDesignIteration: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(db)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -69,6 +75,16 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterTriageOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterFeedbackOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterFeedbackOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterDesignIterationOnDispatcher: %v", regErr)
 	}
 
 	serverT, clientT := mcpsdk.NewInMemoryTransports()

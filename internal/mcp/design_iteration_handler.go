@@ -9,19 +9,23 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type feedbackInput struct {
+type designIterationInput struct {
 	Envelope envelopes.Envelope `json:"envelope"`
 }
 
-func (s *Server) handleFeedback(
+func (s *Server) handleDesignIteration(
 	ctx context.Context,
 	_ *mcpsdk.CallToolRequest,
-	args feedbackInput,
+	args designIterationInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if args.Envelope.Type != feedbackEnvelopeType {
+	if args.Envelope.Type != designIterationEnvelopeType {
 		return toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
-			fmt.Sprintf("tangent.feedback rejects envelope type %q; want %q", args.Envelope.Type, feedbackEnvelopeType),
+			fmt.Sprintf(
+				"tangent.design-iteration rejects envelope type %q; want %q",
+				args.Envelope.Type,
+				designIterationEnvelopeType,
+			),
 		), nil, nil
 	}
 
@@ -41,12 +45,15 @@ func (s *Server) handleFeedback(
 		}
 		var created sessionCreateResult
 		if err := json.Unmarshal([]byte(extractToolText(createRes)), &created); err != nil {
-			return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("decode session_create result: %v", err)), nil, nil
+			return toolErrorResult(
+				envelopes.ErrorCodeHostError,
+				fmt.Sprintf("decode session_create result: %v", err),
+			), nil, nil
 		}
 		roomID = created.RoomID
-		s.logWorkflowRoomCreated("feedback", roomID, args.Envelope.ID)
+		s.logWorkflowRoomCreated("design-iteration", roomID, args.Envelope.ID)
 	} else {
-		s.logWorkflowRoomReused("feedback", roomID, args.Envelope.ID)
+		s.logWorkflowRoomReused("design-iteration", roomID, args.Envelope.ID)
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)

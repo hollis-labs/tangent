@@ -125,7 +125,7 @@ func (s *Server) handleTriage(
 		), nil, nil
 	}
 
-	roomID, reused := metaString(args.Envelope.Meta, "roomID")
+	roomID, reused := metaRoomID(args.Envelope.Meta)
 	if !reused || roomID == "" {
 		createRes, _, err := s.handleSessionCreate(ctx, nil, sessionCreateInput{
 			Meta: map[string]any{

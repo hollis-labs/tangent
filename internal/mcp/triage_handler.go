@@ -128,7 +128,7 @@ func (t *TriageHandler) Handle(ctx context.Context, env *envelopes.Envelope) (*e
 // Meta["roomID"] referencing an unknown room is a hard error so
 // arbitrary client input cannot smuggle rooms into existence.
 func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, error) {
-	if id, ok := metaString(env.Meta, "roomID"); ok && id != "" {
+	if id, ok := metaRoomID(env.Meta); ok && id != "" {
 		if rm, found := t.manager.Get(id); found {
 			return rm, false, nil
 		}
@@ -193,6 +193,12 @@ func RegisterFeedbackOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tria
 	return dispatcher.Register(feedbackEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterDesignIterationOnDispatcher wires the same room-bridging
+// handler for tangent.design-iteration envelopes.
+func RegisterDesignIterationOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(designIterationEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // resolveTriageTimeout reads envTriageTimeout once at construction. A
 // malformed value silently falls back to the package default — v0.1
 // prefers "boots no matter what" over "fails fast on bad config" for
@@ -211,14 +217,14 @@ func resolveTriageTimeout() time.Duration {
 	return defaultTriageTimeout
 }
 
-// metaString returns the string value of env.Meta[key] if present and
-// of type string. Tangent's Meta is map[string]any (per the canonical
-// Envelope shape) so we type-assert here.
-func metaString(meta map[string]any, key string) (string, bool) {
+// metaRoomID returns env.Meta["roomID"] when present and string-typed.
+// Tangent's Meta is map[string]any (per the canonical Envelope shape)
+// so we type-assert here.
+func metaRoomID(meta map[string]any) (string, bool) {
 	if meta == nil {
 		return "", false
 	}
-	v, ok := meta[key]
+	v, ok := meta["roomID"]
 	if !ok {
 		return "", false
 	}
