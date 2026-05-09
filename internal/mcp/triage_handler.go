@@ -199,6 +199,36 @@ func RegisterDesignIterationOnDispatcher(dispatcher *envelope.Dispatcher, handle
 	return dispatcher.Register(designIterationEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterInterviewQuestionOnDispatcher wires the same room-bridging
+// handler for tangent.interview-question envelopes.
+func RegisterInterviewQuestionOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(interviewQuestionEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
+// RegisterBlockDraftOnDispatcher wires the same room-bridging handler
+// for tangent.block-draft envelopes.
+func RegisterBlockDraftOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(blockDraftEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
+// RegisterProseRevisionOnDispatcher wires the same room-bridging handler
+// for tangent.prose-revision envelopes.
+func RegisterProseRevisionOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(proseRevisionEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
+// RegisterOutputRenderOnDispatcher wires the same room-bridging handler
+// for tangent.output-render envelopes.
+func RegisterOutputRenderOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(outputRenderEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
+// RegisterSynthesisNotesOnDispatcher wires the same room-bridging
+// handler for tangent.synthesis-notes envelopes.
+func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(synthesisNotesEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // resolveTriageTimeout reads envTriageTimeout once at construction. A
 // malformed value silently falls back to the package default — v0.1
 // prefers "boots no matter what" over "fails fast on bad config" for

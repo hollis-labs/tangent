@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Prose revision envelope data",
+  "description": "Present one prose revision pass with a review lens and explicit suggestions so the response can mark each suggestion accepted, rejected, or commented.",
+  "properties": {
+    "lens": {
+      "type": "string",
+      "enum": [
+        "review",
+        "copy",
+        "style"
+      ]
+    },
+    "revision_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "block_id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "source_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suggestions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "original_text": {
+            "type": "string"
+          },
+          "suggested_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "suggested_text"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "lens",
+    "source_text",
+    "suggestions"
+  ],
+  "additionalProperties": false
+}

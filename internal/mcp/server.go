@@ -168,6 +168,56 @@ func (s *Server) registerTools() error {
 		InputSchema: designIterationSchema,
 	}, s.handleDesignIteration)
 
+	interviewQuestionSchema, err := buildInterviewQuestionInputSchema()
+	if err != nil {
+		return fmt.Errorf("build interview-question input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.interview_question",
+		Description: "Dispatch an interview-question envelope through Tangent. Creates or reuses a room and waits for one long-form answer.",
+		InputSchema: interviewQuestionSchema,
+	}, s.handleInterviewQuestion)
+
+	blockDraftSchema, err := buildBlockDraftInputSchema()
+	if err != nil {
+		return fmt.Errorf("build block-draft input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.block_draft",
+		Description: "Dispatch a block-draft envelope through Tangent. Accepted responses append durable draft blocks on the room.",
+		InputSchema: blockDraftSchema,
+	}, s.handleBlockDraft)
+
+	proseRevisionSchema, err := buildProseRevisionInputSchema()
+	if err != nil {
+		return fmt.Errorf("build prose-revision input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.prose_revision",
+		Description: "Dispatch a prose-revision envelope through Tangent. Persists explicit accept/reject/comment outcomes per suggestion on the room.",
+		InputSchema: proseRevisionSchema,
+	}, s.handleProseRevision)
+
+	outputRenderSchema, err := buildOutputRenderInputSchema()
+	if err != nil {
+		return fmt.Errorf("build output-render input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.output_render",
+		Description: "Dispatch an output-render envelope through Tangent. Persists the room's final markdown artifact and renders it with copy/export affordances.",
+		InputSchema: outputRenderSchema,
+	}, s.handleOutputRender)
+
+	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
+	if err != nil {
+		return fmt.Errorf("build synthesis-notes input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.synthesis_notes",
+		Description: "Dispatch a synthesis-notes envelope through Tangent. Persists private notes on the room and only exposes the phase-gated preview to the user.",
+		InputSchema: synthesisNotesSchema,
+	}, s.handleSynthesisNotes)
+
 	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
@@ -197,6 +247,26 @@ func (s *Server) registerTools() error {
 		Description: "Read the current room state and persisted envelope history for a Tangent room.",
 		InputSchema: sessionGetSchema,
 	}, s.handleSessionGet)
+
+	sessionAdvancePhaseSchema, err := buildSchema(sessionAdvancePhaseInputSchemaJSON, "session_advance_phase")
+	if err != nil {
+		return fmt.Errorf("build session_advance_phase input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_advance_phase",
+		Description: "Set the current workflow phase for a Tangent room and append it to the room's visited phase history.",
+		InputSchema: sessionAdvancePhaseSchema,
+	}, s.handleSessionAdvancePhase)
+
+	sessionSetPhaseOutputSchema, err := buildSchema(sessionSetPhaseOutputInputSchemaJSON, "session_set_phase_output")
+	if err != nil {
+		return fmt.Errorf("build session_set_phase_output input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_set_phase_output",
+		Description: "Write a top-level key into a room's versioned JSON output blob for a workflow phase.",
+		InputSchema: sessionSetPhaseOutputSchema,
+	}, s.handleSessionSetPhaseOutput)
 
 	sessionCloseSchema, err := buildSchema(sessionCloseInputSchemaJSON, "session_close")
 	if err != nil {
@@ -245,6 +315,26 @@ func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
 
 func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(designIterationInputSchemaJSON, "design-iteration")
+}
+
+func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
+}
+
+func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(blockDraftInputSchemaJSON, "block_draft")
+}
+
+func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(proseRevisionInputSchemaJSON, "prose_revision")
+}
+
+func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(outputRenderInputSchemaJSON, "output_render")
+}
+
+func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

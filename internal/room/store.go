@@ -25,18 +25,20 @@ type hydratedRoomRow struct {
 	ID        string
 	CreatedAt time.Time
 	Meta      map[string]string
+	PhaseState
 }
 
 type EnvelopeHistory struct {
-	EnvelopeID string              `json:"envelope_id"`
-	Type       string              `json:"type"`
-	Envelope   *envelopes.Envelope `json:"envelope,omitempty"`
-	Response   *envelopes.Response `json:"response,omitempty"`
-	Status     string              `json:"status"`
-	ErrorCode  string              `json:"error_code,omitempty"`
-	ErrorMsg   string              `json:"error_message,omitempty"`
-	CreatedAt  string              `json:"created_at"`
-	ResolvedAt string              `json:"resolved_at,omitempty"`
+	EnvelopeID string                    `json:"envelope_id"`
+	Type       string                    `json:"type"`
+	Envelope   *envelopes.Envelope       `json:"envelope,omitempty"`
+	Response   *envelopes.Response       `json:"response,omitempty"`
+	Interview  *InterviewQuestionHistory `json:"interview_question,omitempty"`
+	Status     string                    `json:"status"`
+	ErrorCode  string                    `json:"error_code,omitempty"`
+	ErrorMsg   string                    `json:"error_message,omitempty"`
+	CreatedAt  string                    `json:"created_at"`
+	ResolvedAt string                    `json:"resolved_at,omitempty"`
 }
 
 type RoomSummary struct {
@@ -55,13 +57,25 @@ func (m *Manager) persistRoomCreate(room *Room) error {
 	if err != nil {
 		return fmt.Errorf("marshal room meta: %w", err)
 	}
+	phaseState := room.PhaseState()
+	phasesVisitedJSON, err := marshalJSONText(phaseState.PhasesVisited, "[]")
+	if err != nil {
+		return fmt.Errorf("marshal room phases_visited: %w", err)
+	}
+	phaseOutputsJSON, err := marshalJSONText(phaseState.PhaseOutputs, "{}")
+	if err != nil {
+		return fmt.Errorf("marshal room phase_outputs: %w", err)
+	}
 
 	now := nowUTC()
 	_, err = m.db.ExecContext(
 		context.Background(),
-		`INSERT INTO rooms (id, meta, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO rooms (id, meta, current_phase, phases_visited, phase_outputs, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		room.ID,
 		metaJSON,
+		phaseState.CurrentPhase,
+		phasesVisitedJSON,
+		phaseOutputsJSON,
 		now,
 		now,
 	)
@@ -107,6 +121,7 @@ WHERE status = ?`,
 func (m *Manager) loadActiveRooms(ctx context.Context) ([]hydratedRoomRow, error) {
 	rows, err := m.db.QueryContext(ctx, `
 SELECT id, meta, created_at
+     , current_phase, phases_visited, phase_outputs
 FROM rooms
 WHERE closed_at IS NULL
 ORDER BY created_at ASC`)
@@ -120,15 +135,22 @@ ORDER BY created_at ASC`)
 	var out []hydratedRoomRow
 	for rows.Next() {
 		var (
-			row     hydratedRoomRow
-			metaRaw string
-			tsRaw   any
+			row          hydratedRoomRow
+			metaRaw      string
+			currentPhase string
+			visitedRaw   string
+			outputsRaw   string
+			tsRaw        any
 		)
-		if scanErr := rows.Scan(&row.ID, &metaRaw, &tsRaw); scanErr != nil {
+		if scanErr := rows.Scan(&row.ID, &metaRaw, &tsRaw, &currentPhase, &visitedRaw, &outputsRaw); scanErr != nil {
 			return nil, fmt.Errorf("scan active room: %w", scanErr)
 		}
 		if unmarshalErr := json.Unmarshal([]byte(metaRaw), &row.Meta); unmarshalErr != nil {
 			return nil, fmt.Errorf("unmarshal room %q meta: %w", row.ID, unmarshalErr)
+		}
+		row.PhaseState, err = decodePhaseState(currentPhase, visitedRaw, outputsRaw)
+		if err != nil {
+			return nil, fmt.Errorf("decode room %q phase state: %w", row.ID, err)
 		}
 		row.CreatedAt, err = parseSQLiteTimestampValue(tsRaw)
 		if err != nil {
@@ -203,6 +225,7 @@ ORDER BY created_at ASC, envelope_id ASC`,
 		if item.Response, err = envelopeHistoryResponse(item.EnvelopeID, item.Status, responseKind, responseRaw, item.ErrorCode, item.ErrorMsg, resolvedRaw); err != nil {
 			return nil, fmt.Errorf("decode room %q envelope %q response: %w", roomID, item.EnvelopeID, err)
 		}
+		item.Interview = buildInterviewQuestionHistory(item.Envelope, item.Response)
 		if item.Response != nil && item.Response.CompletedAt != "" {
 			item.ResolvedAt = item.Response.CompletedAt
 		}
@@ -477,6 +500,41 @@ WHERE room_id = ? AND status = ?`,
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit room close tx: %w", err)
+	}
+	return nil
+}
+
+func (r *Room) persistPhaseState(currentPhase string, phasesVisited []string, phaseOutputs map[string]PhaseOutput) error {
+	if r.db == nil {
+		return nil
+	}
+
+	phasesVisitedJSON, err := marshalJSONText(phasesVisited, "[]")
+	if err != nil {
+		return fmt.Errorf("marshal phases_visited: %w", err)
+	}
+	phaseOutputsJSON, err := marshalJSONText(phaseOutputs, "{}")
+	if err != nil {
+		return fmt.Errorf("marshal phase_outputs: %w", err)
+	}
+
+	now := nowUTC()
+	_, err = r.db.ExecContext(
+		context.Background(),
+		`UPDATE rooms
+SET current_phase = ?,
+    phases_visited = ?,
+    phase_outputs = ?,
+    updated_at = ?
+WHERE id = ?`,
+		currentPhase,
+		phasesVisitedJSON,
+		phaseOutputsJSON,
+		now,
+		r.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update room phase state: %w", err)
 	}
 	return nil
 }

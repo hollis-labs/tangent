@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import {
+  BlockDraft,
+  type BlockDraftEnvelope,
+  type BlockDraftResponse,
+} from "./components/envelopes/BlockDraft";
+import {
   DesignIteration,
   type DesignIterationEnvelope,
   type DesignIterationResponse,
@@ -11,6 +16,26 @@ import {
   type FeedbackEnvelope,
   type FeedbackResponse,
 } from "./components/envelopes/Feedback";
+import {
+  InterviewQuestion,
+  type InterviewQuestionEnvelope,
+  type InterviewQuestionResponse,
+} from "./components/envelopes/InterviewQuestion";
+import {
+  OutputRender,
+  type OutputRenderEnvelope,
+  type OutputRenderResponse,
+} from "./components/envelopes/OutputRender";
+import {
+  ProseRevision,
+  type ProseRevisionEnvelope,
+  type ProseRevisionResponse,
+} from "./components/envelopes/ProseRevision";
+import {
+  SynthesisNotes,
+  type SynthesisNotesEnvelope,
+  type SynthesisNotesResponse,
+} from "./components/envelopes/SynthesisNotes";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -59,9 +84,64 @@ function DesignIterationAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompon
   );
 }
 
+function InterviewQuestionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <InterviewQuestion
+      envelope={envelope as InterviewQuestionEnvelope}
+      onSubmit={onSubmit as (response: InterviewQuestionResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function BlockDraftAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <BlockDraft
+      envelope={envelope as BlockDraftEnvelope}
+      onSubmit={onSubmit as (response: BlockDraftResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function ProseRevisionAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <ProseRevision
+      envelope={envelope as ProseRevisionEnvelope}
+      onSubmit={onSubmit as (response: ProseRevisionResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <OutputRender
+      envelope={envelope as OutputRenderEnvelope}
+      onSubmit={onSubmit as (response: OutputRenderResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <SynthesisNotes
+      envelope={envelope as SynthesisNotesEnvelope}
+      onSubmit={onSubmit as (response: SynthesisNotesResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);
+register("tangent.interview-question", InterviewQuestionAdapter);
+register("tangent.block-draft", BlockDraftAdapter);
+register("tangent.prose-revision", ProseRevisionAdapter);
+register("tangent.output-render", OutputRenderAdapter);
+register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

@@ -86,13 +86,15 @@ For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
 go-envelopes registry) and the Wails-deferral note, see
 [`architecture.md`](./architecture.md).
 
-## Known limitations (v0.2)
+## Known limitations (v0.3)
 
 See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
 - Localhost only, single-user, no auth.
 - One active pending envelope per room.
-- Nine tools advertised; bundled workflows are `triage`, `feedback`,
+- Sixteen tools advertised; bundled workflows now include the full
+  writing path (`interview_question`, `synthesis_notes`, `block_draft`,
+  `prose_revision`, `output_render`) alongside `triage`, `feedback`,
   and `design-iteration`.
 
 ## Persistence layer
@@ -119,9 +121,11 @@ land with both directions present.
 
 ## Adding a new envelope kind
 
-The current precedents are `triage`, `feedback`, and
-`design-iteration`. Use all three as references instead of assuming one
-workflow shape fits every kind.
+The current precedents are `triage`, `feedback`, `design-iteration`,
+`interview-question`, `synthesis-notes`, `block-draft`,
+`prose-revision`, and `output-render`. Use at least one simple workflow
+and one multi-phase writing workflow as references instead of assuming
+one shape fits every kind.
 
 **Go (registration + handler):**
 
@@ -157,10 +161,10 @@ workflow shape fits every kind.
 
 A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent.triage`,
-`tangent.feedback`, and `tangent.design-iteration` are the worked
-examples. If the workflow is multi-step, prefer reusing the
-`tangent.session_*` substrate rather than inventing a parallel room
-lifecycle.
+`tangent.feedback`, `tangent.design-iteration`, and the v0.3 writing
+workflow kinds are the worked examples. If the workflow is multi-step,
+prefer reusing the `tangent.session_*` substrate and the room phase
+state rather than inventing a parallel room lifecycle.
 
 ## Migration note
 

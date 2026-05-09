@@ -43,6 +43,29 @@ var sessionGetInputSchemaJSON = []byte(`{
   "required": ["roomID"]
 }`)
 
+var sessionAdvancePhaseInputSchemaJSON = []byte(`{
+  "type": "object",
+  "title": "tangent.session_advance_phase input",
+  "properties": {
+    "roomID": {"type": "string", "minLength": 1},
+    "to_phase": {"type": "string", "minLength": 1},
+    "reason": {"type": "string"}
+  },
+  "required": ["roomID", "to_phase"]
+}`)
+
+var sessionSetPhaseOutputInputSchemaJSON = []byte(`{
+  "type": "object",
+  "title": "tangent.session_set_phase_output input",
+  "properties": {
+    "roomID": {"type": "string", "minLength": 1},
+    "phase": {"type": "string", "minLength": 1},
+    "key": {"type": "string", "minLength": 1},
+    "value": {}
+  },
+  "required": ["roomID", "phase", "key", "value"]
+}`)
+
 var sessionCloseInputSchemaJSON = []byte(`{
   "type": "object",
   "title": "tangent.session_close input",

@@ -1,0 +1,3 @@
+ALTER TABLE rooms ADD COLUMN current_phase TEXT NOT NULL DEFAULT '';
+ALTER TABLE rooms ADD COLUMN phases_visited TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE rooms ADD COLUMN phase_outputs TEXT NOT NULL DEFAULT '{}';

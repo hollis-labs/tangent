@@ -386,6 +386,250 @@ VALUES (?, ?, ?, ?, ?, ?)`,
 	assertEnvelopeStatus(t, db, "room-stale", "env-stale", "timeout", "SERVER_RESTART", true)
 }
 
+func TestRoom_PhaseStatePersistsAndHydrates(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "phaseful"})
+
+	if err := rm.AdvancePhase("intake", "start"); err != nil {
+		t.Fatalf("AdvancePhase intake: %v", err)
+	}
+	if err := rm.SetPhaseOutput("intake", "notes", map[string]any{"count": 2, "items": []any{"a", "b"}}); err != nil {
+		t.Fatalf("SetPhaseOutput intake: %v", err)
+	}
+	if err := rm.AdvancePhase("draft", "forward"); err != nil {
+		t.Fatalf("AdvancePhase draft: %v", err)
+	}
+	if err := rm.AdvancePhase("intake", "jump back"); err != nil {
+		t.Fatalf("AdvancePhase intake again: %v", err)
+	}
+
+	state := rm.PhaseState()
+	if state.CurrentPhase != "intake" {
+		t.Fatalf("current_phase = %q, want intake", state.CurrentPhase)
+	}
+	if got, want := state.PhasesVisited, []string{"intake", "draft", "intake"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("phases_visited = %#v, want %#v", got, want)
+	}
+	if blob := state.PhaseOutputs["intake"]; blob.Version != 1 {
+		t.Fatalf("phase output version = %d, want 1", blob.Version)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedState := reloaded.PhaseState()
+	if reloadedState.CurrentPhase != "intake" {
+		t.Fatalf("reloaded current_phase = %q, want intake", reloadedState.CurrentPhase)
+	}
+	if got, want := reloadedState.PhasesVisited, []string{"intake", "draft", "intake"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("reloaded phases_visited = %#v, want %#v", got, want)
+	}
+	blob := reloadedState.PhaseOutputs["intake"]
+	if blob.Version != 1 {
+		t.Fatalf("reloaded phase output version = %d, want 1", blob.Version)
+	}
+	notes, ok := blob.Data["notes"].(map[string]any)
+	if !ok {
+		t.Fatalf("reloaded phase output notes has type %T, want map[string]any", blob.Data["notes"])
+	}
+	if notes["count"] != float64(2) {
+		t.Fatalf("reloaded notes count = %#v, want 2", notes["count"])
+	}
+}
+
+func TestRoom_PhaseStateRejectsInvalidPhaseID(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	if err := rm.AdvancePhase("   ", "bad"); !errors.Is(err, room.ErrInvalidPhaseID) {
+		t.Fatalf("AdvancePhase invalid err = %v, want ErrInvalidPhaseID", err)
+	}
+	if err := rm.SetPhaseOutput("", "key", "value"); !errors.Is(err, room.ErrInvalidPhaseID) {
+		t.Fatalf("SetPhaseOutput invalid phase err = %v, want ErrInvalidPhaseID", err)
+	}
+	if err := rm.SetPhaseOutput("draft", "   ", "value"); !errors.Is(err, room.ErrInvalidPhaseKey) {
+		t.Fatalf("SetPhaseOutput invalid key err = %v, want ErrInvalidPhaseKey", err)
+	}
+}
+
+func TestRoom_AcceptedDraftBlocksPersistAndHydrate(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "draftful"})
+
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "intro",
+		EnvelopeID: "draft-1",
+		Label:      "Intro",
+		Mode:       "section",
+		Content:    "First accepted draft block.",
+		Decision:   "accept",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock intro: %v", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "body",
+		EnvelopeID: "draft-2",
+		Label:      "Body",
+		Mode:       "paragraph",
+		Content:    "Second accepted draft block.",
+		Decision:   "inline_edit",
+		Feedback:   "Tightened the middle.",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock body: %v", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{
+		BlockID:    "intro",
+		EnvelopeID: "draft-3",
+		Label:      "Intro",
+		Mode:       "section",
+		Content:    "First accepted draft block, revised.",
+		Decision:   "inline_edit",
+	}); err != nil {
+		t.Fatalf("AppendAcceptedDraftBlock intro revision: %v", err)
+	}
+
+	state := rm.PhaseState()
+	accepted := room.ProjectAcceptedDraftBlocks(state)
+	if len(accepted) != 3 {
+		t.Fatalf("accepted blocks len = %d, want 3", len(accepted))
+	}
+	current := room.ProjectCurrentDraft(state)
+	if current == nil || current.BlockCount != 2 {
+		t.Fatalf("current draft = %#v, want 2 blocks", current)
+	}
+	if got := current.Blocks[0].Content; got != "First accepted draft block, revised." {
+		t.Fatalf("intro content = %q, want revised content", got)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedState := reloaded.PhaseState()
+	reloadedAccepted := room.ProjectAcceptedDraftBlocks(reloadedState)
+	if len(reloadedAccepted) != 3 {
+		t.Fatalf("reloaded accepted blocks len = %d, want 3", len(reloadedAccepted))
+	}
+	reloadedCurrent := room.ProjectCurrentDraft(reloadedState)
+	if reloadedCurrent == nil || reloadedCurrent.BlockCount != 2 {
+		t.Fatalf("reloaded current draft = %#v, want 2 blocks", reloadedCurrent)
+	}
+	if got := reloadedCurrent.Markdown; !strings.Contains(got, "First accepted draft block, revised.") || !strings.Contains(got, "Second accepted draft block.") {
+		t.Fatalf("reloaded markdown = %q, want both accepted blocks", got)
+	}
+}
+
+func TestRoom_AcceptedDraftBlocksRejectInvalidInput(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{BlockID: "   ", Content: "Valid text"}); !errors.Is(err, room.ErrInvalidDraftBlockID) {
+		t.Fatalf("AppendAcceptedDraftBlock invalid id err = %v, want ErrInvalidDraftBlockID", err)
+	}
+	if err := rm.AppendAcceptedDraftBlock(room.DraftBlock{BlockID: "intro", Content: "   "}); !errors.Is(err, room.ErrInvalidDraftBlockContent) {
+		t.Fatalf("AppendAcceptedDraftBlock invalid content err = %v, want ErrInvalidDraftBlockContent", err)
+	}
+}
+
+func TestRoom_ProseRevisionOutcomesPersistAndHydrate(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "revisionful"})
+
+	if err := rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "opening-pass",
+		EnvelopeID: "rev-1",
+		Lens:       "review",
+		BlockID:    "intro",
+		SourceText: "Original opening paragraph.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Lead with the claim."},
+			{ID: "s2", SuggestedText: "Cut the repeated example."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "accept"},
+			{SuggestionID: "s2", Decision: "comment", Comment: "Keep one example, just shorten it."},
+		},
+		GeneralComment: "Prefer structural fixes over more examples.",
+	}); err != nil {
+		t.Fatalf("AppendProseRevisionOutcome: %v", err)
+	}
+
+	state := rm.PhaseState()
+	outcomes := room.ProjectProseRevisionOutcomes(state)
+	if len(outcomes) != 1 {
+		t.Fatalf("outcomes len = %d, want 1", len(outcomes))
+	}
+	if got := outcomes[0].Outcomes[0].Decision; got != "accept" {
+		t.Fatalf("first decision = %q, want accept", got)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedOutcomes := room.ProjectProseRevisionOutcomes(reloaded.PhaseState())
+	if len(reloadedOutcomes) != 1 {
+		t.Fatalf("reloaded outcomes len = %d, want 1", len(reloadedOutcomes))
+	}
+	if got := reloadedOutcomes[0].Outcomes[1].Comment; got != "Keep one example, just shorten it." {
+		t.Fatalf("reloaded comment = %q, want preserved comment", got)
+	}
+}
+
+func TestRoom_ProseRevisionOutcomesRejectInvalidInput(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	err := rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "   ",
+		Lens:       "review",
+		SourceText: "Valid source.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Suggested text."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "accept"},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProseRevisionID) {
+		t.Fatalf("AppendProseRevisionOutcome invalid id err = %v, want ErrInvalidProseRevisionID", err)
+	}
+
+	err = rm.AppendProseRevisionOutcome(room.ProseRevisionOutcome{
+		RevisionID: "rev-1",
+		Lens:       "copy",
+		SourceText: "Valid source.",
+		Suggestions: []room.ProseRevisionSuggestion{
+			{ID: "s1", SuggestedText: "Suggested text."},
+		},
+		Outcomes: []room.ProseRevisionSuggestionOutcome{
+			{SuggestionID: "s1", Decision: "comment"},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProseRevisionOutcome) {
+		t.Fatalf("AppendProseRevisionOutcome invalid outcome err = %v, want ErrInvalidProseRevisionOutcome", err)
+	}
+}
+
 func TestRoom_TwoRoomsParallel(t *testing.T) {
 	rmA, clientA, _, cleanupA := newTestServer(t)
 	defer cleanupA()
@@ -483,6 +727,78 @@ func TestRoom_ReplaceConn(t *testing.T) {
 	res := <-pushDone
 	if res.err != nil {
 		t.Fatalf("push: %v", res.err)
+	}
+}
+
+func TestRoom_SetFinalOutputPersistsAndHydrates(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm, err := mgr.CreateWithError(map[string]string{"title": "Final output"})
+	if err != nil {
+		t.Fatalf("CreateWithError: %v", err)
+	}
+
+	err = rm.SetFinalOutput(room.FinalOutputView{
+		Title:     "Final draft",
+		Markdown:  "# Final draft\n\nTight final paragraph.",
+		Filename:  "final-draft.md",
+		Format:    "markdown",
+		Summary:   "Polished final copy.",
+		UpdatedAt: "2026-05-09T12:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("SetFinalOutput: %v", err)
+	}
+
+	state := rm.PhaseState()
+	output := room.ProjectFinalOutput(state)
+	if output == nil {
+		t.Fatal("ProjectFinalOutput returned nil")
+	}
+	if output.Filename != "final-draft.md" {
+		t.Fatalf("filename = %q, want final-draft.md", output.Filename)
+	}
+	if output.WordCount == 0 {
+		t.Fatal("word_count should be populated")
+	}
+
+	reloaded := room.NewManager(db)
+	err = reloaded.Hydrate(context.Background())
+	if err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloadedState, found, err := reloaded.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState: %v", err)
+	}
+	if !found {
+		t.Fatalf("GetPhaseState found=false for room %q", rm.ID)
+	}
+	reloadedOutput := room.ProjectFinalOutput(reloadedState)
+	if reloadedOutput == nil {
+		t.Fatal("reloaded ProjectFinalOutput returned nil")
+	}
+	if reloadedOutput.Markdown != "# Final draft\n\nTight final paragraph." {
+		t.Fatalf("markdown = %q", reloadedOutput.Markdown)
+	}
+	if reloadedOutput.UpdatedAt != "2026-05-09T12:00:00Z" {
+		t.Fatalf("updated_at = %q", reloadedOutput.UpdatedAt)
+	}
+}
+
+func TestRoom_SetFinalOutputRejectsInvalidData(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+
+	if err := rm.SetFinalOutput(room.FinalOutputView{Markdown: "   "}); !errors.Is(err, room.ErrInvalidFinalOutputMarkdown) {
+		t.Fatalf("SetFinalOutput invalid markdown err = %v, want ErrInvalidFinalOutputMarkdown", err)
+	}
+	if err := rm.SetFinalOutput(room.FinalOutputView{Markdown: "valid", Format: "html"}); !errors.Is(err, room.ErrInvalidFinalOutputFormat) {
+		t.Fatalf("SetFinalOutput invalid format err = %v, want ErrInvalidFinalOutputFormat", err)
 	}
 }
 

@@ -3,7 +3,9 @@
 User-facing setup guide for wiring Tangent into an MCP-speaking agent.
 For the architectural picture see [`architecture.md`](./architecture.md);
 for the full Claude Code e2e walkthrough see
-[`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md); for raw
+[`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md), and for the v0.3
+writing flow see
+[`manual-tests/writing-flow-e2e.md`](./manual-tests/writing-flow-e2e.md); for raw
 curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Install
@@ -66,10 +68,13 @@ claude mcp list
 ```
 
 Then in any Claude Code session, ask Claude to use one of the bundled
-tools: `tangent.triage`, `tangent.feedback`, or
-`tangent.design-iteration`. Tangent prints a room URL, the browser
-resolves the workflow, and Claude receives the structured response back.
-Full walkthroughs live in the manual recipes under
+tools: `tangent.triage`, `tangent.feedback`, `tangent.design-iteration`,
+or the v0.3 writing sequence via `tangent.session_*`,
+`tangent.interview_question`, `tangent.synthesis_notes`,
+`tangent.block_draft`, `tangent.prose_revision`, and
+`tangent.output_render`. Tangent prints a room URL, the browser resolves
+the workflow, and Claude receives the structured response back. Full
+walkthroughs live in the manual recipes under
 [`docs/manual-tests/`](./manual-tests/).
 
 ## Cursor
@@ -112,7 +117,7 @@ shape, please contribute it back.
 
 ## Verification (no agent required)
 
-Confirm the MCP surface is up and advertises the v0.2 tools:
+Confirm the MCP surface is up and advertises the v0.3 tools:
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -126,12 +131,19 @@ Expected:
 ```
 "tangent.design-iteration"
 "tangent.feedback"
+"tangent.interview_question"
 "tangent.list_workflows"
+"tangent.block_draft"
+"tangent.prose_revision"
+"tangent.output_render"
 "tangent.session_advance"
+"tangent.session_advance_phase"
 "tangent.session_close"
 "tangent.session_create"
 "tangent.session_get"
 "tangent.session_list"
+"tangent.session_set_phase_output"
+"tangent.synthesis_notes"
 "tangent.triage"
 ```
 
@@ -145,7 +157,40 @@ curl -fsS -X POST http://localhost:7842/mcp \
 curl -fsS -X POST http://localhost:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
+
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.session_advance_phase","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
+
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent.session_set_phase_output","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
 ```
+
+`tangent.session_get` now returns both room lifecycle status and the
+workflow-neutral phase substrate:
+
+- `status` / legacy `phase`: `active` while a room is live in memory,
+  `closed` once only the persisted row remains.
+- `current_phase`: the room's current workflow phase ID.
+- `phases_visited`: append-only ordered phase history. Jumping back to a
+  prior phase appends that phase again rather than rewriting history.
+- `phase_outputs`: a map keyed by phase ID. Each value is a versioned
+  blob shaped like `{"version":1,"data":{...}}`.
+- `final_output`: the persisted final markdown artifact once
+  `tangent.output_render` runs.
+
+The bundled writing workflow's canonical phase sequence is:
+
+1. `interview`
+2. `synthesis`
+3. `drafting`
+4. `revision`
+5. `output`
+
+Jump-backs are explicit. If a revision pass uncovers a drafting issue,
+call `tangent.session_advance_phase` back to `drafting`, resolve the new
+`tangent.block_draft` envelope, then advance forward again.
 
 For deeper probes (calling a workflow, expected error frames) see
 [`mcp-smoketest.md`](./mcp-smoketest.md) and

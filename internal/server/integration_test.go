@@ -49,6 +49,21 @@ func newRig(t *testing.T) *rig {
 	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
 		t.Fatalf("RegisterDesignIteration: %v", regErr)
 	}
+	if regErr := extensions.RegisterInterviewQuestion(envSvc); regErr != nil {
+		t.Fatalf("RegisterInterviewQuestion: %v", regErr)
+	}
+	if regErr := extensions.RegisterBlockDraft(envSvc); regErr != nil {
+		t.Fatalf("RegisterBlockDraft: %v", regErr)
+	}
+	if regErr := extensions.RegisterProseRevision(envSvc); regErr != nil {
+		t.Fatalf("RegisterProseRevision: %v", regErr)
+	}
+	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
+		t.Fatalf("RegisterOutputRender: %v", regErr)
+	}
+	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
+		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(nil)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
@@ -70,6 +85,21 @@ func newRig(t *testing.T) *rig {
 	}
 	if regErr := tangentmcp.RegisterDesignIterationOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterDesignIterationOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterInterviewQuestionOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterInterviewQuestionOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterBlockDraftOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterBlockDraftOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterProseRevisionOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterProseRevisionOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterOutputRenderOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterOutputRenderOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
 	}
 
 	httpSrv, err := server.New(server.Config{

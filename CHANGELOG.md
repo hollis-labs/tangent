@@ -7,7 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Post-v0.2 work lands here. See `README.md` Roadmap for the next phase._
+_Post-v0.3 work lands here. See `README.md` Roadmap for the next phase._
+
+## [v0.3.0] - 2026-05-09
+
+Interview Protocol — Writing. Tangent now supports the first full multi-phase
+workflow on top of persistent rooms and the session substrate: interview,
+synthesis, drafting, revision, and final output in one room, including
+explicit jump-back to earlier phases.
+
+### Added
+
+- **Phase-state substrate.** Rooms now persist `current_phase`,
+  append-only `phases_visited`, and versioned `phase_outputs`, with MCP
+  tools `tangent.session_advance_phase` and
+  `tangent.session_set_phase_output`.
+- **`tangent.interview_question`.** Long-form question/answer turns with
+  optional quick picks, topic/thread metadata, and explicit output-shape
+  prompting.
+- **`tangent.synthesis_notes`.** Private synthesis state with
+  server-enforced hidden/visible projection and optional outline preview.
+- **`tangent.block_draft`.** Section-first drafting loop with accept,
+  revise, inline-edit, and redirect actions. Accepted blocks now persist
+  in order on the room.
+- **`tangent.prose_revision`.** Unified review/copy/style workflow with
+  explicit per-suggestion accept/reject/comment outcomes.
+- **`tangent.output_render`.** Final markdown renderer with copy and
+  download affordances, backed by persisted final-output room state.
+- **Writing workflow manual recipe.**
+  `docs/manual-tests/writing-flow-e2e.md` now covers interview -> output
+  in one room, including one jump-back.
+
+### Changed
+
+- **`tangent.session_get` is now the writing-room checkpoint surface.**
+  It exposes structured interview history, synthesis projection, accepted
+  draft blocks, reconstructed current draft, prose revision outcomes, and
+  the final output artifact.
+- **Local Tangent skill/command docs now describe the canonical writing
+  choreography.** The Tangent Nanite skill/command point at the exact
+  phase/tool sequence instead of forcing agents to reconstruct it ad hoc.
+- **Architecture and MCP integration docs now describe the v0.3 workflow
+  surface.** Docs now reflect sixteen advertised tools and the canonical
+  phase progression with explicit jump-back.
+
+### Deprecated
+
+- The old `fast-triage` redirect stub remains legacy-only and should not
+  be extended for new workflows.
+
+### Removed
+
+_None._
+
+### Fixed
+
+_None._
+
+### Security
+
+- **The trust model is unchanged.** Tangent remains localhost-only and
+  single-user. The writing workflow adds richer persisted state, but no
+  auth, TLS, or capability-gated distribution yet.
 
 ## [v0.2.0] - 2026-05-08
 
@@ -136,6 +197,7 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.3.0...HEAD
+[v0.3.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.3.0
 [v0.2.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.2.0
 [v0.1.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.1.0
