@@ -89,10 +89,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsEighteenTools asserts the tool surface includes the legacy
+// TestServer_ListsNineteenTools asserts the tool surface includes the legacy
 // and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsEighteenTools(t *testing.T) {
+func TestServer_ListsNineteenTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -100,18 +100,19 @@ func TestServer_ListsEighteenTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 18 {
+	if len(res.Tools) != 19 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 18 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 19 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
 		"tangent.list_workflows":           false,
 		"tangent.triage":                   false,
 		"tangent.feedback":                 false,
+		"tangent.form-collect":             false,
 		"tangent.design-iteration":         false,
 		"tangent.interview_question":       false,
 		"tangent.block_draft":              false,

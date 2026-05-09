@@ -17,6 +17,11 @@ import {
   type FeedbackResponse,
 } from "./components/envelopes/Feedback";
 import {
+  FormCollect,
+  type FormCollectEnvelope,
+  type FormCollectResponse,
+} from "./components/envelopes/FormCollect";
+import {
   InterviewQuestion,
   type InterviewQuestionEnvelope,
   type InterviewQuestionResponse,
@@ -80,6 +85,17 @@ function FeedbackAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProp
       envelope={envelope as FeedbackEnvelope}
       onSubmit={onSubmit as (response: FeedbackResponse) => void}
       onCancel={onCancel}
+    />
+  );
+}
+
+function FormCollectAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <FormCollect
+      envelope={envelope as FormCollectEnvelope}
+      onSubmit={onSubmit as (response: FormCollectResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }
@@ -173,6 +189,7 @@ function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompone
 
 register("tangent.triage", TriageAdapter);
 register("tangent.feedback", FeedbackAdapter);
+register("tangent.form-collect", FormCollectAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);
 register("tangent.interview-question", InterviewQuestionAdapter);
 register("tangent.block-draft", BlockDraftAdapter);
