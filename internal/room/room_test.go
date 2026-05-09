@@ -386,6 +386,79 @@ VALUES (?, ?, ?, ?, ?, ?)`,
 	assertEnvelopeStatus(t, db, "room-stale", "env-stale", "timeout", "SERVER_RESTART", true)
 }
 
+func TestRoom_PhaseStatePersistsAndHydrates(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "phaseful"})
+
+	if err := rm.AdvancePhase("intake", "start"); err != nil {
+		t.Fatalf("AdvancePhase intake: %v", err)
+	}
+	if err := rm.SetPhaseOutput("intake", "notes", map[string]any{"count": 2, "items": []any{"a", "b"}}); err != nil {
+		t.Fatalf("SetPhaseOutput intake: %v", err)
+	}
+	if err := rm.AdvancePhase("draft", "forward"); err != nil {
+		t.Fatalf("AdvancePhase draft: %v", err)
+	}
+	if err := rm.AdvancePhase("intake", "jump back"); err != nil {
+		t.Fatalf("AdvancePhase intake again: %v", err)
+	}
+
+	state := rm.PhaseState()
+	if state.CurrentPhase != "intake" {
+		t.Fatalf("current_phase = %q, want intake", state.CurrentPhase)
+	}
+	if got, want := state.PhasesVisited, []string{"intake", "draft", "intake"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("phases_visited = %#v, want %#v", got, want)
+	}
+	if blob := state.PhaseOutputs["intake"]; blob.Version != 1 {
+		t.Fatalf("phase output version = %d, want 1", blob.Version)
+	}
+
+	hydrated := room.NewManager(db)
+	if err := hydrated.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	reloaded, ok := hydrated.Get(rm.ID)
+	if !ok {
+		t.Fatalf("room %q missing after hydrate", rm.ID)
+	}
+	reloadedState := reloaded.PhaseState()
+	if reloadedState.CurrentPhase != "intake" {
+		t.Fatalf("reloaded current_phase = %q, want intake", reloadedState.CurrentPhase)
+	}
+	if got, want := reloadedState.PhasesVisited, []string{"intake", "draft", "intake"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("reloaded phases_visited = %#v, want %#v", got, want)
+	}
+	blob := reloadedState.PhaseOutputs["intake"]
+	if blob.Version != 1 {
+		t.Fatalf("reloaded phase output version = %d, want 1", blob.Version)
+	}
+	notes, ok := blob.Data["notes"].(map[string]any)
+	if !ok {
+		t.Fatalf("reloaded phase output notes has type %T, want map[string]any", blob.Data["notes"])
+	}
+	if notes["count"] != float64(2) {
+		t.Fatalf("reloaded notes count = %#v, want 2", notes["count"])
+	}
+}
+
+func TestRoom_PhaseStateRejectsInvalidPhaseID(t *testing.T) {
+	rm := room.NewManager(nil).Create(nil)
+
+	if err := rm.AdvancePhase("   ", "bad"); !errors.Is(err, room.ErrInvalidPhaseID) {
+		t.Fatalf("AdvancePhase invalid err = %v, want ErrInvalidPhaseID", err)
+	}
+	if err := rm.SetPhaseOutput("", "key", "value"); !errors.Is(err, room.ErrInvalidPhaseID) {
+		t.Fatalf("SetPhaseOutput invalid phase err = %v, want ErrInvalidPhaseID", err)
+	}
+	if err := rm.SetPhaseOutput("draft", "   ", "value"); !errors.Is(err, room.ErrInvalidPhaseKey) {
+		t.Fatalf("SetPhaseOutput invalid key err = %v, want ErrInvalidPhaseKey", err)
+	}
+}
+
 func TestRoom_TwoRoomsParallel(t *testing.T) {
 	rmA, clientA, _, cleanupA := newTestServer(t)
 	defer cleanupA()

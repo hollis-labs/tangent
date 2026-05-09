@@ -33,6 +33,19 @@ type sessionGetInput struct {
 	RoomID string `json:"roomID"`
 }
 
+type sessionAdvancePhaseInput struct {
+	RoomID  string `json:"roomID"`
+	ToPhase string `json:"to_phase"`
+	Reason  string `json:"reason"`
+}
+
+type sessionSetPhaseOutputInput struct {
+	RoomID string `json:"roomID"`
+	Phase  string `json:"phase"`
+	Key    string `json:"key"`
+	Value  any    `json:"value"`
+}
+
 type sessionCloseInput struct {
 	RoomID string `json:"roomID"`
 	Status string `json:"status"`
@@ -48,9 +61,20 @@ type sessionCreateResult struct {
 }
 
 type sessionGetResult struct {
-	Phase            string                 `json:"phase"`
-	EnvelopesHistory []room.EnvelopeHistory `json:"envelopes_history"`
-	CurrentEnvelope  *envelopes.Envelope    `json:"current_envelope,omitempty"`
+	Status           string                      `json:"status"`
+	Phase            string                      `json:"phase"`
+	CurrentPhase     string                      `json:"current_phase"`
+	PhasesVisited    []string                    `json:"phases_visited"`
+	PhaseOutputs     map[string]room.PhaseOutput `json:"phase_outputs"`
+	EnvelopesHistory []room.EnvelopeHistory      `json:"envelopes_history"`
+	CurrentEnvelope  *envelopes.Envelope         `json:"current_envelope,omitempty"`
+}
+
+type sessionPhaseStateResult struct {
+	RoomID        string                      `json:"roomID"`
+	CurrentPhase  string                      `json:"current_phase"`
+	PhasesVisited []string                    `json:"phases_visited"`
+	PhaseOutputs  map[string]room.PhaseOutput `json:"phase_outputs"`
 }
 
 type sessionCloseResult struct {
@@ -99,25 +123,70 @@ func (s *Server) handleSessionGet(
 	_ *mcpsdk.CallToolRequest,
 	args sessionGetInput,
 ) (*mcpsdk.CallToolResult, sessionGetResult, error) {
+	phaseState, found, err := s.manager.GetPhaseState(ctx, args.RoomID)
+	if err != nil {
+		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), emptySessionGetResult(), nil
+	}
 	history, err := s.manager.History(ctx, args.RoomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room history: %v", err)), sessionGetResult{}, nil
+		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room history: %v", err)), emptySessionGetResult(), nil
 	}
 
 	rm, ok := s.manager.Get(args.RoomID)
-	if !ok && len(history) == 0 {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), sessionGetResult{}, nil
+	if !found && !ok && len(history) == 0 {
+		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), emptySessionGetResult(), nil
 	}
 
 	result := sessionGetResult{
+		Status:           "closed",
 		Phase:            "closed",
+		CurrentPhase:     phaseState.CurrentPhase,
+		PhasesVisited:    phaseState.PhasesVisited,
+		PhaseOutputs:     phaseState.PhaseOutputs,
 		EnvelopesHistory: history,
 	}
 	if ok {
+		result.Status = "active"
 		result.Phase = "active"
 		result.CurrentEnvelope = rm.CurrentEnvelope()
 	}
 	toolRes, payload := toolJSONResult(result)
+	return toolRes, payload, nil
+}
+
+func (s *Server) handleSessionAdvancePhase(
+	_ context.Context,
+	_ *mcpsdk.CallToolRequest,
+	args sessionAdvancePhaseInput,
+) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
+	phaseState, err := s.manager.AdvancePhase(args.RoomID, args.ToPhase, args.Reason)
+	if err != nil {
+		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+	}
+	toolRes, payload := toolJSONResult(sessionPhaseStateResult{
+		RoomID:        args.RoomID,
+		CurrentPhase:  phaseState.CurrentPhase,
+		PhasesVisited: phaseState.PhasesVisited,
+		PhaseOutputs:  phaseState.PhaseOutputs,
+	})
+	return toolRes, payload, nil
+}
+
+func (s *Server) handleSessionSetPhaseOutput(
+	_ context.Context,
+	_ *mcpsdk.CallToolRequest,
+	args sessionSetPhaseOutputInput,
+) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
+	phaseState, err := s.manager.SetPhaseOutput(args.RoomID, args.Phase, args.Key, args.Value)
+	if err != nil {
+		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+	}
+	toolRes, payload := toolJSONResult(sessionPhaseStateResult{
+		RoomID:        args.RoomID,
+		CurrentPhase:  phaseState.CurrentPhase,
+		PhasesVisited: phaseState.PhasesVisited,
+		PhaseOutputs:  phaseState.PhaseOutputs,
+	})
 	return toolRes, payload, nil
 }
 
@@ -230,6 +299,33 @@ func stringifyMeta(meta map[string]any) map[string]string {
 
 func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
+}
+
+func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
+	switch {
+	case errors.Is(err, room.ErrRoomNotFound):
+		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
+	case errors.Is(err, room.ErrInvalidPhaseID), errors.Is(err, room.ErrInvalidPhaseKey):
+		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
+	default:
+		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error())
+	}
+}
+
+func emptySessionPhaseStateResult(roomID string) sessionPhaseStateResult {
+	return sessionPhaseStateResult{
+		RoomID:        roomID,
+		PhasesVisited: []string{},
+		PhaseOutputs:  map[string]room.PhaseOutput{},
+	}
+}
+
+func emptySessionGetResult() sessionGetResult {
+	return sessionGetResult{
+		PhasesVisited:    []string{},
+		PhaseOutputs:     map[string]room.PhaseOutput{},
+		EnvelopesHistory: []room.EnvelopeHistory{},
+	}
 }
 
 func toolJSONResult[T any](payload T) (*mcpsdk.CallToolResult, T) {

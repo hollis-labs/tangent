@@ -68,10 +68,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsNineTools asserts the tool surface includes the legacy
+// TestServer_ListsElevenTools asserts the tool surface includes the legacy
 // and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsNineTools(t *testing.T) {
+func TestServer_ListsElevenTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -79,24 +79,26 @@ func TestServer_ListsNineTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 9 {
+	if len(res.Tools) != 11 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 9 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 11 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
-		"tangent.list_workflows":   false,
-		"tangent.triage":           false,
-		"tangent.feedback":         false,
-		"tangent.design-iteration": false,
-		"tangent.session_create":   false,
-		"tangent.session_advance":  false,
-		"tangent.session_get":      false,
-		"tangent.session_close":    false,
-		"tangent.session_list":     false,
+		"tangent.list_workflows":           false,
+		"tangent.triage":                   false,
+		"tangent.feedback":                 false,
+		"tangent.design-iteration":         false,
+		"tangent.session_create":           false,
+		"tangent.session_advance":          false,
+		"tangent.session_get":              false,
+		"tangent.session_advance_phase":    false,
+		"tangent.session_set_phase_output": false,
+		"tangent.session_close":            false,
+		"tangent.session_list":             false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	envelopes "github.com/hollis-labs/go-envelopes"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -177,7 +178,11 @@ func TestSession_Create_Advance_Get_Close(t *testing.T) {
 		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
 	}
 	var state struct {
-		Phase            string `json:"phase"`
+		Status           string                      `json:"status"`
+		Phase            string                      `json:"phase"`
+		CurrentPhase     string                      `json:"current_phase"`
+		PhasesVisited    []string                    `json:"phases_visited"`
+		PhaseOutputs     map[string]room.PhaseOutput `json:"phase_outputs"`
 		EnvelopesHistory []struct {
 			Envelope struct {
 				ID string `json:"id"`
@@ -190,6 +195,12 @@ func TestSession_Create_Advance_Get_Close(t *testing.T) {
 	}
 	if state.Phase != "active" {
 		t.Fatalf("phase = %q, want active", state.Phase)
+	}
+	if state.Status != "active" {
+		t.Fatalf("status = %q, want active", state.Status)
+	}
+	if state.CurrentPhase != "" || len(state.PhasesVisited) != 0 || len(state.PhaseOutputs) != 0 {
+		t.Fatalf("unexpected initial phase state: %+v", state)
 	}
 	if len(state.EnvelopesHistory) != 3 {
 		t.Fatalf("history len = %d, want 3", len(state.EnvelopesHistory))
@@ -320,6 +331,141 @@ func TestSession_Advance_Busy(t *testing.T) {
 	}
 	if firstRes.result.IsError {
 		t.Fatalf("first session_advance IsError=true: %s", extractText(t, firstRes.result))
+	}
+}
+
+func TestSession_PhaseToolsAndGet(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "phases")
+
+	phaseRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "tangent.session_advance_phase",
+		Arguments: map[string]any{
+			"roomID":   roomID,
+			"to_phase": "intake",
+			"reason":   "start",
+		},
+	})
+	if err != nil {
+		t.Fatalf("session_advance_phase intake: %v", err)
+	}
+	if phaseRes.IsError {
+		t.Fatalf("session_advance_phase intake IsError=true: %s", extractText(t, phaseRes))
+	}
+
+	outputRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "tangent.session_set_phase_output",
+		Arguments: map[string]any{
+			"roomID": roomID,
+			"phase":  "intake",
+			"key":    "notes",
+			"value":  map[string]any{"items": []any{"alpha", "beta"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("session_set_phase_output: %v", err)
+	}
+	if outputRes.IsError {
+		t.Fatalf("session_set_phase_output IsError=true: %s", extractText(t, outputRes))
+	}
+
+	for _, phaseID := range []string{"draft", "intake"} {
+		res, callErr := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+			Name: "tangent.session_advance_phase",
+			Arguments: map[string]any{
+				"roomID":   roomID,
+				"to_phase": phaseID,
+			},
+		})
+		if callErr != nil {
+			t.Fatalf("session_advance_phase %s: %v", phaseID, callErr)
+		}
+		if res.IsError {
+			t.Fatalf("session_advance_phase %s IsError=true: %s", phaseID, extractText(t, res))
+		}
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get after phase tools: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get after phase tools IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		CurrentPhase  string                      `json:"current_phase"`
+		PhasesVisited []string                    `json:"phases_visited"`
+		PhaseOutputs  map[string]room.PhaseOutput `json:"phase_outputs"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get after phase tools: %v", err)
+	}
+	if state.CurrentPhase != "intake" {
+		t.Fatalf("current_phase = %q, want intake", state.CurrentPhase)
+	}
+	if got, want := state.PhasesVisited, []string{"intake", "draft", "intake"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("phases_visited = %#v, want %#v", got, want)
+	}
+	blob := state.PhaseOutputs["intake"]
+	if blob.Version != 1 {
+		t.Fatalf("intake output version = %d, want 1", blob.Version)
+	}
+	notes, ok := blob.Data["notes"].(map[string]any)
+	if !ok {
+		t.Fatalf("phase output notes has type %T, want map[string]any", blob.Data["notes"])
+	}
+	items, ok := notes["items"].([]any)
+	if !ok || len(items) != 2 {
+		t.Fatalf("phase output notes items = %#v, want len 2", notes["items"])
+	}
+}
+
+func TestSession_PhaseToolsRejectInvalidPhaseID(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "bad-phase")
+
+	for _, tc := range []struct {
+		name     string
+		tool     string
+		args     map[string]any
+		wantCode string
+	}{
+		{
+			name:     "advance empty",
+			tool:     "tangent.session_advance_phase",
+			args:     map[string]any{"roomID": roomID, "to_phase": "   "},
+			wantCode: envelopes.ErrorCodeValidationFailed,
+		},
+		{
+			name:     "set output empty key",
+			tool:     "tangent.session_set_phase_output",
+			args:     map[string]any{"roomID": roomID, "phase": "draft", "key": " ", "value": "x"},
+			wantCode: envelopes.ErrorCodeValidationFailed,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+				Name:      tc.tool,
+				Arguments: tc.args,
+			})
+			if err != nil {
+				t.Fatalf("%s: %v", tc.tool, err)
+			}
+			if !res.IsError {
+				t.Fatalf("%s expected IsError=true", tc.tool)
+			}
+			if !strings.Contains(extractText(t, res), tc.wantCode) {
+				t.Fatalf("%s body = %s", tc.tool, extractText(t, res))
+			}
+		})
 	}
 }
 

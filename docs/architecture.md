@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Nine tools are advertised in v0.2:
+Eleven tools are advertised in v0.3:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -72,6 +72,8 @@ Nine tools are advertised in v0.2:
 - `tangent.session_create`
 - `tangent.session_advance`
 - `tangent.session_get`
+- `tangent.session_advance_phase`
+- `tangent.session_set_phase_output`
 - `tangent.session_close`
 - `tangent.session_list`
 
@@ -92,6 +94,18 @@ resolved envelope history in SQLite at `~/.tangent/tangent.db`
 migrations, hydrates prior room state into the manager, and keeps active
 in-memory `Pending` state only for envelopes that are currently awaiting
 a browser response.
+
+Rooms also carry first-class workflow phase state:
+
+- `current_phase`: the room's current workflow phase ID.
+- `phases_visited`: append-only ordered phase history.
+- `phase_outputs`: a map of phase ID to versioned JSON blob, currently
+  `{"version":1,"data":{...}}`.
+
+This substrate is intentionally workflow-neutral. Built-in or external
+agents can move a room through arbitrary phase IDs without registering a
+global sequence, and phase outputs can be rehydrated cheaply through
+`tangent.session_get` after process restart.
 
 ### Multi-envelope rooms
 
@@ -169,6 +183,9 @@ single ephemeral handoff. The key pieces are:
 - per-room state in `internal/room`, keyed by room ID
 - room history persisted in SQLite and surfaced through
   `tangent.session_get`
+- room phase state persisted in the same room row and updated through
+  `tangent.session_advance_phase` and
+  `tangent.session_set_phase_output`
 - room listing surfaced through `tangent.session_list`
 - a browser tab strip that polls the room list and lets the user switch
   between `/r/<roomID>` routes without losing the shared SPA shell

@@ -64,6 +64,11 @@ type Room struct {
 
 	db *sql.DB
 
+	phaseMu       sync.RWMutex
+	currentPhase  string
+	phasesVisited []string
+	phaseOutputs  map[string]PhaseOutput
+
 	connMu sync.Mutex
 	conn   *websocket.Conn
 
@@ -85,17 +90,20 @@ type outboundEnvelopeMessage struct {
 	Envelope   *envelopes.Envelope `json:"envelope"`
 }
 
-func newRoom(id string, createdAt time.Time, meta map[string]string, db *sql.DB) *Room {
+func newRoom(id string, createdAt time.Time, meta map[string]string, phaseState PhaseState, db *sql.DB) *Room {
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
 	return &Room{
-		ID:          id,
-		CreatedAt:   createdAt.UTC(),
-		Meta:        cloneMeta(meta),
-		db:          db,
-		pending:     make(map[string]*Pending),
-		connectedCh: make(chan struct{}),
+		ID:            id,
+		CreatedAt:     createdAt.UTC(),
+		Meta:          cloneMeta(meta),
+		db:            db,
+		currentPhase:  phaseState.CurrentPhase,
+		phasesVisited: cloneStringSlice(phaseState.PhasesVisited),
+		phaseOutputs:  clonePhaseOutputs(phaseState.PhaseOutputs),
+		pending:       make(map[string]*Pending),
+		connectedCh:   make(chan struct{}),
 	}
 }
 
@@ -400,7 +408,7 @@ func (m *Manager) Create(meta map[string]string) *Room {
 // CreateWithError allocates a new Room with a fresh UUID, persists it,
 // and registers it.
 func (m *Manager) CreateWithError(meta map[string]string) (*Room, error) {
-	r := newRoom(uuid.NewString(), time.Now().UTC(), meta, m.db)
+	r := newRoom(uuid.NewString(), time.Now().UTC(), meta, PhaseState{}, m.db)
 	if err := m.persistRoomCreate(r); err != nil {
 		return nil, fmt.Errorf("room: create %q: %w", r.ID, err)
 	}
@@ -427,7 +435,7 @@ func (m *Manager) Hydrate(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, row := range rooms {
-		m.rooms[row.ID] = newRoom(row.ID, row.CreatedAt, row.Meta, m.db)
+		m.rooms[row.ID] = newRoom(row.ID, row.CreatedAt, row.Meta, row.PhaseState, m.db)
 	}
 	return nil
 }

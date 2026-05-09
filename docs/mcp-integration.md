@@ -128,10 +128,12 @@ Expected:
 "tangent.feedback"
 "tangent.list_workflows"
 "tangent.session_advance"
+"tangent.session_advance_phase"
 "tangent.session_close"
 "tangent.session_create"
 "tangent.session_get"
 "tangent.session_list"
+"tangent.session_set_phase_output"
 "tangent.triage"
 ```
 
@@ -145,7 +147,26 @@ curl -fsS -X POST http://localhost:7842/mcp \
 curl -fsS -X POST http://localhost:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
+
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.session_advance_phase","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
+
+curl -fsS -X POST http://localhost:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent.session_set_phase_output","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
 ```
+
+`tangent.session_get` now returns both room lifecycle status and the
+workflow-neutral phase substrate:
+
+- `status` / legacy `phase`: `active` while a room is live in memory,
+  `closed` once only the persisted row remains.
+- `current_phase`: the room's current workflow phase ID.
+- `phases_visited`: append-only ordered phase history. Jumping back to a
+  prior phase appends that phase again rather than rewriting history.
+- `phase_outputs`: a map keyed by phase ID. Each value is a versioned
+  blob shaped like `{"version":1,"data":{...}}`.
 
 For deeper probes (calling a workflow, expected error frames) see
 [`mcp-smoketest.md`](./mcp-smoketest.md) and

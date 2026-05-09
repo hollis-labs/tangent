@@ -198,6 +198,26 @@ func (s *Server) registerTools() error {
 		InputSchema: sessionGetSchema,
 	}, s.handleSessionGet)
 
+	sessionAdvancePhaseSchema, err := buildSchema(sessionAdvancePhaseInputSchemaJSON, "session_advance_phase")
+	if err != nil {
+		return fmt.Errorf("build session_advance_phase input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_advance_phase",
+		Description: "Set the current workflow phase for a Tangent room and append it to the room's visited phase history.",
+		InputSchema: sessionAdvancePhaseSchema,
+	}, s.handleSessionAdvancePhase)
+
+	sessionSetPhaseOutputSchema, err := buildSchema(sessionSetPhaseOutputInputSchemaJSON, "session_set_phase_output")
+	if err != nil {
+		return fmt.Errorf("build session_set_phase_output input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.session_set_phase_output",
+		Description: "Write a top-level key into a room's versioned JSON output blob for a workflow phase.",
+		InputSchema: sessionSetPhaseOutputSchema,
+	}, s.handleSessionSetPhaseOutput)
+
 	sessionCloseSchema, err := buildSchema(sessionCloseInputSchemaJSON, "session_close")
 	if err != nil {
 		return fmt.Errorf("build session_close input schema: %w", err)
