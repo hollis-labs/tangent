@@ -1,6 +1,11 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import {
+  Feedback,
+  type FeedbackEnvelope,
+  type FeedbackResponse,
+} from "./components/envelopes/Feedback";
 import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -29,7 +34,18 @@ function TriageAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps)
   );
 }
 
+function FeedbackAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <Feedback
+      envelope={envelope as FeedbackEnvelope}
+      onSubmit={onSubmit as (response: FeedbackResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 register("tangent.triage", TriageAdapter);
+register("tangent.feedback", FeedbackAdapter);
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {

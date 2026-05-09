@@ -148,6 +148,16 @@ func (s *Server) registerTools() error {
 		InputSchema: triageSchema,
 	}, s.handleTriage)
 
+	feedbackSchema, err := buildFeedbackInputSchema()
+	if err != nil {
+		return fmt.Errorf("build feedback input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.feedback",
+		Description: "Dispatch a feedback-kind envelope through Tangent. Creates or reuses a room and waits for a structured questionnaire response.",
+		InputSchema: feedbackSchema,
+	}, s.handleFeedback)
+
 	sessionCreateSchema, err := buildSchema(sessionCreateInputSchemaJSON, "session_create")
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
@@ -207,6 +217,10 @@ func buildEmptyObjectSchema() (*jsonschema.Schema, error) {
 // triage_schema.go for the rationale).
 func buildTriageInputSchema() (*jsonschema.Schema, error) {
 	return buildSchema(triageInputSchemaJSON, "triage")
+}
+
+func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
+	return buildSchema(feedbackInputSchemaJSON, "feedback")
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

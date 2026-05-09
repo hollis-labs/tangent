@@ -221,15 +221,15 @@ func toolJSONResult[T any](payload T) (*mcpsdk.CallToolResult, T) {
 	}, payload
 }
 
-func (s *Server) logTriageRoomCreated(roomID, envelopeID string) {
+func (s *Server) logWorkflowRoomCreated(workflow, roomID, envelopeID string) {
 	url := s.roomURL(roomID)
 	if url != "" {
-		slog.Default().Info("triage room created", "room", roomID, "url", url, "envelope", envelopeID)
+		slog.Default().Info(workflow+" room created", "room", roomID, "url", url, "envelope", envelopeID)
 		return
 	}
-	slog.Default().Info("triage room created", "room", roomID, "envelope", envelopeID)
+	slog.Default().Info(workflow+" room created", "room", roomID, "envelope", envelopeID)
 }
 
-func (s *Server) logTriageRoomReused(roomID, envelopeID string) {
-	slog.Default().Info("triage routed to existing room", "room", roomID, "envelope", envelopeID)
+func (s *Server) logWorkflowRoomReused(workflow, roomID, envelopeID string) {
+	slog.Default().Info(workflow+" routed to existing room", "room", roomID, "envelope", envelopeID)
 }

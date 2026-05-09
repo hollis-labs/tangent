@@ -144,9 +144,9 @@ func (s *Server) handleTriage(
 			return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("decode session_create result: %v", err)), nil, nil
 		}
 		roomID = created.RoomID
-		s.logTriageRoomCreated(roomID, args.Envelope.ID)
+		s.logWorkflowRoomCreated("triage", roomID, args.Envelope.ID)
 	} else {
-		s.logTriageRoomReused(roomID, args.Envelope.ID)
+		s.logWorkflowRoomReused("triage", roomID, args.Envelope.ID)
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)

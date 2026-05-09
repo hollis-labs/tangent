@@ -34,6 +34,9 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
 		t.Fatalf("RegisterTriage: %v", regErr)
 	}
+	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
+		t.Fatalf("RegisterFeedback: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	manager := room.NewManager(nil)
 
@@ -62,10 +65,10 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsSixTools asserts the tool surface includes the legacy
+// TestServer_ListsSevenTools asserts the tool surface includes the legacy
 // and session tools callers integrate against. Treat this as a
 // contract test: changing names is a public-API change.
-func TestServer_ListsSixTools(t *testing.T) {
+func TestServer_ListsSevenTools(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -73,17 +76,18 @@ func TestServer_ListsSixTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 6 {
+	if len(res.Tools) != 7 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 6 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 7 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
 		"tangent.list_workflows":  false,
 		"tangent.triage":          false,
+		"tangent.feedback":        false,
 		"tangent.session_create":  false,
 		"tangent.session_advance": false,
 		"tangent.session_get":     false,

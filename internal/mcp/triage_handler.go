@@ -186,6 +186,13 @@ func RegisterTriageOnDispatcher(dispatcher *envelope.Dispatcher, handler *Triage
 	return dispatcher.Register(triageEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterFeedbackOnDispatcher wires the same room-bridging handler for
+// tangent.feedback envelopes. Feedback uses the same room semantics as
+// triage; the MCP layer keeps separate tool entrypoints and schemas.
+func RegisterFeedbackOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(feedbackEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // resolveTriageTimeout reads envTriageTimeout once at construction. A
 // malformed value silently falls back to the package default — v0.1
 // prefers "boots no matter what" over "fails fast on bad config" for
