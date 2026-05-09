@@ -318,7 +318,16 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
-		errors.Is(err, room.ErrInvalidDraftBlockContent):
+		errors.Is(err, room.ErrInvalidDraftBlockContent),
+		errors.Is(err, room.ErrInvalidProseRevisionID),
+		errors.Is(err, room.ErrInvalidProseRevisionLens),
+		errors.Is(err, room.ErrInvalidProseRevisionSourceText),
+		errors.Is(err, room.ErrInvalidProseRevisionSuggestionID),
+		errors.Is(err, room.ErrInvalidProseRevisionSuggestionText),
+		errors.Is(err, room.ErrInvalidProseRevisionDecision),
+		errors.Is(err, room.ErrInvalidProseRevisionOutcome),
+		errors.Is(err, room.ErrInvalidFinalOutputMarkdown),
+		errors.Is(err, room.ErrInvalidFinalOutputFormat):
 		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	default:
 		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error())

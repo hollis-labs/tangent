@@ -21,6 +21,7 @@ describe("<OutputRender>", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders the final markdown and metadata", () => {

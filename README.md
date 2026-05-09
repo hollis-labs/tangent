@@ -27,6 +27,9 @@ Install:
 go install github.com/hollis-labs/tangent/cmd/tangent@v0.3.0
 ```
 
+If you are reading this before the `v0.3.0` tag is published, use `@main`
+temporarily and switch back to the release tag once it lands.
+
 Run:
 
 ```bash
