@@ -262,7 +262,21 @@ func (s *Server) advanceRoomEnvelope(
 		return toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
 	}
 
-	resp, err := rm.Push(ctx, env)
+	resp, err := rm.PushWithResponseTransform(ctx, env, func(resp *envelopes.Response) (*envelopes.Response, error) {
+		if resp == nil {
+			return nil, fmt.Errorf("room response is nil")
+		}
+		if resp.EnvelopeID != env.ID {
+			return nil, fmt.Errorf("%w: response envelopeId %q does not match pending envelope %q", envelopes.ErrSchemaValidation, resp.EnvelopeID, env.ID)
+		}
+		if err := s.envSvc.ValidateResponse(env.Type, resp); err != nil {
+			return nil, err
+		}
+		if env.Type == whiteboardEnvelopeType {
+			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
+		}
+		return resp, nil
+	})
 	if err != nil {
 		if errors.Is(err, room.ErrUserCancelled) {
 			cancelled := &envelopes.Response{

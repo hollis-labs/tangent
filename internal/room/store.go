@@ -393,6 +393,19 @@ func (r *Room) persistTerminalEnvelopeError(envelopeID string, err error) error 
 	}
 
 	switch {
+	case errors.Is(err, envelopes.ErrSchemaValidation):
+		payload := mustMarshalJSONText(map[string]any{
+			"code":    envelopes.ErrorCodeValidationFailed,
+			"message": err.Error(),
+		})
+		return r.persistEnvelopeFinalState(
+			envelopeID,
+			string(envelopes.ResponseKindError),
+			&payload,
+			envelopeStatusError,
+			envelopes.ErrorCodeValidationFailed,
+			err.Error(),
+		)
 	case errors.Is(err, context.DeadlineExceeded):
 		payload := mustMarshalJSONText(map[string]any{
 			"code":    envelopes.ErrorCodeTimeout,

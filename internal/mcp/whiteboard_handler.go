@@ -16,6 +16,41 @@ type whiteboardInput struct {
 	Envelope envelopes.Envelope `json:"envelope"`
 }
 
+type whiteboardSelectionSummary struct {
+	Count int      `json:"count"`
+	IDs   []string `json:"ids,omitempty"`
+	Types []string `json:"types,omitempty"`
+}
+
+type whiteboardExportRef struct {
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	MIMEType   string `json:"mime_type,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	URI        string `json:"uri,omitempty"`
+}
+
+type whiteboardSubmitDraft struct {
+	BoardID          string                      `json:"board_id"`
+	Scene            map[string]any              `json:"scene"`
+	Assets           []room.WhiteboardAssetRef   `json:"assets,omitempty"`
+	Notes            string                      `json:"notes,omitempty"`
+	ToolMode         string                      `json:"tool_mode,omitempty"`
+	SelectionSummary *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
+	ExportRefs       []whiteboardExportRef       `json:"export_refs,omitempty"`
+}
+
+type whiteboardSubmitPayload struct {
+	BoardID          string                      `json:"board_id"`
+	RevisionID       string                      `json:"revision_id"`
+	Scene            map[string]any              `json:"scene"`
+	Assets           []room.WhiteboardAssetRef   `json:"assets"`
+	Notes            string                      `json:"notes"`
+	ToolMode         string                      `json:"tool_mode,omitempty"`
+	SelectionSummary *whiteboardSelectionSummary `json:"selection_summary,omitempty"`
+	ExportRefs       []whiteboardExportRef       `json:"export_refs,omitempty"`
+}
+
 func (s *Server) handleWhiteboard(
 	ctx context.Context,
 	_ *mcpsdk.CallToolRequest,
@@ -89,19 +124,26 @@ func whiteboardSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.Whit
 	if boardID == "" && persisted != nil {
 		boardID = persisted.BoardID
 	}
+	reusePersisted := persisted != nil && persisted.BoardID != "" && persisted.BoardID == boardID
 
 	scene := readObjectValue(data, "scene")
-	if len(scene) == 0 && persisted != nil {
+	if reusePersisted {
+		scene = persisted.SceneSnapshot
+	} else if len(scene) == 0 && persisted != nil {
 		scene = persisted.SceneSnapshot
 	}
 
 	assets := readWhiteboardAssetRefs(data["assets"])
-	if len(assets) == 0 && persisted != nil {
+	if reusePersisted {
+		assets = persisted.Assets
+	} else if len(assets) == 0 && persisted != nil {
 		assets = persisted.Assets
 	}
 
 	notes := readStringValue(data, "notes")
-	if notes == "" && persisted != nil {
+	if reusePersisted {
+		notes = persisted.Notes
+	} else if notes == "" && persisted != nil {
 		notes = persisted.Notes
 	}
 
@@ -129,6 +171,13 @@ func buildVisibleWhiteboardEnvelope(env *envelopes.Envelope, view *room.Whiteboa
 	data["assets"] = whiteboardAssetRefsAny(view.Assets)
 	if view.Notes != "" {
 		data["notes"] = view.Notes
+	}
+	if view.UpdatedAt != "" {
+		data["updated_at"] = view.UpdatedAt
+	}
+	if len(view.RevisionHistory) > 0 {
+		data["revision_history"] = whiteboardRevisionHistoryAny(view.RevisionHistory)
+		data["revision_id"] = view.RevisionHistory[len(view.RevisionHistory)-1].RevisionID
 	}
 	clone.Data = data
 	return clone
@@ -217,5 +266,241 @@ func readNumberValue(data map[string]any, key string) float64 {
 		return float64(value)
 	default:
 		return 0
+	}
+}
+
+func (s *Server) normalizeWhiteboardSubmitResponse(
+	roomID string,
+	env *envelopes.Envelope,
+	resp *envelopes.Response,
+) (*envelopes.Response, error) {
+	if resp == nil {
+		return nil, whiteboardResponseValidationError("response is required")
+	}
+	if resp.Kind != envelopes.ResponseKindData {
+		return nil, whiteboardResponseValidationError("kind must be %q", envelopes.ResponseKindData)
+	}
+	if resp.Status != envelopes.ResponseStatusSubmitted {
+		return nil, whiteboardResponseValidationError("status must be %q", envelopes.ResponseStatusSubmitted)
+	}
+
+	phaseState, found, err := s.manager.GetPhaseState(context.Background(), roomID)
+	if err != nil {
+		return nil, fmt.Errorf("whiteboard submit: load room state: %w", err)
+	}
+	if !found {
+		return nil, fmt.Errorf("%w: %s", room.ErrRoomNotFound, roomID)
+	}
+	persisted := room.ProjectWhiteboardState(phaseState)
+
+	draft, err := decodeWhiteboardSubmitDraft(resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	if draft.BoardID == "" {
+		return nil, whiteboardResponseValidationError("payload.board_id is required")
+	}
+	if persisted != nil && persisted.BoardID != "" && persisted.BoardID != draft.BoardID {
+		return nil, whiteboardResponseValidationError(
+			"payload.board_id %q does not match persisted board %q",
+			draft.BoardID,
+			persisted.BoardID,
+		)
+	}
+	if draft.Scene == nil {
+		return nil, whiteboardResponseValidationError("payload.scene is required")
+	}
+	if !isValidWhiteboardToolMode(draft.ToolMode) {
+		return nil, whiteboardResponseValidationError("payload.tool_mode %q is invalid", draft.ToolMode)
+	}
+
+	assets := draft.Assets
+	if assets == nil && persisted != nil && persisted.BoardID == draft.BoardID {
+		assets = persisted.Assets
+	}
+
+	completedAt := nowRFC3339()
+	revisionID := nextWhiteboardRevisionID(draft.BoardID, persisted)
+	payload := whiteboardSubmitPayload{
+		BoardID:    draft.BoardID,
+		RevisionID: revisionID,
+		Scene:      draft.Scene,
+		Assets:     assets,
+		Notes:      draft.Notes,
+		ToolMode:   draft.ToolMode,
+	}
+	if payload.Assets == nil {
+		payload.Assets = []room.WhiteboardAssetRef{}
+	}
+	if draft.SelectionSummary != nil {
+		payload.SelectionSummary = normalizeWhiteboardSelectionSummary(*draft.SelectionSummary)
+	}
+	if len(draft.ExportRefs) > 0 {
+		payload.ExportRefs = normalizeWhiteboardExportRefs(draft.ExportRefs)
+	}
+
+	if _, err := s.manager.SaveWhiteboardSnapshot(roomID, room.WhiteboardSnapshot{
+		BoardID:       payload.BoardID,
+		SceneSnapshot: payload.Scene,
+		Assets:        payload.Assets,
+		Notes:         payload.Notes,
+		UpdatedAt:     completedAt,
+		Revision: &room.WhiteboardRevision{
+			RevisionID: revisionID,
+			UpdatedAt:  completedAt,
+			Summary:    whiteboardRevisionSummary(payload),
+			SceneSize:  whiteboardSceneSize(payload.Scene),
+			AssetCount: len(payload.Assets),
+		},
+	}); err != nil {
+		return nil, err
+	}
+
+	return &envelopes.Response{
+		V:           envelopes.ProtocolVersion,
+		EnvelopeID:  env.ID,
+		Kind:        envelopes.ResponseKindData,
+		Status:      envelopes.ResponseStatusSubmitted,
+		Payload:     payload,
+		CompletedAt: completedAt,
+	}, nil
+}
+
+func decodeWhiteboardSubmitDraft(raw any) (whiteboardSubmitDraft, error) {
+	if raw == nil {
+		return whiteboardSubmitDraft{}, whiteboardResponseValidationError("payload is required")
+	}
+	blob, err := json.Marshal(raw)
+	if err != nil {
+		return whiteboardSubmitDraft{}, whiteboardResponseValidationError("payload must be JSON-shaped")
+	}
+	var draft whiteboardSubmitDraft
+	if err := json.Unmarshal(blob, &draft); err != nil {
+		return whiteboardSubmitDraft{}, whiteboardResponseValidationError("payload is invalid: %v", err)
+	}
+	return draft, nil
+}
+
+func whiteboardResponseValidationError(format string, args ...any) error {
+	return fmt.Errorf("whiteboard submit response: %w: %s", envelopes.ErrSchemaValidation, fmt.Sprintf(format, args...))
+}
+
+func nextWhiteboardRevisionID(boardID string, persisted *room.WhiteboardStateView) string {
+	seq := 1
+	if persisted != nil && persisted.BoardID == boardID {
+		seq = len(persisted.RevisionHistory) + 1
+	}
+	return fmt.Sprintf("%s-r%d", boardID, seq)
+}
+
+func whiteboardRevisionSummary(payload whiteboardSubmitPayload) string {
+	if payload.Notes != "" {
+		if len(payload.Notes) > 160 {
+			return payload.Notes[:160]
+		}
+		return payload.Notes
+	}
+	if payload.SelectionSummary != nil && payload.SelectionSummary.Count > 0 {
+		return fmt.Sprintf("%d selected object(s)", payload.SelectionSummary.Count)
+	}
+	return fmt.Sprintf("whiteboard revision %s", payload.RevisionID)
+}
+
+func whiteboardSceneSize(scene map[string]any) int {
+	if len(scene) == 0 {
+		return 0
+	}
+	if store, ok := scene["store"].(map[string]any); ok {
+		return len(store)
+	}
+	document, _ := scene["document"].(map[string]any)
+	if pages, ok := document["pages"].([]any); ok {
+		return len(pages)
+	}
+	return len(scene)
+}
+
+func normalizeWhiteboardSelectionSummary(summary whiteboardSelectionSummary) *whiteboardSelectionSummary {
+	out := &whiteboardSelectionSummary{
+		Count: summary.Count,
+		IDs:   compactStrings(summary.IDs),
+		Types: compactStrings(summary.Types),
+	}
+	if out.Count < 0 {
+		out.Count = 0
+	}
+	if len(out.IDs) == 0 {
+		out.IDs = nil
+	}
+	if len(out.Types) == 0 {
+		out.Types = nil
+	}
+	return out
+}
+
+func normalizeWhiteboardExportRefs(refs []whiteboardExportRef) []whiteboardExportRef {
+	out := make([]whiteboardExportRef, 0, len(refs))
+	for _, ref := range refs {
+		item := whiteboardExportRef{
+			ArtifactID: ref.ArtifactID,
+			Name:       ref.Name,
+			MIMEType:   ref.MIMEType,
+			Kind:       ref.Kind,
+			URI:        ref.URI,
+		}
+		if item.ArtifactID == "" && item.Name == "" && item.MIMEType == "" && item.Kind == "" && item.URI == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func whiteboardRevisionHistoryAny(revisions []room.WhiteboardRevision) []any {
+	if len(revisions) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(revisions))
+	for _, revision := range revisions {
+		record := map[string]any{
+			"revision_id": revision.RevisionID,
+		}
+		if revision.UpdatedAt != "" {
+			record["updated_at"] = revision.UpdatedAt
+		}
+		if revision.Summary != "" {
+			record["summary"] = revision.Summary
+		}
+		if revision.SceneSize > 0 {
+			record["scene_size"] = revision.SceneSize
+		}
+		if revision.AssetCount > 0 {
+			record["asset_count"] = revision.AssetCount
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
+func compactStrings(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func isValidWhiteboardToolMode(mode string) bool {
+	switch mode {
+	case "", "select", "draw", "text", "shape", "arrow", "note":
+		return true
+	default:
+		return false
 	}
 }

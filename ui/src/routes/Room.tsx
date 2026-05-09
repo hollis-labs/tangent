@@ -318,6 +318,14 @@ function attachWhiteboardState(envelope: unknown, whiteboard: unknown): unknown 
     data.scene = persisted.scene_snapshot ?? data.scene;
     data.assets = persisted.assets ?? data.assets;
     data.notes = persisted.notes ?? data.notes;
+    data.updated_at = persisted.updated_at ?? data.updated_at;
+    data.revision_history = persisted.revision_history ?? data.revision_history;
+    if (Array.isArray(persisted.revision_history) && persisted.revision_history.length > 0) {
+      const current = persisted.revision_history[persisted.revision_history.length - 1];
+      if (current && typeof current === "object") {
+        data.revision_id = (current as { revision_id?: unknown }).revision_id ?? data.revision_id;
+      }
+    }
   }
   return { ...typed, data };
 }

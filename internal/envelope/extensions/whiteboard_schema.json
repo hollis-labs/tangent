@@ -36,6 +36,27 @@
     "notes": {
       "type": "string"
     },
+    "updated_at": {
+      "type": "string"
+    },
+    "revision_id": {
+      "type": "string"
+    },
+    "revision_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "revision_id": { "type": "string" },
+          "updated_at": { "type": "string" },
+          "summary": { "type": "string" },
+          "scene_size": { "type": "integer", "minimum": 0 },
+          "asset_count": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["revision_id"],
+        "additionalProperties": false
+      }
+    },
     "tool_mode": {
       "type": "string",
       "enum": ["select", "draw", "text", "shape", "arrow", "note"]

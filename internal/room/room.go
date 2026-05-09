@@ -46,6 +46,8 @@ type Pending struct {
 	Cancel     func() error
 	Deadline   time.Time
 
+	TransformResponse func(*envelopes.Response) (*envelopes.Response, error)
+
 	settleOnce sync.Once
 }
 
@@ -152,6 +154,24 @@ func (r *Room) HasConn() bool {
 // Push persists a pending envelope row, sends the envelope on the live
 // WebSocket conn, and blocks until response, cancel, close, or ctx.
 func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Response, error) {
+	return r.push(ctx, env, nil)
+}
+
+// PushWithResponseTransform behaves like Push, but runs the supplied
+// transform against the client response before it is persisted and returned.
+func (r *Room) PushWithResponseTransform(
+	ctx context.Context,
+	env *envelopes.Envelope,
+	transform func(*envelopes.Response) (*envelopes.Response, error),
+) (*envelopes.Response, error) {
+	return r.push(ctx, env, transform)
+}
+
+func (r *Room) push(
+	ctx context.Context,
+	env *envelopes.Envelope,
+	transform func(*envelopes.Response) (*envelopes.Response, error),
+) (*envelopes.Response, error) {
 	if env == nil {
 		return nil, fmt.Errorf("room: push: nil envelope")
 	}
@@ -169,6 +189,7 @@ func (r *Room) Push(ctx context.Context, env *envelopes.Envelope) (*envelopes.Re
 	pending.Cancel = func() error {
 		return fmt.Errorf("%w: envelope %q", ErrUserCancelled, env.ID)
 	}
+	pending.TransformResponse = transform
 
 	r.pendingMu.Lock()
 	if _, exists := r.pending[env.ID]; exists {
@@ -247,11 +268,33 @@ func (r *Room) HandleResponse(envelopeID string, resp *envelopes.Response) {
 		return
 	}
 	p.settle(func() {
-		if err := r.persistResolvedEnvelope(envelopeID, resp); err != nil {
+		nextResp := cloneResponse(resp)
+		if p.TransformResponse != nil {
+			transformed, err := p.TransformResponse(nextResp)
+			if err != nil {
+				if persistErr := r.persistTerminalEnvelopeError(envelopeID, err); persistErr != nil {
+					trySendErr(p.ErrCh, fmt.Errorf("room: persist response transform error for envelope %q: %w", envelopeID, persistErr))
+					return
+				}
+				trySendErr(p.ErrCh, err)
+				return
+			}
+			nextResp = transformed
+		}
+		if nextResp == nil {
+			err := fmt.Errorf("room: envelope %q response transform returned nil", envelopeID)
+			if persistErr := r.persistTerminalEnvelopeError(envelopeID, err); persistErr != nil {
+				trySendErr(p.ErrCh, fmt.Errorf("room: persist nil response transform error for envelope %q: %w", envelopeID, persistErr))
+				return
+			}
+			trySendErr(p.ErrCh, err)
+			return
+		}
+		if err := r.persistResolvedEnvelope(envelopeID, nextResp); err != nil {
 			trySendErr(p.ErrCh, fmt.Errorf("room: persist resolved envelope %q: %w", envelopeID, err))
 			return
 		}
-		trySendResp(p.RespCh, resp)
+		trySendResp(p.RespCh, nextResp)
 	})
 }
 
@@ -525,6 +568,25 @@ func cloneEnvelope(env *envelopes.Envelope) *envelopes.Envelope {
 	if env.Trace != nil {
 		traceCopy := *env.Trace
 		out.Trace = &traceCopy
+	}
+	return &out
+}
+
+func cloneResponse(resp *envelopes.Response) *envelopes.Response {
+	if resp == nil {
+		return nil
+	}
+	out := *resp
+	if resp.Handle != nil {
+		handleCopy := *resp.Handle
+		out.Handle = &handleCopy
+	}
+	if resp.Error != nil {
+		errCopy := *resp.Error
+		out.Error = &errCopy
+	}
+	if resp.Meta != nil {
+		out.Meta = cloneAnyMap(resp.Meta)
 	}
 	return &out
 }

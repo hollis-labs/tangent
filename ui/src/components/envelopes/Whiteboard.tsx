@@ -16,6 +16,28 @@ export interface WhiteboardAssetRef {
   height?: number;
 }
 
+export interface WhiteboardRevisionHistoryItem {
+  revision_id: string;
+  updated_at?: string;
+  summary?: string;
+  scene_size?: number;
+  asset_count?: number;
+}
+
+export interface WhiteboardSelectionSummary {
+  count: number;
+  ids?: string[];
+  types?: string[];
+}
+
+export interface WhiteboardExportRef {
+  artifact_id?: string;
+  name?: string;
+  mime_type?: string;
+  kind?: string;
+  uri?: string;
+}
+
 export interface WhiteboardEnvelopeData {
   board_id: string;
   title?: string;
@@ -23,6 +45,9 @@ export interface WhiteboardEnvelopeData {
   scene?: TLEditorSnapshot | Record<string, unknown>;
   assets?: WhiteboardAssetRef[];
   notes?: string;
+  updated_at?: string;
+  revision_id?: string;
+  revision_history?: WhiteboardRevisionHistoryItem[];
   tool_mode?: "select" | "draw" | "text" | "shape" | "arrow" | "note";
   reference_images?: Array<Record<string, unknown>>;
 }
@@ -39,7 +64,7 @@ export interface WhiteboardEnvelope {
   meta?: Record<string, unknown>;
 }
 
-export interface WhiteboardResponse {
+export interface WhiteboardSubmitResponse {
   v: 1;
   envelopeId: string;
   kind: "data";
@@ -50,13 +75,15 @@ export interface WhiteboardResponse {
     assets: WhiteboardAssetRef[];
     notes: string;
     tool_mode?: WhiteboardEnvelopeData["tool_mode"];
+    selection_summary?: WhiteboardSelectionSummary;
+    export_refs?: WhiteboardExportRef[];
   };
   completedAt: string;
 }
 
 export type WhiteboardProps = {
   envelope: WhiteboardEnvelope;
-  onSubmit: (response: WhiteboardResponse) => void;
+  onSubmit: (response: WhiteboardSubmitResponse) => void;
   onCancel: () => void;
 };
 
@@ -70,6 +97,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
     if (!editor || !data?.board_id) {
       return;
     }
+    const selectionSummary = summarizeSelection(editor);
     onSubmit({
       v: 1,
       envelopeId: envelope.id,
@@ -81,6 +109,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
         assets: data.assets ?? [],
         notes,
         tool_mode: data.tool_mode,
+        selection_summary: selectionSummary,
       },
       completedAt: new Date().toISOString(),
     });
@@ -102,6 +131,16 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
           </span>
           {data?.tool_mode ? (
             <span className="rounded-full border border-zinc-700 px-2 py-1">{data.tool_mode}</span>
+          ) : null}
+          {data?.revision_id ? (
+            <span className="rounded-full border border-zinc-700 px-2 py-1">
+              rev {data.revision_id}
+            </span>
+          ) : null}
+          {data?.updated_at ? (
+            <span className="rounded-full border border-zinc-700 px-2 py-1">
+              saved {data.updated_at}
+            </span>
           ) : null}
           <span className="rounded-full border border-zinc-700 px-2 py-1">
             {data?.assets?.length ?? 0} asset refs
@@ -132,6 +171,9 @@ export function Whiteboard({ envelope, onSubmit, onCancel }: WhiteboardProps) {
       </CardContent>
 
       <CardFooter className="justify-end gap-3">
+        <p className="mr-auto text-xs text-zinc-500">
+          Submit saves a new room revision. Cancel closes without saving local edits.
+        </p>
         <Button type="button" variant="ghost" onClick={onCancel} data-testid="whiteboard-cancel">
           Cancel
         </Button>
@@ -148,4 +190,24 @@ function normalizeSnapshot(scene: WhiteboardEnvelopeData["scene"]): TLEditorSnap
     return undefined;
   }
   return scene as TLEditorSnapshot;
+}
+
+function summarizeSelection(editor: Editor): WhiteboardSelectionSummary | undefined {
+  const ids = editor.getSelectedShapeIds();
+  if (ids.length === 0) {
+    return undefined;
+  }
+  const types = Array.from(
+    new Set(
+      editor
+        .getSelectedShapes()
+        .map((shape) => shape.type)
+        .filter((type): type is typeof type => typeof type === "string" && type.length > 0),
+    ),
+  );
+  return {
+    count: ids.length,
+    ids: ids.map((id) => String(id)),
+    types: types.length > 0 ? types : undefined,
+  };
 }

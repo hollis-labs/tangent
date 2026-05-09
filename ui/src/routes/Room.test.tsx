@@ -292,6 +292,101 @@ describe("<Room>", () => {
       "Accepted final copy.",
     );
   });
+
+  it("enriches whiteboard envelopes with the latest persisted revision before submit", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.whiteboard", WhiteboardProbeAdapter);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        result: {
+          content: [
+            {
+              text: JSON.stringify({
+                whiteboard: {
+                  board_id: "board-1",
+                  scene_snapshot: { document: { pages: [{ id: "page:persisted" }] } },
+                  assets: [{ artifact_id: "artifact-1", source: "artifact://artifact-1" }],
+                  notes: "Persisted board notes",
+                  updated_at: "2026-05-09T20:15:00Z",
+                  revision_history: [{ revision_id: "board-1-r1" }, { revision_id: "board-1-r2" }],
+                },
+              }),
+            },
+          ],
+        },
+      }),
+    } as Response);
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("whiteboard-1", {
+        v: 1,
+        id: "whiteboard-1",
+        type: "tangent.whiteboard",
+        data: {
+          board_id: "board-1",
+          scene: { document: { pages: [{ id: "page:stale" }] } },
+          notes: "stale notes",
+        },
+      });
+    });
+
+    expect(await screen.findByTestId("whiteboard-probe-state")).toHaveTextContent(
+      '"revision_id":"board-1-r2"',
+    );
+    expect(screen.getByTestId("whiteboard-probe-state")).toHaveTextContent(
+      '"notes":"Persisted board notes"',
+    );
+
+    fireEvent.click(screen.getByTestId("whiteboard-probe-submit"));
+    expect(submitResponse).toHaveBeenCalledWith("whiteboard-1", { ok: true });
+  });
+
+  it("whiteboard cancel uses the explicit cancel transport", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    register("tangent.whiteboard", WhiteboardProbeAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("whiteboard-cancel-1", {
+        v: 1,
+        id: "whiteboard-cancel-1",
+        type: "tangent.whiteboard",
+        data: { board_id: "board-1" },
+      });
+    });
+
+    fireEvent.click(await screen.findByTestId("whiteboard-probe-cancel"));
+    expect(cancel).toHaveBeenCalledWith("whiteboard-cancel-1");
+  });
 });
 
 function renderAt(path: string, includeNavigator = false) {
@@ -373,5 +468,25 @@ function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponent
       onSubmit={onSubmit as (response: OutputRenderResponse) => void}
       onCancel={onCancel}
     />
+  );
+}
+
+function WhiteboardProbeAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <div>
+      <pre data-testid="whiteboard-probe-state">
+        {JSON.stringify((envelope as { data?: unknown }).data ?? null)}
+      </pre>
+      <button
+        type="button"
+        data-testid="whiteboard-probe-submit"
+        onClick={() => onSubmit({ ok: true })}
+      >
+        submit
+      </button>
+      <button type="button" data-testid="whiteboard-probe-cancel" onClick={onCancel}>
+        cancel
+      </button>
+    </div>
   );
 }

@@ -77,13 +77,18 @@ func (r *Room) SaveWhiteboardSnapshot(snapshot WhiteboardSnapshot) error {
 		current = &WhiteboardStateView{}
 	}
 
+	revisionHistory := []WhiteboardRevision{}
+	if current.BoardID == normalized.BoardID {
+		revisionHistory = cloneWhiteboardRevisions(current.RevisionHistory)
+	}
+
 	nextState := WhiteboardStateView{
 		BoardID:         normalized.BoardID,
 		SceneSnapshot:   normalized.SceneSnapshot,
 		Assets:          normalized.Assets,
 		Notes:           normalized.Notes,
 		UpdatedAt:       normalized.UpdatedAt,
-		RevisionHistory: cloneWhiteboardRevisions(current.RevisionHistory),
+		RevisionHistory: revisionHistory,
 	}
 	if normalized.Revision != nil {
 		nextState.RevisionHistory = append(nextState.RevisionHistory, *normalized.Revision)

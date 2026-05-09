@@ -40,7 +40,7 @@ import { Triage, type TriageEnvelope, type TriageResponse } from "./components/e
 import {
   Whiteboard,
   type WhiteboardEnvelope,
-  type WhiteboardResponse,
+  type WhiteboardSubmitResponse,
 } from "./components/envelopes/Whiteboard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
@@ -133,7 +133,7 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentPr
   return (
     <Whiteboard
       envelope={envelope as WhiteboardEnvelope}
-      onSubmit={onSubmit as (response: WhiteboardResponse) => void}
+      onSubmit={onSubmit as (response: WhiteboardSubmitResponse) => void}
       onCancel={onCancel}
     />
   );

@@ -14,9 +14,17 @@ vi.mock("tldraw", () => ({
     onMount,
   }: {
     snapshot?: unknown;
-    onMount?: (editor: { store: Record<string, unknown> }) => void;
+    onMount?: (editor: {
+      store: Record<string, unknown>;
+      getSelectedShapeIds: () => string[];
+      getSelectedShapes: () => Array<{ type: string }>;
+    }) => void;
   }) => {
-    onMount?.({ store: { mocked: true } });
+    onMount?.({
+      store: { mocked: true },
+      getSelectedShapeIds: () => ["shape:1"],
+      getSelectedShapes: () => [{ type: "geo" }],
+    });
     return <div data-testid="tldraw-host" data-snapshot={JSON.stringify(snapshot ?? null)} />;
   },
   getSnapshot: () => getSnapshot(),
@@ -85,7 +93,23 @@ describe("Whiteboard", () => {
       payload: {
         board_id: "board-1",
         notes: "updated notes",
+        selection_summary: {
+          count: 1,
+          ids: ["shape:1"],
+          types: ["geo"],
+        },
       },
     });
+  });
+
+  it("cancel delegates without emitting a submit payload", () => {
+    const onSubmit = vi.fn();
+    const onCancel = vi.fn();
+    render(<Whiteboard envelope={baseEnvelope} onSubmit={onSubmit} onCancel={onCancel} />);
+
+    fireEvent.click(screen.getByTestId("whiteboard-cancel"));
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });
