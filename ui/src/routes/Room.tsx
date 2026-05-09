@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  whiteboard?: unknown;
   synthesis_notes?: unknown;
   current_draft?: unknown;
   prose_revision_outcomes?: unknown[];
@@ -144,7 +145,8 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.synthesis-notes" &&
     type !== "tangent.block-draft" &&
     type !== "tangent.prose-revision" &&
-    type !== "tangent.output-render"
+    type !== "tangent.output-render" &&
+    type !== "tangent.whiteboard"
   ) {
     return envelope;
   }
@@ -161,6 +163,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.output-render") {
       return attachFinalOutput(envelope, state.final_output);
+    }
+    if (type === "tangent.whiteboard") {
+      return attachWhiteboardState(envelope, state.whiteboard);
     }
     return attachSynthesisState(envelope, state.synthesis_notes);
   } catch {
@@ -294,6 +299,25 @@ function attachFinalOutput(envelope: unknown, finalOutput: unknown): unknown {
       : {};
   if (finalOutput && typeof finalOutput === "object") {
     Object.assign(data, finalOutput as Record<string, unknown>);
+  }
+  return { ...typed, data };
+}
+
+function attachWhiteboardState(envelope: unknown, whiteboard: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  if (whiteboard && typeof whiteboard === "object") {
+    const persisted = whiteboard as Record<string, unknown>;
+    data.board_id = persisted.board_id ?? data.board_id;
+    data.scene = persisted.scene_snapshot ?? data.scene;
+    data.assets = persisted.assets ?? data.assets;
+    data.notes = persisted.notes ?? data.notes;
   }
   return { ...typed, data };
 }
