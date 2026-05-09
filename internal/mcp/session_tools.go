@@ -333,6 +333,10 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidWhiteboardBoardID),
+		errors.Is(err, room.ErrInvalidWhiteboardAssetRef),
+		errors.Is(err, room.ErrInvalidWhiteboardExportRef),
+		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
 		errors.Is(err, room.ErrInvalidDraftBlockContent),
 		errors.Is(err, room.ErrInvalidProseRevisionID),

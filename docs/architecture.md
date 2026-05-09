@@ -119,6 +119,7 @@ projects a dedicated `whiteboard` payload when present:
 - `board_id`
 - `scene_snapshot` (canonical tldraw-style scene JSON)
 - `assets` (references/metadata only, not inline base64 blobs)
+- `export_refs` (latest export metadata, PNG-only in v0.4)
 - `notes`
 - `updated_at`
 - `revision_history` (append-only metadata, not full duplicated scenes)

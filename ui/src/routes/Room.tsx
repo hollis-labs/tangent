@@ -321,6 +321,12 @@ function attachWhiteboardState(envelope: unknown, whiteboard: unknown): unknown 
     data.board_id = persisted.board_id ?? data.board_id;
     data.scene = persisted.scene_snapshot ?? data.scene;
     data.assets = persisted.assets ?? data.assets;
+    data.reference_images = Array.isArray(persisted.assets)
+      ? (persisted.assets as Array<Record<string, unknown>>).filter(
+          (asset) => asset?.kind === "reference_image",
+        )
+      : data.reference_images;
+    data.export_refs = persisted.export_refs ?? data.export_refs;
     data.notes = persisted.notes ?? data.notes;
     data.updated_at = persisted.updated_at ?? data.updated_at;
     data.revision_history = persisted.revision_history ?? data.revision_history;

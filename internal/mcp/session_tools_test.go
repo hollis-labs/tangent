@@ -642,8 +642,20 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 			{
 				AssetID:    "asset-1",
 				ArtifactID: "artifact-1",
-				Source:     "artifact://artifact-1",
+				Source:     "https://assets.example.test/reference.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
 				MIMEType:   "image/png",
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r1.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:40:10Z",
+				Width:     1200,
+				Height:    800,
 			},
 		},
 		Notes:     "seed board",
@@ -687,6 +699,12 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 	}
 	if got := state.Whiteboard.Assets[0].ArtifactID; got != "artifact-1" {
 		t.Fatalf("artifact_id = %q, want artifact-1", got)
+	}
+	if got := state.Whiteboard.Assets[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
+	}
+	if got := state.Whiteboard.ExportRefs[0].Kind; got != "png" {
+		t.Fatalf("export kind = %q, want png", got)
 	}
 }
 

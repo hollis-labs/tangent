@@ -352,7 +352,15 @@ describe("<Room>", () => {
                 whiteboard: {
                   board_id: "board-1",
                   scene_snapshot: { document: { pages: [{ id: "page:persisted" }] } },
-                  assets: [{ artifact_id: "artifact-1", source: "artifact://artifact-1" }],
+                  assets: [
+                    {
+                      artifact_id: "artifact-1",
+                      uri: "artifact://artifact-1",
+                      source: "https://assets.example.test/reference.png",
+                      kind: "reference_image",
+                    },
+                  ],
+                  export_refs: [{ kind: "png", name: "board-1-r2.png" }],
                   notes: "Persisted board notes",
                   updated_at: "2026-05-09T20:15:00Z",
                   revision_history: [{ revision_id: "board-1-r1" }, { revision_id: "board-1-r2" }],
@@ -384,6 +392,12 @@ describe("<Room>", () => {
     );
     expect(screen.getByTestId("whiteboard-probe-state")).toHaveTextContent(
       '"notes":"Persisted board notes"',
+    );
+    expect(screen.getByTestId("whiteboard-probe-state")).toHaveTextContent(
+      '"reference_images":[{"artifact_id":"artifact-1"',
+    );
+    expect(screen.getByTestId("whiteboard-probe-state")).toHaveTextContent(
+      '"export_refs":[{"kind":"png","name":"board-1-r2.png"}]',
     );
 
     fireEvent.click(screen.getByTestId("whiteboard-probe-submit"));

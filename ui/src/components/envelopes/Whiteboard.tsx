@@ -6,22 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  buildWhiteboardSubmitAssets,
+  mergeWhiteboardAssetRefs,
+  prepareWhiteboardSnapshotForEditor,
+  type WhiteboardAssetRef,
+  type WhiteboardExportRef,
+} from "@/lib/whiteboard-assets";
+import {
   buildWhiteboardCanonicalSeedKey,
   clearWhiteboardDraft,
   loadWhiteboardDraft,
   saveWhiteboardDraft,
   WHITEBOARD_AUTOSAVE_DEBOUNCE_MS,
 } from "@/lib/whiteboard-draft-storage";
-
-export interface WhiteboardAssetRef {
-  asset_id?: string;
-  artifact_id?: string;
-  name?: string;
-  mime_type?: string;
-  source?: string;
-  width?: number;
-  height?: number;
-}
 
 export interface WhiteboardRevisionHistoryItem {
   revision_id: string;
@@ -37,26 +34,19 @@ export interface WhiteboardSelectionSummary {
   types?: string[];
 }
 
-export interface WhiteboardExportRef {
-  artifact_id?: string;
-  name?: string;
-  mime_type?: string;
-  kind?: string;
-  uri?: string;
-}
-
 export interface WhiteboardEnvelopeData {
   board_id: string;
   title?: string;
   intent?: string;
   scene?: TLEditorSnapshot | Record<string, unknown>;
   assets?: WhiteboardAssetRef[];
+  export_refs?: WhiteboardExportRef[];
   notes?: string;
   updated_at?: string;
   revision_id?: string;
   revision_history?: WhiteboardRevisionHistoryItem[];
   tool_mode?: "select" | "draw" | "text" | "shape" | "arrow" | "note";
-  reference_images?: Array<Record<string, unknown>>;
+  reference_images?: WhiteboardAssetRef[];
 }
 
 export interface WhiteboardEnvelope {
@@ -99,17 +89,26 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
   const data = envelope.data;
   const editorRef = useRef<Editor | null>(null);
   const boardID = data?.board_id ?? "";
+  const assetRefs = mergeWhiteboardAssetRefs(data?.assets ?? [], data?.reference_images ?? []);
   const [initialState] = useState(() =>
     resolveInitialWhiteboardState({
       roomID,
       boardID,
       envelopeId: envelope.id,
       scene: normalizeSnapshot(data?.scene),
+      assetRefs,
       notes: data?.notes ?? "",
       revisionId: readRevisionID(data?.revision_id),
     }),
   );
   const [notes, setNotes] = useState(initialState.notes);
+  const [latestExportRef, setLatestExportRef] = useState<WhiteboardExportRef | null>(null);
+  const [exportStatus, setExportStatus] = useState<"idle" | "done" | "failed">("idle");
+  const [message, setMessage] = useState<string | null>(
+    initialState.staleReferenceImages.length > 0
+      ? buildStaleReferenceImageMessage(initialState.staleReferenceImages.length)
+      : null,
+  );
   const notesRef = useRef(initialState.notes);
   const autosaveTimerRef = useRef<number | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -118,6 +117,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
   const canonicalNotesRef = useRef(initialState.canonicalNotes);
   const canonicalRevisionIdRef = useRef(initialState.revisionId);
   const canonicalSeedKeyRef = useRef(initialState.canonicalSeedKey);
+  const latestExportRefRef = useRef<WhiteboardExportRef | null>(null);
   const lastPersistedPayloadRef = useRef<string | null>(
     initialState.recoveredDraft
       ? JSON.stringify({
@@ -199,14 +199,31 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     };
   }, []);
 
+  const invalidateExport = useEffectEvent(() => {
+    if (latestExportRefRef.current === null) {
+      return;
+    }
+    latestExportRefRef.current = null;
+    setLatestExportRef(null);
+    setExportStatus("idle");
+  });
+
   const handleSubmit = () => {
     const editor = editorRef.current;
     if (!editor || !data?.board_id) {
       return;
     }
+    const submitScene = buildWhiteboardSubmitAssets(getSnapshot(editor.store), assetRefs);
+    if (submitScene.unsupportedLocalAssetIds.length > 0) {
+      setMessage(
+        `Remove ${submitScene.unsupportedLocalAssetIds.length} browser-only image asset(s) before submit. Tangent only persists artifact-backed image refs.`,
+      );
+      return;
+    }
     const selectionSummary = summarizeSelection(editor);
     shouldFlushDraftRef.current = false;
     clearDraft();
+    setMessage(null);
     onSubmit({
       v: 1,
       envelopeId: envelope.id,
@@ -214,11 +231,12 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       status: "submitted",
       payload: {
         board_id: data.board_id,
-        scene: getSnapshot(editor.store),
-        assets: data.assets ?? [],
+        scene: submitScene.snapshot,
+        assets: submitScene.assets,
         notes,
         tool_mode: data.tool_mode,
         selection_summary: selectionSummary,
+        export_refs: latestExportRefRef.current ? [latestExportRefRef.current] : [],
       },
       completedAt: new Date().toISOString(),
     });
@@ -235,6 +253,51 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     notesRef.current = nextNotes;
     setNotes(nextNotes);
     scheduleAutosave();
+  };
+
+  const handleExportPNG = async () => {
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+    const shapeIDs = Array.from(editor.getCurrentPageShapeIds());
+    if (shapeIDs.length === 0) {
+      setExportStatus("failed");
+      setMessage("Export PNG requires at least one shape on the current board.");
+      return;
+    }
+    try {
+      const image = await editor.toImage(shapeIDs, {
+        format: "png",
+        background: true,
+      });
+      const filename = buildWhiteboardExportFilename(boardID, data?.revision_id);
+      const url = window.URL.createObjectURL(image.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      const exportRef: WhiteboardExportRef = {
+        name: filename,
+        mime_type: image.blob.type || "image/png",
+        kind: "png",
+        created_at: new Date().toISOString(),
+        size_bytes: image.blob.size,
+        width: image.width,
+        height: image.height,
+      };
+      latestExportRefRef.current = exportRef;
+      setLatestExportRef(exportRef);
+      setExportStatus("done");
+      setMessage(null);
+    } catch {
+      setExportStatus("failed");
+      setMessage("PNG export failed. Try again after the board finishes rendering.");
+    }
   };
 
   return (
@@ -267,10 +330,24 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
           <span className="rounded-full border border-zinc-700 px-2 py-1">
             {data?.assets?.length ?? 0} asset refs
           </span>
+          {(data?.export_refs?.length ?? 0) > 0 ? (
+            <span className="rounded-full border border-zinc-700 px-2 py-1">
+              {data?.export_refs?.length} persisted export
+              {data?.export_refs?.length === 1 ? "" : "s"}
+            </span>
+          ) : null}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {message ? (
+          <div
+            className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200"
+            data-testid="whiteboard-message"
+          >
+            {message}
+          </div>
+        ) : null}
         <div className="h-[640px] overflow-hidden rounded-xl border border-zinc-800 bg-white">
           <Tldraw
             snapshot={initialState.scene}
@@ -282,6 +359,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
               unsubscribeRef.current?.();
               unsubscribeRef.current = editor.store.listen(
                 () => {
+                  invalidateExport();
                   scheduleAutosave();
                 },
                 { source: "user", scope: "document" },
@@ -305,7 +383,16 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       <CardFooter className="justify-end gap-3">
         <p className="mr-auto text-xs text-zinc-500">
           Draft autosaves stay in this browser until you submit or cancel.
+          {latestExportRef ? ` Latest PNG export: ${latestExportRef.name}.` : ""}
         </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleExportPNG}
+          data-testid="whiteboard-export-png"
+        >
+          Export PNG
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -318,6 +405,16 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
           Submit board
         </Button>
       </CardFooter>
+      {exportStatus === "done" ? (
+        <div className="px-6 pb-4 text-xs text-emerald-400" data-testid="whiteboard-export-status">
+          PNG exported
+        </div>
+      ) : null}
+      {exportStatus === "failed" ? (
+        <div className="px-6 pb-4 text-xs text-red-400" data-testid="whiteboard-export-status">
+          Export failed
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -338,6 +435,7 @@ function resolveInitialWhiteboardState(input: {
   boardID: string;
   envelopeId: string;
   scene?: TLEditorSnapshot;
+  assetRefs: WhiteboardAssetRef[];
   notes: string;
   revisionId: string | null;
 }): {
@@ -348,33 +446,37 @@ function resolveInitialWhiteboardState(input: {
   canonicalSeedKey: string;
   revisionId: string | null;
   recoveredDraft: boolean;
+  staleReferenceImages: WhiteboardAssetRef[];
 } {
+  const hydratedCanonical = prepareWhiteboardSnapshotForEditor(input.scene, input.assetRefs);
   const canonicalSeedKey = buildWhiteboardCanonicalSeedKey({
     notes: input.notes,
-    scene: input.scene,
+    scene: hydratedCanonical.snapshot,
   });
   if (!input.roomID || !input.boardID) {
     return {
-      scene: input.scene,
+      scene: hydratedCanonical.snapshot,
       notes: input.notes,
-      canonicalScene: input.scene,
+      canonicalScene: hydratedCanonical.snapshot,
       canonicalNotes: input.notes,
       canonicalSeedKey,
       revisionId: input.revisionId,
       recoveredDraft: false,
+      staleReferenceImages: hydratedCanonical.staleReferenceImages,
     };
   }
 
   const draft = loadWhiteboardDraft(input.roomID, input.boardID);
   if (!draft) {
     return {
-      scene: input.scene,
+      scene: hydratedCanonical.snapshot,
       notes: input.notes,
-      canonicalScene: input.scene,
+      canonicalScene: hydratedCanonical.snapshot,
       canonicalNotes: input.notes,
       canonicalSeedKey,
       revisionId: input.revisionId,
       recoveredDraft: false,
+      staleReferenceImages: hydratedCanonical.staleReferenceImages,
     };
   }
 
@@ -387,24 +489,26 @@ function resolveInitialWhiteboardState(input: {
   ) {
     clearWhiteboardDraft(input.roomID, input.boardID);
     return {
-      scene: input.scene,
+      scene: hydratedCanonical.snapshot,
       notes: input.notes,
-      canonicalScene: input.scene,
+      canonicalScene: hydratedCanonical.snapshot,
       canonicalNotes: input.notes,
       canonicalSeedKey,
       revisionId: input.revisionId,
       recoveredDraft: false,
+      staleReferenceImages: hydratedCanonical.staleReferenceImages,
     };
   }
 
   return {
-    scene: draft.scene,
+    scene: prepareWhiteboardSnapshotForEditor(draft.scene, input.assetRefs).snapshot,
     notes: draft.notes,
-    canonicalScene: input.scene,
+    canonicalScene: hydratedCanonical.snapshot,
     canonicalNotes: input.notes,
     canonicalSeedKey,
     revisionId: input.revisionId,
     recoveredDraft: true,
+    staleReferenceImages: hydratedCanonical.staleReferenceImages,
   };
 }
 
@@ -446,4 +550,17 @@ function summarizeSelection(editor: Editor): WhiteboardSelectionSummary | undefi
     ids: ids.map((id) => String(id)),
     types: types.length > 0 ? types : undefined,
   };
+}
+
+function buildWhiteboardExportFilename(boardID: string, revisionID?: string): string {
+  const safeBoardID = boardID.trim().length > 0 ? boardID.trim() : "whiteboard";
+  const safeRevisionID =
+    typeof revisionID === "string" && revisionID.trim().length > 0 ? revisionID.trim() : "draft";
+  return `${safeBoardID}-${safeRevisionID}.png`;
+}
+
+function buildStaleReferenceImageMessage(count: number): string {
+  return count === 1
+    ? "1 persisted reference image could not be reloaded from its artifact ref."
+    : `${count} persisted reference images could not be reloaded from their artifact refs.`;
 }

@@ -12,6 +12,7 @@ var (
 	ErrInvalidPhaseKey                    = errors.New("room: invalid phase output key")
 	ErrInvalidWhiteboardBoardID           = errors.New("room: invalid whiteboard board id")
 	ErrInvalidWhiteboardAssetRef          = errors.New("room: invalid whiteboard asset ref")
+	ErrInvalidWhiteboardExportRef         = errors.New("room: invalid whiteboard export ref")
 	ErrInvalidWhiteboardRevisionID        = errors.New("room: invalid whiteboard revision id")
 	ErrInvalidDraftBlockID                = errors.New("room: invalid draft block id")
 	ErrInvalidDraftBlockContent           = errors.New("room: invalid draft block content")

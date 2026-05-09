@@ -4,9 +4,11 @@ Manual smoke for the v0.4 whiteboard submit loop. This validates:
 
 - host-local autosave for in-progress edits while the envelope is open
 - refresh recovery scoped to the active room + board
+- PNG export from the room footer
 - explicit `Submit board` vs `Cancel`
 - server-issued `revision_id` on submit
 - same-room reopen from the latest persisted snapshot
+- artifact-backed reference-image refs surviving room reload
 - append-only whiteboard revision history in `tangent.session_get`
 
 ## 1. Boot Tangent
@@ -56,12 +58,17 @@ Refresh the page before clicking `Submit board`. Confirm:
 - the same whiteboard envelope reopens
 - the unsent canvas edits and notes recover from this browser
 - another room or another `board_id` does not pick up this draft
+- if the seeded board included artifact-backed `reference_images`, they
+  still render after refresh
+- if an artifact ref is stale or missing, the whiteboard shows a warning
+  instead of failing the entire board
 
 ## 5. Submit once
 
 Open the `/r/<roomID>` URL. Confirm:
 
 - the board renders
+- clicking `Export PNG` downloads a `.png`
 - editing the board and clicking `Submit board` returns a `data` response
 
 Claude should receive a response shaped like:
@@ -78,6 +85,12 @@ Claude should receive a response shaped like:
     "scene": { "...": "full snapshot" },
     "assets": [],
     "notes": "revision one",
+    "export_refs": [
+      {
+        "kind": "png",
+        "name": "board-1-draft.png"
+      }
+    ],
     "selection_summary": {
       "count": 1
     }
@@ -101,6 +114,8 @@ Submit again and verify Claude receives a new `revision_id`.
 Have Claude call `tangent.session_get` for the room and confirm:
 
 - `whiteboard.notes` matches the second submit
+- `whiteboard.export_refs` contains the latest PNG export metadata
+- `whiteboard.assets` retains artifact-backed reference-image refs
 - `whiteboard.revision_history` has two entries
 - `envelopes_history` includes both whiteboard turns with their
   normalized submit payloads

@@ -47,6 +47,22 @@ async function main() {
               pages: [{ id: "page:1" }],
             },
           },
+          assets: [
+            {
+              artifact_id: "artifact-1",
+              uri: "artifact://artifact-1",
+              source: "https://assets.example.test/reference.png",
+              kind: "reference_image",
+            },
+          ],
+          reference_images: [
+            {
+              artifact_id: "artifact-1",
+              uri: "artifact://artifact-1",
+              source: "https://assets.example.test/reference.png",
+              kind: "reference_image",
+            },
+          ],
           notes: "seed notes",
         },
         meta: { roomID },
@@ -99,6 +115,9 @@ async function main() {
     if (reopened.envelope?.data?.notes !== "revision one") {
       throw new Error(`reopened notes were not persisted: ${JSON.stringify(reopened.envelope?.data)}`);
     }
+    if ((reopened.envelope?.data?.reference_images ?? []).length !== 1) {
+      throw new Error(`reopened reference_images missing: ${JSON.stringify(reopened.envelope?.data)}`);
+    }
     if (reopened.envelope?.data?.revision_id !== firstResult.payload.revision_id) {
       throw new Error(`reopened revision_id mismatch: ${JSON.stringify(reopened.envelope?.data)}`);
     }
@@ -146,6 +165,9 @@ async function main() {
     }
     if ((state.whiteboard?.revision_history ?? []).length !== 2) {
       throw new Error(`unexpected revision history: ${JSON.stringify(state.whiteboard)}`);
+    }
+    if ((state.whiteboard?.export_refs ?? []).length !== 1) {
+      throw new Error(`unexpected export refs: ${JSON.stringify(state.whiteboard)}`);
     }
     if ((state.envelopes_history ?? []).length !== 2) {
       throw new Error(`unexpected envelopes history: ${JSON.stringify(state.envelopes_history)}`);

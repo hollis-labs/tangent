@@ -179,7 +179,8 @@ workflow-neutral phase substrate:
   blob shaped like `{"version":1,"data":{...}}`.
 - `whiteboard`: when a room has persisted board state, a dedicated
   projection with `board_id`, `scene_snapshot`, referenced `assets`,
-  `notes`, `updated_at`, and append-only `revision_history` metadata.
+  `export_refs`, `notes`, `updated_at`, and append-only
+  `revision_history` metadata.
 - `final_output`: the persisted final markdown artifact once
   `tangent.output_render` runs.
 

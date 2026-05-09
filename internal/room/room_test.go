@@ -824,9 +824,22 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "artifact://artifact-1",
+				Source:     "https://assets.example.test/screenshot.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
 				Width:      1200,
 				Height:     800,
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r1.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:30:10Z",
+				SizeBytes: 2048,
+				Width:     1200,
+				Height:    800,
 			},
 		},
 		Notes:     "first board snapshot",
@@ -857,9 +870,22 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "artifact://artifact-1",
+				Source:     "https://assets.example.test/screenshot.png",
+				URI:        "artifact://artifact-1",
+				Kind:       "reference_image",
 				Width:      1200,
 				Height:     800,
+			},
+		},
+		ExportRefs: []room.WhiteboardExportRef{
+			{
+				Name:      "board-1-r2.png",
+				MIMEType:  "image/png",
+				Kind:      "png",
+				CreatedAt: "2026-05-09T19:35:10Z",
+				SizeBytes: 3072,
+				Width:     1280,
+				Height:    900,
 			},
 		},
 		Notes:     "second board snapshot",
@@ -892,8 +918,11 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 	if got := board.RevisionHistory[0].RevisionID; got != "rev-1" {
 		t.Fatalf("revision_history[0].revision_id = %q, want rev-1", got)
 	}
-	if got := board.Assets[0].Source; got != "artifact://artifact-1" {
-		t.Fatalf("asset source = %q, want artifact://artifact-1", got)
+	if got := board.Assets[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
+	}
+	if got := len(board.ExportRefs); got != 1 {
+		t.Fatalf("export_refs len = %d, want 1", got)
 	}
 
 	reloaded := room.NewManager(db)
@@ -919,6 +948,9 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 	}
 	if got := reloadedBoard.RevisionHistory[1].RevisionID; got != "rev-2" {
 		t.Fatalf("reloaded revision_history[1].revision_id = %q, want rev-2", got)
+	}
+	if got := reloadedBoard.ExportRefs[0].Name; got != "board-1-r2.png" {
+		t.Fatalf("reloaded export_refs[0].name = %q, want board-1-r2.png", got)
 	}
 }
 

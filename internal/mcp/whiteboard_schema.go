@@ -35,6 +35,26 @@ var whiteboardInputSchemaJSON = []byte(`{
                   "name": {"type": "string"},
                   "mime_type": {"type": "string"},
                   "source": {"type": "string"},
+                  "uri": {"type": "string"},
+                  "kind": {"type": "string", "enum": ["reference_image"]},
+                  "width": {"type": "integer", "minimum": 0},
+                  "height": {"type": "integer", "minimum": 0}
+                },
+                "additionalProperties": false
+              }
+            },
+            "export_refs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": {"type": "string"},
+                  "name": {"type": "string"},
+                  "mime_type": {"type": "string"},
+                  "kind": {"type": "string", "enum": ["png"]},
+                  "uri": {"type": "string"},
+                  "created_at": {"type": "string"},
+                  "size_bytes": {"type": "integer", "minimum": 0},
                   "width": {"type": "integer", "minimum": 0},
                   "height": {"type": "integer", "minimum": 0}
                 },
@@ -43,7 +63,24 @@ var whiteboardInputSchemaJSON = []byte(`{
             },
             "notes": {"type": "string"},
             "tool_mode": {"type": "string", "enum": ["select", "draw", "text", "shape", "arrow", "note"]},
-            "reference_images": {"type": "array", "items": {"type": "object"}}
+            "reference_images": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "asset_id": {"type": "string"},
+                  "artifact_id": {"type": "string"},
+                  "name": {"type": "string"},
+                  "mime_type": {"type": "string"},
+                  "source": {"type": "string"},
+                  "uri": {"type": "string"},
+                  "kind": {"type": "string", "enum": ["reference_image"]},
+                  "width": {"type": "integer", "minimum": 0},
+                  "height": {"type": "integer", "minimum": 0}
+                },
+                "additionalProperties": false
+              }
+            }
           },
           "required": ["board_id"],
           "additionalProperties": false

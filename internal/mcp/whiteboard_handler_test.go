@@ -126,8 +126,11 @@ func TestWhiteboard_PersistsSeedStateAndRendersEnvelope(t *testing.T) {
 
 	var state struct {
 		Whiteboard *struct {
-			BoardID         string `json:"board_id"`
-			Notes           string `json:"notes"`
+			BoardID string `json:"board_id"`
+			Notes   string `json:"notes"`
+			Assets  []struct {
+				URI string `json:"uri"`
+			} `json:"assets"`
 			RevisionHistory []struct {
 				RevisionID string `json:"revision_id"`
 			} `json:"revision_history"`
@@ -150,6 +153,9 @@ func TestWhiteboard_PersistsSeedStateAndRendersEnvelope(t *testing.T) {
 	}
 	if got := state.Whiteboard.RevisionHistory[0].RevisionID; got != toolResp.Payload.RevisionID {
 		t.Fatalf("revision_history[0].revision_id = %q, want %q", got, toolResp.Payload.RevisionID)
+	}
+	if got := state.Whiteboard.Assets[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("asset uri = %q, want artifact://artifact-1", got)
 	}
 }
 
@@ -235,6 +241,10 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	if got := secondData["notes"]; got != "revision one" {
 		t.Fatalf("reopened notes = %v, want revision one", got)
 	}
+	secondReferenceImages, _ := secondData["reference_images"].([]any)
+	if len(secondReferenceImages) != 1 {
+		t.Fatalf("reopened reference_images len = %d, want 1", len(secondReferenceImages))
+	}
 	if got := secondData["revision_id"]; got != firstToolResp.Payload.RevisionID {
 		t.Fatalf("reopened revision_id = %v, want %q", got, firstToolResp.Payload.RevisionID)
 	}
@@ -298,7 +308,10 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 
 	var state struct {
 		Whiteboard *struct {
-			Notes           string `json:"notes"`
+			Notes      string `json:"notes"`
+			ExportRefs []struct {
+				Kind string `json:"kind"`
+			} `json:"export_refs"`
 			RevisionHistory []struct {
 				RevisionID string `json:"revision_id"`
 			} `json:"revision_history"`
@@ -322,6 +335,12 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	}
 	if got := len(state.Whiteboard.RevisionHistory); got != 2 {
 		t.Fatalf("revision_history len = %d, want 2", got)
+	}
+	if got := len(state.Whiteboard.ExportRefs); got != 1 {
+		t.Fatalf("export_refs len = %d, want 1", got)
+	}
+	if got := state.Whiteboard.ExportRefs[0].Kind; got != "png" {
+		t.Fatalf("export_refs[0].kind = %q, want png", got)
 	}
 	if got := state.Whiteboard.RevisionHistory[0].RevisionID; got != firstToolResp.Payload.RevisionID {
 		t.Fatalf("revision_history[0].revision_id = %q, want %q", got, firstToolResp.Payload.RevisionID)
@@ -469,7 +488,20 @@ func callWhiteboard(
 					"intent":   "Map the layout",
 					"scene":    scene,
 					"assets": []any{
-						map[string]any{"artifact_id": "artifact-1", "source": "artifact://artifact-1"},
+						map[string]any{
+							"artifact_id": "artifact-1",
+							"uri":         "artifact://artifact-1",
+							"source":      "https://assets.example.test/reference.png",
+							"kind":        "reference_image",
+						},
+					},
+					"reference_images": []any{
+						map[string]any{
+							"artifact_id": "artifact-1",
+							"uri":         "artifact://artifact-1",
+							"source":      "https://assets.example.test/reference.png",
+							"kind":        "reference_image",
+						},
 					},
 					"notes":     "seed notes",
 					"tool_mode": "draw",

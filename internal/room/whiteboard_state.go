@@ -10,6 +10,7 @@ const (
 	whiteboardBoardIDKey            = "board_id"
 	whiteboardSceneSnapshotKey      = "scene_snapshot"
 	whiteboardAssetsKey             = "assets"
+	whiteboardExportRefsKey         = "export_refs"
 	whiteboardNotesKey              = "notes"
 	whiteboardUpdatedAtKey          = "updated_at"
 	whiteboardRevisionHistoryKey    = "revision_history"
@@ -22,8 +23,12 @@ const (
 	whiteboardAssetNameKey          = "name"
 	whiteboardAssetMIMETypeKey      = "mime_type"
 	whiteboardAssetSourceKey        = "source"
+	whiteboardAssetURIKey           = "uri"
+	whiteboardAssetKindKey          = "kind"
 	whiteboardAssetWidthKey         = "width"
 	whiteboardAssetHeightKey        = "height"
+	whiteboardExportCreatedAtKey    = "created_at"
+	whiteboardExportSizeBytesKey    = "size_bytes"
 )
 
 type WhiteboardAssetRef struct {
@@ -32,6 +37,20 @@ type WhiteboardAssetRef struct {
 	Name       string `json:"name,omitempty"`
 	MIMEType   string `json:"mime_type,omitempty"`
 	Source     string `json:"source,omitempty"`
+	URI        string `json:"uri,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Width      int    `json:"width,omitempty"`
+	Height     int    `json:"height,omitempty"`
+}
+
+type WhiteboardExportRef struct {
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	MIMEType   string `json:"mime_type,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	URI        string `json:"uri,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	SizeBytes  int    `json:"size_bytes,omitempty"`
 	Width      int    `json:"width,omitempty"`
 	Height     int    `json:"height,omitempty"`
 }
@@ -45,18 +64,20 @@ type WhiteboardRevision struct {
 }
 
 type WhiteboardStateView struct {
-	BoardID         string               `json:"board_id"`
-	SceneSnapshot   map[string]any       `json:"scene_snapshot"`
-	Assets          []WhiteboardAssetRef `json:"assets"`
-	Notes           string               `json:"notes,omitempty"`
-	UpdatedAt       string               `json:"updated_at,omitempty"`
-	RevisionHistory []WhiteboardRevision `json:"revision_history"`
+	BoardID         string                `json:"board_id"`
+	SceneSnapshot   map[string]any        `json:"scene_snapshot"`
+	Assets          []WhiteboardAssetRef  `json:"assets"`
+	ExportRefs      []WhiteboardExportRef `json:"export_refs"`
+	Notes           string                `json:"notes,omitempty"`
+	UpdatedAt       string                `json:"updated_at,omitempty"`
+	RevisionHistory []WhiteboardRevision  `json:"revision_history"`
 }
 
 type WhiteboardSnapshot struct {
 	BoardID       string
 	SceneSnapshot map[string]any
 	Assets        []WhiteboardAssetRef
+	ExportRefs    []WhiteboardExportRef
 	Notes         string
 	UpdatedAt     string
 	Revision      *WhiteboardRevision
@@ -86,6 +107,7 @@ func (r *Room) SaveWhiteboardSnapshot(snapshot WhiteboardSnapshot) error {
 		BoardID:         normalized.BoardID,
 		SceneSnapshot:   normalized.SceneSnapshot,
 		Assets:          normalized.Assets,
+		ExportRefs:      normalized.ExportRefs,
 		Notes:           normalized.Notes,
 		UpdatedAt:       normalized.UpdatedAt,
 		RevisionHistory: revisionHistory,
@@ -140,6 +162,7 @@ func projectWhiteboardStateFromBlob(blob PhaseOutput) *WhiteboardStateView {
 		BoardID:         boardID,
 		SceneSnapshot:   readWhiteboardSceneSnapshot(blob.Data[whiteboardSceneSnapshotKey]),
 		Assets:          readWhiteboardAssets(blob.Data[whiteboardAssetsKey]),
+		ExportRefs:      readWhiteboardExportRefs(blob.Data[whiteboardExportRefsKey]),
 		Notes:           readString(blob.Data, whiteboardNotesKey),
 		UpdatedAt:       readString(blob.Data, whiteboardUpdatedAtKey),
 		RevisionHistory: readWhiteboardRevisions(blob.Data[whiteboardRevisionHistoryKey]),
@@ -149,6 +172,9 @@ func projectWhiteboardStateFromBlob(blob PhaseOutput) *WhiteboardStateView {
 	}
 	if view.Assets == nil {
 		view.Assets = []WhiteboardAssetRef{}
+	}
+	if view.ExportRefs == nil {
+		view.ExportRefs = []WhiteboardExportRef{}
 	}
 	if view.RevisionHistory == nil {
 		view.RevisionHistory = []WhiteboardRevision{}
@@ -184,6 +210,15 @@ func normalizeWhiteboardSnapshot(snapshot WhiteboardSnapshot) (WhiteboardSnapsho
 		assets = append(assets, normalizedAsset)
 	}
 
+	exportRefs := make([]WhiteboardExportRef, 0, len(snapshot.ExportRefs))
+	for _, ref := range snapshot.ExportRefs {
+		normalizedRef, err := normalizeWhiteboardExportRef(ref)
+		if err != nil {
+			return WhiteboardSnapshot{}, err
+		}
+		exportRefs = append(exportRefs, normalizedRef)
+	}
+
 	var revision *WhiteboardRevision
 	if snapshot.Revision != nil {
 		normalizedRevision, err := normalizeWhiteboardRevision(*snapshot.Revision)
@@ -197,6 +232,7 @@ func normalizeWhiteboardSnapshot(snapshot WhiteboardSnapshot) (WhiteboardSnapsho
 		BoardID:       boardID,
 		SceneSnapshot: sceneSnapshot,
 		Assets:        assets,
+		ExportRefs:    exportRefs,
 		Notes:         strings.TrimSpace(snapshot.Notes),
 		UpdatedAt:     strings.TrimSpace(snapshot.UpdatedAt),
 		Revision:      revision,
@@ -210,17 +246,52 @@ func normalizeWhiteboardAssetRef(asset WhiteboardAssetRef) (WhiteboardAssetRef, 
 		Name:       strings.TrimSpace(asset.Name),
 		MIMEType:   strings.TrimSpace(asset.MIMEType),
 		Source:     strings.TrimSpace(asset.Source),
+		URI:        strings.TrimSpace(asset.URI),
+		Kind:       strings.TrimSpace(asset.Kind),
 		Width:      asset.Width,
 		Height:     asset.Height,
+	}
+	if normalized.URI == "" && strings.HasPrefix(normalized.Source, "artifact://") {
+		normalized.URI = normalized.Source
 	}
 	if normalized.Width < 0 || normalized.Height < 0 {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
 	}
-	if normalized.AssetID == "" && normalized.ArtifactID == "" && normalized.Source == "" {
+	if normalized.AssetID == "" && normalized.ArtifactID == "" && normalized.Source == "" && normalized.URI == "" {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
 	}
-	if strings.HasPrefix(normalized.Source, "data:") {
+	if strings.HasPrefix(normalized.Source, "data:") || strings.HasPrefix(normalized.Source, "blob:") {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
+	}
+	if normalized.Kind != "" && normalized.Kind != "reference_image" {
+		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
+	}
+	return normalized, nil
+}
+
+func normalizeWhiteboardExportRef(ref WhiteboardExportRef) (WhiteboardExportRef, error) {
+	normalized := WhiteboardExportRef{
+		ArtifactID: strings.TrimSpace(ref.ArtifactID),
+		Name:       strings.TrimSpace(ref.Name),
+		MIMEType:   strings.TrimSpace(ref.MIMEType),
+		Kind:       strings.TrimSpace(ref.Kind),
+		URI:        strings.TrimSpace(ref.URI),
+		CreatedAt:  strings.TrimSpace(ref.CreatedAt),
+		SizeBytes:  ref.SizeBytes,
+		Width:      ref.Width,
+		Height:     ref.Height,
+	}
+	if normalized.URI == "" && normalized.ArtifactID != "" {
+		normalized.URI = "artifact://" + normalized.ArtifactID
+	}
+	if normalized.Name == "" && normalized.ArtifactID == "" && normalized.MIMEType == "" && normalized.Kind == "" && normalized.URI == "" {
+		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
+	}
+	if normalized.Kind != "" && normalized.Kind != "png" {
+		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
+	}
+	if normalized.SizeBytes < 0 || normalized.Width < 0 || normalized.Height < 0 {
+		return WhiteboardExportRef{}, ErrInvalidWhiteboardExportRef
 	}
 	return normalized, nil
 }
@@ -255,6 +326,10 @@ func whiteboardBlobFromState(blob PhaseOutput, state WhiteboardStateView) (Phase
 	if err != nil {
 		return PhaseOutput{}, fmt.Errorf("room: normalize whiteboard assets blob: %w", err)
 	}
+	exportRefsRaw, err := normalizeJSONValue(whiteboardExportRefsAny(state.ExportRefs))
+	if err != nil {
+		return PhaseOutput{}, fmt.Errorf("room: normalize whiteboard export refs blob: %w", err)
+	}
 	revisionsRaw, err := normalizeJSONValue(whiteboardRevisionsAny(state.RevisionHistory))
 	if err != nil {
 		return PhaseOutput{}, fmt.Errorf("room: normalize whiteboard revisions blob: %w", err)
@@ -264,6 +339,7 @@ func whiteboardBlobFromState(blob PhaseOutput, state WhiteboardStateView) (Phase
 		whiteboardBoardIDKey:         state.BoardID,
 		whiteboardSceneSnapshotKey:   sceneRaw,
 		whiteboardAssetsKey:          assetsRaw,
+		whiteboardExportRefsKey:      exportRefsRaw,
 		whiteboardNotesKey:           state.Notes,
 		whiteboardUpdatedAtKey:       state.UpdatedAt,
 		whiteboardRevisionHistoryKey: revisionsRaw,
@@ -300,6 +376,8 @@ func readWhiteboardAssets(raw any) []WhiteboardAssetRef {
 			Name:       readString(record, whiteboardAssetNameKey),
 			MIMEType:   readString(record, whiteboardAssetMIMETypeKey),
 			Source:     readString(record, whiteboardAssetSourceKey),
+			URI:        readString(record, whiteboardAssetURIKey),
+			Kind:       readString(record, whiteboardAssetKindKey),
 			Width:      readInt(record, whiteboardAssetWidthKey),
 			Height:     readInt(record, whiteboardAssetHeightKey),
 		})
@@ -309,6 +387,36 @@ func readWhiteboardAssets(raw any) []WhiteboardAssetRef {
 		assets = append(assets, asset)
 	}
 	return assets
+}
+
+func readWhiteboardExportRefs(raw any) []WhiteboardExportRef {
+	items, ok := raw.([]any)
+	if !ok {
+		return []WhiteboardExportRef{}
+	}
+	refs := make([]WhiteboardExportRef, 0, len(items))
+	for _, item := range items {
+		record, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		ref, err := normalizeWhiteboardExportRef(WhiteboardExportRef{
+			ArtifactID: readString(record, whiteboardAssetArtifactIDKey),
+			Name:       readString(record, whiteboardAssetNameKey),
+			MIMEType:   readString(record, whiteboardAssetMIMETypeKey),
+			Kind:       readString(record, whiteboardAssetKindKey),
+			URI:        readString(record, whiteboardAssetURIKey),
+			CreatedAt:  readString(record, whiteboardExportCreatedAtKey),
+			SizeBytes:  readInt(record, whiteboardExportSizeBytesKey),
+			Width:      readInt(record, whiteboardAssetWidthKey),
+			Height:     readInt(record, whiteboardAssetHeightKey),
+		})
+		if err != nil {
+			continue
+		}
+		refs = append(refs, ref)
+	}
+	return refs
 }
 
 func readWhiteboardRevisions(raw any) []WhiteboardRevision {
@@ -359,11 +467,56 @@ func whiteboardAssetsAny(assets []WhiteboardAssetRef) []map[string]any {
 		if asset.Source != "" {
 			record[whiteboardAssetSourceKey] = asset.Source
 		}
+		if asset.URI != "" {
+			record[whiteboardAssetURIKey] = asset.URI
+		}
+		if asset.Kind != "" {
+			record[whiteboardAssetKindKey] = asset.Kind
+		}
 		if asset.Width > 0 {
 			record[whiteboardAssetWidthKey] = asset.Width
 		}
 		if asset.Height > 0 {
 			record[whiteboardAssetHeightKey] = asset.Height
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
+func whiteboardExportRefsAny(refs []WhiteboardExportRef) []map[string]any {
+	if len(refs) == 0 {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(refs))
+	for _, ref := range refs {
+		record := map[string]any{}
+		if ref.ArtifactID != "" {
+			record[whiteboardAssetArtifactIDKey] = ref.ArtifactID
+		}
+		if ref.Name != "" {
+			record[whiteboardAssetNameKey] = ref.Name
+		}
+		if ref.MIMEType != "" {
+			record[whiteboardAssetMIMETypeKey] = ref.MIMEType
+		}
+		if ref.Kind != "" {
+			record[whiteboardAssetKindKey] = ref.Kind
+		}
+		if ref.URI != "" {
+			record[whiteboardAssetURIKey] = ref.URI
+		}
+		if ref.CreatedAt != "" {
+			record[whiteboardExportCreatedAtKey] = ref.CreatedAt
+		}
+		if ref.SizeBytes > 0 {
+			record[whiteboardExportSizeBytesKey] = ref.SizeBytes
+		}
+		if ref.Width > 0 {
+			record[whiteboardAssetWidthKey] = ref.Width
+		}
+		if ref.Height > 0 {
+			record[whiteboardAssetHeightKey] = ref.Height
 		}
 		out = append(out, record)
 	}
@@ -402,6 +555,20 @@ func cloneWhiteboardRevisions(in []WhiteboardRevision) []WhiteboardRevision {
 	}
 	out := make([]WhiteboardRevision, len(in))
 	copy(out, in)
+	return out
+}
+
+func WhiteboardReferenceImageRefs(assets []WhiteboardAssetRef) []WhiteboardAssetRef {
+	if len(assets) == 0 {
+		return []WhiteboardAssetRef{}
+	}
+	out := make([]WhiteboardAssetRef, 0, len(assets))
+	for _, asset := range assets {
+		if asset.Kind != "reference_image" {
+			continue
+		}
+		out = append(out, asset)
+	}
 	return out
 }
 

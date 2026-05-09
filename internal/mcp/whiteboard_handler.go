@@ -28,6 +28,10 @@ type whiteboardExportRef struct {
 	MIMEType   string `json:"mime_type,omitempty"`
 	Kind       string `json:"kind,omitempty"`
 	URI        string `json:"uri,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	SizeBytes  int    `json:"size_bytes,omitempty"`
+	Width      int    `json:"width,omitempty"`
+	Height     int    `json:"height,omitempty"`
 }
 
 type whiteboardSubmitDraft struct {
@@ -134,10 +138,18 @@ func whiteboardSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.Whit
 	}
 
 	assets := readWhiteboardAssetRefs(data["assets"])
+	assets = mergeWhiteboardAssetRefs(assets, readWhiteboardReferenceImages(data["reference_images"]))
 	if reusePersisted {
 		assets = persisted.Assets
 	} else if len(assets) == 0 && persisted != nil {
 		assets = persisted.Assets
+	}
+
+	exportRefs := readWhiteboardExportRefs(data["export_refs"])
+	if reusePersisted {
+		exportRefs = whiteboardMCPExportRefsFromRoom(persisted.ExportRefs)
+	} else if len(exportRefs) == 0 && persisted != nil {
+		exportRefs = whiteboardMCPExportRefsFromRoom(persisted.ExportRefs)
 	}
 
 	notes := readStringValue(data, "notes")
@@ -151,6 +163,7 @@ func whiteboardSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.Whit
 		BoardID:       boardID,
 		SceneSnapshot: scene,
 		Assets:        assets,
+		ExportRefs:    whiteboardRoomExportRefs(exportRefs),
 		Notes:         notes,
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
@@ -169,6 +182,8 @@ func buildVisibleWhiteboardEnvelope(env *envelopes.Envelope, view *room.Whiteboa
 	data["board_id"] = view.BoardID
 	data["scene"] = view.SceneSnapshot
 	data["assets"] = whiteboardAssetRefsAny(view.Assets)
+	data["reference_images"] = whiteboardAssetRefsAny(room.WhiteboardReferenceImageRefs(view.Assets))
+	data["export_refs"] = whiteboardExportRefsAny(view.ExportRefs)
 	if view.Notes != "" {
 		data["notes"] = view.Notes
 	}
@@ -211,11 +226,52 @@ func readWhiteboardAssetRefs(raw any) []room.WhiteboardAssetRef {
 			Name:       readStringValue(record, "name"),
 			MIMEType:   readStringValue(record, "mime_type"),
 			Source:     readStringValue(record, "source"),
+			URI:        readStringValue(record, "uri"),
+			Kind:       readStringValue(record, "kind"),
 			Width:      int(readNumberValue(record, "width")),
 			Height:     int(readNumberValue(record, "height")),
 		})
 	}
 	return assets
+}
+
+func readWhiteboardReferenceImages(raw any) []room.WhiteboardAssetRef {
+	assets := readWhiteboardAssetRefs(raw)
+	if len(assets) == 0 {
+		return nil
+	}
+	out := make([]room.WhiteboardAssetRef, 0, len(assets))
+	for _, asset := range assets {
+		asset.Kind = "reference_image"
+		out = append(out, asset)
+	}
+	return out
+}
+
+func readWhiteboardExportRefs(raw any) []whiteboardExportRef {
+	items, _ := raw.([]any)
+	if len(items) == 0 {
+		return nil
+	}
+	refs := make([]whiteboardExportRef, 0, len(items))
+	for _, item := range items {
+		record, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		refs = append(refs, whiteboardExportRef{
+			ArtifactID: readStringValue(record, "artifact_id"),
+			Name:       readStringValue(record, "name"),
+			MIMEType:   readStringValue(record, "mime_type"),
+			Kind:       readStringValue(record, "kind"),
+			URI:        readStringValue(record, "uri"),
+			CreatedAt:  readStringValue(record, "created_at"),
+			SizeBytes:  int(readNumberValue(record, "size_bytes")),
+			Width:      int(readNumberValue(record, "width")),
+			Height:     int(readNumberValue(record, "height")),
+		})
+	}
+	return refs
 }
 
 func whiteboardAssetRefsAny(assets []room.WhiteboardAssetRef) []any {
@@ -240,11 +296,56 @@ func whiteboardAssetRefsAny(assets []room.WhiteboardAssetRef) []any {
 		if asset.Source != "" {
 			record["source"] = asset.Source
 		}
+		if asset.URI != "" {
+			record["uri"] = asset.URI
+		}
+		if asset.Kind != "" {
+			record["kind"] = asset.Kind
+		}
 		if asset.Width > 0 {
 			record["width"] = asset.Width
 		}
 		if asset.Height > 0 {
 			record["height"] = asset.Height
+		}
+		out = append(out, record)
+	}
+	return out
+}
+
+func whiteboardExportRefsAny(refs []room.WhiteboardExportRef) []any {
+	if len(refs) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(refs))
+	for _, ref := range refs {
+		record := map[string]any{}
+		if ref.ArtifactID != "" {
+			record["artifact_id"] = ref.ArtifactID
+		}
+		if ref.Name != "" {
+			record["name"] = ref.Name
+		}
+		if ref.MIMEType != "" {
+			record["mime_type"] = ref.MIMEType
+		}
+		if ref.Kind != "" {
+			record["kind"] = ref.Kind
+		}
+		if ref.URI != "" {
+			record["uri"] = ref.URI
+		}
+		if ref.CreatedAt != "" {
+			record["created_at"] = ref.CreatedAt
+		}
+		if ref.SizeBytes > 0 {
+			record["size_bytes"] = ref.SizeBytes
+		}
+		if ref.Width > 0 {
+			record["width"] = ref.Width
+		}
+		if ref.Height > 0 {
+			record["height"] = ref.Height
 		}
 		out = append(out, record)
 	}
@@ -343,6 +444,7 @@ func (s *Server) normalizeWhiteboardSubmitResponse(
 		BoardID:       payload.BoardID,
 		SceneSnapshot: payload.Scene,
 		Assets:        payload.Assets,
+		ExportRefs:    whiteboardRoomExportRefs(payload.ExportRefs),
 		Notes:         payload.Notes,
 		UpdatedAt:     completedAt,
 		Revision: &room.WhiteboardRevision{
@@ -447,6 +549,10 @@ func normalizeWhiteboardExportRefs(refs []whiteboardExportRef) []whiteboardExpor
 			MIMEType:   ref.MIMEType,
 			Kind:       ref.Kind,
 			URI:        ref.URI,
+			CreatedAt:  ref.CreatedAt,
+			SizeBytes:  ref.SizeBytes,
+			Width:      ref.Width,
+			Height:     ref.Height,
 		}
 		if item.ArtifactID == "" && item.Name == "" && item.MIMEType == "" && item.Kind == "" && item.URI == "" {
 			continue
@@ -454,6 +560,97 @@ func normalizeWhiteboardExportRefs(refs []whiteboardExportRef) []whiteboardExpor
 		out = append(out, item)
 	}
 	return out
+}
+
+func whiteboardRoomExportRefs(refs []whiteboardExportRef) []room.WhiteboardExportRef {
+	if len(refs) == 0 {
+		return []room.WhiteboardExportRef{}
+	}
+	out := make([]room.WhiteboardExportRef, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, room.WhiteboardExportRef{
+			ArtifactID: ref.ArtifactID,
+			Name:       ref.Name,
+			MIMEType:   ref.MIMEType,
+			Kind:       ref.Kind,
+			URI:        ref.URI,
+			CreatedAt:  ref.CreatedAt,
+			SizeBytes:  ref.SizeBytes,
+			Width:      ref.Width,
+			Height:     ref.Height,
+		})
+	}
+	return out
+}
+
+func whiteboardMCPExportRefsFromRoom(refs []room.WhiteboardExportRef) []whiteboardExportRef {
+	if len(refs) == 0 {
+		return []whiteboardExportRef{}
+	}
+	out := make([]whiteboardExportRef, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, whiteboardExportRef{
+			ArtifactID: ref.ArtifactID,
+			Name:       ref.Name,
+			MIMEType:   ref.MIMEType,
+			Kind:       ref.Kind,
+			URI:        ref.URI,
+			CreatedAt:  ref.CreatedAt,
+			SizeBytes:  ref.SizeBytes,
+			Width:      ref.Width,
+			Height:     ref.Height,
+		})
+	}
+	return out
+}
+
+func mergeWhiteboardAssetRefs(groups ...[]room.WhiteboardAssetRef) []room.WhiteboardAssetRef {
+	if len(groups) == 0 {
+		return nil
+	}
+	seen := make(map[string]int)
+	out := make([]room.WhiteboardAssetRef, 0)
+	for _, group := range groups {
+		for _, asset := range group {
+			key := whiteboardAssetRefKey(asset)
+			if key == "" {
+				continue
+			}
+			if idx, ok := seen[key]; ok {
+				if asset.Kind == "reference_image" {
+					out[idx].Kind = "reference_image"
+				}
+				if out[idx].URI == "" {
+					out[idx].URI = asset.URI
+				}
+				if out[idx].Source == "" {
+					out[idx].Source = asset.Source
+				}
+				if out[idx].ArtifactID == "" {
+					out[idx].ArtifactID = asset.ArtifactID
+				}
+				continue
+			}
+			seen[key] = len(out)
+			out = append(out, asset)
+		}
+	}
+	return out
+}
+
+func whiteboardAssetRefKey(asset room.WhiteboardAssetRef) string {
+	switch {
+	case asset.AssetID != "":
+		return "asset:" + asset.AssetID
+	case asset.URI != "":
+		return "uri:" + asset.URI
+	case asset.ArtifactID != "":
+		return "artifact:" + asset.ArtifactID
+	case asset.Source != "":
+		return "source:" + asset.Source
+	default:
+		return ""
+	}
 }
 
 func whiteboardRevisionHistoryAny(revisions []room.WhiteboardRevision) []any {
