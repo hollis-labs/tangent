@@ -52,6 +52,25 @@ const emptyStateData: NonNullable<SpreadsheetReviewEnvelope["data"]> = {
   row_actions: [{ id: "approve", label: "Approve" }],
 };
 
+const nonSortableEnvelopeData: NonNullable<SpreadsheetReviewEnvelope["data"]> = {
+  table_id: "table-1",
+  intent: "Review the table",
+  columns: [
+    { id: "name", label: "Name", sortable: false },
+    { id: "status", label: "Status" },
+  ],
+  rows: [
+    { id: "row-1", name: "Alpha", status: "open" },
+    { id: "row-2", name: "Beta", status: "closed" },
+  ],
+  query_state: {
+    search: "",
+    visible_columns: ["name", "status"],
+  },
+  notes: "seed notes",
+  row_actions: [{ id: "approve", label: "Approve" }],
+};
+
 describe("SpreadsheetReview", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -132,6 +151,49 @@ describe("SpreadsheetReview", () => {
         },
       },
     });
+  });
+
+  it("submits selected row summaries from canonical rows, not only the filtered subset", () => {
+    const onSubmit = vi.fn<(response: SpreadsheetReviewResponse) => void>();
+    render(
+      <SpreadsheetReview
+        envelope={baseEnvelope}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        roomID="room-a"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("spreadsheet-review-select-row-1"));
+    fireEvent.click(screen.getByTestId("spreadsheet-review-select-row-2"));
+    fireEvent.change(screen.getByTestId("spreadsheet-review-search"), {
+      target: { value: "Alpha" },
+    });
+    fireEvent.click(screen.getByTestId("spreadsheet-review-submit"));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].payload.selected_row_ids).toEqual(["row-1", "row-2"]);
+    expect(onSubmit.mock.calls[0][0].payload.selected_rows).toEqual([
+      { id: "row-1", name: "Alpha", status: "open" },
+      { id: "row-2", name: "Beta", status: "closed" },
+    ]);
+  });
+
+  it("does not render sort controls for non-sortable columns", () => {
+    render(
+      <SpreadsheetReview
+        envelope={{
+          ...baseEnvelope,
+          data: nonSortableEnvelopeData,
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        roomID="room-a"
+      />,
+    );
+
+    expect(screen.queryByTestId("spreadsheet-review-sort-name")).not.toBeInTheDocument();
+    expect(screen.getByTestId("spreadsheet-review-sort-status")).toBeInTheDocument();
   });
 
   it("saves and restores named views", () => {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -354,15 +353,21 @@ func normalizeSpreadsheetSelectedRowsForSubmit(
 	if len(selectedRowIDs) == 0 {
 		return []map[string]any{}
 	}
-	out := make([]map[string]any, 0, min(len(selectedRowIDs), maxSpreadsheetSelectedRowSummaries))
-	for _, id := range selectedRowIDs {
-		idx := slices.IndexFunc(allRows, func(row map[string]any) bool {
-			return readStringValue(row, "id") == id
-		})
-		if idx < 0 {
+	rowsByID := make(map[string]map[string]any, len(allRows))
+	for _, row := range allRows {
+		id := readStringValue(row, "id")
+		if id == "" {
 			continue
 		}
-		out = append(out, compactSpreadsheetRow(allRows[idx]))
+		rowsByID[id] = row
+	}
+	out := make([]map[string]any, 0, min(len(selectedRowIDs), maxSpreadsheetSelectedRowSummaries))
+	for _, id := range selectedRowIDs {
+		row, ok := rowsByID[id]
+		if !ok {
+			continue
+		}
+		out = append(out, compactSpreadsheetRow(row))
 		if len(out) >= maxSpreadsheetSelectedRowSummaries {
 			break
 		}

@@ -95,7 +95,8 @@ export default function Room() {
       if (!pending || !clientRef.current) {
         return;
       }
-      if (readEnvelopeType(pending.envelope) === "tangent.whiteboard") {
+      const envelopeType = readEnvelopeType(pending.envelope);
+      if (envelopeType === "tangent.whiteboard" || envelopeType === "tangent.spreadsheet-review") {
         return;
       }
       clientRef.current.cancel(pending.envelopeId);

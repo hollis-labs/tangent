@@ -198,16 +198,16 @@ export function SpreadsheetReview({
     : columns.map((column) => column.id);
   const visibleColumns = columns.filter((column) => visibleColumnIDs.includes(column.id));
   const filteredRows = useMemo(
-    () => applyQueryState(rows, visibleColumnIDs, queryState),
-    [rows, visibleColumnIDs, queryState],
+    () => applyQueryState(rows, columns, visibleColumnIDs, queryState),
+    [rows, columns, visibleColumnIDs, queryState],
   );
   const selectedRows = useMemo(
     () =>
-      filteredRows
+      rows
         .filter((row) => selectedRowIDs.includes(row.id))
         .slice(0, 20)
         .map((row) => compactRow(row, visibleColumnIDs)),
-    [filteredRows, selectedRowIDs, visibleColumnIDs],
+    [rows, selectedRowIDs, visibleColumnIDs],
   );
 
   const clearDraft = () => {
@@ -306,6 +306,10 @@ export function SpreadsheetReview({
 
   const handleSortToggle = (columnID: string) => {
     setQueryState((current) => {
+      const column = columns.find((item) => item.id === columnID);
+      if (column?.sortable === false) {
+        return current;
+      }
       const active = current.sort?.[0];
       let nextSort: QuerySort[] | undefined;
       if (!active || active.column_id !== columnID) {
@@ -576,6 +580,13 @@ export function SpreadsheetReview({
                     const activeSort = queryState.sort?.[0];
                     const sortDir =
                       activeSort?.column_id === column.id ? activeSort.direction : null;
+                    if (column.sortable === false) {
+                      return (
+                        <th key={column.id} className="px-3 py-2 text-left text-zinc-400">
+                          {column.label}
+                        </th>
+                      );
+                    }
                     return (
                       <th key={column.id} className="px-3 py-2 text-left">
                         <button
@@ -885,7 +896,12 @@ function getFilterKey(filter: QueryFilter): string {
   return `${filter.column_id}:${filter.op}:${filter.value}`;
 }
 
-function applyQueryState(rows: Row[], visibleColumnIDs: string[], queryState: QueryState): Row[] {
+function applyQueryState(
+  rows: Row[],
+  columns: Column[],
+  visibleColumnIDs: string[],
+  queryState: QueryState,
+): Row[] {
   let next = [...rows];
   const search = queryState.search?.trim().toLowerCase();
   if (search) {
@@ -908,7 +924,10 @@ function applyQueryState(rows: Row[], visibleColumnIDs: string[], queryState: Qu
     });
   }
   const activeSort = queryState.sort?.[0];
-  if (activeSort?.column_id) {
+  const sortableColumnIDs = new Set(
+    columns.filter((column) => column.sortable !== false).map((column) => column.id),
+  );
+  if (activeSort?.column_id && sortableColumnIDs.has(activeSort.column_id)) {
     next.sort((left, right) => {
       const a = String(left[activeSort.column_id] ?? "");
       const b = String(right[activeSort.column_id] ?? "");
@@ -961,7 +980,7 @@ function buildCSV(columns: Column[], rows: Row[]): string {
 
 function escapeCSV(value: string): string {
   const escaped = value.replaceAll('"', '""');
-  return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
+  return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
 }
 
 function sanitizeFilePart(value: string): string {
