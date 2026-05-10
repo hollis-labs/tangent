@@ -83,6 +83,7 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
       "",
   );
   const [selectedKeys, setSelectedKeys] = useState(() => new Set(initialSelected.map(refKey)));
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const visibleFiles = useMemo(
     () => availableFiles.filter((item) => !activeRootID || item.root_id === activeRootID),
@@ -155,6 +156,11 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                 </p>
               </div>
             </div>
+            {submitError ? (
+              <p className="mt-3 text-sm text-amber-300" data-testid="file-picker-submit-error">
+                {submitError}
+              </p>
+            ) : null}
             <div className="mt-3 space-y-2" data-testid="file-picker-files">
               {visibleFiles.map((item) => {
                 const key = refKey(item);
@@ -207,7 +213,12 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
             <Button
               type="button"
               data-testid="file-picker-submit"
-              onClick={() =>
+              onClick={() => {
+                if (selectedRefs.length === 0) {
+                  setSubmitError("Select at least one file before submit.");
+                  return;
+                }
+                setSubmitError(null);
                 onSubmit({
                   v: 1,
                   envelopeId: envelope.id,
@@ -221,8 +232,8 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                       current_root_id: activeRootID || undefined,
                     },
                   },
-                })
-              }
+                });
+              }}
             >
               Submit selection
             </Button>

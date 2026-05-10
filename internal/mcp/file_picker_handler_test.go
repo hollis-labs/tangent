@@ -88,6 +88,22 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 	if firstRes.result.IsError {
 		t.Fatalf("first file-picker IsError=true: %s", extractText(t, firstRes.result))
 	}
+	var accepted struct {
+		Status  string `json:"status"`
+		Payload struct {
+			Outcome             string `json:"outcome"`
+			SelectionRevisionID string `json:"selection_revision_id"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, firstRes.result)), &accepted); decodeErr != nil {
+		t.Fatalf("unmarshal accepted file-picker response: %v", decodeErr)
+	}
+	if accepted.Payload.Outcome != "accepted" {
+		t.Fatalf("accepted outcome = %q, want accepted", accepted.Payload.Outcome)
+	}
+	if accepted.Payload.SelectionRevisionID != "picker-1-rev-001" {
+		t.Fatalf("selection_revision_id = %q, want picker-1-rev-001", accepted.Payload.SelectionRevisionID)
+	}
 
 	secondDone := make(chan advanceResult, 1)
 	go func() {
@@ -137,7 +153,8 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 				ArtifactID string `json:"artifact_id"`
 			} `json:"selected_refs"`
 			SelectionRevisions []struct {
-				SelectedCount int `json:"selected_count"`
+				SelectionRevisionID string `json:"selection_revision_id"`
+				SelectedCount       int    `json:"selected_count"`
 			} `json:"selection_revisions"`
 		} `json:"file_picker"`
 	}
@@ -155,6 +172,107 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 	}
 	if len(state.FilePicker.SelectionRevisions) != 1 || state.FilePicker.SelectionRevisions[0].SelectedCount != 1 {
 		t.Fatalf("selection_revisions = %#v", state.FilePicker.SelectionRevisions)
+	}
+	if revisionID := state.FilePicker.SelectionRevisions[0].SelectionRevisionID; revisionID != "picker-1-rev-001" {
+		t.Fatalf("selection_revision_id = %q, want picker-1-rev-001", revisionID)
+	}
+}
+
+func TestFilePicker_InvalidSubmitReturnsRejectedPayloadAndPreservesAcceptedState(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "file-picker")
+	conn, _, err := websocket.Dial(context.Background(), rg.wsURL(roomID), nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	done := make(chan advanceResult, 1)
+	go func() {
+		done <- callFilePicker(t, rg, roomID, "picker-invalid-1", map[string]any{
+			"picker_id": "picker-invalid",
+			"browse_roots": []any{
+				map[string]any{"root_id": "workspace", "label": "Workspace", "path": "/tmp/workspace"},
+			},
+		})
+	}()
+
+	awaitPendingRoom(t, rg.mgr, roomID, 2*time.Second)
+	_ = readWSFrame(t, conn, 3*time.Second)
+	writeWSFrame(t, conn, map[string]any{
+		"type":       "response",
+		"envelopeId": "picker-invalid-1",
+		"response": map[string]any{
+			"v":          1,
+			"envelopeId": "picker-invalid-1",
+			"kind":       "data",
+			"status":     "submitted",
+			"payload": map[string]any{
+				"picker_id":     "picker-invalid",
+				"selected_refs": []any{},
+			},
+		},
+	})
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("invalid file-picker transport err: %v", res.err)
+	}
+	if res.result.IsError {
+		t.Fatalf("invalid file-picker IsError=true: %s", extractText(t, res.result))
+	}
+
+	var rejected struct {
+		Status  string `json:"status"`
+		Payload struct {
+			Outcome string `json:"outcome"`
+			Errors  []struct {
+				Code string `json:"code"`
+			} `json:"errors"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, res.result)), &rejected); decodeErr != nil {
+		t.Fatalf("unmarshal rejected file-picker response: %v", decodeErr)
+	}
+	if rejected.Status != "partial" {
+		t.Fatalf("rejected status = %q, want partial", rejected.Status)
+	}
+	if rejected.Payload.Outcome != "rejected" {
+		t.Fatalf("rejected outcome = %q, want rejected", rejected.Payload.Outcome)
+	}
+	if len(rejected.Payload.Errors) != 1 || rejected.Payload.Errors[0].Code != "EMPTY_SELECTION" {
+		t.Fatalf("rejected errors = %#v", rejected.Payload.Errors)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+	var state struct {
+		FilePicker *struct {
+			SelectedRefs       []any `json:"selected_refs"`
+			SelectionRevisions []any `json:"selection_revisions"`
+		} `json:"file_picker"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.FilePicker == nil {
+		t.Fatal("file_picker is nil")
+	}
+	if len(state.FilePicker.SelectedRefs) != 0 {
+		t.Fatalf("selected_refs len = %d, want 0", len(state.FilePicker.SelectedRefs))
+	}
+	if len(state.FilePicker.SelectionRevisions) != 0 {
+		t.Fatalf("selection_revisions len = %d, want 0", len(state.FilePicker.SelectionRevisions))
 	}
 }
 

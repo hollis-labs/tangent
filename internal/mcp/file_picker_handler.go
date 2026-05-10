@@ -22,10 +22,23 @@ type filePickerSubmitDraft struct {
 	QueryState   map[string]any               `json:"query_state"`
 }
 
-type filePickerSubmitPayload struct {
-	PickerID     string                       `json:"picker_id"`
-	SelectedRefs []room.FilePickerArtifactRef `json:"selected_refs"`
-	QueryState   map[string]any               `json:"query_state"`
+type filePickerSubmitAcceptedPayload struct {
+	PickerID            string                       `json:"picker_id"`
+	Outcome             string                       `json:"outcome"`
+	SelectionRevisionID string                       `json:"selection_revision_id"`
+	SelectedRefs        []room.FilePickerArtifactRef `json:"selected_refs"`
+	QueryState          map[string]any               `json:"query_state"`
+}
+
+type filePickerSubmitRejectedPayload struct {
+	PickerID string                  `json:"picker_id"`
+	Outcome  string                  `json:"outcome"`
+	Errors   []filePickerSubmitError `json:"errors"`
+}
+
+type filePickerSubmitError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (s *Server) handleFilePicker(
@@ -180,15 +193,24 @@ func (s *Server) normalizeFilePickerSubmitResponse(
 
 	draft, err := decodeFilePickerSubmitDraft(resp.Payload)
 	if err != nil {
-		return nil, err
+		return filePickerRejectedResponse(resp, persisted.PickerID, "INVALID_PAYLOAD", err.Error()), nil
 	}
 	if strings.TrimSpace(draft.PickerID) == "" {
-		return nil, filePickerResponseValidationError("payload.picker_id is required")
+		return filePickerRejectedResponse(resp, persisted.PickerID, "INVALID_PAYLOAD", "payload.picker_id is required"), nil
 	}
 	if draft.PickerID != persisted.PickerID {
-		return nil, filePickerResponseValidationError("payload.picker_id %q does not match room picker_id %q", draft.PickerID, persisted.PickerID)
+		return filePickerRejectedResponse(
+			resp,
+			persisted.PickerID,
+			"INVALID_PAYLOAD",
+			fmt.Sprintf("payload.picker_id %q does not match room picker_id %q", draft.PickerID, persisted.PickerID),
+		), nil
+	}
+	if len(draft.SelectedRefs) == 0 {
+		return filePickerRejectedResponse(resp, persisted.PickerID, "EMPTY_SELECTION", "select at least one file before submit"), nil
 	}
 
+	revisionID := nextFilePickerSelectionRevisionID(persisted)
 	snapshot := room.FilePickerSnapshot{
 		PickerID:     persisted.PickerID,
 		BrowseRoots:  persisted.BrowseRoots,
@@ -198,8 +220,9 @@ func (s *Server) normalizeFilePickerSubmitResponse(
 		SelectionRevisions: append(
 			append([]room.FilePickerSelectionRevision{}, persisted.SelectionRevisions...),
 			room.FilePickerSelectionRevision{
-				SubmittedAt:   nowRFC3339(),
-				SelectedCount: len(draft.SelectedRefs),
+				SelectionRevisionID: revisionID,
+				SubmittedAt:         nowRFC3339(),
+				SelectedCount:       len(draft.SelectedRefs),
 			},
 		),
 	}
@@ -207,7 +230,7 @@ func (s *Server) normalizeFilePickerSubmitResponse(
 		snapshot.QueryState = persisted.QueryState
 	}
 	if _, err := s.manager.SaveFilePickerSnapshot(roomID, snapshot); err != nil {
-		return nil, err
+		return filePickerRejectedResponse(resp, persisted.PickerID, "INVALID_SELECTION", err.Error()), nil
 	}
 
 	normalized := &envelopes.Response{
@@ -216,10 +239,12 @@ func (s *Server) normalizeFilePickerSubmitResponse(
 		Kind:        envelopes.ResponseKindData,
 		Status:      envelopes.ResponseStatusSubmitted,
 		CompletedAt: resp.CompletedAt,
-		Payload: filePickerSubmitPayload{
-			PickerID:     persisted.PickerID,
-			SelectedRefs: snapshot.SelectedRefs,
-			QueryState:   snapshot.QueryState,
+		Payload: filePickerSubmitAcceptedPayload{
+			PickerID:            persisted.PickerID,
+			Outcome:             "accepted",
+			SelectionRevisionID: revisionID,
+			SelectedRefs:        snapshot.SelectedRefs,
+			QueryState:          snapshot.QueryState,
 		},
 	}
 	if normalized.CompletedAt == "" {
@@ -340,4 +365,34 @@ func filePickerSelectionRevisionsAnyForDispatch(items []room.FilePickerSelection
 
 func filePickerResponseValidationError(format string, args ...any) error {
 	return fmt.Errorf("file-picker submit response: %w: %s", envelopes.ErrSchemaValidation, fmt.Sprintf(format, args...))
+}
+
+func filePickerRejectedResponse(resp *envelopes.Response, pickerID, code, message string) *envelopes.Response {
+	completedAt := nowRFC3339()
+	envelopeID := ""
+	if resp != nil {
+		if resp.CompletedAt != "" {
+			completedAt = resp.CompletedAt
+		}
+		envelopeID = resp.EnvelopeID
+	}
+	return &envelopes.Response{
+		V:           envelopes.ProtocolVersion,
+		EnvelopeID:  envelopeID,
+		Kind:        envelopes.ResponseKindData,
+		Status:      envelopes.ResponseStatusPartial,
+		CompletedAt: completedAt,
+		Payload: filePickerSubmitRejectedPayload{
+			PickerID: pickerID,
+			Outcome:  "rejected",
+			Errors: []filePickerSubmitError{{
+				Code:    code,
+				Message: message,
+			}},
+		},
+	}
+}
+
+func nextFilePickerSelectionRevisionID(view *room.FilePickerStateView) string {
+	return fmt.Sprintf("%s-rev-%03d", view.PickerID, len(view.SelectionRevisions)+1)
 }

@@ -98,4 +98,52 @@ describe("<FilePicker>", () => {
       },
     });
   });
+
+  it("blocks empty submit locally", () => {
+    const onSubmit = vi.fn<(response: FilePickerResponse) => void>();
+    const envelope: FilePickerEnvelope = {
+      v: 1,
+      id: "picker-env-2",
+      type: "tangent.file-picker",
+      data: {
+        picker_id: "picker-2",
+        browse_roots: [{ root_id: "workspace", label: "Workspace", path: "/tmp/workspace" }],
+        files: [
+          {
+            artifact_id: "artifact-2",
+            name: "README.md",
+            uri: "artifact://artifact-2",
+            root_id: "workspace",
+            relative_path: "README.md",
+          },
+        ],
+        selected_refs: [
+          {
+            artifact_id: "artifact-2",
+            name: "README.md",
+            uri: "artifact://artifact-2",
+            root_id: "workspace",
+            relative_path: "README.md",
+          },
+        ],
+      },
+    };
+
+    render(<FilePicker envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} />);
+
+    const checkbox = screen
+      .getByTestId("file-picker-file-workspace:README.md")
+      .querySelector("input");
+    expect(checkbox).not.toBeNull();
+    if (!checkbox) {
+      throw new Error("README checkbox missing");
+    }
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByTestId("file-picker-submit"));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("file-picker-submit-error")).toHaveTextContent(
+      "Select at least one file before submit.",
+    );
+  });
 });
