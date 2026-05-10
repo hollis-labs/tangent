@@ -228,6 +228,16 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
+	dashboardSchema, err := buildSchema(dashboardInputSchemaJSON, "dashboard")
+	if err != nil {
+		return fmt.Errorf("build dashboard input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.dashboard",
+		Description: "Dispatch a dashboard envelope through Tangent. Persists room-backed tiles, layouts, query state, and explicit refresh/update affordances.",
+		InputSchema: dashboardSchema,
+	}, s.handleDashboard)
+
 	filePickerSchema, err := buildSchema(filePickerInputSchemaJSON, "file_picker")
 	if err != nil {
 		return fmt.Errorf("build file-picker input schema: %w", err)

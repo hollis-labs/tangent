@@ -196,6 +196,42 @@ describe("<Room>", () => {
     expect(cancel).not.toHaveBeenCalledWith("picker-refresh-1");
   });
 
+  it("beforeunload does not cancel an active dashboard envelope", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+
+    mockFetchForRoom();
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("dashboard-refresh-1", {
+        v: 1,
+        id: "dashboard-refresh-1",
+        type: "tangent.dashboard",
+        data: {
+          dashboard_id: "dashboard-1",
+          tiles: [],
+        },
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    expect(cancel).not.toHaveBeenCalledWith("dashboard-refresh-1");
+  });
+
   it("beforeunload does not cancel an active approval-queue envelope", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(

@@ -149,6 +149,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register whiteboard extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterDashboard(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register dashboard extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterFilePicker(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register file-picker extension: %v\n", regErr)
 		os.Exit(1)
@@ -236,6 +240,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterWhiteboardOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register whiteboard handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterDashboardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register dashboard handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterFilePickerOnDispatcher(dispatcher, triageHandler); regErr != nil {

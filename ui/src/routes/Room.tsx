@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  dashboard?: unknown;
   progress_panel?: unknown;
   file_picker?: unknown;
   diff_review?: unknown;
@@ -103,6 +104,7 @@ export default function Room() {
       const envelopeType = readEnvelopeType(pending.envelope);
       if (
         envelopeType === "tangent.whiteboard" ||
+        envelopeType === "tangent.dashboard" ||
         envelopeType === "tangent.file-picker" ||
         envelopeType === "tangent.progress-panel" ||
         envelopeType === "tangent.diff-review" ||
@@ -165,6 +167,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.block-draft" &&
     type !== "tangent.prose-revision" &&
     type !== "tangent.output-render" &&
+    type !== "tangent.dashboard" &&
     type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
     type !== "tangent.file-picker" &&
@@ -191,6 +194,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.form-collect") {
       return attachFormCollectState(envelope, state.form_collect);
+    }
+    if (type === "tangent.dashboard") {
+      return attachDashboardState(envelope, state.dashboard);
     }
     if (type === "tangent.file-picker") {
       return attachFilePickerState(envelope, state.file_picker);
@@ -327,6 +333,37 @@ function attachSpreadsheetReviewState(envelope: unknown, spreadsheetReview: unkn
     "selected_rows",
     "action_id",
     "export_refs",
+  ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachDashboardState(envelope: unknown, dashboard: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!dashboard || typeof dashboard !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = dashboard as Record<string, unknown>;
+  for (const key of [
+    "dashboard_id",
+    "title",
+    "tiles",
+    "layout",
+    "saved_layouts",
+    "active_layout_id",
+    "query_state",
+    "summary",
+    "updated_at",
   ]) {
     if (persisted[key] !== undefined) {
       data[key] = persisted[key];
