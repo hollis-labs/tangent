@@ -100,5 +100,7 @@ function getStorage(): Storage | null {
 }
 
 function isValidDraftIndex(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+  return (
+    typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+  );
 }

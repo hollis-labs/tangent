@@ -185,7 +185,9 @@ describe("ApprovalQueue", () => {
       />,
     );
 
-    expect(window.localStorage.getItem(getApprovalQueueDraftStorageKey("room-a", "queue-empty"))).toBeNull();
+    expect(
+      window.localStorage.getItem(getApprovalQueueDraftStorageKey("room-a", "queue-empty")),
+    ).toBeNull();
     expect(screen.getByTestId("approval-queue-submit")).toBeDisabled();
     expect(screen.getByText("No queue items were provided.")).toBeInTheDocument();
   });
