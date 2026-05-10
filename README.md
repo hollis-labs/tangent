@@ -10,12 +10,13 @@ Use cases the chat window can't carry well:
 - persistent forms
 - brainstorm iteration
 - spreadsheet review
+- progress tracking
 
 Tangent is the *separate-window app surface* for an interactive collaboration system. Inline modals, fast-triage popovers, spatial canvases, and chat-multiplexor modes are deliberately handled elsewhere — keeping Tangent's scope to a single shape is intentional.
 
 ## Status
 
-The latest published tag is `v0.9.0`. Tangent now ships `tangent.file-picker`: a room-backed local artifact selection workflow with allowed browse roots, explicit submit/reopen turns, browser-local draft recovery, persisted query state, and reusable artifact-ref handoff payloads. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.10.0`. Tangent now ships `tangent.progress-panel`: a room-backed progress workflow with explicit update/reopen turns, append-only timeline entries, checkpoint summaries, browser-local recovery for operator context, and concise export snapshots for downstream inspection. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -24,7 +25,7 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.9.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.10.0
 ```
 
 Run:
@@ -47,18 +48,18 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What v0.9.0 adds
+### What v0.10.0 adds
 
-- Tangent now ships `tangent.file-picker`, a room-backed local artifact selection workflow with explicit submit/reopen turns.
-- File-picker turns persist allowed roots, canonical selected artifact refs, normalized query state, accepted selection revisions, and stable handoff summary metadata.
-- `tangent.session_get` now exposes a dedicated `file_picker` projection alongside diff-review, approval-queue, spreadsheet-review, whiteboard, and writing-flow room state.
+- Tangent now ships `tangent.progress-panel`, a room-backed progress workflow with explicit update/reopen turns.
+- Progress-panel turns persist canonical items, append-only updates, checkpoint summaries, completion-result metadata, and concise summary fields under `session_get.progress_panel`.
+- The browser host now supports timeline, checkpoint, and log inspection plus local operator-context recovery without changing canonical room history.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -107,7 +108,11 @@ Shipped on the current branch line before file-picker. Tangent added a room-back
 
 ### v0.9 — File picker
 
-Current branch. Tangent adds a room-backed file-picker workflow with allowed local browse roots, persisted query state, browser-local draft recovery, accepted selection revision history, and reusable artifact-ref handoff payloads.
+Shipped. Tangent added a room-backed file-picker workflow with allowed local browse roots, persisted query state, browser-local draft recovery, accepted selection revision history, and reusable artifact-ref handoff payloads.
+
+### v0.10 — Progress panel
+
+Current branch. Tangent adds a room-backed progress workflow with append-only updates, timeline/checkpoint/log inspection, local operator-context recovery, and concise summary/export inspection.
 
 ### v0.8+ — Distribution and trust
 
@@ -184,6 +189,7 @@ More docs:
 - [`docs/manual-tests/approval-queue-e2e.md`](./docs/manual-tests/approval-queue-e2e.md) — full approval-queue workflow with reopen, defer reasons, and audit export metadata
 - [`docs/manual-tests/diff-review-e2e.md`](./docs/manual-tests/diff-review-e2e.md) — full diff-review workflow with reopen, batch decisions, and summary export
 - [`docs/manual-tests/file-picker-e2e.md`](./docs/manual-tests/file-picker-e2e.md) — full file-picker workflow with reopen, local draft recovery, and artifact-ref handoff inspection
+- [`docs/manual-tests/progress-panel-e2e.md`](./docs/manual-tests/progress-panel-e2e.md) — full progress-panel workflow with update/reopen, checkpoint inspection, and export snapshot verification
 
 ## License
 
