@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Wizard workflow groundwork for `v0.12.0`.
+_None._
+
+## [v0.12.0] - 2026-05-10
+
+Wizard. Tangent now ships a persistent room-backed guided wizard
+workflow with explicit partial updates, canonical branch-aware step
+progress, browser-local draft recovery, and final completion through
+the existing room/tool contract.
 
 ### Added
 
@@ -24,6 +31,10 @@ Wizard workflow groundwork for `v0.12.0`.
   output affordances.
 - **Wizard manual test coverage.** Added
   `docs/manual-tests/wizard-e2e.md`.
+- **Repo-local Tangent workflow skills.** Added tight copy/paste
+  launcher skills under `.agents/skills/` for the bundled workflows and
+  the multi-phase writing flow so operators can reuse known-good
+  prompts and payload shapes during manual runs.
 
 ### Changed
 
@@ -33,6 +44,16 @@ Wizard workflow groundwork for `v0.12.0`.
 - **Wizard submit semantics are explicit.** Partial room-backed saves
   stay `status: "partial"` while final completion resolves with
   `status: "submitted"` and a completed summary payload.
+- **Manual smoke docs are stricter about launch discipline.** The smoke
+  runbook now calls out payload-sensitive workflows, shared-room
+  writing-flow sequencing, and the one-tab-per-room rule while a submit
+  is pending.
+
+### Fixed
+
+- **Wizard manual docs now include a minimal valid seed payload.**
+  Operators no longer need to infer the required `steps`,
+  `current_step_id`, and branch target shape from tests or handlers.
 
 ## [v0.11.0] - 2026-05-10
 
@@ -535,7 +556,14 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.12.0...HEAD
+[v0.12.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.12.0
+[v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
+[v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0
+[v0.9.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.9.0
+[v0.8.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.8.0
+[v0.7.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.7.0
+[v0.6.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.5.0
 [v0.4.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.4.0
 [v0.3.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.3.0

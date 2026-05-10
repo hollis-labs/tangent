@@ -17,7 +17,7 @@ import (
 // clients pin against this string.
 const (
 	implementationName    = "tangent"
-	implementationVersion = "v0.8.0"
+	implementationVersion = "v0.12.0"
 )
 
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +

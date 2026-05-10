@@ -17,7 +17,17 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.11.0`. The current branch line is preparing `v0.12.0`, which adds `tangent.wizard`: a room-backed guided wizard workflow with canonical step progress, explicit partial updates, branch selections, local draft recovery, review summary, and final completion. Existing `tangent.dashboard` support remains in place for workflow-state snapshots and drill-down. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.12.0`. This release adds
+`tangent.wizard`: a room-backed guided wizard workflow with canonical
+step progress, explicit partial updates, branch selections, local draft
+recovery, review summary, and final completion. It also tightens the
+manual operator surface with repo-local workflow skills under
+`.agents/skills/` plus clearer smoke-test guidance for payload-sensitive
+workflows. Existing `tangent.dashboard` support remains in place for
+workflow-state snapshots and drill-down. Fast-Triage has been migrated
+and archived; if you are moving an existing setup, see
+[`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md).
+See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -26,7 +36,7 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.12.0
 ```
 
 Run:
@@ -61,6 +71,8 @@ For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-in
 - Tangent now ships `tangent.wizard`, a room-backed guided wizard workflow with explicit partial updates and final completion.
 - Wizard turns persist canonical step definitions, accepted step progress, branch selections, and summary fields under `session_get.wizard`.
 - The browser host now supports local draft recovery, review summary, forward/back navigation, attachment-style responses, and action outputs without introducing any cloud sync or multi-user state.
+- The repo now includes tight workflow launcher skills under `.agents/skills/` so operators can copy/paste known-good Tangent prompts and payload shapes.
+- Manual smoke-test docs now call out payload-sensitive workflows and the one-tab-per-room constraint for pending submissions.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 

@@ -13,6 +13,56 @@ Verify the room-backed wizard workflow can reopen accepted progress, recover uns
    - one branch option leading to a review step
    - a final review/completion step
 
+## Minimal launch payload
+
+`current_step_id` must match a real `step_id`, and every branch
+`target_step_id` must point at another real step. This minimal payload
+is valid:
+
+```json
+{
+  "wizard_id": "wizard-1",
+  "title": "Release wizard",
+  "current_step_id": "step-scope",
+  "steps": [
+    {
+      "step_id": "step-scope",
+      "title": "Scope",
+      "kind": "form",
+      "fields": {
+        "fields": [
+          {
+            "field_id": "scope",
+            "label": "Scope",
+            "kind": "textarea"
+          }
+        ]
+      },
+      "branches": [
+        {
+          "branch_id": "review",
+          "label": "Review",
+          "target_step_id": "step-review"
+        }
+      ]
+    },
+    {
+      "step_id": "step-review",
+      "title": "Review",
+      "kind": "review"
+    }
+  ]
+}
+```
+
+If you want to launch it directly over MCP, use:
+
+```bash
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.wizard","arguments":{"envelope":{"v":1,"id":"wizard-1","type":"tangent.wizard","data":{"wizard_id":"wizard-1","title":"Release wizard","current_step_id":"step-scope","steps":[{"step_id":"step-scope","title":"Scope","kind":"form","fields":{"fields":[{"field_id":"scope","label":"Scope","kind":"textarea"}]},"branches":[{"branch_id":"review","label":"Review","target_step_id":"step-review"}]},{"step_id":"step-review","title":"Review","kind":"review"}]}}}}}'
+```
+
 ## Flow
 
 1. Enter text on the first step and click `Save Progress`.

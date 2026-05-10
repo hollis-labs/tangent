@@ -20,6 +20,37 @@ make build
 3. Connect one MCP-speaking agent to Tangent.
 4. Keep one browser tab ready to open room URLs printed by Tangent.
 
+## Operator rules
+
+- Use the linked e2e doc's sample payload literally for each workflow.
+  Do not rely on a loose natural-language prompt when the workflow needs
+  seeded data.
+- Run bundled workflows in fresh rooms unless the linked doc explicitly
+  says to reuse one room across multiple phases.
+- Keep one browser tab per active room until the agent confirms the MCP
+  call resolved. Navigating that tab to a different room can disconnect
+  the pending workflow and return `ROOM_DISCONNECTED`.
+
+## Payload-sensitive workflows
+
+These workflows are easy to launch incorrectly if the agent improvises
+the envelope shape:
+
+- `tangent.diff-review` needs seeded `files`, and each file needs a
+  stable `id`. Hunks also need stable `id` values if you want per-hunk
+  review.
+- `tangent.file-picker` needs seeded `browse_roots` plus `files`.
+  Without `files`, the UI can open with no selectable candidates.
+- `tangent.progress-panel` needs seeded `items`. `updates`,
+  `checkpoints`, and `summary` are optional but recommended for a useful
+  smoke pass.
+- `tangent.dashboard` needs seeded `tiles`. `layout` and
+  `saved_layouts` are strongly recommended or the workflow has little to
+  exercise.
+- `tangent.wizard` needs real `steps` objects plus a `current_step_id`
+  that matches one of those `step_id` values. If a step exposes
+  branches, every `target_step_id` must also point at a real step.
+
 ## Shared pass criteria
 
 Every workflow smoke test should confirm these basics:
@@ -34,7 +65,8 @@ Every workflow smoke test should confirm these basics:
 ## Bundled workflows
 
 Use the linked e2e doc for the exact sample payload. For smoke coverage,
-you only need the minimal interaction listed here.
+you only need the minimal interaction listed here, but still launch the
+workflow with the full seeded example from the linked doc.
 
 | Workflow | Launch reference | Minimal interaction | Pass if |
 | --- | --- | --- | --- |
@@ -53,9 +85,10 @@ you only need the minimal interaction listed here.
 
 ## Writing flow
 
-Run this as one room across the canonical writing phases. Use
-[`writing-flow-e2e.md`](./writing-flow-e2e.md) for the exact sample
-calls.
+Run this as one room across the canonical writing phases. Reuse the same
+`roomID` for every phase. Use [`writing-flow-e2e.md`](./writing-flow-e2e.md)
+for the exact sample calls and ignore any phase-specific docs that begin
+with their own fresh-room setup.
 
 | Phase tool | Launch reference | Minimal interaction | Pass if |
 | --- | --- | --- | --- |
