@@ -7,45 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Diff review. Tangent now ships a persistent room-backed diff-review
-workflow for explicit before/after comparison, per-file/per-hunk
-decisions, durable comments, artifact refs, batch review controls, and
-exportable summaries.
+File picker. Tangent now ships a persistent room-backed file-picker
+workflow for explicit local artifact selection, persisted browse/query
+state, browser-local draft recovery, accepted selection revisions, and
+reusable handoff payloads.
 
 ### Added
 
-- **`tangent.diff-review`.** A bundled room-backed diff workflow with
-  canonical agent-provided files, explicit submit/cancel, and room
-  reuse via `meta.roomID`.
-- **Diff-review room substrate.** `phase_outputs["diff-review"]` now
-  persists `review_id`, canonical `files`, `current_file`,
-  `filter_state`, normalized `decisions`, freeform `comments`,
-  `updated_at`, artifact-backed `before_ref` / `after_ref`, durable
-  `summary`, and lightweight `export_refs`.
-- **Batch file review and local draft recovery.** Diff-review turns can
-  apply one decision across the active file and autosave unsent
-  comments/filter state in the browser for refresh recovery.
-- **Artifact refs and summary export.** Reopened rooms keep stable
-  before/after context through persisted artifact refs, and exported
-  markdown summaries persist lightweight metadata back onto the room.
-- **Diff-review e2e coverage.** Added
-  `docs/manual-tests/diff-review-e2e.md`.
+- **`tangent.file-picker`.** A bundled room-backed file-picker workflow
+  with allowed browse roots, explicit submit/cancel, and room reuse via
+  `meta.roomID`.
+- **File-picker room substrate.** `phase_outputs["file_picker"]` now
+  persists `picker_id`, canonical `browse_roots`, durable
+  `selected_refs`, normalized `query_state`, append-only
+  `selection_revisions`, and accepted submission metadata.
+- **Browser-local draft recovery and preview.** File-picker turns keep
+  unsent staged selection/query state in browser storage keyed by room +
+  picker and recover it on refresh without overwriting canonical room
+  state.
+- **Artifact handoff metadata.** Accepted file-picker submits now
+  persist a stable `handoff` payload plus `submission_summary` so later
+  workflows can consume selected artifact refs without reparsing the UI
+  state.
+- **File-picker e2e coverage.** Added
+  `docs/manual-tests/file-picker-e2e.md`.
 
 ### Changed
 
-- **`tangent.session_get` now projects diff-review state.** It exposes
-  a dedicated `diff_review` payload with canonical files, current file,
-  normalized decisions/comments, durable review summary, and artifact
-  refs.
-- **Docs now describe diff review as the next bundled workflow.**
-  README, MCP integration, architecture, and developer docs now reflect
-  the new tool surface and room projection.
+- **`tangent.session_get` now projects file-picker state.** It exposes
+  a dedicated `file_picker` payload with canonical roots, durable
+  selected refs, normalized query state, accepted selection revisions,
+  and the latest handoff summary.
+- **Docs now describe file picker as the newest bundled workflow.**
+  README, MCP integration, and manual test docs now reflect the new
+  tool surface and localhost-only artifact-ref selection model.
 
 ### Fixed
 
-- **Refresh no longer cancels active diff-review work by default.** The
-  room keeps the pending review alive while the browser restores its
-  unsent local comment/draft state.
+- **Invalid file-picker submits no longer create fake accepted room
+  state.** Rejected payloads return an explicit non-accepted response
+  shape and preserve the last accepted selection snapshot for reopen.
 
 ## [v0.6.0] - 2026-05-09
 
