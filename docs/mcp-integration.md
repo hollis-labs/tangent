@@ -2,6 +2,8 @@
 
 User-facing setup guide for wiring Tangent into an MCP-speaking agent.
 For the architectural picture see [`architecture.md`](./architecture.md);
+for the quick cross-workflow smoke pass see
+[`manual-tests/workflow-smoke-tests.md`](./manual-tests/workflow-smoke-tests.md);
 for the full Claude Code e2e walkthrough see
 [`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md), for the
 writing flow see
@@ -22,6 +24,8 @@ for the dashboard flow see
 [`manual-tests/dashboard-e2e.md`](./manual-tests/dashboard-e2e.md);
 for the generalized form flow see
 [`manual-tests/form-collect-e2e.md`](./manual-tests/form-collect-e2e.md);
+for the wizard flow see
+[`manual-tests/wizard-e2e.md`](./manual-tests/wizard-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Install
@@ -171,6 +175,7 @@ Expected:
 "tangent.spreadsheet-review"
 "tangent.synthesis_notes"
 "tangent.triage"
+"tangent.wizard"
 "tangent.whiteboard"
 ```
 

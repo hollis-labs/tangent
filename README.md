@@ -190,7 +190,10 @@ More docs:
 - [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
+- [`docs/manual-tests/workflow-smoke-tests.md`](./docs/manual-tests/workflow-smoke-tests.md) — quick smoke pass across every shipped workflow
 - [`docs/manual-tests/triage-e2e.md`](./docs/manual-tests/triage-e2e.md) — full e2e recipe
+- [`docs/manual-tests/feedback-e2e.md`](./docs/manual-tests/feedback-e2e.md) — full feedback workflow
+- [`docs/manual-tests/design-iteration-e2e.md`](./docs/manual-tests/design-iteration-e2e.md) — full design-iteration workflow
 - [`docs/manual-tests/writing-flow-e2e.md`](./docs/manual-tests/writing-flow-e2e.md) — full Interview Protocol writing workflow
 - [`docs/manual-tests/whiteboard-e2e.md`](./docs/manual-tests/whiteboard-e2e.md) — full whiteboard workflow with autosave, export, and revision browser
 - [`docs/manual-tests/spreadsheet-review-e2e.md`](./docs/manual-tests/spreadsheet-review-e2e.md) — full spreadsheet-review workflow with recovery, saved views, and CSV export metadata
@@ -200,6 +203,7 @@ More docs:
 - [`docs/manual-tests/file-picker-e2e.md`](./docs/manual-tests/file-picker-e2e.md) — full file-picker workflow with reopen, local draft recovery, and artifact-ref handoff inspection
 - [`docs/manual-tests/progress-panel-e2e.md`](./docs/manual-tests/progress-panel-e2e.md) — full progress-panel workflow with update/reopen, checkpoint inspection, and export snapshot verification
 - [`docs/manual-tests/dashboard-e2e.md`](./docs/manual-tests/dashboard-e2e.md) — full dashboard workflow with saved layouts, drill-down, and export/share snapshot verification
+- [`docs/manual-tests/wizard-e2e.md`](./docs/manual-tests/wizard-e2e.md) — full wizard workflow with partial saves, recovery, and final completion
 
 ## License
 
