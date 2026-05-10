@@ -1,6 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  getProgressPanelDraftStorageKey,
+  PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS,
+} from "@/lib/progress-panel-storage";
 import {
   ProgressPanel,
   type ProgressPanelEnvelope,
@@ -8,6 +11,12 @@ import {
 } from "./ProgressPanel";
 
 describe("<ProgressPanel>", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
   it("renders seeded progress state and submits canonical updates", () => {
     const onSubmit = vi.fn<(response: ProgressPanelResponse) => void>();
     const envelope: ProgressPanelEnvelope = {
@@ -56,11 +65,15 @@ describe("<ProgressPanel>", () => {
       },
     };
 
-    render(<ProgressPanel envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} />);
+    render(
+      <ProgressPanel envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} roomID="room-1" />,
+    );
 
     expect(screen.getByTestId("progress-panel-item-item-1")).toHaveTextContent("Scan repo");
     expect(screen.getByText("1 running")).toBeInTheDocument();
     expect(screen.getByTestId("progress-panel-update-count")).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("progress-panel-tab-logs"));
+    expect(screen.getByTestId("progress-panel-log-detail")).toHaveTextContent("upd-001");
 
     fireEvent.change(screen.getByTestId("progress-panel-item-select"), {
       target: { value: "item-2" },
@@ -114,5 +127,69 @@ describe("<ProgressPanel>", () => {
     expect(screen.getByTestId("progress-panel-submit-error")).toHaveTextContent(
       "Select a progress item before submitting an update.",
     );
+  });
+
+  it("persists timeline view filters locally and restores them on reopen", () => {
+    vi.useFakeTimers();
+    const storageKey = getProgressPanelDraftStorageKey("room-9", "panel-9");
+    const envelope: ProgressPanelEnvelope = {
+      v: 1,
+      id: "progress-env-9",
+      type: "tangent.progress-panel",
+      data: {
+        panel_id: "panel-9",
+        items: [
+          { item_id: "item-1", label: "Scan repo", status: "running" },
+          { item_id: "item-2", label: "Write summary", status: "queued" },
+        ],
+        updates: [
+          {
+            update_id: "upd-001",
+            kind: "status",
+            item_id: "item-1",
+            status: "running",
+            summary: "Started scan",
+          },
+          {
+            update_id: "upd-002",
+            kind: "checkpoint",
+            item_id: "item-2",
+            checkpoint_id: "cp-001",
+            checkpoint_label: "Summary started",
+            summary: "Drafting summary",
+          },
+        ],
+        checkpoints: [{ checkpoint_id: "cp-001", label: "Summary started" }],
+      },
+    };
+
+    const { unmount } = render(
+      <ProgressPanel envelope={envelope} onSubmit={() => {}} onCancel={() => {}} roomID="room-9" />,
+    );
+    fireEvent.click(screen.getByTestId("progress-panel-tab-logs"));
+    fireEvent.change(screen.getByTestId("progress-panel-filter-item"), {
+      target: { value: "item-2" },
+    });
+    fireEvent.change(screen.getByTestId("progress-panel-filter-kind"), {
+      target: { value: "checkpoint" },
+    });
+    fireEvent.click(screen.getByTestId("progress-panel-log-upd-002"));
+
+    act(() => {
+      vi.advanceTimersByTime(PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS + 50);
+    });
+    expect(window.localStorage.getItem(storageKey)).toContain('"activeTab":"logs"');
+    unmount();
+
+    render(
+      <ProgressPanel envelope={envelope} onSubmit={() => {}} onCancel={() => {}} roomID="room-9" />,
+    );
+    expect(screen.getByTestId("progress-panel-message")).toHaveTextContent(
+      "Recovered progress-panel view state from this browser.",
+    );
+    expect(screen.getByTestId("progress-panel-logs")).toBeInTheDocument();
+    expect(screen.getByTestId("progress-panel-filter-item")).toHaveValue("item-2");
+    expect(screen.getByTestId("progress-panel-filter-kind")).toHaveValue("checkpoint");
+    expect(screen.getByTestId("progress-panel-log-detail")).toHaveTextContent("upd-002");
   });
 });

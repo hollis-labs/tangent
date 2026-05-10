@@ -214,12 +214,13 @@ function FilePickerAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
-function ProgressPanelAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+function ProgressPanelAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <ProgressPanel
       envelope={envelope as ProgressPanelEnvelope}
       onSubmit={onSubmit as (response: ProgressPanelResponse) => void}
       onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }
