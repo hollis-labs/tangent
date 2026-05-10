@@ -68,6 +68,13 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 			"payload": map[string]any{
 				"dashboard_id": "dashboard-1",
 				"action":       "refresh",
+				"query_state": map[string]any{
+					"search": "open",
+					"scope":  "active",
+					"sort": []any{
+						map[string]any{"field": "updated_at", "direction": "desc"},
+					},
+				},
 			},
 		},
 	})
@@ -118,6 +125,10 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	secondData, _ := secondEnvelope["data"].(map[string]any)
 	if got := secondData["title"]; got != "Ops dashboard" {
 		t.Fatalf("reopened title = %v, want Ops dashboard", got)
+	}
+	secondQueryState, _ := secondData["query_state"].(map[string]any)
+	if got := secondQueryState["search"]; got != "open" {
+		t.Fatalf("reopened query_state.search = %v, want open", got)
 	}
 	reopenedTiles, _ := secondData["tiles"].([]any)
 	if got := len(reopenedTiles); got != 1 {

@@ -92,6 +92,7 @@ export interface DashboardResponse {
     dashboard_id: string;
     action: "refresh" | "update";
     note?: string;
+    query_state?: DashboardQueryState;
   };
   completedAt?: string;
 }
@@ -110,6 +111,14 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
   const queryState = envelope.data?.query_state;
   const snapshotHistory = envelope.data?.snapshot_history ?? [];
   const [note, setNote] = useState("");
+  const [search, setSearch] = useState(queryState?.search ?? "");
+  const [scope, setScope] = useState(queryState?.scope ?? "");
+  const [groupBy, setGroupBy] = useState(queryState?.group_by ?? "");
+  const [statusFilter, setStatusFilter] = useState(
+    queryState?.filters?.find((item) => item.filter_id === "status")?.values?.join(", ") ?? "",
+  );
+  const [sortField, setSortField] = useState(queryState?.sort?.[0]?.field ?? "updated_at");
+  const [sortDirection, setSortDirection] = useState(queryState?.sort?.[0]?.direction ?? "desc");
 
   const orderedTiles = useMemo(() => {
     if (layout.length === 0) {
@@ -131,6 +140,10 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
   );
 
   const submit = (action: "refresh" | "update") => {
+    const normalizedFilterValues = statusFilter
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
     onSubmit({
       v: 1,
       envelopeId: envelope.id,
@@ -140,6 +153,23 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
         dashboard_id: dashboardID,
         action,
         note: note.trim() || undefined,
+        query_state: {
+          search: search.trim() || undefined,
+          scope: scope || undefined,
+          group_by: groupBy.trim() || undefined,
+          filters:
+            normalizedFilterValues.length > 0
+              ? [
+                  {
+                    filter_id: "status",
+                    label: "Status",
+                    operator: "in",
+                    values: normalizedFilterValues,
+                  },
+                ]
+              : [],
+          sort: sortField ? [{ field: sortField, direction: sortDirection || "desc" }] : [],
+        },
       },
       completedAt: new Date().toISOString(),
     });
@@ -208,6 +238,111 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
             ))}
           </section>
         ) : null}
+
+        <section
+          className="grid gap-3 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 md:grid-cols-2"
+          data-testid="dashboard-controls"
+        >
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-search"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Search
+            </label>
+            <input
+              id="dashboard-search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              data-testid="dashboard-search"
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-scope"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Scope
+            </label>
+            <select
+              id="dashboard-scope"
+              value={scope}
+              onChange={(event) => setScope(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              data-testid="dashboard-scope"
+            >
+              <option value="">Default</option>
+              <option value="active">Active</option>
+              <option value="all">All rooms</option>
+              <option value="attention">Attention only</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-group-by"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Group by
+            </label>
+            <input
+              id="dashboard-group-by"
+              value={groupBy}
+              onChange={(event) => setGroupBy(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              data-testid="dashboard-group-by"
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-status-filter"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Status filter
+            </label>
+            <input
+              id="dashboard-status-filter"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              placeholder="running, blocked"
+              data-testid="dashboard-status-filter"
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-sort-field"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Sort field
+            </label>
+            <input
+              id="dashboard-sort-field"
+              value={sortField}
+              onChange={(event) => setSortField(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              data-testid="dashboard-sort-field"
+            />
+          </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="dashboard-sort-direction"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Sort direction
+            </label>
+            <select
+              id="dashboard-sort-direction"
+              value={sortDirection}
+              onChange={(event) => setSortDirection(event.target.value)}
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
+              data-testid="dashboard-sort-direction"
+            >
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </div>
+        </section>
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="dashboard-tiles">
           {orderedTiles.map((tile) => (

@@ -16,9 +16,10 @@ type dashboardInput struct {
 }
 
 type dashboardSubmitDraft struct {
-	DashboardID string `json:"dashboard_id"`
-	Action      string `json:"action"`
-	Note        string `json:"note,omitempty"`
+	DashboardID string                    `json:"dashboard_id"`
+	Action      string                    `json:"action"`
+	Note        string                    `json:"note,omitempty"`
+	QueryState  *room.DashboardQueryState `json:"query_state,omitempty"`
 }
 
 type dashboardAcceptedPayload struct {
@@ -282,6 +283,11 @@ func (s *Server) normalizeDashboardSubmitResponse(
 		summary.LastRefreshAt = now
 	}
 
+	queryState := cloneDashboardQueryState(persisted.QueryState)
+	if draft.QueryState != nil {
+		queryState = cloneDashboardQueryState(draft.QueryState)
+	}
+
 	if _, err := s.manager.SaveDashboardSnapshot(roomID, room.DashboardSnapshot{
 		DashboardID:     persisted.DashboardID,
 		Title:           persisted.Title,
@@ -289,7 +295,7 @@ func (s *Server) normalizeDashboardSubmitResponse(
 		Layout:          persisted.Layout,
 		SavedLayouts:    persisted.SavedLayouts,
 		ActiveLayoutID:  persisted.ActiveLayoutID,
-		QueryState:      cloneDashboardQueryState(persisted.QueryState),
+		QueryState:      queryState,
 		Summary:         summary,
 		SnapshotHistory: snapshotHistory,
 		UpdatedAt:       now,
@@ -439,6 +445,7 @@ func decodeDashboardSubmitDraft(raw any) (dashboardSubmitDraft, error) {
 		DashboardID: readStringValue(map[string]any{"dashboard_id": draft.DashboardID}, "dashboard_id"),
 		Action:      readStringValue(map[string]any{"action": draft.Action}, "action"),
 		Note:        readStringValue(map[string]any{"note": draft.Note}, "note"),
+		QueryState:  cloneDashboardQueryState(draft.QueryState),
 	}, nil
 }
 

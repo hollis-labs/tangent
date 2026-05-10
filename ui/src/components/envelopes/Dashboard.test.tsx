@@ -72,7 +72,14 @@ describe("<Dashboard>", () => {
     expect(screen.getByTestId("dashboard-tile-tile-progress")).toHaveTextContent(
       "tangent.progress-panel",
     );
+    expect(screen.getByTestId("dashboard-search")).toHaveValue("progress");
 
+    fireEvent.change(screen.getByTestId("dashboard-search"), {
+      target: { value: "rooms" },
+    });
+    fireEvent.change(screen.getByTestId("dashboard-status-filter"), {
+      target: { value: "running, blocked" },
+    });
     fireEvent.change(screen.getByTestId("dashboard-note"), {
       target: { value: "Need fresh room counts." },
     });
@@ -83,6 +90,17 @@ describe("<Dashboard>", () => {
           dashboard_id: "dashboard-1",
           action: "refresh",
           note: "Need fresh room counts.",
+          query_state: expect.objectContaining({
+            search: "rooms",
+            filters: [
+              {
+                filter_id: "status",
+                label: "Status",
+                operator: "in",
+                values: ["running", "blocked"],
+              },
+            ],
+          }),
         }),
       }),
     );
