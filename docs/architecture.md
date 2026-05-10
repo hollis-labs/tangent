@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-The current build advertises 24 tools:
+The current build advertises 25 tools:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -76,6 +76,7 @@ The current build advertises 24 tools:
 - `tangent.diff-review` — room-backed diff review with explicit submit.
 - `tangent.file-picker` — room-backed file selection with explicit submit.
 - `tangent.progress-panel` — room-backed progress tracking with explicit submit.
+- `tangent.wizard` — room-backed step wizard with partial updates, navigation, and explicit final completion.
 - `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
@@ -173,6 +174,22 @@ dedicated `dashboard` view when present:
 This keeps the dashboard workflow as a concise summary of Tangent's own
 room/workflow state rather than introducing a separate reporting store
 or external data sync path.
+
+The same substrate also carries wizard room state under the `wizard`
+phase projection. `tangent.session_get` surfaces a dedicated `wizard`
+view when present:
+
+- `wizard_id`
+- canonical `steps`
+- `current_step_id`
+- normalized accepted `progress`
+- deterministic `branch_selections`
+- summary fields including completion status
+- `updated_at`
+
+The browser host may keep unsent step edits in local storage for draft
+recovery, but the room-backed `wizard` projection remains the canonical
+reopen source.
 
 The shipped v0.4 whiteboard state is persisted on the same room
 state path rather than in a separate table. `tangent.session_get`
