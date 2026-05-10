@@ -80,6 +80,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterProgressPanel(envSvc); regErr != nil {
 		t.Fatalf("RegisterProgressPanel: %v", regErr)
 	}
+	if regErr := extensions.RegisterWizard(envSvc); regErr != nil {
+		t.Fatalf("RegisterWizard: %v", regErr)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterDiffReview: %v", regErr)
 	}
@@ -162,6 +165,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterProgressPanelOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterWizardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterWizardOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()

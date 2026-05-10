@@ -77,6 +77,7 @@ import {
   type WhiteboardEnvelope,
   type WhiteboardSubmitResponse,
 } from "./components/envelopes/Whiteboard";
+import { Wizard, type WizardEnvelope, type WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import "./index.css";
 
@@ -241,6 +242,17 @@ function ProgressPanelAdapter({ envelope, onSubmit, onCancel, roomID }: Envelope
   );
 }
 
+function WizardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <Wizard
+      envelope={envelope as WizardEnvelope}
+      onSubmit={onSubmit as (response: WizardResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
 function SpreadsheetReviewAdapter({
   envelope,
   onSubmit,
@@ -280,6 +292,7 @@ register("tangent.whiteboard", WhiteboardAdapter);
 register("tangent.dashboard", DashboardAdapter);
 register("tangent.file-picker", FilePickerAdapter);
 register("tangent.progress-panel", ProgressPanelAdapter);
+register("tangent.wizard", WizardAdapter);
 register("tangent.diff-review", DiffReviewAdapter);
 register("tangent.spreadsheet-review", SpreadsheetReviewAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
