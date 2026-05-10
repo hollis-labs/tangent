@@ -24,6 +24,9 @@ type FilePickerRef = {
 
 type QueryState = {
   current_root_id?: string;
+  current_dir?: string;
+  search?: string;
+  sort?: string;
   [key: string]: unknown;
 };
 
@@ -82,12 +85,31 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
       browseRoots[0]?.root_id ??
       "",
   );
+  const [currentDir, setCurrentDir] = useState(
+    () => normalizeQueryState(envelope.data?.query_state).current_dir ?? "",
+  );
+  const [search, setSearch] = useState(
+    () => normalizeQueryState(envelope.data?.query_state).search ?? "",
+  );
+  const [sort, setSort] = useState(
+    () => normalizeQueryState(envelope.data?.query_state).sort ?? "name:asc",
+  );
   const [selectedKeys, setSelectedKeys] = useState(() => new Set(initialSelected.map(refKey)));
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const directoryOptions = useMemo(
+    () => listDirectories(availableFiles, activeRootID, currentDir),
+    [activeRootID, availableFiles, currentDir],
+  );
   const visibleFiles = useMemo(
-    () => availableFiles.filter((item) => !activeRootID || item.root_id === activeRootID),
-    [activeRootID, availableFiles],
+    () =>
+      applyFilters(availableFiles, {
+        activeRootID,
+        currentDir,
+        search,
+        sort,
+      }),
+    [activeRootID, availableFiles, currentDir, search, sort],
   );
 
   const selectedRefs = useMemo(
@@ -114,7 +136,10 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                   key={root.root_id}
                   type="button"
                   data-testid={`file-picker-root-${root.root_id}`}
-                  onClick={() => setActiveRootID(root.root_id)}
+                  onClick={() => {
+                    setActiveRootID(root.root_id);
+                    setCurrentDir("");
+                  }}
                   className={cn(
                     "w-full rounded-xl border px-3 py-3 text-left transition",
                     activeRootID === root.root_id
@@ -156,6 +181,63 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                 </p>
               </div>
             </div>
+            <div className="mt-3 flex flex-wrap gap-2" data-testid="file-picker-breadcrumbs">
+              <button
+                type="button"
+                className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+                onClick={() => setCurrentDir("")}
+              >
+                /
+              </button>
+              {breadcrumbSegments(currentDir).map((segment, index, all) => {
+                const nextDir = all.slice(0, index + 1).join("/");
+                return (
+                  <button
+                    key={nextDir}
+                    type="button"
+                    className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+                    onClick={() => setCurrentDir(nextDir)}
+                  >
+                    {segment}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px]">
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search file names or paths"
+                data-testid="file-picker-search"
+                className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
+              />
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value)}
+                data-testid="file-picker-sort"
+                className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
+              >
+                <option value="name:asc">Name asc</option>
+                <option value="name:desc">Name desc</option>
+                <option value="path:asc">Path asc</option>
+                <option value="path:desc">Path desc</option>
+              </select>
+            </div>
+            {directoryOptions.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2" data-testid="file-picker-directories">
+                {directoryOptions.map((dir) => (
+                  <button
+                    key={dir}
+                    type="button"
+                    className="rounded-full border border-zinc-800 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-700"
+                    onClick={() => setCurrentDir(dir)}
+                  >
+                    {dir.split("/").pop()}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {submitError ? (
               <p className="mt-3 text-sm text-amber-300" data-testid="file-picker-submit-error">
                 {submitError}
@@ -230,6 +312,9 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                     query_state: {
                       ...normalizeQueryState(envelope.data?.query_state),
                       current_root_id: activeRootID || undefined,
+                      current_dir: currentDir || undefined,
+                      search: search || undefined,
+                      sort,
                     },
                   },
                 });
@@ -289,6 +374,73 @@ function buildAvailableFiles(
     out.push(item);
   }
   return out;
+}
+
+function applyFilters(
+  items: FilePickerRef[],
+  options: {
+    activeRootID: string;
+    currentDir: string;
+    search: string;
+    sort: string;
+  },
+): FilePickerRef[] {
+  const needle = options.search.trim().toLowerCase();
+  const dirPrefix = options.currentDir ? `${options.currentDir}/` : "";
+  const visible = items.filter((item) => {
+    if (options.activeRootID && item.root_id !== options.activeRootID) {
+      return false;
+    }
+    if (options.currentDir) {
+      if (
+        !(item.relative_path === options.currentDir || item.relative_path.startsWith(dirPrefix))
+      ) {
+        return false;
+      }
+    }
+    if (!needle) {
+      return true;
+    }
+    return [item.name, item.relative_path, item.uri]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLowerCase().includes(needle));
+  });
+  return [...visible].sort((left, right) => compareRefs(left, right, options.sort));
+}
+
+function compareRefs(left: FilePickerRef, right: FilePickerRef, sort: string): number {
+  const [field, direction] = sort.split(":");
+  const leftValue =
+    field === "path" ? left.relative_path : (left.name ?? basename(left.relative_path));
+  const rightValue =
+    field === "path" ? right.relative_path : (right.name ?? basename(right.relative_path));
+  const result = leftValue.localeCompare(rightValue);
+  return direction === "desc" ? result * -1 : result;
+}
+
+function listDirectories(items: FilePickerRef[], rootID: string, currentDir: string): string[] {
+  const seen = new Set<string>();
+  const prefix = currentDir ? `${currentDir}/` : "";
+  for (const item of items) {
+    if (rootID && item.root_id !== rootID) {
+      continue;
+    }
+    if (currentDir && !item.relative_path.startsWith(prefix)) {
+      continue;
+    }
+    const rest = currentDir ? item.relative_path.slice(prefix.length) : item.relative_path;
+    const [first] = rest.split("/");
+    if (!first || !rest.includes("/")) {
+      continue;
+    }
+    const next = currentDir ? `${currentDir}/${first}` : first;
+    seen.add(next);
+  }
+  return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
+function breadcrumbSegments(value: string): string[] {
+  return value ? value.split("/").filter(Boolean) : [];
 }
 
 function refKey(item: Pick<FilePickerRef, "root_id" | "relative_path">): string {

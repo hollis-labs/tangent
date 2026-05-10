@@ -45,6 +45,9 @@ describe("<FilePicker>", () => {
         ],
         query_state: {
           current_root_id: "workspace",
+          current_dir: "",
+          search: "read",
+          sort: "path:desc",
         },
       },
     };
@@ -60,6 +63,12 @@ describe("<FilePicker>", () => {
     if (!readmeCheckbox) {
       throw new Error("README checkbox missing");
     }
+    fireEvent.change(screen.getByTestId("file-picker-search"), {
+      target: { value: "read" },
+    });
+    fireEvent.change(screen.getByTestId("file-picker-sort"), {
+      target: { value: "path:desc" },
+    });
     fireEvent.click(readmeCheckbox);
     fireEvent.click(screen.getByTestId("file-picker-submit"));
 
@@ -94,6 +103,9 @@ describe("<FilePicker>", () => {
         ],
         query_state: {
           current_root_id: "workspace",
+          current_dir: undefined,
+          search: "read",
+          sort: "path:desc",
         },
       },
     });

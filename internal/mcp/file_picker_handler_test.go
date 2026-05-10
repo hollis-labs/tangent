@@ -76,6 +76,9 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 				},
 				"query_state": map[string]any{
 					"current_root_id": "workspace",
+					"current_dir":     "docs",
+					"search":          "spec",
+					"sort":            "path:asc",
 				},
 			},
 		},
@@ -122,6 +125,13 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 	selectedRefs, _ := secondData["selected_refs"].([]any)
 	if got := len(selectedRefs); got != 1 {
 		t.Fatalf("reopened selected_refs len = %d, want 1", got)
+	}
+	secondQueryState, _ := secondData["query_state"].(map[string]any)
+	if got := secondQueryState["current_dir"]; got != "docs" {
+		t.Fatalf("reopened query_state.current_dir = %v, want docs", got)
+	}
+	if got := secondQueryState["search"]; got != "spec" {
+		t.Fatalf("reopened query_state.search = %v, want spec", got)
 	}
 
 	writeWSFrame(t, conn, map[string]any{
