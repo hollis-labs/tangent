@@ -372,6 +372,153 @@ func TestRoom_SaveSpreadsheetReviewSnapshotPersistsAndReloads(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveFilePickerSnapshotPersistsAndReloads(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "file-picker"})
+	if err := rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID: "picker-1",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Label: "Workspace", Path: "/tmp/workspace"},
+			{RootID: "docs", Label: "Docs", Path: "/tmp/docs"},
+		},
+		SelectedRefs: []room.FilePickerArtifactRef{
+			{
+				ArtifactID:   "artifact-1",
+				Name:         "spec.md",
+				URI:          "artifact://artifact-1",
+				MIMEType:     "text/markdown",
+				RootID:       "workspace",
+				RelativePath: "docs/spec.md",
+			},
+		},
+		QueryState: map[string]any{
+			"search":      "spec",
+			"current_dir": "docs",
+			"sort":        "name:asc",
+		},
+		SelectionRevisions: []room.FilePickerSelectionRevision{
+			{
+				SubmittedAt:   "2026-05-09T20:30:00Z",
+				SelectedCount: 1,
+			},
+		},
+		UpdatedAt: "2026-05-09T20:30:00Z",
+	}); err != nil {
+		t.Fatalf("SaveFilePickerSnapshot: %v", err)
+	}
+
+	view := room.ProjectFilePickerState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectFilePickerState returned nil")
+	}
+	if got := view.PickerID; got != "picker-1" {
+		t.Fatalf("picker_id = %q, want picker-1", got)
+	}
+	if got := len(view.BrowseRoots); got != 2 {
+		t.Fatalf("browse_roots len = %d, want 2", got)
+	}
+	if got := view.SelectedRefs[0].ArtifactID; got != "artifact-1" {
+		t.Fatalf("selected_refs[0].artifact_id = %q, want artifact-1", got)
+	}
+	if got := view.SelectedRefs[0].RelativePath; got != "docs/spec.md" {
+		t.Fatalf("selected_refs[0].relative_path = %q, want docs/spec.md", got)
+	}
+	if got := view.QueryState["search"]; got != "spec" {
+		t.Fatalf("query_state.search = %v, want spec", got)
+	}
+	if got := view.SelectionRevisions[0].SelectedCount; got != 1 {
+		t.Fatalf("selection_revisions[0].selected_count = %d, want 1", got)
+	}
+
+	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState reload: %v", err)
+	}
+	if !found {
+		t.Fatal("GetPhaseState found = false, want true")
+	}
+	reloadedView := room.ProjectFilePickerState(reloaded)
+	if reloadedView == nil {
+		t.Fatal("reloaded ProjectFilePickerState returned nil")
+	}
+	if got := reloadedView.SelectedRefs[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("reloaded selected_refs[0].uri = %q, want artifact://artifact-1", got)
+	}
+	if got := reloadedView.BrowseRoots[0].Kind; got != "directory" {
+		t.Fatalf("reloaded browse_roots[0].kind = %q, want directory", got)
+	}
+}
+
+func TestRoom_SaveFilePickerSnapshotEmptyPicker(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID:           "picker-empty",
+		QueryState:         map[string]any{},
+		BrowseRoots:        []room.FilePickerBrowseRoot{},
+		SelectedRefs:       []room.FilePickerArtifactRef{},
+		SelectionRevisions: []room.FilePickerSelectionRevision{},
+	}); err != nil {
+		t.Fatalf("SaveFilePickerSnapshot empty: %v", err)
+	}
+
+	view := room.ProjectFilePickerState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectFilePickerState returned nil")
+	}
+	if got := len(view.BrowseRoots); got != 0 {
+		t.Fatalf("browse_roots len = %d, want 0", got)
+	}
+	if got := len(view.SelectedRefs); got != 0 {
+		t.Fatalf("selected_refs len = %d, want 0", got)
+	}
+	if got := len(view.SelectionRevisions); got != 0 {
+		t.Fatalf("selection_revisions len = %d, want 0", got)
+	}
+}
+
+func TestRoom_SaveFilePickerSnapshotRejectsInvalidSelectionRef(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID: "picker-invalid",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Path: "/tmp/workspace"},
+		},
+		SelectedRefs: []room.FilePickerArtifactRef{
+			{
+				Name:         "unsafe",
+				URI:          "blob:local-file",
+				RootID:       "workspace",
+				RelativePath: "unsafe.txt",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidFilePickerSelectionRef) {
+		t.Fatalf("SaveFilePickerSnapshot invalid ref err = %v, want ErrInvalidFilePickerSelectionRef", err)
+	}
+
+	err = rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID: "picker-out-of-root",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Path: "/tmp/workspace"},
+		},
+		SelectedRefs: []room.FilePickerArtifactRef{
+			{
+				ArtifactID:   "artifact-2",
+				RootID:       "workspace",
+				RelativePath: "../escape.txt",
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidFilePickerSelectionRef) {
+		t.Fatalf("SaveFilePickerSnapshot out-of-root err = %v, want ErrInvalidFilePickerSelectionRef", err)
+	}
+}
+
 func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
 	rm := newAnonRoom(t, nil)
 	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{

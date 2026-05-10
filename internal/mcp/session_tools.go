@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	FilePicker            *room.FilePickerStateView        `json:"file_picker,omitempty"`
 	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
 	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
 	FormCollect           *room.FormStateView              `json:"form_collect,omitempty"`
@@ -153,6 +154,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		FilePicker:            room.ProjectFilePickerState(phaseState),
 		DiffReview:            room.ProjectDiffReviewState(phaseState),
 		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
 		FormCollect:           room.ProjectFormState(phaseState),
@@ -353,6 +355,11 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidFilePickerID),
+		errors.Is(err, room.ErrInvalidFilePickerBrowseRoot),
+		errors.Is(err, room.ErrInvalidFilePickerSelectionRef),
+		errors.Is(err, room.ErrInvalidFilePickerQueryState),
+		errors.Is(err, room.ErrInvalidFilePickerSelectionRevision),
 		errors.Is(err, room.ErrInvalidApprovalQueueID),
 		errors.Is(err, room.ErrInvalidApprovalQueueItem),
 		errors.Is(err, room.ErrInvalidApprovalQueueDecision),

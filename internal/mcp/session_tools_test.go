@@ -732,6 +732,75 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 	}
 }
 
+func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "file-picker")
+	if _, err := rg.mgr.SaveFilePickerSnapshot(roomID, room.FilePickerSnapshot{
+		PickerID: "picker-1",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Label: "Workspace", Path: "/tmp/workspace"},
+		},
+		SelectedRefs: []room.FilePickerArtifactRef{
+			{
+				ArtifactID:   "artifact-1",
+				Name:         "spec.md",
+				URI:          "artifact://artifact-1",
+				MIMEType:     "text/markdown",
+				RootID:       "workspace",
+				RelativePath: "docs/spec.md",
+			},
+		},
+		QueryState: map[string]any{
+			"search":      "spec",
+			"current_dir": "docs",
+		},
+		SelectionRevisions: []room.FilePickerSelectionRevision{
+			{
+				SubmittedAt:   "2026-05-09T20:35:00Z",
+				SelectedCount: 1,
+			},
+		},
+		UpdatedAt: "2026-05-09T20:35:00Z",
+	}); err != nil {
+		t.Fatalf("SaveFilePickerSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		FilePicker *room.FilePickerStateView `json:"file_picker"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.FilePicker == nil {
+		t.Fatal("file_picker projection missing")
+	}
+	if got := state.FilePicker.PickerID; got != "picker-1" {
+		t.Fatalf("picker_id = %q, want picker-1", got)
+	}
+	if got := state.FilePicker.SelectedRefs[0].URI; got != "artifact://artifact-1" {
+		t.Fatalf("selected_refs[0].uri = %q, want artifact://artifact-1", got)
+	}
+	if got := state.FilePicker.QueryState["search"]; got != "spec" {
+		t.Fatalf("query_state.search = %v, want spec", got)
+	}
+	if got := state.FilePicker.SelectionRevisions[0].SelectedCount; got != 1 {
+		t.Fatalf("selection_revisions[0].selected_count = %d, want 1", got)
+	}
+}
+
 func TestSession_GetIncludesSpreadsheetReviewProjection(t *testing.T) {
 	rg := newSessionRig(t)
 	defer rg.cleanup()
