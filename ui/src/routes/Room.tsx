@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  progress_panel?: unknown;
   file_picker?: unknown;
   diff_review?: unknown;
   approval_queue?: unknown;
@@ -103,6 +104,7 @@ export default function Room() {
       if (
         envelopeType === "tangent.whiteboard" ||
         envelopeType === "tangent.file-picker" ||
+        envelopeType === "tangent.progress-panel" ||
         envelopeType === "tangent.diff-review" ||
         envelopeType === "tangent.spreadsheet-review" ||
         envelopeType === "tangent.form-collect" ||
@@ -166,6 +168,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
     type !== "tangent.file-picker" &&
+    type !== "tangent.progress-panel" &&
     type !== "tangent.diff-review" &&
     type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
@@ -191,6 +194,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.file-picker") {
       return attachFilePickerState(envelope, state.file_picker);
+    }
+    if (type === "tangent.progress-panel") {
+      return attachProgressPanelState(envelope, state.progress_panel);
     }
     if (type === "tangent.diff-review") {
       return attachDiffReviewState(envelope, state.diff_review);
@@ -350,6 +356,27 @@ function attachFilePickerState(envelope: unknown, filePicker: unknown): unknown 
     "selection_revisions",
     "updated_at",
   ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachProgressPanelState(envelope: unknown, progressPanel: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!progressPanel || typeof progressPanel !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = progressPanel as Record<string, unknown>;
+  for (const key of ["panel_id", "items", "updates", "checkpoints", "summary", "updated_at"]) {
     if (persisted[key] !== undefined) {
       data[key] = persisted[key];
     }

@@ -153,6 +153,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register file-picker extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterProgressPanel(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register progress-panel extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register diff-review extension: %v\n", regErr)
 		os.Exit(1)
@@ -236,6 +240,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterFilePickerOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register file-picker handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterProgressPanelOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register progress-panel handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {

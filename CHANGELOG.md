@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _None._
 
+## [v0.10.0] - 2026-05-10
+
+Progress panel. Tangent now ships a persistent room-backed
+progress-panel workflow for explicit update/reopen turns, append-only
+status history, checkpoint summaries, operator recovery, and concise
+export snapshots.
+
+### Added
+
+- **`tangent.progress-panel`.** A bundled room-backed progress workflow
+  with canonical tracked items, explicit update submits, and room reuse
+  via `meta.roomID`.
+- **Progress-panel room substrate.** `phase_outputs["progress_panel"]`
+  now persists `panel_id`, canonical `items`, append-only `updates`,
+  derived `checkpoints`, and room-backed summary fields surfaced
+  through `tangent.session_get.progress_panel`.
+- **Timeline/log/checkpoint inspection.** The shipped host includes
+  practical timeline, checkpoint, and structured log views with
+  browser-local view-state recovery across refresh.
+- **Operator controls and recovery.** The host now exposes explicit
+  pause/resume/cancel affordances, preserves unsent operator context in
+  browser storage, and restores that context on reopen without
+  overwriting canonical room state.
+- **Summary/export surface.** Progress summaries now carry latest
+  checkpoint label and completion-result metadata, and the browser host
+  can copy a concise export snapshot for downstream inspection.
+- **Progress-panel e2e coverage.** Added
+  `docs/manual-tests/progress-panel-e2e.md`.
+
+### Changed
+
+- **`tangent.session_get` now projects progress-panel state.** It
+  exposes a dedicated `progress_panel` payload with canonical items,
+  append-only updates, derived checkpoints, and concise summary fields
+  for agent reasoning.
+- **Docs now describe progress panel as the newest bundled workflow.**
+  README, MCP integration, and manual docs now reflect the new tool
+  surface and the fact that updates still ride the existing Tangent
+  room/tool contract.
+
+### Fixed
+
+- **Rejected progress updates no longer corrupt room history.** Invalid
+  update payloads return an explicit rejected response shape while
+  preserving the last accepted room-backed progress snapshot for reopen.
+
 ## [v0.9.0] - 2026-05-09
 
 File picker. Tangent now ships a persistent room-backed file-picker

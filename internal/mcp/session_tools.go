@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	ProgressPanel         *room.ProgressPanelStateView     `json:"progress_panel,omitempty"`
 	FilePicker            *room.FilePickerStateView        `json:"file_picker,omitempty"`
 	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
 	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
@@ -154,6 +155,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		ProgressPanel:         room.ProjectProgressPanelState(phaseState),
 		FilePicker:            room.ProjectFilePickerState(phaseState),
 		DiffReview:            room.ProjectDiffReviewState(phaseState),
 		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
@@ -287,6 +289,9 @@ func (s *Server) advanceRoomEnvelope(
 		}
 		if env.Type == filePickerEnvelopeType {
 			return s.normalizeFilePickerSubmitResponse(roomID, env, resp)
+		}
+		if env.Type == progressPanelEnvelopeType {
+			return s.normalizeProgressPanelSubmitResponse(roomID, env, resp)
 		}
 		if env.Type == diffReviewEnvelopeType {
 			return s.normalizeDiffReviewSubmitResponse(roomID, env, resp)

@@ -74,6 +74,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterFilePicker(envSvc); regErr != nil {
 		t.Fatalf("RegisterFilePicker: %v", regErr)
 	}
+	if regErr := extensions.RegisterProgressPanel(envSvc); regErr != nil {
+		t.Fatalf("RegisterProgressPanel: %v", regErr)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterDiffReview: %v", regErr)
 	}
@@ -146,6 +149,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterFilePickerOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterProgressPanelOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterProgressPanelOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
@@ -837,6 +845,94 @@ func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
 	}
 	if state.FilePicker.Handoff == nil || len(state.FilePicker.Handoff.ArtifactRefs) != 1 {
 		t.Fatalf("handoff = %#v, want one artifact ref", state.FilePicker.Handoff)
+	}
+}
+
+func TestSession_GetIncludesProgressPanelProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "progress")
+	if _, err := rg.mgr.SaveProgressPanelSnapshot(roomID, room.ProgressPanelSnapshot{
+		PanelID: "panel-1",
+		Items: []room.ProgressPanelItem{
+			{
+				ItemID:    "item-1",
+				Label:     "Scan repo",
+				Status:    "running",
+				CreatedAt: "2026-05-09T21:00:00Z",
+				Metadata:  map[string]any{"owner": "codex"},
+			},
+		},
+		Updates: []room.ProgressPanelUpdate{
+			{
+				UpdateID:  "upd-001",
+				Kind:      "status",
+				ItemID:    "item-1",
+				Status:    "running",
+				Summary:   "Started scan",
+				CreatedAt: "2026-05-09T21:01:00Z",
+				Metadata:  map[string]any{"source": "agent"},
+			},
+			{
+				UpdateID:        "upd-002",
+				Kind:            "checkpoint",
+				ItemID:          "item-1",
+				CheckpointID:    "cp-001",
+				CheckpointLabel: "Repo indexed",
+				Summary:         "Indexed 24 files",
+				CreatedAt:       "2026-05-09T21:02:00Z",
+				Metadata:        map[string]any{},
+			},
+		},
+		Summary: &room.ProgressPanelSummary{
+			CurrentStatus:    "running",
+			Headline:         "1 active item",
+			LastUpdateID:     "upd-002",
+			LastCheckpointID: "cp-001",
+		},
+		UpdatedAt: "2026-05-09T21:02:00Z",
+	}); err != nil {
+		t.Fatalf("SaveProgressPanelSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		ProgressPanel *room.ProgressPanelStateView `json:"progress_panel"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.ProgressPanel == nil {
+		t.Fatal("progress_panel projection missing")
+	}
+	if got := state.ProgressPanel.PanelID; got != "panel-1" {
+		t.Fatalf("panel_id = %q, want panel-1", got)
+	}
+	if got := state.ProgressPanel.Items[0].Metadata["owner"]; got != "codex" {
+		t.Fatalf("items[0].metadata.owner = %v, want codex", got)
+	}
+	if got := len(state.ProgressPanel.Updates); got != 2 {
+		t.Fatalf("updates len = %d, want 2", got)
+	}
+	if got := len(state.ProgressPanel.Checkpoints); got != 1 {
+		t.Fatalf("checkpoints len = %d, want 1", got)
+	}
+	if got := state.ProgressPanel.Checkpoints[0].Label; got != "Repo indexed" {
+		t.Fatalf("checkpoints[0].label = %q, want Repo indexed", got)
+	}
+	if state.ProgressPanel.Summary == nil || state.ProgressPanel.Summary.LastCheckpointID != "cp-001" {
+		t.Fatalf("summary = %#v, want last_checkpoint_id cp-001", state.ProgressPanel.Summary)
 	}
 }
 

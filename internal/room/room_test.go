@@ -595,6 +595,199 @@ func TestRoom_SaveFilePickerSnapshotRejectsInvalidHandoffRef(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveProgressPanelSnapshotEmptyPanel(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveProgressPanelSnapshot(room.ProgressPanelSnapshot{
+		PanelID: "panel-empty",
+		Items:   []room.ProgressPanelItem{},
+		Updates: []room.ProgressPanelUpdate{},
+	}); err != nil {
+		t.Fatalf("SaveProgressPanelSnapshot empty: %v", err)
+	}
+
+	view := room.ProjectProgressPanelState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectProgressPanelState returned nil")
+	}
+	if got := len(view.Items); got != 0 {
+		t.Fatalf("items len = %d, want 0", got)
+	}
+	if got := len(view.Updates); got != 0 {
+		t.Fatalf("updates len = %d, want 0", got)
+	}
+	if got := len(view.Checkpoints); got != 0 {
+		t.Fatalf("checkpoints len = %d, want 0", got)
+	}
+}
+
+func TestRoom_SaveProgressPanelSnapshotRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "progress-panel"})
+
+	if err := rm.SaveProgressPanelSnapshot(room.ProgressPanelSnapshot{
+		PanelID: "panel-1",
+		Items: []room.ProgressPanelItem{
+			{
+				ItemID:    "item-1",
+				Label:     "Ingest repository",
+				Status:    "running",
+				Detail:    "Enumerating source files",
+				CreatedAt: "2026-05-09T21:00:00Z",
+				UpdatedAt: "2026-05-09T21:04:00Z",
+				Metadata: map[string]any{
+					"owner": "codex",
+					"step":  1,
+				},
+			},
+			{
+				ItemID:    "item-2",
+				Label:     "Write summary",
+				Status:    "queued",
+				CreatedAt: "2026-05-09T21:00:00Z",
+				Metadata:  map[string]any{},
+			},
+		},
+		Updates: []room.ProgressPanelUpdate{
+			{
+				UpdateID:  "upd-001",
+				Kind:      "status",
+				ItemID:    "item-1",
+				Status:    "running",
+				Summary:   "Work started",
+				CreatedAt: "2026-05-09T21:01:00Z",
+				Metadata:  map[string]any{"source": "agent"},
+			},
+			{
+				UpdateID:        "upd-002",
+				Kind:            "checkpoint",
+				ItemID:          "item-1",
+				Summary:         "Workspace scan complete",
+				CreatedAt:       "2026-05-09T21:03:00Z",
+				CheckpointID:    "cp-001",
+				CheckpointLabel: "Scan complete",
+				Metadata:        map[string]any{"files": 24},
+			},
+			{
+				UpdateID:  "upd-003",
+				Kind:      "summary",
+				Summary:   "Repository scan is underway",
+				CreatedAt: "2026-05-09T21:04:00Z",
+				Metadata:  map[string]any{"scope": "boot"},
+			},
+		},
+		Summary: &room.ProgressPanelSummary{
+			CurrentStatus:       "running",
+			Headline:            "1 active item",
+			Detail:              "Repository scan is underway",
+			LastUpdateID:        "upd-003",
+			LastCheckpointID:    "cp-001",
+			LastCheckpointLabel: "Scan complete",
+		},
+		UpdatedAt: "2026-05-09T21:04:00Z",
+	}); err != nil {
+		t.Fatalf("SaveProgressPanelSnapshot: %v", err)
+	}
+
+	view := room.ProjectProgressPanelState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectProgressPanelState returned nil")
+	}
+	if got := view.PanelID; got != "panel-1" {
+		t.Fatalf("panel_id = %q, want panel-1", got)
+	}
+	if got := len(view.Items); got != 2 {
+		t.Fatalf("items len = %d, want 2", got)
+	}
+	if got := view.Items[0].Metadata["owner"]; got != "codex" {
+		t.Fatalf("items[0].metadata.owner = %v, want codex", got)
+	}
+	if got := len(view.Updates); got != 3 {
+		t.Fatalf("updates len = %d, want 3", got)
+	}
+	if got := view.Updates[1].CheckpointID; got != "cp-001" {
+		t.Fatalf("updates[1].checkpoint_id = %q, want cp-001", got)
+	}
+	if got := len(view.Checkpoints); got != 1 {
+		t.Fatalf("checkpoints len = %d, want 1", got)
+	}
+	if got := view.Checkpoints[0].Label; got != "Scan complete" {
+		t.Fatalf("checkpoints[0].label = %q, want Scan complete", got)
+	}
+	if view.Summary == nil || view.Summary.LastUpdateID != "upd-003" {
+		t.Fatalf("summary = %#v, want last_update_id upd-003", view.Summary)
+	}
+	if got := view.Summary.LastCheckpointLabel; got != "Scan complete" {
+		t.Fatalf("summary.last_checkpoint_label = %q, want Scan complete", got)
+	}
+
+	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState reload: %v", err)
+	}
+	if !found {
+		t.Fatal("GetPhaseState found = false, want true")
+	}
+	reloadedView := room.ProjectProgressPanelState(reloaded)
+	if reloadedView == nil {
+		t.Fatal("reloaded ProjectProgressPanelState returned nil")
+	}
+	if got := reloadedView.Items[0].Status; got != "running" {
+		t.Fatalf("reloaded items[0].status = %q, want running", got)
+	}
+	if got := reloadedView.Checkpoints[0].Summary; got != "Workspace scan complete" {
+		t.Fatalf("reloaded checkpoints[0].summary = %q, want Workspace scan complete", got)
+	}
+	if got := reloadedView.Summary.LastCheckpointLabel; got != "Scan complete" {
+		t.Fatalf("reloaded summary.last_checkpoint_label = %q, want Scan complete", got)
+	}
+}
+
+func TestRoom_SaveProgressPanelSnapshotRejectsInvalidUpdate(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveProgressPanelSnapshot(room.ProgressPanelSnapshot{
+		PanelID: "panel-invalid",
+		Items: []room.ProgressPanelItem{
+			{ItemID: "item-1", Label: "Item 1", Status: "running", Metadata: map[string]any{}},
+		},
+		Updates: []room.ProgressPanelUpdate{
+			{
+				UpdateID: "upd-001",
+				Kind:     "status",
+				ItemID:   "item-missing",
+				Status:   "running",
+				Metadata: map[string]any{},
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProgressPanelUpdate) {
+		t.Fatalf("SaveProgressPanelSnapshot unknown item update err = %v, want ErrInvalidProgressPanelUpdate", err)
+	}
+
+	err = rm.SaveProgressPanelSnapshot(room.ProgressPanelSnapshot{
+		PanelID: "panel-invalid-checkpoint",
+		Items: []room.ProgressPanelItem{
+			{ItemID: "item-1", Label: "Item 1", Status: "running", Metadata: map[string]any{}},
+		},
+		Updates: []room.ProgressPanelUpdate{
+			{
+				UpdateID:     "upd-002",
+				Kind:         "checkpoint",
+				ItemID:       "item-1",
+				CheckpointID: "cp-001",
+				Metadata:     map[string]any{},
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidProgressPanelUpdate) {
+		t.Fatalf("SaveProgressPanelSnapshot invalid checkpoint err = %v, want ErrInvalidProgressPanelUpdate", err)
+	}
+}
+
 func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
 	rm := newAnonRoom(t, nil)
 	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
