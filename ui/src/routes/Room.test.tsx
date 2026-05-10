@@ -161,6 +161,41 @@ describe("<Room>", () => {
     expect(cancel).not.toHaveBeenCalledWith("spreadsheet-refresh-1");
   });
 
+  it("beforeunload does not cancel an active file-picker envelope", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    mockFetchForRoom();
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("picker-refresh-1", {
+        v: 1,
+        id: "picker-refresh-1",
+        type: "tangent.file-picker",
+        data: {
+          picker_id: "picker-1",
+          browse_roots: [{ root_id: "workspace", path: "/tmp/workspace" }],
+        },
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    expect(cancel).not.toHaveBeenCalledWith("picker-refresh-1");
+  });
+
   it("beforeunload does not cancel an active approval-queue envelope", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(

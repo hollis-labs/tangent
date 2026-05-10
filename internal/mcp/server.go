@@ -228,6 +228,16 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
+	filePickerSchema, err := buildSchema(filePickerInputSchemaJSON, "file_picker")
+	if err != nil {
+		return fmt.Errorf("build file-picker input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.file-picker",
+		Description: "Dispatch a file-picker envelope through Tangent. Persists allowed roots, selected artifact refs, and canonical picker query state with explicit submit.",
+		InputSchema: filePickerSchema,
+	}, s.handleFilePicker)
+
 	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)

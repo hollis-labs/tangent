@@ -71,6 +71,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
 		t.Fatalf("RegisterWhiteboard: %v", regErr)
 	}
+	if regErr := extensions.RegisterFilePicker(envSvc); regErr != nil {
+		t.Fatalf("RegisterFilePicker: %v", regErr)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterDiffReview: %v", regErr)
 	}
@@ -138,6 +141,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterWhiteboardOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterFilePickerOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterFilePickerOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()

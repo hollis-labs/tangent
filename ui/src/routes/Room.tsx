@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  file_picker?: unknown;
   diff_review?: unknown;
   approval_queue?: unknown;
   form_collect?: unknown;
@@ -101,6 +102,7 @@ export default function Room() {
       const envelopeType = readEnvelopeType(pending.envelope);
       if (
         envelopeType === "tangent.whiteboard" ||
+        envelopeType === "tangent.file-picker" ||
         envelopeType === "tangent.diff-review" ||
         envelopeType === "tangent.spreadsheet-review" ||
         envelopeType === "tangent.form-collect" ||
@@ -163,6 +165,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.output-render" &&
     type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
+    type !== "tangent.file-picker" &&
     type !== "tangent.diff-review" &&
     type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
@@ -185,6 +188,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.form-collect") {
       return attachFormCollectState(envelope, state.form_collect);
+    }
+    if (type === "tangent.file-picker") {
+      return attachFilePickerState(envelope, state.file_picker);
     }
     if (type === "tangent.diff-review") {
       return attachDiffReviewState(envelope, state.diff_review);
@@ -315,6 +321,34 @@ function attachSpreadsheetReviewState(envelope: unknown, spreadsheetReview: unkn
     "selected_rows",
     "action_id",
     "export_refs",
+  ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachFilePickerState(envelope: unknown, filePicker: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!filePicker || typeof filePicker !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = filePicker as Record<string, unknown>;
+  for (const key of [
+    "picker_id",
+    "browse_roots",
+    "selected_refs",
+    "query_state",
+    "selection_revisions",
+    "updated_at",
   ]) {
     if (persisted[key] !== undefined) {
       data[key] = persisted[key];

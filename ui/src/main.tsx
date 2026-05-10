@@ -27,6 +27,11 @@ import {
   type FeedbackResponse,
 } from "./components/envelopes/Feedback";
 import {
+  FilePicker,
+  type FilePickerEnvelope,
+  type FilePickerResponse,
+} from "./components/envelopes/FilePicker";
+import {
   FormCollect,
   type FormCollectEnvelope,
   type FormCollectResponse,
@@ -193,6 +198,16 @@ function DiffReviewAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+function FilePickerAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <FilePicker
+      envelope={envelope as FilePickerEnvelope}
+      onSubmit={onSubmit as (response: FilePickerResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function SpreadsheetReviewAdapter({
   envelope,
   onSubmit,
@@ -229,6 +244,7 @@ register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
+register("tangent.file-picker", FilePickerAdapter);
 register("tangent.diff-review", DiffReviewAdapter);
 register("tangent.spreadsheet-review", SpreadsheetReviewAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
