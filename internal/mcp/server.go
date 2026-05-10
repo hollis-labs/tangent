@@ -238,6 +238,16 @@ func (s *Server) registerTools() error {
 		InputSchema: filePickerSchema,
 	}, s.handleFilePicker)
 
+	progressPanelSchema, err := buildSchema(progressPanelInputSchemaJSON, "progress_panel")
+	if err != nil {
+		return fmt.Errorf("build progress-panel input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.progress-panel",
+		Description: "Dispatch a progress-panel envelope through Tangent. Persists canonical progress items, summary state, and explicit operator updates.",
+		InputSchema: progressPanelSchema,
+	}, s.handleProgressPanel)
+
 	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)

@@ -47,6 +47,11 @@ import {
   type OutputRenderResponse,
 } from "./components/envelopes/OutputRender";
 import {
+  ProgressPanel,
+  type ProgressPanelEnvelope,
+  type ProgressPanelResponse,
+} from "./components/envelopes/ProgressPanel";
+import {
   ProseRevision,
   type ProseRevisionEnvelope,
   type ProseRevisionResponse,
@@ -209,6 +214,16 @@ function FilePickerAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+function ProgressPanelAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <ProgressPanel
+      envelope={envelope as ProgressPanelEnvelope}
+      onSubmit={onSubmit as (response: ProgressPanelResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
 function SpreadsheetReviewAdapter({
   envelope,
   onSubmit,
@@ -246,6 +261,7 @@ register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
 register("tangent.file-picker", FilePickerAdapter);
+register("tangent.progress-panel", ProgressPanelAdapter);
 register("tangent.diff-review", DiffReviewAdapter);
 register("tangent.spreadsheet-review", SpreadsheetReviewAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);

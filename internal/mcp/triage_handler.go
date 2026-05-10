@@ -239,6 +239,10 @@ func RegisterFilePickerOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tr
 	return dispatcher.Register(filePickerEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+func RegisterProgressPanelOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(progressPanelEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterDiffReviewOnDispatcher wires the same room-bridging handler
 // for tangent.diff-review envelopes.
 func RegisterDiffReviewOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {

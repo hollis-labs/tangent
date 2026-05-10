@@ -290,6 +290,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == filePickerEnvelopeType {
 			return s.normalizeFilePickerSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == progressPanelEnvelopeType {
+			return s.normalizeProgressPanelSubmitResponse(roomID, env, resp)
+		}
 		if env.Type == diffReviewEnvelopeType {
 			return s.normalizeDiffReviewSubmitResponse(roomID, env, resp)
 		}
