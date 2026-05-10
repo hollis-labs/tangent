@@ -681,11 +681,12 @@ func TestRoom_SaveProgressPanelSnapshotRoundTrip(t *testing.T) {
 			},
 		},
 		Summary: &room.ProgressPanelSummary{
-			CurrentStatus:    "running",
-			Headline:         "1 active item",
-			Detail:           "Repository scan is underway",
-			LastUpdateID:     "upd-003",
-			LastCheckpointID: "cp-001",
+			CurrentStatus:       "running",
+			Headline:            "1 active item",
+			Detail:              "Repository scan is underway",
+			LastUpdateID:        "upd-003",
+			LastCheckpointID:    "cp-001",
+			LastCheckpointLabel: "Scan complete",
 		},
 		UpdatedAt: "2026-05-09T21:04:00Z",
 	}); err != nil {
@@ -720,6 +721,9 @@ func TestRoom_SaveProgressPanelSnapshotRoundTrip(t *testing.T) {
 	if view.Summary == nil || view.Summary.LastUpdateID != "upd-003" {
 		t.Fatalf("summary = %#v, want last_update_id upd-003", view.Summary)
 	}
+	if got := view.Summary.LastCheckpointLabel; got != "Scan complete" {
+		t.Fatalf("summary.last_checkpoint_label = %q, want Scan complete", got)
+	}
 
 	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
 	if err != nil {
@@ -737,6 +741,9 @@ func TestRoom_SaveProgressPanelSnapshotRoundTrip(t *testing.T) {
 	}
 	if got := reloadedView.Checkpoints[0].Summary; got != "Workspace scan complete" {
 		t.Fatalf("reloaded checkpoints[0].summary = %q, want Workspace scan complete", got)
+	}
+	if got := reloadedView.Summary.LastCheckpointLabel; got != "Scan complete" {
+		t.Fatalf("reloaded summary.last_checkpoint_label = %q, want Scan complete", got)
 	}
 }
 

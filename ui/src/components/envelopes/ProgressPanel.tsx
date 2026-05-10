@@ -17,6 +17,7 @@ type ProgressItem = {
   detail?: string;
   created_at?: string;
   updated_at?: string;
+  completed_at?: string;
 };
 
 type ProgressSummary = {
@@ -25,6 +26,9 @@ type ProgressSummary = {
   detail?: string;
   last_update_id?: string;
   last_checkpoint_id?: string;
+  last_checkpoint_label?: string;
+  completed_at?: string;
+  completion_result?: string;
 };
 
 type ProgressUpdate = {
@@ -116,6 +120,7 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
   const [message, setMessage] = useState<string | null>(
     draft ? "Recovered progress-panel view state from this browser." : null,
   );
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const lastSavedDraftRef = useRef<string | null>(draft ? JSON.stringify(draft) : null);
 
   const activeItem = useMemo(
@@ -152,6 +157,27 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
         return source?.item_id === filterItemID;
       }),
     [checkpoints, filterItemID, updates],
+  );
+  const exportPayload = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          panel_id: panelID,
+          summary,
+          items: items.map((item) => ({
+            item_id: item.item_id,
+            label: item.label,
+            status: item.status,
+            updated_at: item.updated_at,
+            completed_at: item.completed_at,
+          })),
+          latest_checkpoint: checkpoints.at(-1) ?? null,
+          update_count: updates.length,
+        },
+        null,
+        2,
+      ),
+    [checkpoints, items, panelID, summary, updates.length],
   );
 
   useEffect(() => {
@@ -251,6 +277,12 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 {summary?.last_checkpoint_id ? (
                   <span>checkpoint: {summary.last_checkpoint_id}</span>
                 ) : null}
+                {summary?.last_checkpoint_label ? (
+                  <span>label: {summary.last_checkpoint_label}</span>
+                ) : null}
+                {summary?.completion_result ? (
+                  <span>result: {summary.completion_result}</span>
+                ) : null}
               </div>
             </div>
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">
@@ -265,6 +297,48 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
               </p>
               <p className="text-sm text-zinc-400">{checkpoints.length} checkpoints recorded</p>
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+                  Export snapshot
+                </p>
+                <p className="text-sm text-zinc-400">
+                  Operator-facing summary payload derived from the room-backed progress state.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                data-testid="progress-panel-export-copy"
+                onClick={async () => {
+                  try {
+                    await globalThis.navigator?.clipboard?.writeText(exportPayload);
+                    setExportMessage("Copied progress snapshot.");
+                  } catch {
+                    setExportMessage("Clipboard unavailable; inspect the snapshot below.");
+                  }
+                }}
+              >
+                Copy snapshot
+              </Button>
+            </div>
+            {exportMessage ? (
+              <p
+                data-testid="progress-panel-export-message"
+                className="mt-3 text-sm text-emerald-300"
+              >
+                {exportMessage}
+              </p>
+            ) : null}
+            <pre
+              data-testid="progress-panel-export-payload"
+              className="mt-3 min-h-40 whitespace-pre-wrap break-words rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-200"
+            >
+              {exportPayload}
+            </pre>
           </section>
 
           <section className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">

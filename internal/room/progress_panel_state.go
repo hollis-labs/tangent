@@ -6,38 +6,40 @@ import (
 )
 
 const (
-	ProgressPanelPhaseID               = "progress_panel"
-	progressPanelIDKey                 = "panel_id"
-	progressPanelItemsKey              = "items"
-	progressPanelUpdatesKey            = "updates"
-	progressPanelSummaryKey            = "summary"
-	progressPanelUpdatedAtKey          = "updated_at"
-	progressPanelItemIDKey             = "item_id"
-	progressPanelItemLabelKey          = "label"
-	progressPanelItemStatusKey         = "status"
-	progressPanelItemDetailKey         = "detail"
-	progressPanelItemCreatedAtKey      = "created_at"
-	progressPanelItemUpdatedAtKey      = "updated_at"
-	progressPanelItemCompletedAtKey    = "completed_at"
-	progressPanelItemMetadataKey       = "metadata"
-	progressPanelUpdateIDKey           = "update_id"
-	progressPanelUpdateKindKey         = "kind"
-	progressPanelUpdateItemIDKey       = "item_id"
-	progressPanelUpdateStatusKey       = "status"
-	progressPanelUpdateSummaryKey      = "summary"
-	progressPanelUpdateCreatedAtKey    = "created_at"
-	progressPanelUpdateCheckpointIDKey = "checkpoint_id"
-	progressPanelUpdateCheckpointLabel = "checkpoint_label"
-	progressPanelUpdateMetadataKey     = "metadata"
-	progressPanelSummaryStatusKey      = "current_status"
-	progressPanelSummaryHeadlineKey    = "headline"
-	progressPanelSummaryDetailKey      = "detail"
-	progressPanelSummaryLastUpdateKey  = "last_update_id"
-	progressPanelSummaryCheckpointKey  = "last_checkpoint_id"
-	progressPanelSummaryCompletedKey   = "completed_at"
-	progressPanelUpdateKindStatus      = "status"
-	progressPanelUpdateKindCheckpoint  = "checkpoint"
-	progressPanelUpdateKindSummary     = "summary"
+	ProgressPanelPhaseID                    = "progress_panel"
+	progressPanelIDKey                      = "panel_id"
+	progressPanelItemsKey                   = "items"
+	progressPanelUpdatesKey                 = "updates"
+	progressPanelSummaryKey                 = "summary"
+	progressPanelUpdatedAtKey               = "updated_at"
+	progressPanelItemIDKey                  = "item_id"
+	progressPanelItemLabelKey               = "label"
+	progressPanelItemStatusKey              = "status"
+	progressPanelItemDetailKey              = "detail"
+	progressPanelItemCreatedAtKey           = "created_at"
+	progressPanelItemUpdatedAtKey           = "updated_at"
+	progressPanelItemCompletedAtKey         = "completed_at"
+	progressPanelItemMetadataKey            = "metadata"
+	progressPanelUpdateIDKey                = "update_id"
+	progressPanelUpdateKindKey              = "kind"
+	progressPanelUpdateItemIDKey            = "item_id"
+	progressPanelUpdateStatusKey            = "status"
+	progressPanelUpdateSummaryKey           = "summary"
+	progressPanelUpdateCreatedAtKey         = "created_at"
+	progressPanelUpdateCheckpointIDKey      = "checkpoint_id"
+	progressPanelUpdateCheckpointLabel      = "checkpoint_label"
+	progressPanelUpdateMetadataKey          = "metadata"
+	progressPanelSummaryStatusKey           = "current_status"
+	progressPanelSummaryHeadlineKey         = "headline"
+	progressPanelSummaryDetailKey           = "detail"
+	progressPanelSummaryLastUpdateKey       = "last_update_id"
+	progressPanelSummaryCheckpointKey       = "last_checkpoint_id"
+	progressPanelSummaryCheckpointLabelKey  = "last_checkpoint_label"
+	progressPanelSummaryCompletedKey        = "completed_at"
+	progressPanelSummaryCompletionResultKey = "completion_result"
+	progressPanelUpdateKindStatus           = "status"
+	progressPanelUpdateKindCheckpoint       = "checkpoint"
+	progressPanelUpdateKindSummary          = "summary"
 )
 
 var allowedProgressStatuses = map[string]struct{}{
@@ -83,12 +85,14 @@ type ProgressPanelCheckpoint struct {
 }
 
 type ProgressPanelSummary struct {
-	CurrentStatus    string `json:"current_status,omitempty"`
-	Headline         string `json:"headline,omitempty"`
-	Detail           string `json:"detail,omitempty"`
-	LastUpdateID     string `json:"last_update_id,omitempty"`
-	LastCheckpointID string `json:"last_checkpoint_id,omitempty"`
-	CompletedAt      string `json:"completed_at,omitempty"`
+	CurrentStatus       string `json:"current_status,omitempty"`
+	Headline            string `json:"headline,omitempty"`
+	Detail              string `json:"detail,omitempty"`
+	LastUpdateID        string `json:"last_update_id,omitempty"`
+	LastCheckpointID    string `json:"last_checkpoint_id,omitempty"`
+	LastCheckpointLabel string `json:"last_checkpoint_label,omitempty"`
+	CompletedAt         string `json:"completed_at,omitempty"`
+	CompletionResult    string `json:"completion_result,omitempty"`
 }
 
 type ProgressPanelStateView struct {
@@ -297,12 +301,14 @@ func normalizeProgressPanelSummary(summary *ProgressPanelSummary) (*ProgressPane
 		return nil, ErrInvalidProgressPanelSummary
 	}
 	return &ProgressPanelSummary{
-		CurrentStatus:    currentStatus,
-		Headline:         strings.TrimSpace(summary.Headline),
-		Detail:           strings.TrimSpace(summary.Detail),
-		LastUpdateID:     strings.TrimSpace(summary.LastUpdateID),
-		LastCheckpointID: strings.TrimSpace(summary.LastCheckpointID),
-		CompletedAt:      strings.TrimSpace(summary.CompletedAt),
+		CurrentStatus:       currentStatus,
+		Headline:            strings.TrimSpace(summary.Headline),
+		Detail:              strings.TrimSpace(summary.Detail),
+		LastUpdateID:        strings.TrimSpace(summary.LastUpdateID),
+		LastCheckpointID:    strings.TrimSpace(summary.LastCheckpointID),
+		LastCheckpointLabel: strings.TrimSpace(summary.LastCheckpointLabel),
+		CompletedAt:         strings.TrimSpace(summary.CompletedAt),
+		CompletionResult:    strings.TrimSpace(summary.CompletionResult),
 	}, nil
 }
 
@@ -367,12 +373,14 @@ func progressPanelSummaryAny(summary *ProgressPanelSummary) map[string]any {
 		return nil
 	}
 	return map[string]any{
-		progressPanelSummaryStatusKey:     summary.CurrentStatus,
-		progressPanelSummaryHeadlineKey:   summary.Headline,
-		progressPanelSummaryDetailKey:     summary.Detail,
-		progressPanelSummaryLastUpdateKey: summary.LastUpdateID,
-		progressPanelSummaryCheckpointKey: summary.LastCheckpointID,
-		progressPanelSummaryCompletedKey:  summary.CompletedAt,
+		progressPanelSummaryStatusKey:           summary.CurrentStatus,
+		progressPanelSummaryHeadlineKey:         summary.Headline,
+		progressPanelSummaryDetailKey:           summary.Detail,
+		progressPanelSummaryLastUpdateKey:       summary.LastUpdateID,
+		progressPanelSummaryCheckpointKey:       summary.LastCheckpointID,
+		progressPanelSummaryCheckpointLabelKey:  summary.LastCheckpointLabel,
+		progressPanelSummaryCompletedKey:        summary.CompletedAt,
+		progressPanelSummaryCompletionResultKey: summary.CompletionResult,
 	}
 }
 
@@ -425,12 +433,14 @@ func readProgressPanelSummary(raw any) *ProgressPanelSummary {
 		return nil
 	}
 	return &ProgressPanelSummary{
-		CurrentStatus:    readString(record, progressPanelSummaryStatusKey),
-		Headline:         readString(record, progressPanelSummaryHeadlineKey),
-		Detail:           readString(record, progressPanelSummaryDetailKey),
-		LastUpdateID:     readString(record, progressPanelSummaryLastUpdateKey),
-		LastCheckpointID: readString(record, progressPanelSummaryCheckpointKey),
-		CompletedAt:      readString(record, progressPanelSummaryCompletedKey),
+		CurrentStatus:       readString(record, progressPanelSummaryStatusKey),
+		Headline:            readString(record, progressPanelSummaryHeadlineKey),
+		Detail:              readString(record, progressPanelSummaryDetailKey),
+		LastUpdateID:        readString(record, progressPanelSummaryLastUpdateKey),
+		LastCheckpointID:    readString(record, progressPanelSummaryCheckpointKey),
+		LastCheckpointLabel: readString(record, progressPanelSummaryCheckpointLabelKey),
+		CompletedAt:         readString(record, progressPanelSummaryCompletedKey),
+		CompletionResult:    readString(record, progressPanelSummaryCompletionResultKey),
 	}
 }
 

@@ -61,6 +61,7 @@ describe("<ProgressPanel>", () => {
           detail: "Scanning is underway",
           last_update_id: "upd-001",
           last_checkpoint_id: "cp-001",
+          last_checkpoint_label: "Repo indexed",
         },
       },
     };
@@ -72,6 +73,9 @@ describe("<ProgressPanel>", () => {
     expect(screen.getByTestId("progress-panel-item-item-1")).toHaveTextContent("Scan repo");
     expect(screen.getByText("1 running")).toBeInTheDocument();
     expect(screen.getByTestId("progress-panel-update-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("progress-panel-export-payload")).toHaveTextContent(
+      '"panel_id": "panel-1"',
+    );
     fireEvent.click(screen.getByTestId("progress-panel-tab-logs"));
     expect(screen.getByTestId("progress-panel-log-detail")).toHaveTextContent("upd-001");
 
@@ -247,5 +251,41 @@ describe("<ProgressPanel>", () => {
       },
     });
     expect(window.localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("copies an export snapshot from the room-backed summary surface", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(
+      <ProgressPanel
+        envelope={{
+          v: 1,
+          id: "progress-env-export",
+          type: "tangent.progress-panel",
+          data: {
+            panel_id: "panel-export",
+            items: [{ item_id: "item-1", label: "Scan repo", status: "completed" }],
+            summary: {
+              current_status: "completed",
+              headline: "All items completed",
+              last_checkpoint_label: "Repo indexed",
+              completion_result: "completed",
+            },
+          },
+        }}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("progress-panel-export-copy"));
+    });
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText.mock.calls[0][0]).toContain('"completion_result": "completed"');
   });
 });

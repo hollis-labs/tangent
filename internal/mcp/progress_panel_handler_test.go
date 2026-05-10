@@ -167,8 +167,9 @@ func TestProgressPanel_SubmitReopenAndPersistState(t *testing.T) {
 				CheckpointID string `json:"checkpoint_id"`
 			} `json:"checkpoints"`
 			Summary *struct {
-				LastUpdateID     string `json:"last_update_id"`
-				LastCheckpointID string `json:"last_checkpoint_id"`
+				LastUpdateID        string `json:"last_update_id"`
+				LastCheckpointID    string `json:"last_checkpoint_id"`
+				LastCheckpointLabel string `json:"last_checkpoint_label"`
 			} `json:"summary"`
 		} `json:"progress_panel"`
 	}
@@ -186,6 +187,9 @@ func TestProgressPanel_SubmitReopenAndPersistState(t *testing.T) {
 	}
 	if state.ProgressPanel.Summary == nil || state.ProgressPanel.Summary.LastUpdateID != "panel-1-update-001" {
 		t.Fatalf("summary = %#v, want last_update_id panel-1-update-001", state.ProgressPanel.Summary)
+	}
+	if state.ProgressPanel.Summary.LastCheckpointLabel != "Summary started" {
+		t.Fatalf("last_checkpoint_label = %q, want Summary started", state.ProgressPanel.Summary.LastCheckpointLabel)
 	}
 }
 

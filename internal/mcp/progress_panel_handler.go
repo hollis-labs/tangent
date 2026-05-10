@@ -265,9 +265,11 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 	summary.Detail = draft.Summary
 	summary.LastUpdateID = statusUpdateID
 	summary.LastCheckpointID = checkpointID
+	summary.LastCheckpointLabel = draft.CheckpointLabel
 	summary.Headline = buildProgressPanelHeadline(items)
 	if isProgressTerminalStatus(draft.Status) {
 		summary.CompletedAt = now
+		summary.CompletionResult = draft.Status
 	}
 
 	snapshot := room.ProgressPanelSnapshot{
@@ -394,12 +396,14 @@ func cloneProgressPanelSummary(summary *room.ProgressPanelSummary) *room.Progres
 		return nil
 	}
 	return &room.ProgressPanelSummary{
-		CurrentStatus:    summary.CurrentStatus,
-		Headline:         summary.Headline,
-		Detail:           summary.Detail,
-		LastUpdateID:     summary.LastUpdateID,
-		LastCheckpointID: summary.LastCheckpointID,
-		CompletedAt:      summary.CompletedAt,
+		CurrentStatus:       summary.CurrentStatus,
+		Headline:            summary.Headline,
+		Detail:              summary.Detail,
+		LastUpdateID:        summary.LastUpdateID,
+		LastCheckpointID:    summary.LastCheckpointID,
+		LastCheckpointLabel: summary.LastCheckpointLabel,
+		CompletedAt:         summary.CompletedAt,
+		CompletionResult:    summary.CompletionResult,
 	}
 }
 
@@ -498,12 +502,14 @@ func readProgressPanelSummaryValue(raw any) *room.ProgressPanelSummary {
 		return nil
 	}
 	return &room.ProgressPanelSummary{
-		CurrentStatus:    readStringValue(record, "current_status"),
-		Headline:         readStringValue(record, "headline"),
-		Detail:           readStringValue(record, "detail"),
-		LastUpdateID:     readStringValue(record, "last_update_id"),
-		LastCheckpointID: readStringValue(record, "last_checkpoint_id"),
-		CompletedAt:      readStringValue(record, "completed_at"),
+		CurrentStatus:       readStringValue(record, "current_status"),
+		Headline:            readStringValue(record, "headline"),
+		Detail:              readStringValue(record, "detail"),
+		LastUpdateID:        readStringValue(record, "last_update_id"),
+		LastCheckpointID:    readStringValue(record, "last_checkpoint_id"),
+		LastCheckpointLabel: readStringValue(record, "last_checkpoint_label"),
+		CompletedAt:         readStringValue(record, "completed_at"),
+		CompletionResult:    readStringValue(record, "completion_result"),
 	}
 }
 
@@ -562,11 +568,13 @@ func progressPanelSummaryAnyForDispatch(summary *room.ProgressPanelSummary) map[
 		return nil
 	}
 	return map[string]any{
-		"current_status":     summary.CurrentStatus,
-		"headline":           summary.Headline,
-		"detail":             summary.Detail,
-		"last_update_id":     summary.LastUpdateID,
-		"last_checkpoint_id": summary.LastCheckpointID,
-		"completed_at":       summary.CompletedAt,
+		"current_status":        summary.CurrentStatus,
+		"headline":              summary.Headline,
+		"detail":                summary.Detail,
+		"last_update_id":        summary.LastUpdateID,
+		"last_checkpoint_id":    summary.LastCheckpointID,
+		"last_checkpoint_label": summary.LastCheckpointLabel,
+		"completed_at":          summary.CompletedAt,
+		"completion_result":     summary.CompletionResult,
 	}
 }
