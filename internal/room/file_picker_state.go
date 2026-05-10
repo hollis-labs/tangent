@@ -13,6 +13,8 @@ const (
 	filePickerSelectedRefsKey                = "selected_refs"
 	filePickerQueryStateKey                  = "query_state"
 	filePickerSelectionRevisionsKey          = "selection_revisions"
+	filePickerSubmissionSummaryKey           = "submission_summary"
+	filePickerHandoffKey                     = "handoff"
 	filePickerUpdatedAtKey                   = "updated_at"
 	filePickerBrowseRootIDKey                = "root_id"
 	filePickerBrowseRootLabelKey             = "label"
@@ -29,6 +31,13 @@ const (
 	filePickerSelectionRevisionIDKey         = "selection_revision_id"
 	filePickerSelectionRevisionSubmittedAt   = "submitted_at"
 	filePickerSelectionRevisionSelectedCount = "selected_count"
+	filePickerSummarySelectionRevisionID     = "selection_revision_id"
+	filePickerSummarySelectedNames           = "selected_names"
+	filePickerSummarySelectedCount           = "selected_count"
+	filePickerSummarySubmittedAt             = "submitted_at"
+	filePickerHandoffRevisionID              = "selection_revision_id"
+	filePickerHandoffArtifactRefs            = "artifact_refs"
+	filePickerHandoffSummary                 = "summary"
 )
 
 type FilePickerBrowseRoot struct {
@@ -55,12 +64,27 @@ type FilePickerSelectionRevision struct {
 	SelectedCount       int    `json:"selected_count,omitempty"`
 }
 
+type FilePickerSubmissionSummary struct {
+	SelectionRevisionID string   `json:"selection_revision_id,omitempty"`
+	SelectedNames       []string `json:"selected_names"`
+	SelectedCount       int      `json:"selected_count,omitempty"`
+	SubmittedAt         string   `json:"submitted_at,omitempty"`
+}
+
+type FilePickerHandoff struct {
+	SelectionRevisionID string                       `json:"selection_revision_id,omitempty"`
+	ArtifactRefs        []FilePickerArtifactRef      `json:"artifact_refs"`
+	Summary             *FilePickerSubmissionSummary `json:"summary,omitempty"`
+}
+
 type FilePickerStateView struct {
 	PickerID           string                        `json:"picker_id"`
 	BrowseRoots        []FilePickerBrowseRoot        `json:"browse_roots"`
 	SelectedRefs       []FilePickerArtifactRef       `json:"selected_refs"`
 	QueryState         map[string]any                `json:"query_state"`
 	SelectionRevisions []FilePickerSelectionRevision `json:"selection_revisions"`
+	SubmissionSummary  *FilePickerSubmissionSummary  `json:"submission_summary,omitempty"`
+	Handoff            *FilePickerHandoff            `json:"handoff,omitempty"`
 	UpdatedAt          string                        `json:"updated_at,omitempty"`
 }
 
@@ -70,6 +94,8 @@ type FilePickerSnapshot struct {
 	SelectedRefs       []FilePickerArtifactRef
 	QueryState         map[string]any
 	SelectionRevisions []FilePickerSelectionRevision
+	SubmissionSummary  *FilePickerSubmissionSummary
+	Handoff            *FilePickerHandoff
 	UpdatedAt          string
 }
 
@@ -123,6 +149,8 @@ func projectFilePickerStateFromBlob(blob PhaseOutput) *FilePickerStateView {
 		SelectedRefs:       readFilePickerArtifactRefs(blob.Data[filePickerSelectedRefsKey]),
 		QueryState:         readFilePickerQueryState(blob.Data[filePickerQueryStateKey]),
 		SelectionRevisions: readFilePickerSelectionRevisions(blob.Data[filePickerSelectionRevisionsKey]),
+		SubmissionSummary:  readFilePickerSubmissionSummary(blob.Data[filePickerSubmissionSummaryKey]),
+		Handoff:            readFilePickerHandoff(blob.Data[filePickerHandoffKey]),
 		UpdatedAt:          readString(blob.Data, filePickerUpdatedAtKey),
 	}
 	if view.BrowseRoots == nil {
@@ -171,6 +199,8 @@ func normalizeFilePickerSnapshot(snapshot FilePickerSnapshot) (FilePickerSnapsho
 		SelectedRefs:       selectedRefs,
 		QueryState:         queryState,
 		SelectionRevisions: revisions,
+		SubmissionSummary:  normalizeFilePickerSubmissionSummary(snapshot.SubmissionSummary),
+		Handoff:            normalizeFilePickerHandoff(snapshot.Handoff, rootIDs),
 		UpdatedAt:          strings.TrimSpace(snapshot.UpdatedAt),
 	}, nil
 }
@@ -320,6 +350,41 @@ func normalizeFilePickerSelectionRevisions(items []FilePickerSelectionRevision) 
 	return out, nil
 }
 
+func normalizeFilePickerSubmissionSummary(summary *FilePickerSubmissionSummary) *FilePickerSubmissionSummary {
+	if summary == nil {
+		return nil
+	}
+	out := &FilePickerSubmissionSummary{
+		SelectionRevisionID: strings.TrimSpace(summary.SelectionRevisionID),
+		SelectedCount:       max(summary.SelectedCount, 0),
+		SubmittedAt:         strings.TrimSpace(summary.SubmittedAt),
+		SelectedNames:       []string{},
+	}
+	for _, name := range summary.SelectedNames {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		out.SelectedNames = append(out.SelectedNames, trimmed)
+	}
+	return out
+}
+
+func normalizeFilePickerHandoff(handoff *FilePickerHandoff, validRootIDs map[string]struct{}) *FilePickerHandoff {
+	if handoff == nil {
+		return nil
+	}
+	refs, err := normalizeFilePickerArtifactRefs(handoff.ArtifactRefs, validRootIDs)
+	if err != nil {
+		return nil
+	}
+	return &FilePickerHandoff{
+		SelectionRevisionID: strings.TrimSpace(handoff.SelectionRevisionID),
+		ArtifactRefs:        refs,
+		Summary:             normalizeFilePickerSubmissionSummary(handoff.Summary),
+	}
+}
+
 func filePickerBlobFromSnapshot(snapshot FilePickerSnapshot) PhaseOutput {
 	data := map[string]any{
 		filePickerIDKey:                 snapshot.PickerID,
@@ -327,6 +392,12 @@ func filePickerBlobFromSnapshot(snapshot FilePickerSnapshot) PhaseOutput {
 		filePickerSelectedRefsKey:       filePickerArtifactRefsAny(snapshot.SelectedRefs),
 		filePickerQueryStateKey:         cloneAnyMap(snapshot.QueryState),
 		filePickerSelectionRevisionsKey: filePickerSelectionRevisionsAny(snapshot.SelectionRevisions),
+	}
+	if summary := filePickerSubmissionSummaryAny(snapshot.SubmissionSummary); len(summary) > 0 {
+		data[filePickerSubmissionSummaryKey] = summary
+	}
+	if handoff := filePickerHandoffAny(snapshot.Handoff); len(handoff) > 0 {
+		data[filePickerHandoffKey] = handoff
 	}
 	if snapshot.UpdatedAt != "" {
 		data[filePickerUpdatedAtKey] = snapshot.UpdatedAt
@@ -390,6 +461,39 @@ func filePickerSelectionRevisionsAny(items []FilePickerSelectionRevision) []any 
 	return out
 }
 
+func filePickerSubmissionSummaryAny(summary *FilePickerSubmissionSummary) map[string]any {
+	if summary == nil {
+		return map[string]any{}
+	}
+	record := map[string]any{
+		filePickerSummarySelectedNames: cloneStringSlice(summary.SelectedNames),
+		filePickerSummarySelectedCount: summary.SelectedCount,
+	}
+	if summary.SelectionRevisionID != "" {
+		record[filePickerSummarySelectionRevisionID] = summary.SelectionRevisionID
+	}
+	if summary.SubmittedAt != "" {
+		record[filePickerSummarySubmittedAt] = summary.SubmittedAt
+	}
+	return record
+}
+
+func filePickerHandoffAny(handoff *FilePickerHandoff) map[string]any {
+	if handoff == nil {
+		return map[string]any{}
+	}
+	record := map[string]any{
+		filePickerHandoffArtifactRefs: filePickerArtifactRefsAny(handoff.ArtifactRefs),
+	}
+	if handoff.SelectionRevisionID != "" {
+		record[filePickerHandoffRevisionID] = handoff.SelectionRevisionID
+	}
+	if summary := filePickerSubmissionSummaryAny(handoff.Summary); len(summary) > 0 {
+		record[filePickerHandoffSummary] = summary
+	}
+	return record
+}
+
 func readFilePickerBrowseRoots(raw any) []FilePickerBrowseRoot {
 	records := readObjectSlice(raw)
 	out := make([]FilePickerBrowseRoot, 0, len(records))
@@ -445,6 +549,31 @@ func readFilePickerSelectionRevisions(raw any) []FilePickerSelectionRevision {
 		out = append(out, revision)
 	}
 	return out
+}
+
+func readFilePickerSubmissionSummary(raw any) *FilePickerSubmissionSummary {
+	record, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return normalizeFilePickerSubmissionSummary(&FilePickerSubmissionSummary{
+		SelectionRevisionID: readString(record, filePickerSummarySelectionRevisionID),
+		SelectedNames:       readStringSlice(record, filePickerSummarySelectedNames),
+		SelectedCount:       readInt(record, filePickerSummarySelectedCount),
+		SubmittedAt:         readString(record, filePickerSummarySubmittedAt),
+	})
+}
+
+func readFilePickerHandoff(raw any) *FilePickerHandoff {
+	record, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return &FilePickerHandoff{
+		SelectionRevisionID: readString(record, filePickerHandoffRevisionID),
+		ArtifactRefs:        readFilePickerArtifactRefs(record[filePickerHandoffArtifactRefs]),
+		Summary:             readFilePickerSubmissionSummary(record[filePickerHandoffSummary]),
+	}
 }
 
 func readFilePickerQueryState(raw any) map[string]any {

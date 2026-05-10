@@ -770,6 +770,31 @@ func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
 				SelectedCount: 1,
 			},
 		},
+		SubmissionSummary: &room.FilePickerSubmissionSummary{
+			SelectionRevisionID: "picker-1-rev-001",
+			SelectedNames:       []string{"spec.md"},
+			SelectedCount:       1,
+			SubmittedAt:         "2026-05-09T20:35:00Z",
+		},
+		Handoff: &room.FilePickerHandoff{
+			SelectionRevisionID: "picker-1-rev-001",
+			ArtifactRefs: []room.FilePickerArtifactRef{
+				{
+					ArtifactID:   "artifact-1",
+					Name:         "spec.md",
+					URI:          "artifact://artifact-1",
+					MIMEType:     "text/markdown",
+					RootID:       "workspace",
+					RelativePath: "docs/spec.md",
+				},
+			},
+			Summary: &room.FilePickerSubmissionSummary{
+				SelectionRevisionID: "picker-1-rev-001",
+				SelectedNames:       []string{"spec.md"},
+				SelectedCount:       1,
+				SubmittedAt:         "2026-05-09T20:35:00Z",
+			},
+		},
 		UpdatedAt: "2026-05-09T20:35:00Z",
 	}); err != nil {
 		t.Fatalf("SaveFilePickerSnapshot: %v", err)
@@ -806,6 +831,12 @@ func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
 	}
 	if got := state.FilePicker.SelectionRevisions[0].SelectedCount; got != 1 {
 		t.Fatalf("selection_revisions[0].selected_count = %d, want 1", got)
+	}
+	if state.FilePicker.SubmissionSummary == nil || state.FilePicker.SubmissionSummary.SelectedCount != 1 {
+		t.Fatalf("submission_summary = %#v, want selected_count 1", state.FilePicker.SubmissionSummary)
+	}
+	if state.FilePicker.Handoff == nil || len(state.FilePicker.Handoff.ArtifactRefs) != 1 {
+		t.Fatalf("handoff = %#v, want one artifact ref", state.FilePicker.Handoff)
 	}
 }
 

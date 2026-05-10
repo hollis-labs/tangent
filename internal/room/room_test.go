@@ -407,6 +407,31 @@ func TestRoom_SaveFilePickerSnapshotPersistsAndReloads(t *testing.T) {
 				SelectedCount: 1,
 			},
 		},
+		SubmissionSummary: &room.FilePickerSubmissionSummary{
+			SelectionRevisionID: "picker-1-rev-001",
+			SelectedNames:       []string{"spec.md"},
+			SelectedCount:       1,
+			SubmittedAt:         "2026-05-09T20:30:00Z",
+		},
+		Handoff: &room.FilePickerHandoff{
+			SelectionRevisionID: "picker-1-rev-001",
+			ArtifactRefs: []room.FilePickerArtifactRef{
+				{
+					ArtifactID:   "artifact-1",
+					Name:         "spec.md",
+					URI:          "artifact://artifact-1",
+					MIMEType:     "text/markdown",
+					RootID:       "workspace",
+					RelativePath: "docs/spec.md",
+				},
+			},
+			Summary: &room.FilePickerSubmissionSummary{
+				SelectionRevisionID: "picker-1-rev-001",
+				SelectedNames:       []string{"spec.md"},
+				SelectedCount:       1,
+				SubmittedAt:         "2026-05-09T20:30:00Z",
+			},
+		},
 		UpdatedAt: "2026-05-09T20:30:00Z",
 	}); err != nil {
 		t.Fatalf("SaveFilePickerSnapshot: %v", err)
@@ -434,6 +459,12 @@ func TestRoom_SaveFilePickerSnapshotPersistsAndReloads(t *testing.T) {
 	if got := view.SelectionRevisions[0].SelectedCount; got != 1 {
 		t.Fatalf("selection_revisions[0].selected_count = %d, want 1", got)
 	}
+	if view.SubmissionSummary == nil || view.SubmissionSummary.SelectionRevisionID != "picker-1-rev-001" {
+		t.Fatalf("submission_summary = %#v, want revision picker-1-rev-001", view.SubmissionSummary)
+	}
+	if view.Handoff == nil || len(view.Handoff.ArtifactRefs) != 1 {
+		t.Fatalf("handoff = %#v, want one artifact ref", view.Handoff)
+	}
 
 	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
 	if err != nil {
@@ -451,6 +482,9 @@ func TestRoom_SaveFilePickerSnapshotPersistsAndReloads(t *testing.T) {
 	}
 	if got := reloadedView.BrowseRoots[0].Kind; got != "directory" {
 		t.Fatalf("reloaded browse_roots[0].kind = %q, want directory", got)
+	}
+	if reloadedView.Handoff == nil || reloadedView.Handoff.SelectionRevisionID != "picker-1-rev-001" {
+		t.Fatalf("reloaded handoff = %#v, want revision picker-1-rev-001", reloadedView.Handoff)
 	}
 }
 

@@ -166,6 +166,16 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 				SelectionRevisionID string `json:"selection_revision_id"`
 				SelectedCount       int    `json:"selected_count"`
 			} `json:"selection_revisions"`
+			SubmissionSummary *struct {
+				SelectionRevisionID string   `json:"selection_revision_id"`
+				SelectedNames       []string `json:"selected_names"`
+			} `json:"submission_summary"`
+			Handoff *struct {
+				SelectionRevisionID string `json:"selection_revision_id"`
+				ArtifactRefs        []struct {
+					ArtifactID string `json:"artifact_id"`
+				} `json:"artifact_refs"`
+			} `json:"handoff"`
 		} `json:"file_picker"`
 	}
 	if decodeErr := json.Unmarshal([]byte(extractText(t, getRes)), &state); decodeErr != nil {
@@ -185,6 +195,12 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 	}
 	if revisionID := state.FilePicker.SelectionRevisions[0].SelectionRevisionID; revisionID != "picker-1-rev-001" {
 		t.Fatalf("selection_revision_id = %q, want picker-1-rev-001", revisionID)
+	}
+	if state.FilePicker.SubmissionSummary == nil || state.FilePicker.SubmissionSummary.SelectionRevisionID != "picker-1-rev-001" {
+		t.Fatalf("submission_summary = %#v, want picker-1-rev-001", state.FilePicker.SubmissionSummary)
+	}
+	if state.FilePicker.Handoff == nil || len(state.FilePicker.Handoff.ArtifactRefs) != 1 {
+		t.Fatalf("handoff = %#v, want one artifact ref", state.FilePicker.Handoff)
 	}
 }
 

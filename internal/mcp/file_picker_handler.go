@@ -139,6 +139,8 @@ func filePickerSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.File
 	}
 	if reusePersisted {
 		snapshot.SelectionRevisions = persisted.SelectionRevisions
+		snapshot.SubmissionSummary = persisted.SubmissionSummary
+		snapshot.Handoff = persisted.Handoff
 	}
 	return snapshot
 }
@@ -211,20 +213,28 @@ func (s *Server) normalizeFilePickerSubmitResponse(
 	}
 
 	revisionID := nextFilePickerSelectionRevisionID(persisted)
+	submittedAt := nowRFC3339()
+	summary := buildFilePickerSubmissionSummary(revisionID, submittedAt, draft.SelectedRefs)
 	snapshot := room.FilePickerSnapshot{
 		PickerID:     persisted.PickerID,
 		BrowseRoots:  persisted.BrowseRoots,
 		SelectedRefs: draft.SelectedRefs,
 		QueryState:   draft.QueryState,
-		UpdatedAt:    nowRFC3339(),
+		UpdatedAt:    submittedAt,
 		SelectionRevisions: append(
 			append([]room.FilePickerSelectionRevision{}, persisted.SelectionRevisions...),
 			room.FilePickerSelectionRevision{
 				SelectionRevisionID: revisionID,
-				SubmittedAt:         nowRFC3339(),
+				SubmittedAt:         submittedAt,
 				SelectedCount:       len(draft.SelectedRefs),
 			},
 		),
+		SubmissionSummary: summary,
+		Handoff: &room.FilePickerHandoff{
+			SelectionRevisionID: revisionID,
+			ArtifactRefs:        draft.SelectedRefs,
+			Summary:             summary,
+		},
 	}
 	if snapshot.QueryState == nil {
 		snapshot.QueryState = persisted.QueryState
@@ -395,4 +405,25 @@ func filePickerRejectedResponse(resp *envelopes.Response, pickerID, code, messag
 
 func nextFilePickerSelectionRevisionID(view *room.FilePickerStateView) string {
 	return fmt.Sprintf("%s-rev-%03d", view.PickerID, len(view.SelectionRevisions)+1)
+}
+
+func buildFilePickerSubmissionSummary(
+	revisionID string,
+	submittedAt string,
+	selectedRefs []room.FilePickerArtifactRef,
+) *room.FilePickerSubmissionSummary {
+	names := make([]string, 0, len(selectedRefs))
+	for _, item := range selectedRefs {
+		name := item.Name
+		if strings.TrimSpace(name) == "" {
+			name = item.RelativePath
+		}
+		names = append(names, name)
+	}
+	return &room.FilePickerSubmissionSummary{
+		SelectionRevisionID: revisionID,
+		SelectedNames:       names,
+		SelectedCount:       len(selectedRefs),
+		SubmittedAt:         submittedAt,
+	}
 }
