@@ -200,16 +200,32 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       completedCount >= steps.length && steps.length > 0 ? new Date().toISOString() : undefined,
   };
 
-  const persist = (status: "partial" | "submitted", nextCurrentStepID: string) => {
+  const persist = (
+    status: "partial" | "submitted",
+    nextCurrentStepID: string,
+    nextProgress: WizardProgress[],
+    nextBranchSelections: WizardBranchSelection[],
+  ) => {
+    const completedNextCount = nextProgress.filter((item) => item.status === "completed").length;
     const payload: WizardResponse["payload"] = {
       wizard_id: wizardID,
       title: envelope.data?.title,
       description: envelope.data?.description,
       current_step_id: nextCurrentStepID,
       steps,
-      progress,
-      branch_selections: branchSelections,
-      summary: { ...summary, current_step_id: nextCurrentStepID },
+      progress: nextProgress,
+      branch_selections: nextBranchSelections,
+      summary: {
+        ...summary,
+        status:
+          completedNextCount >= steps.length && steps.length > 0 ? "completed" : "in_progress",
+        completed_step_count: completedNextCount,
+        current_step_id: nextCurrentStepID,
+        completed_at:
+          status === "submitted" && completedNextCount >= steps.length && steps.length > 0
+            ? new Date().toISOString()
+            : undefined,
+      },
       updated_at: new Date().toISOString(),
     };
     onSubmit({
@@ -225,29 +241,27 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     }
   };
 
-  const updateCurrentProgress = (patch: Partial<WizardProgress>) => {
-    if (!currentStep) return;
-    setProgress((prev) => {
-      const existing = prev.find((item) => item.step_id === currentStep.step_id);
-      const nextItem: WizardProgress = {
-        step_id: currentStep.step_id,
-        status: existing?.status ?? "in_progress",
-        revision_id: existing?.revision_id,
-        response: existing?.response ?? {},
-        summary: existing?.summary,
-        completed_at: existing?.completed_at,
-        updated_at: new Date().toISOString(),
-        ...existing,
-        ...patch,
-      };
-      const rest = prev.filter((item) => item.step_id !== currentStep.step_id);
-      return [...rest, nextItem];
-    });
+  const withPatchedCurrentProgress = (patch: Partial<WizardProgress>) => {
+    if (!currentStep) return progress;
+    const existing = progress.find((item) => item.step_id === currentStep.step_id);
+    const nextItem: WizardProgress = {
+      step_id: currentStep.step_id,
+      status: existing?.status ?? "in_progress",
+      revision_id: existing?.revision_id,
+      response: existing?.response ?? {},
+      summary: existing?.summary,
+      completed_at: existing?.completed_at,
+      updated_at: new Date().toISOString(),
+      ...existing,
+      ...patch,
+    };
+    const rest = progress.filter((item) => item.step_id !== currentStep.step_id);
+    return [...rest, nextItem];
   };
 
   const setFieldValue = (fieldID: string, value: unknown) => {
     const response = { ...(currentProgress?.response ?? {}), [fieldID]: value };
-    updateCurrentProgress({ response, status: "in_progress" });
+    setProgress(withPatchedCurrentProgress({ response, status: "in_progress" }));
   };
 
   const setBranchSelection = (optionID: string, targetStepID: string) => {
@@ -265,12 +279,15 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
 
   const goToStep = (stepID: string) => {
     setCurrentStepID(stepID);
-    persist("partial", stepID);
+    persist("partial", stepID, progress, branchSelections);
   };
 
   const handleSaveProgress = () => {
-    updateCurrentProgress({ status: currentProgress?.status ?? "in_progress" });
-    persist("partial", currentStepID);
+    const nextProgress = withPatchedCurrentProgress({
+      status: currentProgress?.status ?? "in_progress",
+    });
+    setProgress(nextProgress);
+    persist("partial", currentStepID, nextProgress, branchSelections);
     setMessage("Progress saved to the room.");
   };
 
@@ -279,15 +296,16 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     const selectedBranch = branchSelections.find((item) => item.step_id === currentStep.step_id);
     const nextStepID =
       selectedBranch?.target_step_id ?? steps[currentIndex + 1]?.step_id ?? currentStep.step_id;
-    updateCurrentProgress({
+    const nextProgress = withPatchedCurrentProgress({
       status: "completed",
       revision_id: `rev-${Date.now()}`,
       completed_at: new Date().toISOString(),
     });
+    setProgress(nextProgress);
     const isFinal = currentIndex >= steps.length - 1 && !selectedBranch?.target_step_id;
     const targetStepID = isFinal ? currentStep.step_id : nextStepID;
     setCurrentStepID(targetStepID);
-    persist(isFinal ? "submitted" : "partial", targetStepID);
+    persist(isFinal ? "submitted" : "partial", targetStepID, nextProgress, branchSelections);
     setMessage(isFinal ? "Wizard completed." : "Step submitted.");
   };
 

@@ -191,6 +191,14 @@ func (s *Server) normalizeWizardSubmitResponse(
 	if updatedAt == "" {
 		updatedAt = nowRFC3339()
 	}
+	summary := fallbackWizardSummary(draft.Summary, persisted.Summary)
+	if summary == nil {
+		summary = &room.WizardSummary{}
+	}
+	if resp.Status == envelopes.ResponseStatusSubmitted {
+		summary.Status = "completed"
+		summary.CompletedAt = updatedAt
+	}
 	snapshot := room.WizardSnapshot{
 		WizardID:         persisted.WizardID,
 		Title:            fallbackString(draft.Title, persisted.Title),
@@ -199,7 +207,7 @@ func (s *Server) normalizeWizardSubmitResponse(
 		Steps:            fallbackWizardSteps(draft.Steps, persisted.Steps),
 		Progress:         fallbackWizardProgress(draft.Progress, persisted.Progress),
 		BranchSelections: fallbackWizardBranchSelections(draft.BranchSelections, persisted.BranchSelections),
-		Summary:          fallbackWizardSummary(draft.Summary, persisted.Summary),
+		Summary:          summary,
 		UpdatedAt:        updatedAt,
 	}
 	if _, err := s.manager.SaveWizardSnapshot(roomID, snapshot); err != nil {
