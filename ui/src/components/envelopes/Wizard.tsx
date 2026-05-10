@@ -282,6 +282,15 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     persist("partial", stepID, progress, branchSelections);
   };
 
+  const handleNextStep = () => {
+    const selectedBranch = branchSelections.find((item) => item.step_id === currentStep?.step_id);
+    const nextStepID =
+      selectedBranch?.target_step_id ?? steps[currentIndex + 1]?.step_id ?? currentStepID;
+    setCurrentStepID(nextStepID);
+    persist("partial", nextStepID, progress, branchSelections);
+    setMessage("Moved to the next step.");
+  };
+
   const handleSaveProgress = () => {
     const nextProgress = withPatchedCurrentProgress({
       status: currentProgress?.status ?? "in_progress",
@@ -439,6 +448,14 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
             disabled={currentIndex === 0}
           >
             Back
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleNextStep}
+            disabled={currentIndex >= steps.length - 1 && !currentStep.branches?.length}
+          >
+            Next Step
           </Button>
           <Button type="button" variant="outline" onClick={handleSaveProgress}>
             Save Progress

@@ -66,4 +66,28 @@ describe("Wizard", () => {
     expect(response.payload.summary.status).toBe("completed");
     expect(response.payload.progress[0]?.status).toBe("completed");
   });
+
+  it("navigates forward with a partial update", () => {
+    const onSubmit = vi.fn<(response: WizardResponse) => void>();
+    const envelope: WizardEnvelope = {
+      v: 1,
+      id: "wizard-3",
+      type: "tangent.wizard",
+      data: {
+        wizard_id: "wizard-3",
+        current_step_id: "step-1",
+        steps: [
+          { step_id: "step-1", title: "Step 1" },
+          { step_id: "step-2", title: "Step 2" },
+        ],
+      },
+    };
+
+    render(<Wizard envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} roomID="room-3" />);
+    fireEvent.click(screen.getByText("Next Step"));
+
+    const response = onSubmit.mock.calls[0][0];
+    expect(response.status).toBe("partial");
+    expect(response.payload.current_step_id).toBe("step-2");
+  });
 });
