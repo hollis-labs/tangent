@@ -17,6 +17,11 @@ import {
   type DesignIterationResponse,
 } from "./components/envelopes/DesignIteration";
 import {
+  DiffReview,
+  type DiffReviewEnvelope,
+  type DiffReviewResponse,
+} from "./components/envelopes/DiffReview";
+import {
   Feedback,
   type FeedbackEnvelope,
   type FeedbackResponse,
@@ -177,6 +182,17 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+function DiffReviewAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <DiffReview
+      envelope={envelope as DiffReviewEnvelope}
+      onSubmit={onSubmit as (response: DiffReviewResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
 function SpreadsheetReviewAdapter({
   envelope,
   onSubmit,
@@ -213,6 +229,7 @@ register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
+register("tangent.diff-review", DiffReviewAdapter);
 register("tangent.spreadsheet-review", SpreadsheetReviewAdapter);
 register("tangent.synthesis-notes", SynthesisNotesAdapter);
 
