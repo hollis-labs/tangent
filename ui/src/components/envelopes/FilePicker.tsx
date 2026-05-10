@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  clearFilePickerDraft,
+  loadFilePickerDraft,
+  saveFilePickerDraft,
+} from "@/lib/file-picker-draft-storage";
 import { cn } from "@/lib/utils";
 
 type BrowseRoot = {
@@ -63,10 +68,12 @@ type FilePickerProps = {
   envelope: FilePickerEnvelope;
   onSubmit: (response: FilePickerResponse) => void;
   onCancel: () => void;
+  roomID?: string;
 };
 
-export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
+export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerProps) {
   const pickerID = envelope.data?.picker_id ?? "";
+  const draft = roomID && pickerID ? loadFilePickerDraft(roomID, pickerID) : null;
   const browseRoots = useMemo(
     () => normalizeBrowseRoots(envelope.data?.browse_roots),
     [envelope.data],
@@ -81,21 +88,29 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
   );
   const [activeRootID, setActiveRootID] = useState(
     () =>
-      normalizeQueryState(envelope.data?.query_state).current_root_id ??
+      (draft?.activeRootID || normalizeQueryState(envelope.data?.query_state).current_root_id) ??
       browseRoots[0]?.root_id ??
       "",
   );
   const [currentDir, setCurrentDir] = useState(
-    () => normalizeQueryState(envelope.data?.query_state).current_dir ?? "",
+    () => (draft?.currentDir || normalizeQueryState(envelope.data?.query_state).current_dir) ?? "",
   );
   const [search, setSearch] = useState(
-    () => normalizeQueryState(envelope.data?.query_state).search ?? "",
+    () => (draft?.search || normalizeQueryState(envelope.data?.query_state).search) ?? "",
   );
   const [sort, setSort] = useState(
-    () => normalizeQueryState(envelope.data?.query_state).sort ?? "name:asc",
+    () => (draft?.sort || normalizeQueryState(envelope.data?.query_state).sort) ?? "name:asc",
   );
-  const [selectedKeys, setSelectedKeys] = useState(() => new Set(initialSelected.map(refKey)));
+  const [selectedKeys, setSelectedKeys] = useState(
+    () => new Set(draft?.selectedKeys?.length ? draft.selectedKeys : initialSelected.map(refKey)),
+  );
+  const [previewKey, setPreviewKey] = useState(
+    () => draft?.previewKey || refKey(initialSelected[0] ?? { root_id: "", relative_path: "" }),
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    draft ? "Recovered unsent file-picker state from this browser." : null,
+  );
 
   const directoryOptions = useMemo(
     () => listDirectories(availableFiles, activeRootID, currentDir),
@@ -116,6 +131,24 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
     () => availableFiles.filter((item) => selectedKeys.has(refKey(item))),
     [availableFiles, selectedKeys],
   );
+  const previewItem = useMemo(
+    () => availableFiles.find((item) => refKey(item) === previewKey) ?? visibleFiles[0] ?? null,
+    [availableFiles, previewKey, visibleFiles],
+  );
+
+  useEffect(() => {
+    if (!roomID || !pickerID) {
+      return;
+    }
+    saveFilePickerDraft(roomID, pickerID, {
+      activeRootID,
+      currentDir,
+      search,
+      sort,
+      selectedKeys: [...selectedKeys],
+      previewKey,
+    });
+  }, [activeRootID, currentDir, pickerID, previewKey, roomID, search, selectedKeys, sort]);
 
   return (
     <Card data-testid="file-picker-root">
@@ -243,6 +276,11 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                 {submitError}
               </p>
             ) : null}
+            {message ? (
+              <p className="mt-3 text-sm text-emerald-300" data-testid="file-picker-message">
+                {message}
+              </p>
+            ) : null}
             <div className="mt-3 space-y-2" data-testid="file-picker-files">
               {visibleFiles.map((item) => {
                 const key = refKey(item);
@@ -261,6 +299,7 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                     <input
                       type="checkbox"
                       checked={checked}
+                      onClick={() => setPreviewKey(key)}
                       onChange={() => {
                         setSelectedKeys((current) => {
                           const next = new Set(current);
@@ -288,6 +327,32 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
             </div>
           </div>
 
+          <div
+            className="rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4"
+            data-testid="file-picker-preview"
+          >
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Preview</p>
+            {previewItem ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm font-medium text-zinc-100">
+                  {previewItem.name ?? basename(previewItem.relative_path)}
+                </p>
+                <p className="text-xs text-zinc-500">{previewItem.relative_path}</p>
+                <p className="text-xs text-zinc-600">{previewItem.uri ?? "No durable URI"}</p>
+                <p className="text-xs text-zinc-500">
+                  {previewItem.mime_type ?? "unknown type"}
+                  {typeof previewItem.size_bytes === "number"
+                    ? ` • ${previewItem.size_bytes} bytes`
+                    : ""}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-zinc-500">
+                Select a file to inspect its persisted metadata.
+              </p>
+            )}
+          </div>
+
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
@@ -301,6 +366,10 @@ export function FilePicker({ envelope, onSubmit, onCancel }: FilePickerProps) {
                   return;
                 }
                 setSubmitError(null);
+                setMessage(null);
+                if (roomID && pickerID) {
+                  clearFilePickerDraft(roomID, pickerID);
+                }
                 onSubmit({
                   v: 1,
                   envelopeId: envelope.id,
@@ -444,6 +513,9 @@ function breadcrumbSegments(value: string): string[] {
 }
 
 function refKey(item: Pick<FilePickerRef, "root_id" | "relative_path">): string {
+  if (!item.root_id && !item.relative_path) {
+    return "";
+  }
   return `${item.root_id}:${item.relative_path}`;
 }
 

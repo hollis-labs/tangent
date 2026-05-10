@@ -198,12 +198,13 @@ function DiffReviewAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
-function FilePickerAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+function FilePickerAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <FilePicker
       envelope={envelope as FilePickerEnvelope}
       onSubmit={onSubmit as (response: FilePickerResponse) => void}
       onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }
