@@ -1035,6 +1035,209 @@ func TestRoom_SaveDashboardSnapshotRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveWizardSnapshotEmptyWizard(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveWizardSnapshot(room.WizardSnapshot{
+		WizardID:         "wizard-empty",
+		Steps:            []room.WizardStep{},
+		Progress:         []room.WizardStepProgress{},
+		BranchSelections: []room.WizardBranchSelection{},
+		Summary: &room.WizardSummary{
+			Status:         "not_started",
+			TotalStepCount: 0,
+		},
+	}); err != nil {
+		t.Fatalf("SaveWizardSnapshot empty: %v", err)
+	}
+
+	view := room.ProjectWizardState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectWizardState returned nil")
+	}
+	if got := len(view.Steps); got != 0 {
+		t.Fatalf("steps len = %d, want 0", got)
+	}
+	if got := len(view.Progress); got != 0 {
+		t.Fatalf("progress len = %d, want 0", got)
+	}
+	if got := len(view.BranchSelections); got != 0 {
+		t.Fatalf("branch_selections len = %d, want 0", got)
+	}
+}
+
+func TestRoom_SaveWizardSnapshotPersistsAndReloads(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "wizard"})
+
+	if err := rm.SaveWizardSnapshot(room.WizardSnapshot{
+		WizardID:      "wizard-1",
+		Title:         "Shipping Checklist",
+		Description:   "Collect the bounded inputs needed to prepare release notes.",
+		CurrentStepID: "step-review",
+		Steps: []room.WizardStep{
+			{
+				StepID:      "step-scope",
+				Title:       "Confirm scope",
+				Description: "Define the release scope.",
+				Kind:        "form",
+				Fields: map[string]any{
+					"fields": []map[string]any{
+						{"field_id": "scope", "label": "Scope", "kind": "textarea"},
+					},
+				},
+				Branches: []room.WizardStepBranch{
+					{BranchID: "requires-review", Label: "Needs review", TargetStepID: "step-review", Metadata: map[string]any{"priority": "high"}},
+					{BranchID: "skip-review", Label: "Skip review", TargetStepID: "step-publish", Metadata: map[string]any{}},
+				},
+				Metadata: map[string]any{"order": float64(1)},
+			},
+			{
+				StepID:      "step-review",
+				Title:       "Review summary",
+				Description: "Inspect the accepted result.",
+				Kind:        "review",
+				Metadata:    map[string]any{"order": float64(2)},
+			},
+			{
+				StepID:   "step-publish",
+				Title:    "Publish result",
+				Optional: true,
+				Kind:     "action",
+				Metadata: map[string]any{"order": float64(3)},
+			},
+		},
+		Progress: []room.WizardStepProgress{
+			{
+				StepID:     "step-scope",
+				Status:     "completed",
+				RevisionID: "rev-001",
+				Response: map[string]any{
+					"scope": "Wizard state substrate",
+				},
+				Summary:     "Scope confirmed",
+				CompletedAt: "2026-05-10T04:10:00Z",
+				UpdatedAt:   "2026-05-10T04:10:00Z",
+			},
+			{
+				StepID:     "step-review",
+				Status:     "in_progress",
+				RevisionID: "rev-002",
+				Response: map[string]any{
+					"notes": "Awaiting final review",
+				},
+				Summary:   "Review in progress",
+				UpdatedAt: "2026-05-10T04:12:00Z",
+			},
+		},
+		BranchSelections: []room.WizardBranchSelection{
+			{
+				StepID:     "step-scope",
+				OptionID:   "requires-review",
+				SelectedAt: "2026-05-10T04:10:00Z",
+			},
+		},
+		Summary: &room.WizardSummary{
+			Status:              "in_progress",
+			Headline:            "1 of 3 steps completed",
+			Detail:              "Review remains before publish.",
+			CompletedStepCount:  1,
+			TotalStepCount:      3,
+			LastCompletedStepID: "step-scope",
+			CurrentStepID:       "step-review",
+		},
+		UpdatedAt: "2026-05-10T04:12:00Z",
+	}); err != nil {
+		t.Fatalf("SaveWizardSnapshot: %v", err)
+	}
+
+	view := room.ProjectWizardState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectWizardState returned nil")
+	}
+	if got := view.WizardID; got != "wizard-1" {
+		t.Fatalf("wizard_id = %q, want wizard-1", got)
+	}
+	if got := view.CurrentStepID; got != "step-review" {
+		t.Fatalf("current_step_id = %q, want step-review", got)
+	}
+	if got := len(view.Steps); got != 3 {
+		t.Fatalf("steps len = %d, want 3", got)
+	}
+	if got := view.Steps[0].Branches[0].TargetStepID; got != "step-review" {
+		t.Fatalf("steps[0].branches[0].target_step_id = %q, want step-review", got)
+	}
+	if got := view.Progress[0].Response["scope"]; got != "Wizard state substrate" {
+		t.Fatalf("progress[0].response.scope = %v, want Wizard state substrate", got)
+	}
+	if got := view.BranchSelections[0].TargetStepID; got != "step-review" {
+		t.Fatalf("branch_selections[0].target_step_id = %q, want step-review", got)
+	}
+	if view.Summary == nil || view.Summary.CurrentStepID != "step-review" {
+		t.Fatalf("summary = %#v, want current_step_id step-review", view.Summary)
+	}
+
+	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState reload: %v", err)
+	}
+	if !found {
+		t.Fatal("GetPhaseState found = false, want true")
+	}
+	reloadedView := room.ProjectWizardState(reloaded)
+	if reloadedView == nil {
+		t.Fatal("reloaded ProjectWizardState returned nil")
+	}
+	if got := reloadedView.Steps[0].Metadata["order"]; got != float64(1) {
+		t.Fatalf("reloaded steps[0].metadata.order = %v, want 1", got)
+	}
+	if got := reloadedView.Progress[1].RevisionID; got != "rev-002" {
+		t.Fatalf("reloaded progress[1].revision_id = %q, want rev-002", got)
+	}
+	if got := reloadedView.BranchSelections[0].OptionID; got != "requires-review" {
+		t.Fatalf("reloaded branch_selections[0].option_id = %q, want requires-review", got)
+	}
+}
+
+func TestRoom_SaveWizardSnapshotRejectsInvalidProgress(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveWizardSnapshot(room.WizardSnapshot{
+		WizardID: "wizard-invalid-progress",
+		Steps: []room.WizardStep{
+			{StepID: "step-1", Title: "Step 1", Metadata: map[string]any{}},
+		},
+		Progress: []room.WizardStepProgress{
+			{StepID: "missing-step", Status: "completed", Response: map[string]any{}},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWizardProgress) {
+		t.Fatalf("SaveWizardSnapshot invalid progress err = %v, want ErrInvalidWizardProgress", err)
+	}
+
+	err = rm.SaveWizardSnapshot(room.WizardSnapshot{
+		WizardID: "wizard-invalid-branch",
+		Steps: []room.WizardStep{
+			{
+				StepID:   "step-1",
+				Title:    "Step 1",
+				Branches: []room.WizardStepBranch{{BranchID: "next", Label: "Next", TargetStepID: "step-2", Metadata: map[string]any{}}},
+				Metadata: map[string]any{},
+			},
+			{StepID: "step-2", Title: "Step 2", Metadata: map[string]any{}},
+		},
+		BranchSelections: []room.WizardBranchSelection{
+			{StepID: "step-1", OptionID: "missing"},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidWizardBranchSelection) {
+		t.Fatalf("SaveWizardSnapshot invalid branch err = %v, want ErrInvalidWizardBranchSelection", err)
+	}
+}
+
 func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
 	rm := newAnonRoom(t, nil)
 	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
