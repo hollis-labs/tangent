@@ -50,9 +50,17 @@ export function loadWizardDraft(roomID: string, wizardID: string): WizardDraftRe
 }
 
 export function saveWizardDraft(record: WizardDraftRecord): void {
-  window.localStorage.setItem(storageKey(record.roomID, record.wizardID), JSON.stringify(record));
+  try {
+    window.localStorage.setItem(storageKey(record.roomID, record.wizardID), JSON.stringify(record));
+  } catch {
+    // Ignore draft persistence failures in restricted or quota-limited browsers.
+  }
 }
 
 export function clearWizardDraft(roomID: string, wizardID: string): void {
-  window.localStorage.removeItem(storageKey(roomID, wizardID));
+  try {
+    window.localStorage.removeItem(storageKey(roomID, wizardID));
+  } catch {
+    // Ignore draft cleanup failures in restricted browsers.
+  }
 }

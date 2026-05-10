@@ -138,8 +138,12 @@ func buildVisibleWizardEnvelope(env *envelopes.Envelope, view *room.WizardStateV
 	}
 	data := cloneAnyMapForDispatch(clone.Data)
 	data["wizard_id"] = view.WizardID
-	data["title"] = view.Title
-	data["description"] = view.Description
+	if view.Title != "" {
+		data["title"] = view.Title
+	}
+	if view.Description != "" {
+		data["description"] = view.Description
+	}
 	data["steps"] = wizardStepsPayload(view.Steps)
 	data["current_step_id"] = view.CurrentStepID
 	data["progress"] = wizardProgressPayload(view.Progress)

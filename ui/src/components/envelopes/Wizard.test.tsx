@@ -46,6 +46,7 @@ describe("Wizard", () => {
 
   it("submits completed state on the final step", () => {
     const onSubmit = vi.fn<(response: WizardResponse) => void>();
+    const removeItem = vi.spyOn(window.localStorage.__proto__, "removeItem");
     const envelope: WizardEnvelope = {
       v: 1,
       id: "wizard-2",
@@ -65,6 +66,8 @@ describe("Wizard", () => {
     expect(response.status).toBe("submitted");
     expect(response.payload.summary.status).toBe("completed");
     expect(response.payload.progress[0]?.status).toBe("completed");
+    expect(removeItem).toHaveBeenCalledWith("tangent:wizard-draft:v1:room-2:wizard-2");
+    removeItem.mockRestore();
   });
 
   it("navigates forward with a partial update", () => {
@@ -128,5 +131,32 @@ describe("Wizard", () => {
     };
     expect(attachments[0]?.uri).toBe("artifact://brief-1");
     expect(actionOutput.action_id).toBe("queue-followup");
+  });
+
+  it("refreshes updated_at when patching existing progress", () => {
+    const onSubmit = vi.fn<(response: WizardResponse) => void>();
+    const envelope: WizardEnvelope = {
+      v: 1,
+      id: "wizard-5",
+      type: "tangent.wizard",
+      data: {
+        wizard_id: "wizard-5",
+        current_step_id: "step-1",
+        progress: [
+          {
+            step_id: "step-1",
+            status: "in_progress",
+            updated_at: "2026-05-09T00:00:00.000Z",
+          },
+        ],
+        steps: [{ step_id: "step-1", title: "Step 1" }],
+      },
+    };
+
+    render(<Wizard envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} roomID="room-5" />);
+    fireEvent.click(screen.getByText("Save Progress"));
+
+    const response = onSubmit.mock.calls[0][0];
+    expect(response.payload.progress[0]?.updated_at).not.toBe("2026-05-09T00:00:00.000Z");
   });
 });

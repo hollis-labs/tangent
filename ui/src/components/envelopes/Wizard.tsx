@@ -207,7 +207,9 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     nextProgress: WizardProgress[],
     nextBranchSelections: WizardBranchSelection[],
   ) => {
+    const updatedAt = new Date().toISOString();
     const completedNextCount = nextProgress.filter((item) => item.status === "completed").length;
+    const isCompleted = completedNextCount >= steps.length && steps.length > 0;
     const payload: WizardResponse["payload"] = {
       wizard_id: wizardID,
       title: envelope.data?.title,
@@ -218,16 +220,12 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       branch_selections: nextBranchSelections,
       summary: {
         ...summary,
-        status:
-          completedNextCount >= steps.length && steps.length > 0 ? "completed" : "in_progress",
+        status: isCompleted ? "completed" : "in_progress",
         completed_step_count: completedNextCount,
         current_step_id: nextCurrentStepID,
-        completed_at:
-          status === "submitted" && completedNextCount >= steps.length && steps.length > 0
-            ? new Date().toISOString()
-            : undefined,
+        completed_at: status === "submitted" && isCompleted ? updatedAt : undefined,
       },
-      updated_at: new Date().toISOString(),
+      updated_at: updatedAt,
     };
     onSubmit({
       v: 1,
@@ -237,7 +235,7 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       payload,
       completedAt: payload.updated_at,
     });
-    if (roomID && wizardID && status === "submitted" && summary.status === "completed") {
+    if (roomID && wizardID && status === "submitted" && isCompleted) {
       clearWizardDraft(roomID, wizardID);
     }
   };
@@ -252,8 +250,8 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       response: existing?.response ?? {},
       summary: existing?.summary,
       completed_at: existing?.completed_at,
-      updated_at: new Date().toISOString(),
       ...existing,
+      updated_at: new Date().toISOString(),
       ...patch,
     };
     const rest = progress.filter((item) => item.step_id !== currentStep.step_id);
