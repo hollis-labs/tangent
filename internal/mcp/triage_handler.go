@@ -235,6 +235,12 @@ func RegisterWhiteboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tr
 	return dispatcher.Register(whiteboardEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterDiffReviewOnDispatcher wires the same room-bridging handler
+// for tangent.diff-review envelopes.
+func RegisterDiffReviewOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(diffReviewEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterSpreadsheetReviewOnDispatcher wires the same room-bridging
 // handler for tangent.spreadsheet-review envelopes.
 func RegisterSpreadsheetReviewOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {

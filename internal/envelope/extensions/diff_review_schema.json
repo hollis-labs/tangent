@@ -1,0 +1,42 @@
+{
+  "title": "Diff review envelope data",
+  "description": "Render a persisted diff review with file and hunk decisions, comments, filters, and stable before/after artifact refs.",
+  "type": "object",
+  "properties": {
+    "review_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "intent": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "type": "string" },
+          "summary": { "type": "string" },
+          "before": { "type": "string" },
+          "after": { "type": "string" },
+          "hunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "header": { "type": "string" },
+                "before": { "type": "string" },
+                "after": { "type": "string" },
+                "status": { "type": "string" }
+              }
+            }
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    "current_file": { "type": "string" },
+    "filter_state": { "type": "object" },
+    "before_ref": { "type": "object" },
+    "after_ref": { "type": "object" }
+  },
+  "required": ["review_id", "files"]
+}

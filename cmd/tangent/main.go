@@ -149,6 +149,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register whiteboard extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register diff-review extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterSpreadsheetReview(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register spreadsheet-review extension: %v\n", regErr)
 		os.Exit(1)
@@ -224,6 +228,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterWhiteboardOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register whiteboard handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register diff-review handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterSpreadsheetReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {

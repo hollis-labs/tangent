@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
 	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
 	FormCollect           *room.FormStateView              `json:"form_collect,omitempty"`
 	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
@@ -152,6 +153,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		DiffReview:            room.ProjectDiffReviewState(phaseState),
 		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
 		FormCollect:           room.ProjectFormState(phaseState),
 		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
@@ -280,6 +282,9 @@ func (s *Server) advanceRoomEnvelope(
 		}
 		if env.Type == whiteboardEnvelopeType {
 			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
+		}
+		if env.Type == diffReviewEnvelopeType {
+			return s.normalizeDiffReviewSubmitResponse(roomID, env, resp)
 		}
 		if env.Type == spreadsheetReviewEnvelopeType {
 			return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)

@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.6.0`. The current branch adds `tangent.approval-queue`: a room-backed serialized approval workflow with explicit accept/reject/defer decisions, evidence panes, keyboard navigation, batch defer controls, local comment recovery, and durable audit export metadata. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.6.0`. The current branch prepares `v0.8.0` with `tangent.diff-review`: a room-backed diff workflow with per-file and per-hunk decisions, persisted comments, filter/navigation state, artifact-backed before/after refs, batch review controls, and exportable summaries. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -27,7 +27,7 @@ Install:
 go install github.com/hollis-labs/tangent/cmd/tangent@v0.6.0
 ```
 
-If you are reading this before the `v0.6.0` tag is published, use `@main`
+If you want the in-progress diff-review branch before the `v0.8.0` tag is published, use `@main`
 temporarily and switch back to the release tag once it lands.
 
 Run:
@@ -50,18 +50,18 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What changed since v0.5
+### What this branch adds
 
-- Tangent now ships `tangent.form-collect`, a room-backed generalized form workflow for schema-driven data collection.
-- Form-collect turns support conditional fields, repeatable sections, saved drafts/templates, local recovery, attachment refs, and explicit submit.
-- `tangent.session_get` now exposes a dedicated `form_collect` projection alongside spreadsheet-review, whiteboard, and writing-flow room state.
+- Tangent now ships `tangent.diff-review`, a room-backed diff workflow for explicit before/after review.
+- Diff-review turns persist canonical files, current file, filter state, normalized decisions, comments, artifact refs, and export summary metadata.
+- `tangent.session_get` now exposes a dedicated `diff_review` projection alongside approval-queue, spreadsheet-review, whiteboard, and writing-flow room state.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -102,11 +102,11 @@ Shipped. Tangent now includes a persistent, MCP-driven schema-first form workflo
 
 ### v0.7 — Approval queue
 
-Current branch. Tangent adds a room-backed approval queue for serialized review with evidence panes, durable decision history, defer reasons, batch controls, audit export metadata, and explicit submit/reopen turns.
+Shipped. Tangent now includes a room-backed approval queue for serialized review with evidence panes, durable decision history, defer reasons, batch controls, audit export metadata, and explicit submit/reopen turns.
 
-### v0.8 — Additional workflow expansion
+### v0.8 — Diff review
 
-Diff review, file picker, progress panel, dashboard, and wizard.
+Current branch. Tangent adds a room-backed diff review workflow with per-file/per-hunk decisions, durable comments, artifact-backed before/after refs, batch review controls, draft recovery, and exportable summaries.
 
 ### v0.9 — Nanite-native side-channel
 
@@ -185,6 +185,7 @@ More docs:
 - [`docs/manual-tests/spreadsheet-review-e2e.md`](./docs/manual-tests/spreadsheet-review-e2e.md) — full spreadsheet-review workflow with recovery, saved views, and CSV export metadata
 - [`docs/manual-tests/form-collect-e2e.md`](./docs/manual-tests/form-collect-e2e.md) — full form-collect workflow with conditional sections, recovery, and attachment refs
 - [`docs/manual-tests/approval-queue-e2e.md`](./docs/manual-tests/approval-queue-e2e.md) — full approval-queue workflow with reopen, defer reasons, and audit export metadata
+- [`docs/manual-tests/diff-review-e2e.md`](./docs/manual-tests/diff-review-e2e.md) — full diff-review workflow with reopen, batch decisions, and summary export
 
 ## License
 

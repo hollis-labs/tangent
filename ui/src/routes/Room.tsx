@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  diff_review?: unknown;
   approval_queue?: unknown;
   form_collect?: unknown;
   spreadsheet_review?: unknown;
@@ -100,6 +101,7 @@ export default function Room() {
       const envelopeType = readEnvelopeType(pending.envelope);
       if (
         envelopeType === "tangent.whiteboard" ||
+        envelopeType === "tangent.diff-review" ||
         envelopeType === "tangent.spreadsheet-review" ||
         envelopeType === "tangent.form-collect" ||
         envelopeType === "tangent.approval-queue"
@@ -161,6 +163,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.output-render" &&
     type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
+    type !== "tangent.diff-review" &&
     type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
   ) {
@@ -182,6 +185,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.form-collect") {
       return attachFormCollectState(envelope, state.form_collect);
+    }
+    if (type === "tangent.diff-review") {
+      return attachDiffReviewState(envelope, state.diff_review);
     }
     if (type === "tangent.approval-queue") {
       return attachApprovalQueueState(envelope, state.approval_queue);
@@ -308,6 +314,39 @@ function attachSpreadsheetReviewState(envelope: unknown, spreadsheetReview: unkn
     "selected_row_ids",
     "selected_rows",
     "action_id",
+    "export_refs",
+  ]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachDiffReviewState(envelope: unknown, diffReview: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!diffReview || typeof diffReview !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = diffReview as Record<string, unknown>;
+  for (const key of [
+    "review_id",
+    "files",
+    "current_file",
+    "filter_state",
+    "decisions",
+    "comments",
+    "updated_at",
+    "summary",
+    "before_ref",
+    "after_ref",
     "export_refs",
   ]) {
     if (persisted[key] !== undefined) {

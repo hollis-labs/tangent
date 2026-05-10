@@ -17,7 +17,7 @@ import (
 // clients pin against this string.
 const (
 	implementationName    = "tangent"
-	implementationVersion = "v0.7.0"
+	implementationVersion = "v0.8.0"
 )
 
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +
@@ -227,6 +227,16 @@ func (s *Server) registerTools() error {
 		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
+
+	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
+	if err != nil {
+		return fmt.Errorf("build diff-review input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.diff-review",
+		Description: "Dispatch a diff-review envelope through Tangent. Persists file and hunk decisions, filter state, comments, artifact refs, and exportable review summaries.",
+		InputSchema: diffReviewSchema,
+	}, s.handleDiffReview)
 
 	spreadsheetReviewSchema, err := buildSpreadsheetReviewInputSchema()
 	if err != nil {

@@ -12,6 +12,8 @@ spreadsheet-review flow see
 [`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
 for the approval-queue flow see
 [`manual-tests/approval-queue-e2e.md`](./manual-tests/approval-queue-e2e.md);
+for the diff-review flow see
+[`manual-tests/diff-review-e2e.md`](./manual-tests/diff-review-e2e.md);
 for the generalized form flow see
 [`manual-tests/form-collect-e2e.md`](./manual-tests/form-collect-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
@@ -19,7 +21,7 @@ for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 ## Install
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.6.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.8.0
 ```
 
 Or build from source:
@@ -78,7 +80,8 @@ claude mcp list
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
 `tangent.design-iteration`, `tangent.whiteboard`,
-`tangent.spreadsheet-review`, `tangent.approval-queue`, or the writing
+`tangent.spreadsheet-review`, `tangent.approval-queue`,
+`tangent.diff-review`, or the writing
 sequence via `tangent.session_*`, `tangent.interview_question`,
 `tangent.synthesis_notes`, `tangent.block_draft`,
 `tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
@@ -139,6 +142,7 @@ Expected:
 
 ```
 "tangent.design-iteration"
+"tangent.diff-review"
 "tangent.feedback"
 "tangent.form-collect"
 "tangent.interview_question"
@@ -196,6 +200,11 @@ workflow-neutral phase substrate:
   room-backed `saved_views`, persisted `selected_row_ids`,
   normalized `selected_rows`, optional bulk `action_id`, and
   lightweight CSV `export_refs`.
+- `diff_review`: when a room has persisted diff-review state, a
+  dedicated projection with `review_id`, canonical `files`,
+  `current_file`, `filter_state`, normalized `decisions`, freeform
+  `comments`, durable `summary`, artifact-backed `before_ref` /
+  `after_ref`, and lightweight summary `export_refs`.
 - `approval_queue`: when a room has persisted approval-queue state, a
   dedicated projection with `queue_id`, canonical `items`,
   `current_index`, normalized `decisions`, queue `notes`, `updated_at`,
@@ -252,9 +261,9 @@ For deeper probes (calling a workflow, expected error frames) see
   `--transport sse` and the `/sse` URL. The two transports are
   equivalent for the current tool surface.
 - **`go install` vs fresh-clone build.** `go install` is the simplest
-  path for a stable v0.6.0 binary; build-from-source is required if you
+  path for a stable v0.8.0 binary; build-from-source is required if you
   want unreleased fixes from `main`. The two are not API-compatible
-  across releases — pin via `@v0.6.0` until you have a reason not to.
+  across releases — pin via `@v0.8.0` until you have a reason not to.
 - **Browser shows "No component registered for ..."** The envelope
   `type` on the wire is not one of Tangent's registered workflow kinds.
   The bundled tools pin the type for you; if you're calling the session
