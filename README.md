@@ -24,10 +24,10 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.8.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.6.0
 ```
 
-If you are reading this before the `v0.8.0` tag is published, use `@main`
+If you want the in-progress diff-review branch before the `v0.8.0` tag is published, use `@main`
 temporarily and switch back to the release tag once it lands.
 
 Run:
@@ -57,7 +57,7 @@ resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What changed since v0.7
+### What this branch adds
 
 - Tangent now ships `tangent.diff-review`, a room-backed diff workflow for explicit before/after review.
 - Diff-review turns persist canonical files, current file, filter state, normalized decisions, comments, artifact refs, and export summary metadata.

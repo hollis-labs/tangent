@@ -430,35 +430,38 @@ func normalizeDiffReviewDecisionValueForSubmit(value string) string {
 func buildDiffReviewSummary(files []map[string]any, decisions []room.DiffReviewDecision, comments map[string]string, exportRefs []room.DiffReviewArtifactRef) *room.DiffReviewSummary {
 	fileDecisions := map[string]struct{}{}
 	decisionSummary := map[string]int{}
-	hunkTargets := map[string]struct{}{}
+	targets := map[string]struct{}{}
+	decisionTargets := map[string]struct{}{}
 	for _, file := range files {
-		for _, hunk := range readObjectSliceValue(file["hunks"]) {
+		fileID := strings.TrimSpace(readStringValue(file, "id"))
+		if fileID == "" {
+			continue
+		}
+		hunks := readObjectSliceValue(file["hunks"])
+		if len(hunks) == 0 {
+			targets[fileID] = struct{}{}
+			continue
+		}
+		for _, hunk := range hunks {
 			hunkID := strings.TrimSpace(readStringValue(hunk, "id"))
-			fileID := strings.TrimSpace(readStringValue(file, "id"))
-			if fileID == "" || hunkID == "" {
+			if hunkID == "" {
 				continue
 			}
-			hunkTargets[fileID+"::"+hunkID] = struct{}{}
+			targets[fileID+"::"+hunkID] = struct{}{}
 		}
 	}
 	for _, decision := range decisions {
 		fileDecisions[decision.FileID] = struct{}{}
 		decisionSummary[decision.Decision]++
+		target := decision.FileID
+		if decision.HunkID != "" {
+			target += "::" + decision.HunkID
+		}
+		decisionTargets[target] = struct{}{}
 	}
 	pendingCount := 0
-	for target := range hunkTargets {
-		found := false
-		for _, decision := range decisions {
-			key := decision.FileID
-			if decision.HunkID != "" {
-				key += "::" + decision.HunkID
-			}
-			if key == target {
-				found = true
-				break
-			}
-		}
-		if !found {
+	for target := range targets {
+		if _, ok := decisionTargets[target]; !ok {
 			pendingCount++
 		}
 	}

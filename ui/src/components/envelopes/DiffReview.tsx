@@ -844,6 +844,9 @@ function buildSummaryText(
   comments: Record<string, string>,
 ): string {
   const ordered = buildOrderedDecisions(files, decisions);
+  const decisionsByTarget = new Map(
+    ordered.map((item) => [buildTargetKey(item.file_id, item.hunk_id), item] as const),
+  );
   const lines = ["# Diff review summary", ""];
   for (const file of files) {
     lines.push(`## ${file.path}`);
@@ -854,9 +857,7 @@ function buildSummaryText(
         }))
       : [{ label: "file", key: file.id }];
     for (const target of targets) {
-      const decision = ordered.find(
-        (item) => buildTargetKey(item.file_id, item.hunk_id) === target.key,
-      );
+      const decision = decisionsByTarget.get(target.key);
       const comment = comments[target.key];
       lines.push(`- ${target.label}: ${decision?.decision ?? "pending"}`);
       if (decision?.action_id) {

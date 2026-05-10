@@ -26,38 +26,58 @@ export type DiffReviewDraft = {
 };
 
 export function getDiffReviewDraftStorageKey(roomID: string, reviewID: string): string {
-  return `${STORAGE_PREFIX}:${roomID}:${reviewID}`;
+  return `${STORAGE_PREFIX}:${encodeURIComponent(roomID)}:${encodeURIComponent(reviewID)}`;
 }
 
 export function saveDiffReviewDraft(draft: DiffReviewDraft): void {
-  window.localStorage.setItem(
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+  storage.setItem(
     getDiffReviewDraftStorageKey(draft.roomID, draft.reviewID),
     JSON.stringify(draft),
   );
 }
 
 export function loadDiffReviewDraft(roomID: string, reviewID: string): DiffReviewDraft | null {
-  const raw = window.localStorage.getItem(getDiffReviewDraftStorageKey(roomID, reviewID));
+  const storage = getStorage();
+  if (!storage) {
+    return null;
+  }
+  const raw = storage.getItem(getDiffReviewDraftStorageKey(roomID, reviewID));
   if (!raw) {
     return null;
   }
   try {
     const parsed = JSON.parse(raw) as DiffReviewDraft;
     if (parsed?.version !== 1 || parsed?.roomID !== roomID || parsed?.reviewID !== reviewID) {
-      clearDiffReviewDraft(roomID, reviewID);
+      storage.removeItem(getDiffReviewDraftStorageKey(roomID, reviewID));
       return null;
     }
     return parsed;
   } catch {
-    clearDiffReviewDraft(roomID, reviewID);
+    storage.removeItem(getDiffReviewDraftStorageKey(roomID, reviewID));
     return null;
   }
 }
 
 export function clearDiffReviewDraft(roomID: string, reviewID: string): void {
-  window.localStorage.removeItem(getDiffReviewDraftStorageKey(roomID, reviewID));
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+  storage.removeItem(getDiffReviewDraftStorageKey(roomID, reviewID));
 }
 
 export function buildDiffReviewCanonicalSeedKey(value: Record<string, unknown>): string {
   return JSON.stringify(value);
+}
+
+function getStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }
