@@ -17,7 +17,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.11.0`. Tangent now ships `tangent.dashboard`: a room-backed workflow-state dashboard with explicit refresh/update turns, saved layouts, room/artifact drill-down affordances, and concise accepted snapshot export metadata for downstream inspection. The dashboard summarizes Tangent workflow state only; it is not a general external BI surface. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.11.0`. The current branch line is preparing `v0.12.0`, which adds `tangent.wizard`: a room-backed guided wizard workflow with canonical step progress, explicit partial updates, branch selections, local draft recovery, review summary, and final completion. Existing `tangent.dashboard` support remains in place for workflow-state snapshots and drill-down. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -49,18 +49,18 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`, `tangent.dashboard`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`, `tangent.dashboard`, `tangent.wizard`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What v0.11.0 adds
+### What v0.12.0 adds
 
-- Tangent now ships `tangent.dashboard`, a room-backed workflow-state dashboard with explicit refresh/update turns.
-- Dashboard turns persist canonical tiles, saved layouts, accepted snapshot history, and deterministic `export_state` metadata under `session_get.dashboard`.
-- The browser host now supports saved layout reuse, browser-local layout draft recovery, room/artifact drill-down actions, and concise export/share inspection without introducing any cloud sync or multi-user state.
+- Tangent now ships `tangent.wizard`, a room-backed guided wizard workflow with explicit partial updates and final completion.
+- Wizard turns persist canonical step definitions, accepted step progress, branch selections, and summary fields under `session_get.wizard`.
+- The browser host now supports local draft recovery, review summary, forward/back navigation, attachment-style responses, and action outputs without introducing any cloud sync or multi-user state.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -117,7 +117,11 @@ Shipped. Tangent added a room-backed progress workflow with append-only updates,
 
 ### v0.11 — Dashboard
 
-Current branch. Tangent adds a room-backed dashboard workflow that summarizes Tangent room/workflow state through reusable saved layouts, explicit refresh/update submits, room/artifact drill-down, and deterministic export metadata.
+Shipped. Tangent adds a room-backed dashboard workflow that summarizes Tangent room/workflow state through reusable saved layouts, explicit refresh/update submits, room/artifact drill-down, and deterministic export metadata.
+
+### v0.12 — Wizard
+
+Current branch. Tangent adds a room-backed guided wizard workflow for bounded step progression, branch selections, explicit partial saves, local draft recovery, and final review/completion.
 
 ### v0.8+ — Distribution and trust
 

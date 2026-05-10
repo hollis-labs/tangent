@@ -126,9 +126,7 @@ describe("Wizard", () => {
     const actionOutput = (response.payload.progress[0]?.response?.action_output ?? {}) as {
       action_id?: string;
     };
-    expect(attachments[0]?.uri).toBe(
-      "artifact://brief-1",
-    );
+    expect(attachments[0]?.uri).toBe("artifact://brief-1");
     expect(actionOutput.action_id).toBe("queue-followup");
   });
 });
