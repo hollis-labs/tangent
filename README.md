@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.6.0`. The current branch prepares `v0.9.0` with `tangent.file-picker`: a room-backed local artifact selection workflow with allowed browse roots, explicit submit/reopen turns, browser-local draft recovery, persisted query state, and reusable artifact-ref handoff payloads. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.9.0`. Tangent now ships `tangent.file-picker`: a room-backed local artifact selection workflow with allowed browse roots, explicit submit/reopen turns, browser-local draft recovery, persisted query state, and reusable artifact-ref handoff payloads. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -24,11 +24,8 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.6.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.9.0
 ```
-
-If you want the in-progress file-picker branch before the `v0.9.0` tag is published, use `@main`
-temporarily and switch back to the release tag once it lands.
 
 Run:
 
@@ -57,7 +54,7 @@ resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What this branch adds
+### What v0.9.0 adds
 
 - Tangent now ships `tangent.file-picker`, a room-backed local artifact selection workflow with explicit submit/reopen turns.
 - File-picker turns persist allowed roots, canonical selected artifact refs, normalized query state, accepted selection revisions, and stable handoff summary metadata.

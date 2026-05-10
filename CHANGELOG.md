@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_None._
+
+## [v0.9.0] - 2026-05-09
+
 File picker. Tangent now ships a persistent room-backed file-picker
 workflow for explicit local artifact selection, persisted browse/query
 state, browser-local draft recovery, accepted selection revisions, and
