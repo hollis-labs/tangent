@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  clearProgressPanelDraft,
   loadProgressPanelDraft,
   PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS,
   saveProgressPanelDraft,
@@ -99,10 +100,12 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
   const [draft] = useState(() =>
     roomID && panelID ? loadProgressPanelDraft(roomID, panelID) : null,
   );
-  const [selectedItemID, setSelectedItemID] = useState(items[0]?.item_id ?? "");
-  const [status, setStatus] = useState(items[0]?.status ?? "running");
-  const [note, setNote] = useState("");
-  const [checkpointLabel, setCheckpointLabel] = useState("");
+  const [selectedItemID, setSelectedItemID] = useState(
+    draft?.selectedItemID || items[0]?.item_id || "",
+  );
+  const [status, setStatus] = useState(draft?.status || items[0]?.status || "running");
+  const [note, setNote] = useState(draft?.note ?? "");
+  const [checkpointLabel, setCheckpointLabel] = useState(draft?.checkpointLabel ?? "");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"timeline" | "checkpoints" | "logs">(
     draft?.activeTab ?? "timeline",
@@ -160,6 +163,10 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
       filterItemID,
       filterKind,
       selectedUpdateID,
+      selectedItemID,
+      status,
+      note,
+      checkpointLabel,
     };
     const serialized = JSON.stringify(nextDraft);
     if (serialized === lastSavedDraftRef.current) {
@@ -170,7 +177,18 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
       lastSavedDraftRef.current = serialized;
     }, PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
-  }, [activeTab, filterItemID, filterKind, panelID, roomID, selectedUpdateID]);
+  }, [
+    activeTab,
+    checkpointLabel,
+    filterItemID,
+    filterKind,
+    note,
+    panelID,
+    roomID,
+    selectedItemID,
+    selectedUpdateID,
+    status,
+  ]);
 
   return (
     <Card data-testid="progress-panel-root">
@@ -442,6 +460,54 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
             </p>
           </div>
 
+          <div className="grid gap-2 sm:grid-cols-3" data-testid="progress-panel-controls">
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="progress-panel-control-pause"
+              onClick={() => {
+                if (!activeItem) {
+                  return;
+                }
+                setSelectedItemID(activeItem.item_id);
+                setStatus("paused");
+                setNote(`Paused ${activeItem.label.toLowerCase()}.`);
+              }}
+            >
+              Pause
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="progress-panel-control-resume"
+              onClick={() => {
+                if (!activeItem) {
+                  return;
+                }
+                setSelectedItemID(activeItem.item_id);
+                setStatus("running");
+                setNote(`Resumed ${activeItem.label.toLowerCase()}.`);
+              }}
+            >
+              Resume
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              data-testid="progress-panel-control-cancel"
+              onClick={() => {
+                if (!activeItem) {
+                  return;
+                }
+                setSelectedItemID(activeItem.item_id);
+                setStatus("cancelled");
+                setNote(`Cancelled ${activeItem.label.toLowerCase()}.`);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+
           <label className="space-y-2 text-sm text-zinc-200">
             <span>Item</span>
             <select
@@ -523,6 +589,10 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 }
                 setMessage(null);
                 setSubmitError(null);
+                if (roomID && panelID) {
+                  clearProgressPanelDraft(roomID, panelID);
+                  lastSavedDraftRef.current = null;
+                }
                 onSubmit({
                   v: 1,
                   envelopeId: envelope.id,

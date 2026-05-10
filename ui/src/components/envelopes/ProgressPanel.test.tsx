@@ -174,6 +174,12 @@ describe("<ProgressPanel>", () => {
       target: { value: "checkpoint" },
     });
     fireEvent.click(screen.getByTestId("progress-panel-log-upd-002"));
+    fireEvent.change(screen.getByTestId("progress-panel-summary-input"), {
+      target: { value: "Unsaved note" },
+    });
+    fireEvent.change(screen.getByTestId("progress-panel-checkpoint-input"), {
+      target: { value: "Unsaved checkpoint" },
+    });
 
     act(() => {
       vi.advanceTimersByTime(PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS + 50);
@@ -191,5 +197,55 @@ describe("<ProgressPanel>", () => {
     expect(screen.getByTestId("progress-panel-filter-item")).toHaveValue("item-2");
     expect(screen.getByTestId("progress-panel-filter-kind")).toHaveValue("checkpoint");
     expect(screen.getByTestId("progress-panel-log-detail")).toHaveTextContent("upd-002");
+    expect(screen.getByTestId("progress-panel-summary-input")).toHaveValue("Unsaved note");
+    expect(screen.getByTestId("progress-panel-checkpoint-input")).toHaveValue("Unsaved checkpoint");
+  });
+
+  it("offers explicit controls and clears recovered draft state on submit", () => {
+    vi.useFakeTimers();
+    const onSubmit = vi.fn<(response: ProgressPanelResponse) => void>();
+    const storageKey = getProgressPanelDraftStorageKey("room-12", "panel-12");
+    const envelope: ProgressPanelEnvelope = {
+      v: 1,
+      id: "progress-env-12",
+      type: "tangent.progress-panel",
+      data: {
+        panel_id: "panel-12",
+        items: [{ item_id: "item-1", label: "Scan repo", status: "running" }],
+      },
+    };
+
+    render(
+      <ProgressPanel
+        envelope={envelope}
+        onSubmit={onSubmit}
+        onCancel={() => {}}
+        roomID="room-12"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("progress-panel-control-pause"));
+    expect(screen.getByTestId("progress-panel-status-select")).toHaveValue("paused");
+    expect(screen.getByTestId("progress-panel-summary-input")).toHaveValue("Paused scan repo.");
+
+    act(() => {
+      vi.advanceTimersByTime(PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS + 50);
+    });
+    expect(window.localStorage.getItem(storageKey)).toContain('"status":"paused"');
+
+    fireEvent.click(screen.getByTestId("progress-panel-submit"));
+    expect(onSubmit).toHaveBeenCalledWith({
+      v: 1,
+      envelopeId: "progress-env-12",
+      kind: "data",
+      status: "submitted",
+      payload: {
+        panel_id: "panel-12",
+        item_id: "item-1",
+        status: "paused",
+        summary: "Paused scan repo.",
+        checkpoint_label: undefined,
+      },
+    });
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
   });
 });

@@ -7,6 +7,10 @@ export type ProgressPanelViewDraft = {
   filterItemID: string;
   filterKind: string;
   selectedUpdateID: string;
+  selectedItemID: string;
+  status: string;
+  note: string;
+  checkpointLabel: string;
 };
 
 export function getProgressPanelDraftStorageKey(roomID: string, panelID: string): string {
@@ -38,6 +42,10 @@ export function loadProgressPanelDraft(
       filterItemID: typeof parsed.filterItemID === "string" ? parsed.filterItemID : "",
       filterKind: typeof parsed.filterKind === "string" ? parsed.filterKind : "all",
       selectedUpdateID: typeof parsed.selectedUpdateID === "string" ? parsed.selectedUpdateID : "",
+      selectedItemID: typeof parsed.selectedItemID === "string" ? parsed.selectedItemID : "",
+      status: typeof parsed.status === "string" ? parsed.status : "running",
+      note: typeof parsed.note === "string" ? parsed.note : "",
+      checkpointLabel: typeof parsed.checkpointLabel === "string" ? parsed.checkpointLabel : "",
     };
   } catch {
     storage.removeItem(getProgressPanelDraftStorageKey(roomID, panelID));
