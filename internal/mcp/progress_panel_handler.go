@@ -31,7 +31,19 @@ type progressPanelSubmitPayload struct {
 	Status       string `json:"status"`
 	UpdateID     string `json:"update_id"`
 	CheckpointID string `json:"checkpoint_id,omitempty"`
+	CreatedAt    string `json:"created_at,omitempty"`
 	Summary      string `json:"summary,omitempty"`
+}
+
+type progressPanelRejectedPayload struct {
+	PanelID string                     `json:"panel_id"`
+	Outcome string                     `json:"outcome"`
+	Errors  []progressPanelSubmitError `json:"errors"`
+}
+
+type progressPanelSubmitError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (s *Server) handleProgressPanel(
@@ -184,10 +196,15 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 
 	draft, err := decodeProgressPanelSubmitDraft(resp.Payload)
 	if err != nil {
-		return nil, err
+		return progressPanelRejectedResponse(resp, persisted.PanelID, "INVALID_PAYLOAD", err.Error()), nil
 	}
 	if draft.PanelID != persisted.PanelID {
-		return nil, fmt.Errorf("payload.panel_id %q does not match room panel_id %q", draft.PanelID, persisted.PanelID)
+		return progressPanelRejectedResponse(
+			resp,
+			persisted.PanelID,
+			"INVALID_PAYLOAD",
+			fmt.Sprintf("payload.panel_id %q does not match room panel_id %q", draft.PanelID, persisted.PanelID),
+		), nil
 	}
 
 	items, index := cloneProgressPanelItems(persisted.Items), -1
@@ -198,7 +215,12 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 		}
 	}
 	if index < 0 {
-		return nil, fmt.Errorf("%w: unknown item_id %q", room.ErrInvalidProgressPanelUpdate, draft.ItemID)
+		return progressPanelRejectedResponse(
+			resp,
+			persisted.PanelID,
+			"UNKNOWN_ITEM",
+			fmt.Sprintf("payload.item_id %q is not part of this panel", draft.ItemID),
+		), nil
 	}
 
 	now := nowRFC3339()
@@ -256,7 +278,7 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 		UpdatedAt: now,
 	}
 	if _, err := s.manager.SaveProgressPanelSnapshot(roomID, snapshot); err != nil {
-		return nil, err
+		return progressPanelRejectedResponse(resp, persisted.PanelID, "INVALID_UPDATE", err.Error()), nil
 	}
 
 	normalized := &envelopes.Response{
@@ -272,6 +294,7 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 			Status:       draft.Status,
 			UpdateID:     statusUpdateID,
 			CheckpointID: checkpointID,
+			CreatedAt:    now,
 			Summary:      draft.Summary,
 		},
 	}
@@ -299,6 +322,30 @@ func decodeProgressPanelSubmitDraft(payload any) (progressPanelSubmitDraft, erro
 		return progressPanelSubmitDraft{}, fmt.Errorf("payload.panel_id, payload.item_id, and payload.status are required")
 	}
 	return draft, nil
+}
+
+func progressPanelRejectedResponse(
+	resp *envelopes.Response,
+	panelID, code, message string,
+) *envelopes.Response {
+	completedAt := resp.CompletedAt
+	if completedAt == "" {
+		completedAt = nowRFC3339()
+	}
+	return &envelopes.Response{
+		V:           envelopes.ProtocolVersion,
+		EnvelopeID:  resp.EnvelopeID,
+		Kind:        envelopes.ResponseKindData,
+		Status:      envelopes.ResponseStatusPartial,
+		CompletedAt: completedAt,
+		Payload: progressPanelRejectedPayload{
+			PanelID: panelID,
+			Outcome: "rejected",
+			Errors: []progressPanelSubmitError{
+				{Code: code, Message: message},
+			},
+		},
+	}
 }
 
 func cloneProgressPanelItems(items []room.ProgressPanelItem) []room.ProgressPanelItem {
@@ -460,8 +507,8 @@ func readProgressPanelSummaryValue(raw any) *room.ProgressPanelSummary {
 	}
 }
 
-func progressPanelItemsAnyForDispatch(items []room.ProgressPanelItem) []map[string]any {
-	out := make([]map[string]any, 0, len(items))
+func progressPanelItemsAnyForDispatch(items []room.ProgressPanelItem) []any {
+	out := make([]any, 0, len(items))
 	for _, item := range items {
 		out = append(out, map[string]any{
 			"item_id":      item.ItemID,
@@ -477,8 +524,8 @@ func progressPanelItemsAnyForDispatch(items []room.ProgressPanelItem) []map[stri
 	return out
 }
 
-func progressPanelUpdatesAnyForDispatch(updates []room.ProgressPanelUpdate) []map[string]any {
-	out := make([]map[string]any, 0, len(updates))
+func progressPanelUpdatesAnyForDispatch(updates []room.ProgressPanelUpdate) []any {
+	out := make([]any, 0, len(updates))
 	for _, update := range updates {
 		out = append(out, map[string]any{
 			"update_id":        update.UpdateID,
@@ -495,8 +542,8 @@ func progressPanelUpdatesAnyForDispatch(updates []room.ProgressPanelUpdate) []ma
 	return out
 }
 
-func progressPanelCheckpointsAnyForDispatch(checkpoints []room.ProgressPanelCheckpoint) []map[string]any {
-	out := make([]map[string]any, 0, len(checkpoints))
+func progressPanelCheckpointsAnyForDispatch(checkpoints []room.ProgressPanelCheckpoint) []any {
+	out := make([]any, 0, len(checkpoints))
 	for _, checkpoint := range checkpoints {
 		out = append(out, map[string]any{
 			"update_id":     checkpoint.UpdateID,
