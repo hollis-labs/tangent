@@ -27,7 +27,7 @@ const (
 	progressPanelUpdateSummaryKey           = "summary"
 	progressPanelUpdateCreatedAtKey         = "created_at"
 	progressPanelUpdateCheckpointIDKey      = "checkpoint_id"
-	progressPanelUpdateCheckpointLabel      = "checkpoint_label"
+	progressPanelUpdateCheckpointLabelKey   = "checkpoint_label"
 	progressPanelUpdateMetadataKey          = "metadata"
 	progressPanelSummaryStatusKey           = "current_status"
 	progressPanelSummaryHeadlineKey         = "headline"
@@ -353,15 +353,15 @@ func progressPanelUpdatesAny(updates []ProgressPanelUpdate) []map[string]any {
 	out := make([]map[string]any, 0, len(updates))
 	for _, update := range updates {
 		record := map[string]any{
-			progressPanelUpdateIDKey:           update.UpdateID,
-			progressPanelUpdateKindKey:         update.Kind,
-			progressPanelUpdateItemIDKey:       update.ItemID,
-			progressPanelUpdateStatusKey:       update.Status,
-			progressPanelUpdateSummaryKey:      update.Summary,
-			progressPanelUpdateCreatedAtKey:    update.CreatedAt,
-			progressPanelUpdateCheckpointIDKey: update.CheckpointID,
-			progressPanelUpdateCheckpointLabel: update.CheckpointLabel,
-			progressPanelUpdateMetadataKey:     cloneAnyMap(update.Metadata),
+			progressPanelUpdateIDKey:              update.UpdateID,
+			progressPanelUpdateKindKey:            update.Kind,
+			progressPanelUpdateItemIDKey:          update.ItemID,
+			progressPanelUpdateStatusKey:          update.Status,
+			progressPanelUpdateSummaryKey:         update.Summary,
+			progressPanelUpdateCreatedAtKey:       update.CreatedAt,
+			progressPanelUpdateCheckpointIDKey:    update.CheckpointID,
+			progressPanelUpdateCheckpointLabelKey: update.CheckpointLabel,
+			progressPanelUpdateMetadataKey:        cloneAnyMap(update.Metadata),
 		}
 		out = append(out, record)
 	}
@@ -420,7 +420,7 @@ func readProgressPanelUpdates(raw any) []ProgressPanelUpdate {
 			Summary:         readString(record, progressPanelUpdateSummaryKey),
 			CreatedAt:       readString(record, progressPanelUpdateCreatedAtKey),
 			CheckpointID:    readString(record, progressPanelUpdateCheckpointIDKey),
-			CheckpointLabel: readString(record, progressPanelUpdateCheckpointLabel),
+			CheckpointLabel: readString(record, progressPanelUpdateCheckpointLabelKey),
 			Metadata:        readObjectValueMap(record[progressPanelUpdateMetadataKey]),
 		})
 	}

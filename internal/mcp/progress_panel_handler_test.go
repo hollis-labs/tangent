@@ -300,6 +300,68 @@ func TestProgressPanel_InvalidSubmitReturnsRejectedPayloadAndPreservesState(t *t
 	}
 }
 
+func TestProgressPanel_ReopenDifferentPanelIDDoesNotReusePersistedItems(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "progress-panel")
+	conn, _, err := websocket.Dial(context.Background(), rg.wsURL(roomID), nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	firstDone := make(chan advanceResult, 1)
+	go func() {
+		firstDone <- callProgressPanel(t, rg, roomID, "progress-panel-a", map[string]any{
+			"panel_id": "panel-a",
+			"items": []any{
+				map[string]any{"item_id": "item-1", "label": "Scan repo", "status": "running"},
+			},
+		})
+	}()
+	_ = readWSFrame(t, conn, 3*time.Second)
+	writeWSFrame(t, conn, map[string]any{
+		"type":       "cancel",
+		"envelopeId": "progress-panel-a",
+	})
+	if res := <-firstDone; res.err != nil || res.result.IsError {
+		t.Fatalf("seed progress-panel result: err=%v body=%s", res.err, extractText(t, res.result))
+	}
+
+	secondDone := make(chan advanceResult, 1)
+	go func() {
+		secondDone <- callProgressPanel(t, rg, roomID, "progress-panel-b", map[string]any{
+			"panel_id": "panel-b",
+			"items":    []any{},
+			"updates":  []any{},
+		})
+	}()
+
+	secondFrame := readWSFrame(t, conn, 3*time.Second)
+	secondEnvelope, _ := secondFrame["envelope"].(map[string]any)
+	secondData, _ := secondEnvelope["data"].(map[string]any)
+	if got := secondData["panel_id"]; got != "panel-b" {
+		t.Fatalf("reopened panel_id = %v, want panel-b", got)
+	}
+	items, _ := secondData["items"].([]any)
+	if len(items) != 0 {
+		t.Fatalf("reopened items len = %d, want 0", len(items))
+	}
+	updates, _ := secondData["updates"].([]any)
+	if len(updates) != 0 {
+		t.Fatalf("reopened updates len = %d, want 0", len(updates))
+	}
+
+	writeWSFrame(t, conn, map[string]any{
+		"type":       "cancel",
+		"envelopeId": "progress-panel-b",
+	})
+	if res := <-secondDone; res.err != nil || res.result.IsError {
+		t.Fatalf("reopen progress-panel result: err=%v body=%s", res.err, extractText(t, res.result))
+	}
+}
+
 func callProgressPanel(
 	t *testing.T,
 	rg *sessionRig,

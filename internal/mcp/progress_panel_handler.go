@@ -121,13 +121,9 @@ func progressPanelSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.P
 	items := readProgressPanelItemsValue(data["items"])
 	if reusePersisted {
 		items = persisted.Items
-	} else if len(items) == 0 && persisted != nil {
-		items = persisted.Items
 	}
 	updates := readProgressPanelUpdatesValue(data["updates"])
 	if reusePersisted {
-		updates = persisted.Updates
-	} else if len(updates) == 0 && persisted != nil {
 		updates = persisted.Updates
 	}
 	summary := readProgressPanelSummaryValue(data["summary"])
@@ -229,6 +225,8 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 	items[index].Detail = draft.Summary
 	if isProgressTerminalStatus(draft.Status) {
 		items[index].CompletedAt = now
+	} else {
+		items[index].CompletedAt = ""
 	}
 
 	updates := cloneProgressPanelUpdates(persisted.Updates)
@@ -270,6 +268,9 @@ func (s *Server) normalizeProgressPanelSubmitResponse(
 	if isProgressTerminalStatus(draft.Status) {
 		summary.CompletedAt = now
 		summary.CompletionResult = draft.Status
+	} else {
+		summary.CompletedAt = ""
+		summary.CompletionResult = ""
 	}
 
 	snapshot := room.ProgressPanelSnapshot{
