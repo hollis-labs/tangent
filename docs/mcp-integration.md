@@ -10,6 +10,8 @@ and for the whiteboard flow see
 [`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for the
 spreadsheet-review flow see
 [`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
+for the approval-queue flow see
+[`manual-tests/approval-queue-e2e.md`](./manual-tests/approval-queue-e2e.md);
 for the generalized form flow see
 [`manual-tests/form-collect-e2e.md`](./manual-tests/form-collect-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
@@ -39,7 +41,7 @@ collides. Expected startup logs:
 
 ```
 level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=29
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=38
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
@@ -76,7 +78,7 @@ claude mcp list
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
 `tangent.design-iteration`, `tangent.whiteboard`,
-`tangent.spreadsheet-review`, or the writing
+`tangent.spreadsheet-review`, `tangent.approval_queue`, or the writing
 sequence via `tangent.session_*`, `tangent.interview_question`,
 `tangent.synthesis_notes`, `tangent.block_draft`,
 `tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
@@ -124,7 +126,7 @@ shape, please contribute it back.
 
 ## Verification (no agent required)
 
-Confirm the MCP surface is up and advertises the v0.6 tools:
+Confirm the MCP surface is up and advertises the current tool set:
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -144,6 +146,7 @@ Expected:
 "tangent.block_draft"
 "tangent.prose_revision"
 "tangent.output_render"
+"tangent.approval_queue"
 "tangent.session_advance"
 "tangent.session_advance_phase"
 "tangent.session_close"
@@ -193,6 +196,10 @@ workflow-neutral phase substrate:
   room-backed `saved_views`, persisted `selected_row_ids`,
   normalized `selected_rows`, optional bulk `action_id`, and
   lightweight CSV `export_refs`.
+- `approval_queue`: when a room has persisted approval-queue state, a
+  dedicated projection with `queue_id`, canonical `items`,
+  `current_index`, normalized `decisions`, queue `notes`, `updated_at`,
+  append-only `audit_trail`, and lightweight audit `export_refs`.
 - `whiteboard`: when a room has persisted board state, a dedicated
   projection with `board_id`, `scene_snapshot`, referenced `assets`,
   `export_refs`, `notes`, `updated_at`, and append-only

@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import {
+  ApprovalQueue,
+  type ApprovalQueueEnvelope,
+  type ApprovalQueueResponse,
+} from "./components/envelopes/ApprovalQueue";
+import {
   BlockDraft,
   type BlockDraftEnvelope,
   type BlockDraftResponse,
@@ -75,6 +80,17 @@ function TriageAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps)
       envelope={envelope as TriageEnvelope}
       onSubmit={onSubmit as (response: TriageResponse) => void}
       onCancel={onCancel}
+    />
+  );
+}
+
+function ApprovalQueueAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <ApprovalQueue
+      envelope={envelope as ApprovalQueueEnvelope}
+      onSubmit={onSubmit as (response: ApprovalQueueResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }
@@ -188,6 +204,7 @@ function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompone
 }
 
 register("tangent.triage", TriageAdapter);
+register("tangent.approval-queue", ApprovalQueueAdapter);
 register("tangent.feedback", FeedbackAdapter);
 register("tangent.form-collect", FormCollectAdapter);
 register("tangent.design-iteration", DesignIterationAdapter);

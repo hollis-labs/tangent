@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
 	FormCollect           *room.FormStateView              `json:"form_collect,omitempty"`
 	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
 	Whiteboard            *room.WhiteboardStateView        `json:"whiteboard,omitempty"`
@@ -151,6 +152,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
 		FormCollect:           room.ProjectFormState(phaseState),
 		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
 		Whiteboard:            room.ProjectWhiteboardState(phaseState),
@@ -282,6 +284,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == spreadsheetReviewEnvelopeType {
 			return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == approvalQueueEnvelopeType {
+			return s.normalizeApprovalQueueSubmitResponse(roomID, env, resp)
+		}
 		if env.Type == formCollectEnvelopeType {
 			return s.normalizeFormCollectSubmitResponse(roomID, env, resp)
 		}
@@ -343,6 +348,11 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidApprovalQueueID),
+		errors.Is(err, room.ErrInvalidApprovalQueueItem),
+		errors.Is(err, room.ErrInvalidApprovalQueueDecision),
+		errors.Is(err, room.ErrInvalidApprovalQueueAuditEntry),
+		errors.Is(err, room.ErrInvalidApprovalQueueExportRef),
 		errors.Is(err, room.ErrInvalidSpreadsheetTableID),
 		errors.Is(err, room.ErrInvalidSpreadsheetColumn),
 		errors.Is(err, room.ErrInvalidSpreadsheetRow),

@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": ["queue_id", "items"],
+  "properties": {
+    "queue_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "intent": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "current_index": { "type": "integer", "minimum": 0 },
+    "decisions": { "type": "array", "items": { "type": "object" } },
+    "notes": { "type": "string" },
+    "audit_trail": { "type": "array", "items": { "type": "object" } },
+    "export_refs": { "type": "array", "items": { "type": "object" } }
+  },
+  "additionalProperties": true
+}

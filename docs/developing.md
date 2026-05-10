@@ -64,6 +64,8 @@ Notable suites:
 - `scripts/spreadsheet-review-mock-call.mjs` — end-to-end
   spreadsheet-review submit -> reopen -> cancel verification, including
   saved views and export metadata.
+- `scripts/approval-queue-mock-call.mjs` — end-to-end approval-queue
+  submit -> reopen -> cancel verification, including audit export refs.
 - `scripts/form-collect-mock-call.mjs` — end-to-end form-collect submit
   verification, including attachment refs and explicit action capture.
 
@@ -99,11 +101,11 @@ See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
 - Localhost only, single-user, no auth.
 - One active pending envelope per room.
-- Nineteen tools advertised; bundled workflows now include the full
+- Twenty tools advertised on the current branch; bundled workflows now include the full
   writing path (`interview_question`, `synthesis_notes`, `block_draft`,
   `prose_revision`, `output_render`) alongside `triage`, `feedback`,
-  `form-collect`, `design-iteration`, `whiteboard`, and
-  `spreadsheet-review`.
+  `form-collect`, `design-iteration`, `whiteboard`,
+  `spreadsheet-review`, and `approval_queue`.
 
 ## Persistence layer
 
@@ -130,11 +132,11 @@ land with both directions present.
 ## Adding a new envelope kind
 
 The current precedents are `triage`, `feedback`, `form-collect`,
-`design-iteration`, `whiteboard`, `spreadsheet-review`, `interview-question`,
+`design-iteration`, `whiteboard`, `spreadsheet-review`, `approval-queue`, `interview-question`,
 `synthesis-notes`, `block-draft`, `prose-revision`, and
 `output-render`. Use at least one simple workflow, one room-backed
 structured surface (`form-collect`, `whiteboard`, or
-`spreadsheet-review`), and one
+`spreadsheet-review` or `approval-queue`), and one
 multi-phase writing workflow as references instead of assuming one
 shape fits every kind.
 
@@ -173,7 +175,8 @@ shape fits every kind.
 A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent.triage`,
 `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`,
-`tangent.whiteboard`, `tangent.spreadsheet-review`, and the writing
+tangent.whiteboard`, `tangent.spreadsheet-review`,
+`tangent.approval_queue`, and the writing
 workflow kinds are the worked examples. If the workflow
 is multi-step,
 prefer reusing the `tangent.session_*` substrate and the room phase

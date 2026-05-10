@@ -161,6 +161,38 @@ describe("<Room>", () => {
     expect(cancel).not.toHaveBeenCalledWith("spreadsheet-refresh-1");
   });
 
+  it("beforeunload does not cancel an active approval-queue envelope", async () => {
+    let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+    mockFetchForRoom();
+    renderAt("/r/room-a");
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    await act(async () => {
+      onEnvelope?.("approval-refresh-1", {
+        v: 1,
+        id: "approval-refresh-1",
+        type: "tangent.approval-queue",
+        data: { queue_id: "queue-1", items: [{ id: "item-1", title: "Review" }] },
+      });
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    expect(cancel).not.toHaveBeenCalledWith("approval-refresh-1");
+  });
+
   it("enriches synthesis-notes envelopes with the gated session state", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(

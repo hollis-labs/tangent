@@ -241,6 +241,12 @@ func RegisterSpreadsheetReviewOnDispatcher(dispatcher *envelope.Dispatcher, hand
 	return dispatcher.Register(spreadsheetReviewEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+// RegisterApprovalQueueOnDispatcher wires the same room-bridging
+// handler for tangent.approval-queue envelopes.
+func RegisterApprovalQueueOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(approvalQueueEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 // RegisterSynthesisNotesOnDispatcher wires the same room-bridging
 // handler for tangent.synthesis-notes envelopes.
 func RegisterSynthesisNotesOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
