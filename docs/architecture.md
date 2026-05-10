@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Twenty tools are advertised in the current build:
+The current build advertises 24 tools:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -73,6 +73,9 @@ Twenty tools are advertised in the current build:
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
 - `tangent.dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
+- `tangent.diff-review` — room-backed diff review with explicit submit.
+- `tangent.file-picker` — room-backed file selection with explicit submit.
+- `tangent.progress-panel` — room-backed progress tracking with explicit submit.
 - `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.

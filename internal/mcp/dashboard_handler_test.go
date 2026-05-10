@@ -343,6 +343,125 @@ func TestDashboard_InvalidSubmitReturnsRejectedPayloadAndPreservesState(t *testi
 	}
 }
 
+func TestDashboard_InvalidStateSubmitReturnsRejectedPayloadAndPreservesState(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "dashboard")
+	conn, _, err := websocket.Dial(context.Background(), rg.wsURL(roomID), nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	done := make(chan advanceResult, 1)
+	go func() {
+		done <- callDashboard(t, rg, roomID, "dashboard-invalid-state-1", map[string]any{
+			"dashboard_id": "dashboard-stateful",
+			"title":        "Ops dashboard",
+			"tiles": []any{
+				map[string]any{"tile_id": "tile-open", "kind": "room_count", "title": "Open rooms"},
+			},
+			"saved_layouts": []any{
+				map[string]any{
+					"layout_id":  "layout-default",
+					"name":       "Default",
+					"is_default": true,
+					"tiles": []any{
+						map[string]any{"tile_id": "tile-open", "x": 0, "y": 0, "w": 1, "h": 1},
+					},
+				},
+			},
+			"active_layout_id": "layout-default",
+		})
+	}()
+
+	select {
+	case early := <-done:
+		t.Fatalf("invalid-state dashboard returned before ws frame: err=%v isError=%v body=%s", early.err, early.result != nil && early.result.IsError, extractText(t, early.result))
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	_ = readWSFrame(t, conn, 3*time.Second)
+	writeWSFrame(t, conn, map[string]any{
+		"type":       "response",
+		"envelopeId": "dashboard-invalid-state-1",
+		"response": map[string]any{
+			"v":          1,
+			"envelopeId": "dashboard-invalid-state-1",
+			"kind":       "data",
+			"status":     "submitted",
+			"payload": map[string]any{
+				"dashboard_id":     "dashboard-stateful",
+				"action":           "update",
+				"active_layout_id": "missing-layout",
+			},
+		},
+	})
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("invalid-state dashboard transport err: %v", res.err)
+	}
+	if res.result.IsError {
+		t.Fatalf("invalid-state dashboard IsError=true: %s", extractText(t, res.result))
+	}
+
+	var rejected struct {
+		Payload struct {
+			Outcome string `json:"outcome"`
+			Action  string `json:"action"`
+			Errors  []struct {
+				Code string `json:"code"`
+			} `json:"errors"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, res.result)), &rejected); decodeErr != nil {
+		t.Fatalf("unmarshal invalid-state dashboard response: %v", decodeErr)
+	}
+	if rejected.Payload.Outcome != "rejected" {
+		t.Fatalf("rejected outcome = %q, want rejected", rejected.Payload.Outcome)
+	}
+	if rejected.Payload.Action != "update" {
+		t.Fatalf("rejected action = %q, want update", rejected.Payload.Action)
+	}
+	if len(rejected.Payload.Errors) != 1 || rejected.Payload.Errors[0].Code != "INVALID_STATE" {
+		t.Fatalf("rejected errors = %#v, want INVALID_STATE", rejected.Payload.Errors)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get after invalid-state submit: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get after invalid-state submit IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		Dashboard *struct {
+			ActiveLayoutID  string `json:"active_layout_id"`
+			SnapshotHistory []struct {
+				SnapshotID string `json:"snapshot_id"`
+			} `json:"snapshot_history"`
+		} `json:"dashboard"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, getRes)), &state); decodeErr != nil {
+		t.Fatalf("unmarshal session_get after invalid-state submit: %v", decodeErr)
+	}
+	if state.Dashboard == nil {
+		t.Fatal("dashboard is nil after invalid-state submit")
+	}
+	if state.Dashboard.ActiveLayoutID != "layout-default" {
+		t.Fatalf("active_layout_id = %q, want layout-default", state.Dashboard.ActiveLayoutID)
+	}
+	if len(state.Dashboard.SnapshotHistory) != 0 {
+		t.Fatalf("snapshot_history len = %d, want 0", len(state.Dashboard.SnapshotHistory))
+	}
+}
+
 func callDashboard(
 	t *testing.T,
 	rg *sessionRig,

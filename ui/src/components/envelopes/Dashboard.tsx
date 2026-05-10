@@ -791,12 +791,10 @@ function normalizeSavedLayoutsDraft(
 }
 
 function normalizeDefaultLayout(items: DashboardSavedLayout[]): DashboardSavedLayout[] {
-  let defaultAssigned = false;
+  const defaultLayoutID =
+    items.find((item) => item.is_default === true)?.layout_id ?? items[0]?.layout_id ?? "";
   return items.map((item, index) => {
-    const isDefault = item.is_default === true || (!defaultAssigned && index === 0);
-    if (isDefault) {
-      defaultAssigned = true;
-    }
+    const isDefault = defaultLayoutID !== "" ? item.layout_id === defaultLayoutID : index === 0;
     return { ...item, is_default: isDefault };
   });
 }

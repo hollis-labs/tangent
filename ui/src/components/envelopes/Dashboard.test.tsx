@@ -134,6 +134,9 @@ describe("<Dashboard>", () => {
       activeLayoutID: "focus",
       savedLayouts: [{ layout_id: "layout-default" }, { layout_id: "focus", name: "Focus" }],
     });
+    expect(
+      savedDraft.savedLayouts.filter((item: { is_default?: boolean }) => item.is_default),
+    ).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId("dashboard-copy-artifact-tile-progress"));
     await act(async () => {

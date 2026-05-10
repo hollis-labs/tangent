@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
@@ -275,13 +276,29 @@ func (s *Server) normalizeDashboardSubmitResponse(
 
 	now := nowRFC3339()
 	snapshotID := nextDashboardSnapshotID(persisted)
+	savedLayouts := cloneDashboardSavedLayouts(persisted.SavedLayouts)
+	if draft.SavedLayouts != nil {
+		savedLayouts = cloneDashboardSavedLayouts(draft.SavedLayouts)
+	}
+	activeLayoutID := persisted.ActiveLayoutID
+	if draft.ActiveLayoutID != "" || draft.SavedLayouts != nil {
+		activeLayoutID = draft.ActiveLayoutID
+	}
+	layout := cloneDashboardLayout(persisted.Layout)
+	if draft.Layout != nil {
+		layout = cloneDashboardLayout(draft.Layout)
+	} else if activeLayoutID != "" {
+		if active := findDashboardSavedLayout(savedLayouts, activeLayoutID); active != nil {
+			layout = cloneDashboardLayout(active.Tiles)
+		}
+	}
 	snapshotHistory := append(cloneDashboardSnapshotHistory(persisted.SnapshotHistory), room.DashboardSnapshotMeta{
 		SnapshotID:     snapshotID,
 		Action:         draft.Action,
 		Note:           draft.Note,
 		CreatedAt:      now,
 		TileCount:      len(persisted.Tiles),
-		ActiveLayoutID: persisted.ActiveLayoutID,
+		ActiveLayoutID: activeLayoutID,
 	})
 
 	summary := cloneDashboardSummary(persisted.Summary)
@@ -298,22 +315,6 @@ func (s *Server) normalizeDashboardSubmitResponse(
 	queryState := cloneDashboardQueryState(persisted.QueryState)
 	if draft.QueryState != nil {
 		queryState = cloneDashboardQueryState(draft.QueryState)
-	}
-	savedLayouts := cloneDashboardSavedLayouts(persisted.SavedLayouts)
-	if draft.SavedLayouts != nil {
-		savedLayouts = cloneDashboardSavedLayouts(draft.SavedLayouts)
-	}
-	activeLayoutID := persisted.ActiveLayoutID
-	if draft.ActiveLayoutID != "" || draft.SavedLayouts != nil {
-		activeLayoutID = draft.ActiveLayoutID
-	}
-	layout := cloneDashboardLayout(persisted.Layout)
-	if draft.Layout != nil {
-		layout = cloneDashboardLayout(draft.Layout)
-	} else if activeLayoutID != "" {
-		if active := findDashboardSavedLayout(savedLayouts, activeLayoutID); active != nil {
-			layout = cloneDashboardLayout(active.Tiles)
-		}
 	}
 	exportState := buildDashboardExportState(
 		persisted.DashboardID,
@@ -336,6 +337,9 @@ func (s *Server) normalizeDashboardSubmitResponse(
 		ExportState:     exportState,
 		UpdatedAt:       now,
 	}); err != nil {
+		if isDashboardSnapshotValidationError(err) {
+			return dashboardRejectedResponse(resp, persisted.DashboardID, draft.Action, "INVALID_STATE", err.Error()), nil
+		}
 		return nil, fmt.Errorf("dashboard submit: save room state: %w", err)
 	}
 
@@ -556,6 +560,17 @@ func findDashboardSavedLayout(
 		}
 	}
 	return nil
+}
+
+func isDashboardSnapshotValidationError(err error) bool {
+	return errors.Is(err, room.ErrInvalidDashboardID) ||
+		errors.Is(err, room.ErrInvalidDashboardTile) ||
+		errors.Is(err, room.ErrInvalidDashboardLayout) ||
+		errors.Is(err, room.ErrInvalidDashboardSavedLayout) ||
+		errors.Is(err, room.ErrInvalidDashboardQueryState) ||
+		errors.Is(err, room.ErrInvalidDashboardSummary) ||
+		errors.Is(err, room.ErrInvalidDashboardSnapshot) ||
+		errors.Is(err, room.ErrInvalidDashboardExport)
 }
 
 func dashboardRejectedResponse(

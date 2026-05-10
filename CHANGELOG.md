@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _None._
 
-## [v0.11.0] - 2026-05-09
+## [v0.11.0] - 2026-05-10
 
 Dashboard. Tangent now ships a persistent room-backed dashboard
 workflow for explicit refresh/update turns, saved layout reuse,
