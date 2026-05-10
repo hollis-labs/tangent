@@ -90,4 +90,45 @@ describe("Wizard", () => {
     expect(response.status).toBe("partial");
     expect(response.payload.current_step_id).toBe("step-2");
   });
+
+  it("captures attachment and action outputs", () => {
+    const onSubmit = vi.fn<(response: WizardResponse) => void>();
+    const envelope: WizardEnvelope = {
+      v: 1,
+      id: "wizard-4",
+      type: "tangent.wizard",
+      data: {
+        wizard_id: "wizard-4",
+        current_step_id: "step-artifacts",
+        steps: [
+          {
+            step_id: "step-artifacts",
+            title: "Artifacts",
+            fields: {
+              fields: [{ field_id: "attachments", label: "Attachments", kind: "attachments" }],
+              actions: [{ action_id: "queue-followup", label: "Queue Follow-up" }],
+            },
+          },
+        ],
+      },
+    };
+
+    render(<Wizard envelope={envelope} onSubmit={onSubmit} onCancel={() => {}} roomID="room-4" />);
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "brief|artifact://brief-1" },
+    });
+    fireEvent.click(screen.getByText("Queue Follow-up"));
+
+    const response = onSubmit.mock.calls[0][0];
+    const attachments = (response.payload.progress[0]?.response?.attachments ?? []) as Array<{
+      uri?: string;
+    }>;
+    const actionOutput = (response.payload.progress[0]?.response?.action_output ?? {}) as {
+      action_id?: string;
+    };
+    expect(attachments[0]?.uri).toBe(
+      "artifact://brief-1",
+    );
+    expect(actionOutput.action_id).toBe("queue-followup");
+  });
 });

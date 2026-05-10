@@ -21,7 +21,7 @@ type WizardFieldOption = {
 type WizardField = {
   field_id: string;
   label: string;
-  kind?: "text" | "textarea" | "select" | "checkbox";
+  kind?: "text" | "textarea" | "select" | "checkbox" | "attachments";
   placeholder?: string;
   required?: boolean;
   options?: WizardFieldOption[];
@@ -35,6 +35,7 @@ export type WizardStep = {
   optional?: boolean;
   fields?: {
     fields?: WizardField[];
+    actions?: Array<{ action_id: string; label: string; description?: string }>;
   };
   branches?: Array<{
     branch_id: string;
@@ -264,6 +265,24 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     setProgress(withPatchedCurrentProgress({ response, status: "in_progress" }));
   };
 
+  const handleActionOutput = (actionID: string) => {
+    const response = {
+      ...(currentProgress?.response ?? {}),
+      action_output: {
+        action_id: actionID,
+        triggered_at: new Date().toISOString(),
+      },
+    };
+    const nextProgress = withPatchedCurrentProgress({
+      response,
+      status: "completed",
+      summary: `Action ${actionID} selected`,
+    });
+    setProgress(nextProgress);
+    persist("partial", currentStepID, nextProgress, branchSelections);
+    setMessage(`Action ${actionID} selected.`);
+  };
+
   const setBranchSelection = (optionID: string, targetStepID: string) => {
     if (!currentStep) return;
     setBranchSelections((prev) => [
@@ -385,6 +404,24 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
               onChange={(value) => setFieldValue(field.field_id, value)}
             />
           ))}
+
+          {currentStep.fields?.actions && currentStep.fields.actions.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Actions</div>
+              <div className="flex flex-wrap gap-2">
+                {currentStep.fields.actions.map((action) => (
+                  <Button
+                    key={action.action_id}
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleActionOutput(action.action_id)}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {currentStep.branches && currentStep.branches.length > 0 ? (
             <div className="space-y-2">
@@ -519,6 +556,38 @@ function FieldControl({
             </option>
           ))}
         </select>
+      </div>
+    );
+  }
+  if (kind === "attachments") {
+    const lines = Array.isArray(value)
+      ? (value as Array<{ name?: unknown; uri?: unknown }>).map(
+          (item) =>
+            `${typeof item.name === "string" ? item.name : ""}|${typeof item.uri === "string" ? item.uri : ""}`,
+        )
+      : [];
+    return (
+      <div className="space-y-2">
+        <label htmlFor={inputID} className="block text-sm font-medium">
+          {field.label}
+        </label>
+        <Textarea
+          id={inputID}
+          value={lines.join("\n")}
+          onChange={(event) =>
+            onChange(
+              event.target.value
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => {
+                  const [name, uri] = line.split("|");
+                  return { name: name?.trim() ?? "", uri: uri?.trim() ?? "" };
+                }),
+            )
+          }
+          placeholder={field.placeholder ?? "name|artifact://ref"}
+        />
       </div>
     );
   }
