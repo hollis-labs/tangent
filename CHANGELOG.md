@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_None._
+Wizard workflow groundwork for `v0.12.0`.
+
+### Added
+
+- **`tangent.wizard`.** A bundled room-backed wizard workflow with
+  canonical step definitions, explicit partial updates, and final
+  completion through the existing room/tool contract.
+- **Wizard room substrate.** `phase_outputs["wizard"]` now persists
+  `wizard_id`, canonical `steps`, `current_step_id`, accepted
+  `progress`, deterministic `branch_selections`, summary fields, and
+  `updated_at`, all surfaced through `tangent.session_get.wizard`.
+- **Wizard browser host.** Tangent now ships a step-based wizard host
+  with reopen hydration, browser-local draft recovery, review summary,
+  back/next navigation, attachment-style response capture, and action
+  output affordances.
+- **Wizard manual test coverage.** Added
+  `docs/manual-tests/wizard-e2e.md`.
+
+### Changed
+
+- **`tangent.session_get` now projects wizard state.** Agents can read
+  canonical wizard room state directly without scraping envelope
+  history.
+- **Wizard submit semantics are explicit.** Partial room-backed saves
+  stay `status: "partial"` while final completion resolves with
+  `status: "submitted"` and a completed summary payload.
 
 ## [v0.11.0] - 2026-05-10
 

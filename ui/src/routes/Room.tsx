@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  wizard?: unknown;
   dashboard?: unknown;
   progress_panel?: unknown;
   file_picker?: unknown;
@@ -107,6 +108,7 @@ export default function Room() {
         envelopeType === "tangent.dashboard" ||
         envelopeType === "tangent.file-picker" ||
         envelopeType === "tangent.progress-panel" ||
+        envelopeType === "tangent.wizard" ||
         envelopeType === "tangent.diff-review" ||
         envelopeType === "tangent.spreadsheet-review" ||
         envelopeType === "tangent.form-collect" ||
@@ -170,6 +172,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.dashboard" &&
     type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
+    type !== "tangent.wizard" &&
     type !== "tangent.file-picker" &&
     type !== "tangent.progress-panel" &&
     type !== "tangent.diff-review" &&
@@ -194,6 +197,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.form-collect") {
       return attachFormCollectState(envelope, state.form_collect);
+    }
+    if (type === "tangent.wizard") {
+      return attachWizardState(envelope, state.wizard);
     }
     if (type === "tangent.dashboard") {
       return attachDashboardState(envelope, state.dashboard);
@@ -416,6 +422,37 @@ function attachProgressPanelState(envelope: unknown, progressPanel: unknown): un
       : {};
   const persisted = progressPanel as Record<string, unknown>;
   for (const key of ["panel_id", "items", "updates", "checkpoints", "summary", "updated_at"]) {
+    if (persisted[key] !== undefined) {
+      data[key] = persisted[key];
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachWizardState(envelope: unknown, wizard: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  if (!wizard || typeof wizard !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  const persisted = wizard as Record<string, unknown>;
+  for (const key of [
+    "wizard_id",
+    "title",
+    "description",
+    "steps",
+    "current_step_id",
+    "progress",
+    "branch_selections",
+    "summary",
+    "updated_at",
+  ]) {
     if (persisted[key] !== undefined) {
       data[key] = persisted[key];
     }

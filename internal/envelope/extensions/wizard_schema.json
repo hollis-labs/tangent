@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["wizard_id", "steps"],
+  "properties": {
+    "wizard_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "current_step_id": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step_id", "title"],
+        "properties": {
+          "step_id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "kind": { "type": "string" },
+          "optional": { "type": "boolean" },
+          "fields": { "type": "object" },
+          "branches": { "type": "array" },
+          "metadata": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "progress": { "type": "array" },
+    "branch_selections": { "type": "array" },
+    "summary": { "type": "object" },
+    "updated_at": { "type": "string" }
+  },
+  "additionalProperties": true
+}

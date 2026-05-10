@@ -161,6 +161,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register progress-panel extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterWizard(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register wizard extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register diff-review extension: %v\n", regErr)
 		os.Exit(1)
@@ -252,6 +256,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterProgressPanelOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register progress-panel handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterWizardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register wizard handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {

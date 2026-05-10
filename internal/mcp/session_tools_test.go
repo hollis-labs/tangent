@@ -80,6 +80,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterProgressPanel(envSvc); regErr != nil {
 		t.Fatalf("RegisterProgressPanel: %v", regErr)
 	}
+	if regErr := extensions.RegisterWizard(envSvc); regErr != nil {
+		t.Fatalf("RegisterWizard: %v", regErr)
+	}
 	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterDiffReview: %v", regErr)
 	}
@@ -162,6 +165,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterProgressPanelOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterWizardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterWizardOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterDiffReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
@@ -941,6 +949,83 @@ func TestSession_GetIncludesDashboardProjection(t *testing.T) {
 	}
 	if state.Dashboard.Summary == nil || state.Dashboard.Summary.AcceptedSnapshotID != "dashboard-1-snapshot-001" {
 		t.Fatalf("summary = %#v, want accepted_snapshot_id dashboard-1-snapshot-001", state.Dashboard.Summary)
+	}
+}
+
+func TestSession_GetIncludesWizardProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "wizard")
+	if _, err := rg.mgr.SaveWizardSnapshot(roomID, room.WizardSnapshot{
+		WizardID:      "wizard-1",
+		Title:         "Release wizard",
+		CurrentStepID: "step-review",
+		Steps: []room.WizardStep{
+			{
+				StepID: "step-scope",
+				Title:  "Scope",
+				Kind:   "form",
+				Branches: []room.WizardStepBranch{
+					{BranchID: "review", Label: "Review", TargetStepID: "step-review", Metadata: map[string]any{}},
+				},
+				Metadata: map[string]any{"owner": "codex"},
+			},
+			{StepID: "step-review", Title: "Review", Kind: "review", Metadata: map[string]any{}},
+		},
+		Progress: []room.WizardStepProgress{
+			{
+				StepID:     "step-scope",
+				Status:     "completed",
+				RevisionID: "rev-001",
+				Response:   map[string]any{"scope": "wizard state"},
+			},
+		},
+		BranchSelections: []room.WizardBranchSelection{
+			{StepID: "step-scope", OptionID: "review"},
+		},
+		Summary: &room.WizardSummary{
+			Status:             "in_progress",
+			CompletedStepCount: 1,
+			TotalStepCount:     2,
+			CurrentStepID:      "step-review",
+		},
+		UpdatedAt: "2026-05-10T04:20:00Z",
+	}); err != nil {
+		t.Fatalf("SaveWizardSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		Wizard *room.WizardStateView `json:"wizard"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.Wizard == nil {
+		t.Fatal("wizard projection missing")
+	}
+	if got := state.Wizard.WizardID; got != "wizard-1" {
+		t.Fatalf("wizard_id = %q, want wizard-1", got)
+	}
+	if got := state.Wizard.Steps[0].Metadata["owner"]; got != "codex" {
+		t.Fatalf("steps[0].metadata.owner = %v, want codex", got)
+	}
+	if got := state.Wizard.BranchSelections[0].TargetStepID; got != "step-review" {
+		t.Fatalf("branch_selections[0].target_step_id = %q, want step-review", got)
+	}
+	if state.Wizard.Summary == nil || state.Wizard.Summary.CurrentStepID != "step-review" {
+		t.Fatalf("summary = %#v, want current_step_id step-review", state.Wizard.Summary)
 	}
 }
 

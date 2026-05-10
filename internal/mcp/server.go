@@ -258,6 +258,16 @@ func (s *Server) registerTools() error {
 		InputSchema: progressPanelSchema,
 	}, s.handleProgressPanel)
 
+	wizardSchema, err := buildSchema(wizardInputSchemaJSON, "wizard")
+	if err != nil {
+		return fmt.Errorf("build wizard input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.wizard",
+		Description: "Dispatch a guided wizard envelope through Tangent. Persists room-backed step definitions, progress, branch selections, and explicit partial/final completion state.",
+		InputSchema: wizardSchema,
+	}, s.handleWizard)
+
 	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)
