@@ -898,6 +898,16 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 			AcceptedSnapshotID: "dashboard-1-snapshot-001",
 			AcceptedSnapshotAt: "2026-05-09T22:01:00Z",
 		},
+		SnapshotHistory: []room.DashboardSnapshotMeta{
+			{
+				SnapshotID:     "dashboard-1-snapshot-001",
+				Action:         "refresh",
+				Note:           "First accepted refresh",
+				CreatedAt:      "2026-05-09T22:01:00Z",
+				TileCount:      2,
+				ActiveLayoutID: "layout-default",
+			},
+		},
 		UpdatedAt: "2026-05-09T22:01:00Z",
 	}); err != nil {
 		t.Fatalf("SaveDashboardSnapshot: %v", err)
@@ -937,6 +947,9 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 	if view.Summary == nil || view.Summary.TileCount != 2 {
 		t.Fatalf("summary = %#v, want tile_count 2", view.Summary)
 	}
+	if got := len(view.SnapshotHistory); got != 1 {
+		t.Fatalf("snapshot_history len = %d, want 1", got)
+	}
 
 	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
 	if err != nil {
@@ -957,6 +970,9 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 	}
 	if got := reloadedView.Summary.AcceptedSnapshotID; got != "dashboard-1-snapshot-001" {
 		t.Fatalf("reloaded summary.accepted_snapshot_id = %q, want dashboard-1-snapshot-001", got)
+	}
+	if got := reloadedView.SnapshotHistory[0].Action; got != "refresh" {
+		t.Fatalf("reloaded snapshot_history[0].action = %q, want refresh", got)
 	}
 }
 

@@ -8,15 +8,16 @@ import (
 const (
 	DashboardPhaseID = "dashboard"
 
-	dashboardIDKey             = "dashboard_id"
-	dashboardTitleKey          = "title"
-	dashboardTilesKey          = "tiles"
-	dashboardLayoutKey         = "layout"
-	dashboardSavedLayoutsKey   = "saved_layouts"
-	dashboardActiveLayoutIDKey = "active_layout_id"
-	dashboardQueryStateKey     = "query_state"
-	dashboardSummaryKey        = "summary"
-	dashboardUpdatedAtKey      = "updated_at"
+	dashboardIDKey              = "dashboard_id"
+	dashboardTitleKey           = "title"
+	dashboardTilesKey           = "tiles"
+	dashboardLayoutKey          = "layout"
+	dashboardSavedLayoutsKey    = "saved_layouts"
+	dashboardActiveLayoutIDKey  = "active_layout_id"
+	dashboardQueryStateKey      = "query_state"
+	dashboardSummaryKey         = "summary"
+	dashboardSnapshotHistoryKey = "snapshot_history"
+	dashboardUpdatedAtKey       = "updated_at"
 
 	dashboardTileIDKey       = "tile_id"
 	dashboardTileKindKey     = "kind"
@@ -70,11 +71,23 @@ const (
 	dashboardSummaryLastRefreshAtKey      = "last_refresh_at"
 	dashboardSummaryAcceptedSnapshotIDKey = "accepted_snapshot_id"
 	dashboardSummaryAcceptedSnapshotAtKey = "accepted_snapshot_at"
+
+	dashboardSnapshotIDKey        = "snapshot_id"
+	dashboardSnapshotActionKey    = "action"
+	dashboardSnapshotNoteKey      = "note"
+	dashboardSnapshotCreatedAtKey = "created_at"
+	dashboardSnapshotTileCountKey = "tile_count"
+	dashboardSnapshotLayoutIDKey  = "active_layout_id"
 )
 
 var allowedDashboardSortDirections = map[string]struct{}{
 	"asc":  {},
 	"desc": {},
+}
+
+var allowedDashboardSnapshotActions = map[string]struct{}{
+	"refresh": {},
+	"update":  {},
 }
 
 type DashboardTile struct {
@@ -149,28 +162,39 @@ type DashboardSummary struct {
 	AcceptedSnapshotAt string `json:"accepted_snapshot_at,omitempty"`
 }
 
+type DashboardSnapshotMeta struct {
+	SnapshotID     string `json:"snapshot_id"`
+	Action         string `json:"action"`
+	Note           string `json:"note,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+	TileCount      int    `json:"tile_count,omitempty"`
+	ActiveLayoutID string `json:"active_layout_id,omitempty"`
+}
+
 type DashboardStateView struct {
-	DashboardID    string                   `json:"dashboard_id"`
-	Title          string                   `json:"title,omitempty"`
-	Tiles          []DashboardTile          `json:"tiles"`
-	Layout         []DashboardTilePlacement `json:"layout"`
-	SavedLayouts   []DashboardSavedLayout   `json:"saved_layouts"`
-	ActiveLayoutID string                   `json:"active_layout_id,omitempty"`
-	QueryState     *DashboardQueryState     `json:"query_state,omitempty"`
-	Summary        *DashboardSummary        `json:"summary,omitempty"`
-	UpdatedAt      string                   `json:"updated_at,omitempty"`
+	DashboardID     string                   `json:"dashboard_id"`
+	Title           string                   `json:"title,omitempty"`
+	Tiles           []DashboardTile          `json:"tiles"`
+	Layout          []DashboardTilePlacement `json:"layout"`
+	SavedLayouts    []DashboardSavedLayout   `json:"saved_layouts"`
+	ActiveLayoutID  string                   `json:"active_layout_id,omitempty"`
+	QueryState      *DashboardQueryState     `json:"query_state,omitempty"`
+	Summary         *DashboardSummary        `json:"summary,omitempty"`
+	SnapshotHistory []DashboardSnapshotMeta  `json:"snapshot_history"`
+	UpdatedAt       string                   `json:"updated_at,omitempty"`
 }
 
 type DashboardSnapshot struct {
-	DashboardID    string
-	Title          string
-	Tiles          []DashboardTile
-	Layout         []DashboardTilePlacement
-	SavedLayouts   []DashboardSavedLayout
-	ActiveLayoutID string
-	QueryState     *DashboardQueryState
-	Summary        *DashboardSummary
-	UpdatedAt      string
+	DashboardID     string
+	Title           string
+	Tiles           []DashboardTile
+	Layout          []DashboardTilePlacement
+	SavedLayouts    []DashboardSavedLayout
+	ActiveLayoutID  string
+	QueryState      *DashboardQueryState
+	Summary         *DashboardSummary
+	SnapshotHistory []DashboardSnapshotMeta
+	UpdatedAt       string
 }
 
 func (r *Room) SaveDashboardSnapshot(snapshot DashboardSnapshot) error {
@@ -218,15 +242,16 @@ func projectDashboardStateFromBlob(blob PhaseOutput) *DashboardStateView {
 		return nil
 	}
 	view := &DashboardStateView{
-		DashboardID:    dashboardID,
-		Title:          readString(blob.Data, dashboardTitleKey),
-		Tiles:          readDashboardTiles(blob.Data[dashboardTilesKey]),
-		Layout:         readDashboardTilePlacements(blob.Data[dashboardLayoutKey]),
-		SavedLayouts:   readDashboardSavedLayouts(blob.Data[dashboardSavedLayoutsKey]),
-		ActiveLayoutID: readString(blob.Data, dashboardActiveLayoutIDKey),
-		QueryState:     readDashboardQueryState(blob.Data[dashboardQueryStateKey]),
-		Summary:        readDashboardSummary(blob.Data[dashboardSummaryKey]),
-		UpdatedAt:      readString(blob.Data, dashboardUpdatedAtKey),
+		DashboardID:     dashboardID,
+		Title:           readString(blob.Data, dashboardTitleKey),
+		Tiles:           readDashboardTiles(blob.Data[dashboardTilesKey]),
+		Layout:          readDashboardTilePlacements(blob.Data[dashboardLayoutKey]),
+		SavedLayouts:    readDashboardSavedLayouts(blob.Data[dashboardSavedLayoutsKey]),
+		ActiveLayoutID:  readString(blob.Data, dashboardActiveLayoutIDKey),
+		QueryState:      readDashboardQueryState(blob.Data[dashboardQueryStateKey]),
+		Summary:         readDashboardSummary(blob.Data[dashboardSummaryKey]),
+		SnapshotHistory: readDashboardSnapshotHistory(blob.Data[dashboardSnapshotHistoryKey]),
+		UpdatedAt:       readString(blob.Data, dashboardUpdatedAtKey),
 	}
 	if view.Tiles == nil {
 		view.Tiles = []DashboardTile{}
@@ -236,6 +261,9 @@ func projectDashboardStateFromBlob(blob PhaseOutput) *DashboardStateView {
 	}
 	if view.SavedLayouts == nil {
 		view.SavedLayouts = []DashboardSavedLayout{}
+	}
+	if view.SnapshotHistory == nil {
+		view.SnapshotHistory = []DashboardSnapshotMeta{}
 	}
 	return view
 }
@@ -271,16 +299,21 @@ func normalizeDashboardSnapshot(snapshot DashboardSnapshot) (DashboardSnapshot, 
 	if err != nil {
 		return DashboardSnapshot{}, err
 	}
+	snapshotHistory, err := normalizeDashboardSnapshotHistory(snapshot.SnapshotHistory)
+	if err != nil {
+		return DashboardSnapshot{}, err
+	}
 	return DashboardSnapshot{
-		DashboardID:    dashboardID,
-		Title:          strings.TrimSpace(snapshot.Title),
-		Tiles:          tiles,
-		Layout:         layout,
-		SavedLayouts:   savedLayouts,
-		ActiveLayoutID: activeLayoutID,
-		QueryState:     queryState,
-		Summary:        summary,
-		UpdatedAt:      strings.TrimSpace(snapshot.UpdatedAt),
+		DashboardID:     dashboardID,
+		Title:           strings.TrimSpace(snapshot.Title),
+		Tiles:           tiles,
+		Layout:          layout,
+		SavedLayouts:    savedLayouts,
+		ActiveLayoutID:  activeLayoutID,
+		QueryState:      queryState,
+		Summary:         summary,
+		SnapshotHistory: snapshotHistory,
+		UpdatedAt:       strings.TrimSpace(snapshot.UpdatedAt),
 	}, nil
 }
 
@@ -482,6 +515,40 @@ func normalizeDashboardSummary(summary *DashboardSummary, tileCount int) (*Dashb
 	}, nil
 }
 
+func normalizeDashboardSnapshotHistory(items []DashboardSnapshotMeta) ([]DashboardSnapshotMeta, error) {
+	if len(items) == 0 {
+		return []DashboardSnapshotMeta{}, nil
+	}
+	out := make([]DashboardSnapshotMeta, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		snapshotID := strings.TrimSpace(item.SnapshotID)
+		action := strings.TrimSpace(item.Action)
+		if snapshotID == "" {
+			return nil, ErrInvalidDashboardSnapshot
+		}
+		if _, exists := seen[snapshotID]; exists {
+			return nil, fmt.Errorf("%w: duplicate snapshot_id %q", ErrInvalidDashboardSnapshot, snapshotID)
+		}
+		if _, ok := allowedDashboardSnapshotActions[action]; !ok {
+			return nil, ErrInvalidDashboardSnapshot
+		}
+		if item.TileCount < 0 {
+			return nil, ErrInvalidDashboardSnapshot
+		}
+		seen[snapshotID] = struct{}{}
+		out = append(out, DashboardSnapshotMeta{
+			SnapshotID:     snapshotID,
+			Action:         action,
+			Note:           strings.TrimSpace(item.Note),
+			CreatedAt:      strings.TrimSpace(item.CreatedAt),
+			TileCount:      item.TileCount,
+			ActiveLayoutID: strings.TrimSpace(item.ActiveLayoutID),
+		})
+	}
+	return out, nil
+}
+
 func dashboardBlobFromSnapshot(snapshot DashboardSnapshot) PhaseOutput {
 	record := map[string]any{
 		dashboardIDKey:           snapshot.DashboardID,
@@ -499,6 +566,9 @@ func dashboardBlobFromSnapshot(snapshot DashboardSnapshot) PhaseOutput {
 	}
 	if summary := dashboardSummaryAny(snapshot.Summary); len(summary) > 0 {
 		record[dashboardSummaryKey] = summary
+	}
+	if history := dashboardSnapshotHistoryAny(snapshot.SnapshotHistory); len(history) > 0 {
+		record[dashboardSnapshotHistoryKey] = history
 	}
 	return PhaseOutput{Version: phaseOutputVersion, Data: record}
 }
@@ -636,6 +706,24 @@ func dashboardSummaryAny(summary *DashboardSummary) map[string]any {
 		dashboardSummaryAcceptedSnapshotIDKey: summary.AcceptedSnapshotID,
 		dashboardSummaryAcceptedSnapshotAtKey: summary.AcceptedSnapshotAt,
 	}
+}
+
+func dashboardSnapshotHistoryAny(items []DashboardSnapshotMeta) []map[string]any {
+	if len(items) == 0 {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			dashboardSnapshotIDKey:        item.SnapshotID,
+			dashboardSnapshotActionKey:    item.Action,
+			dashboardSnapshotNoteKey:      item.Note,
+			dashboardSnapshotCreatedAtKey: item.CreatedAt,
+			dashboardSnapshotTileCountKey: item.TileCount,
+			dashboardSnapshotLayoutIDKey:  item.ActiveLayoutID,
+		})
+	}
+	return out
 }
 
 func readDashboardTiles(raw any) []DashboardTile {
@@ -783,6 +871,25 @@ func readDashboardSummary(raw any) *DashboardSummary {
 		AcceptedSnapshotID: readString(record, dashboardSummaryAcceptedSnapshotIDKey),
 		AcceptedSnapshotAt: readString(record, dashboardSummaryAcceptedSnapshotAtKey),
 	}
+}
+
+func readDashboardSnapshotHistory(raw any) []DashboardSnapshotMeta {
+	records := readDashboardRecords(raw)
+	if records == nil {
+		return nil
+	}
+	out := make([]DashboardSnapshotMeta, 0, len(records))
+	for _, record := range records {
+		out = append(out, DashboardSnapshotMeta{
+			SnapshotID:     readString(record, dashboardSnapshotIDKey),
+			Action:         readString(record, dashboardSnapshotActionKey),
+			Note:           readString(record, dashboardSnapshotNoteKey),
+			CreatedAt:      readString(record, dashboardSnapshotCreatedAtKey),
+			TileCount:      readDashboardInt(record[dashboardSnapshotTileCountKey]),
+			ActiveLayoutID: readString(record, dashboardSnapshotLayoutIDKey),
+		})
+	}
+	return out
 }
 
 func readDashboardInt(raw any) int {

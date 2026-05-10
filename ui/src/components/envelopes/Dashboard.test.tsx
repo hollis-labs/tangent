@@ -53,6 +53,14 @@ describe("<Dashboard>", () => {
           active_room_count: 4,
           accepted_snapshot_id: "snap-001",
         },
+        snapshot_history: [
+          {
+            snapshot_id: "snap-001",
+            action: "refresh",
+            note: "Baseline refresh",
+            created_at: "2026-05-09T22:30:00Z",
+          },
+        ],
       },
     };
 
@@ -60,6 +68,7 @@ describe("<Dashboard>", () => {
 
     expect(screen.getByTestId("dashboard-summary")).toHaveTextContent("2 workflows need attention");
     expect(screen.getByTestId("dashboard-query-state")).toHaveTextContent("scope: active");
+    expect(screen.getByTestId("dashboard-snapshot-history")).toHaveTextContent("snap-001");
     expect(screen.getByTestId("dashboard-tile-tile-progress")).toHaveTextContent(
       "tangent.progress-panel",
     );

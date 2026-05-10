@@ -15,6 +15,33 @@ type dashboardInput struct {
 	Envelope envelopes.Envelope `json:"envelope"`
 }
 
+type dashboardSubmitDraft struct {
+	DashboardID string `json:"dashboard_id"`
+	Action      string `json:"action"`
+	Note        string `json:"note,omitempty"`
+}
+
+type dashboardAcceptedPayload struct {
+	DashboardID string `json:"dashboard_id"`
+	Outcome     string `json:"outcome"`
+	Action      string `json:"action"`
+	SnapshotID  string `json:"snapshot_id"`
+	AcceptedAt  string `json:"accepted_at"`
+	Note        string `json:"note,omitempty"`
+}
+
+type dashboardRejectedPayload struct {
+	DashboardID string                 `json:"dashboard_id"`
+	Outcome     string                 `json:"outcome"`
+	Action      string                 `json:"action,omitempty"`
+	Errors      []dashboardSubmitError `json:"errors"`
+}
+
+type dashboardSubmitError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
 func (s *Server) handleDashboard(
 	ctx context.Context,
 	_ *mcpsdk.CallToolRequest,
@@ -125,21 +152,27 @@ func dashboardSnapshotFromEnvelope(
 		summary = cloneDashboardSummary(persisted.Summary)
 	}
 
+	snapshotHistory := readDashboardSnapshotHistoryValue(data["snapshot_history"])
+	if reusePersisted && len(snapshotHistory) == 0 {
+		snapshotHistory = cloneDashboardSnapshotHistory(persisted.SnapshotHistory)
+	}
+
 	updatedAt := readStringValue(data, "updated_at")
 	if updatedAt == "" {
 		updatedAt = nowRFC3339()
 	}
 
 	return room.DashboardSnapshot{
-		DashboardID:    dashboardID,
-		Title:          title,
-		Tiles:          tiles,
-		Layout:         layout,
-		SavedLayouts:   savedLayouts,
-		ActiveLayoutID: activeLayoutID,
-		QueryState:     queryState,
-		Summary:        summary,
-		UpdatedAt:      updatedAt,
+		DashboardID:     dashboardID,
+		Title:           title,
+		Tiles:           tiles,
+		Layout:          layout,
+		SavedLayouts:    savedLayouts,
+		ActiveLayoutID:  activeLayoutID,
+		QueryState:      queryState,
+		Summary:         summary,
+		SnapshotHistory: snapshotHistory,
+		UpdatedAt:       updatedAt,
 	}
 }
 
@@ -169,11 +202,112 @@ func buildVisibleDashboardEnvelope(
 	if view.Summary != nil {
 		data["summary"] = dashboardSummaryAnyForDispatch(view.Summary)
 	}
+	data["snapshot_history"] = dashboardSnapshotHistoryAnyForDispatch(view.SnapshotHistory)
 	if view.UpdatedAt != "" {
 		data["updated_at"] = view.UpdatedAt
 	}
 	clone.Data = data
 	return clone
+}
+
+func (s *Server) normalizeDashboardSubmitResponse(
+	roomID string,
+	_ *envelopes.Envelope,
+	resp *envelopes.Response,
+) (*envelopes.Response, error) {
+	if resp == nil {
+		return nil, fmt.Errorf("dashboard response is required")
+	}
+	if resp.Kind != envelopes.ResponseKindData {
+		return nil, fmt.Errorf("dashboard kind must be %q", envelopes.ResponseKindData)
+	}
+	if resp.Status != envelopes.ResponseStatusSubmitted {
+		return nil, fmt.Errorf("dashboard status must be %q", envelopes.ResponseStatusSubmitted)
+	}
+
+	phaseState, found, err := s.manager.GetPhaseState(context.Background(), roomID)
+	if err != nil {
+		return nil, fmt.Errorf("dashboard submit: load room state: %w", err)
+	}
+	if !found {
+		return nil, fmt.Errorf("%w: %s", room.ErrRoomNotFound, roomID)
+	}
+	persisted := room.ProjectDashboardState(phaseState)
+	if persisted == nil {
+		return nil, fmt.Errorf("room %q has no persisted dashboard state", roomID)
+	}
+
+	draft, err := decodeDashboardSubmitDraft(resp.Payload)
+	if err != nil {
+		return dashboardRejectedResponse(resp, persisted.DashboardID, "", "INVALID_PAYLOAD", err.Error()), nil
+	}
+	if draft.DashboardID != persisted.DashboardID {
+		return dashboardRejectedResponse(
+			resp,
+			persisted.DashboardID,
+			draft.Action,
+			"INVALID_PAYLOAD",
+			fmt.Sprintf("payload.dashboard_id %q does not match room dashboard_id %q", draft.DashboardID, persisted.DashboardID),
+		), nil
+	}
+	if draft.Action != "refresh" && draft.Action != "update" {
+		return dashboardRejectedResponse(
+			resp,
+			persisted.DashboardID,
+			draft.Action,
+			"INVALID_ACTION",
+			fmt.Sprintf("payload.action %q must be refresh or update", draft.Action),
+		), nil
+	}
+
+	now := nowRFC3339()
+	snapshotID := nextDashboardSnapshotID(persisted)
+	snapshotHistory := append(cloneDashboardSnapshotHistory(persisted.SnapshotHistory), room.DashboardSnapshotMeta{
+		SnapshotID:     snapshotID,
+		Action:         draft.Action,
+		Note:           draft.Note,
+		CreatedAt:      now,
+		TileCount:      len(persisted.Tiles),
+		ActiveLayoutID: persisted.ActiveLayoutID,
+	})
+
+	summary := cloneDashboardSummary(persisted.Summary)
+	if summary == nil {
+		summary = &room.DashboardSummary{}
+	}
+	summary.TileCount = len(persisted.Tiles)
+	summary.AcceptedSnapshotID = snapshotID
+	summary.AcceptedSnapshotAt = now
+	if draft.Action == "refresh" {
+		summary.LastRefreshAt = now
+	}
+
+	if _, err := s.manager.SaveDashboardSnapshot(roomID, room.DashboardSnapshot{
+		DashboardID:     persisted.DashboardID,
+		Title:           persisted.Title,
+		Tiles:           persisted.Tiles,
+		Layout:          persisted.Layout,
+		SavedLayouts:    persisted.SavedLayouts,
+		ActiveLayoutID:  persisted.ActiveLayoutID,
+		QueryState:      cloneDashboardQueryState(persisted.QueryState),
+		Summary:         summary,
+		SnapshotHistory: snapshotHistory,
+		UpdatedAt:       now,
+	}); err != nil {
+		return nil, fmt.Errorf("dashboard submit: save room state: %w", err)
+	}
+
+	next := cloneDashboardResponse(resp)
+	next.Payload = dashboardAcceptedPayload{
+		DashboardID: persisted.DashboardID,
+		Outcome:     "accepted",
+		Action:      draft.Action,
+		SnapshotID:  snapshotID,
+		AcceptedAt:  now,
+		Note:        draft.Note,
+	}
+	next.CompletedAt = now
+	return next, nil
 }
 
 func readDashboardTilesValue(raw any) []room.DashboardTile {
@@ -225,6 +359,15 @@ func readDashboardSummaryValue(raw any) *room.DashboardSummary {
 	return &out
 }
 
+func readDashboardSnapshotHistoryValue(raw any) []room.DashboardSnapshotMeta {
+	if raw == nil {
+		return nil
+	}
+	var out []room.DashboardSnapshotMeta
+	decodeJSONValue(raw, &out)
+	return out
+}
+
 func decodeJSONValue(raw any, target any) bool {
 	buf, err := json.Marshal(raw)
 	if err != nil {
@@ -257,6 +400,74 @@ func cloneDashboardSummary(summary *room.DashboardSummary) *room.DashboardSummar
 	}
 	out := *summary
 	return &out
+}
+
+func cloneDashboardSnapshotHistory(items []room.DashboardSnapshotMeta) []room.DashboardSnapshotMeta {
+	if len(items) == 0 {
+		return []room.DashboardSnapshotMeta{}
+	}
+	out := make([]room.DashboardSnapshotMeta, len(items))
+	copy(out, items)
+	return out
+}
+
+func cloneDashboardResponse(resp *envelopes.Response) *envelopes.Response {
+	if resp == nil {
+		return nil
+	}
+	out := *resp
+	if resp.Handle != nil {
+		handleCopy := *resp.Handle
+		out.Handle = &handleCopy
+	}
+	if resp.Error != nil {
+		errorCopy := *resp.Error
+		out.Error = &errorCopy
+	}
+	if resp.Meta != nil {
+		out.Meta = cloneAnyMapForDispatch(resp.Meta)
+	}
+	return &out
+}
+
+func decodeDashboardSubmitDraft(raw any) (dashboardSubmitDraft, error) {
+	var draft dashboardSubmitDraft
+	if !decodeJSONValue(raw, &draft) {
+		return dashboardSubmitDraft{}, fmt.Errorf("payload must be an object")
+	}
+	return dashboardSubmitDraft{
+		DashboardID: readStringValue(map[string]any{"dashboard_id": draft.DashboardID}, "dashboard_id"),
+		Action:      readStringValue(map[string]any{"action": draft.Action}, "action"),
+		Note:        readStringValue(map[string]any{"note": draft.Note}, "note"),
+	}, nil
+}
+
+func dashboardRejectedResponse(
+	resp *envelopes.Response,
+	dashboardID string,
+	action string,
+	code string,
+	message string,
+) *envelopes.Response {
+	next := cloneDashboardResponse(resp)
+	next.Payload = dashboardRejectedPayload{
+		DashboardID: dashboardID,
+		Outcome:     "rejected",
+		Action:      action,
+		Errors: []dashboardSubmitError{{
+			Code:    code,
+			Message: message,
+		}},
+	}
+	return next
+}
+
+func nextDashboardSnapshotID(view *room.DashboardStateView) string {
+	count := 0
+	if view != nil {
+		count = len(view.SnapshotHistory)
+	}
+	return fmt.Sprintf("%s-snapshot-%03d", view.DashboardID, count+1)
 }
 
 func dashboardTilesAnyForDispatch(items []room.DashboardTile) []any {
@@ -375,6 +586,24 @@ func dashboardSummaryAnyForDispatch(summary *room.DashboardSummary) map[string]a
 		"accepted_snapshot_id": summary.AcceptedSnapshotID,
 		"accepted_snapshot_at": summary.AcceptedSnapshotAt,
 	}
+}
+
+func dashboardSnapshotHistoryAnyForDispatch(items []room.DashboardSnapshotMeta) []any {
+	if len(items) == 0 {
+		return []any{}
+	}
+	out := make([]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"snapshot_id":      item.SnapshotID,
+			"action":           item.Action,
+			"note":             item.Note,
+			"created_at":       item.CreatedAt,
+			"tile_count":       item.TileCount,
+			"active_layout_id": item.ActiveLayoutID,
+		})
+	}
+	return out
 }
 
 func cloneStringSliceAnyForDispatch(in []string) []any {

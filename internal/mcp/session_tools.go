@@ -289,6 +289,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == whiteboardEnvelopeType {
 			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == dashboardEnvelopeType {
+			return s.normalizeDashboardSubmitResponse(roomID, env, resp)
+		}
 		if env.Type == filePickerEnvelopeType {
 			return s.normalizeFilePickerSubmitResponse(roomID, env, resp)
 		}
@@ -371,6 +374,7 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		errors.Is(err, room.ErrInvalidDashboardSavedLayout),
 		errors.Is(err, room.ErrInvalidDashboardQueryState),
 		errors.Is(err, room.ErrInvalidDashboardSummary),
+		errors.Is(err, room.ErrInvalidDashboardSnapshot),
 		errors.Is(err, room.ErrInvalidFilePickerID),
 		errors.Is(err, room.ErrInvalidFilePickerBrowseRoot),
 		errors.Is(err, room.ErrInvalidFilePickerSelectionRef),

@@ -363,6 +363,7 @@ function attachDashboardState(envelope: unknown, dashboard: unknown): unknown {
     "active_layout_id",
     "query_state",
     "summary",
+    "snapshot_history",
     "updated_at",
   ]) {
     if (persisted[key] !== undefined) {

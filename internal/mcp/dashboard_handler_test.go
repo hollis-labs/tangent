@@ -79,6 +79,25 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	if firstRes.result.IsError {
 		t.Fatalf("first dashboard IsError=true: %s", extractText(t, firstRes.result))
 	}
+	var accepted struct {
+		Payload struct {
+			Outcome    string `json:"outcome"`
+			Action     string `json:"action"`
+			SnapshotID string `json:"snapshot_id"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, firstRes.result)), &accepted); decodeErr != nil {
+		t.Fatalf("unmarshal accepted dashboard response: %v", decodeErr)
+	}
+	if accepted.Payload.Outcome != "accepted" {
+		t.Fatalf("accepted outcome = %q, want accepted", accepted.Payload.Outcome)
+	}
+	if accepted.Payload.Action != "refresh" {
+		t.Fatalf("accepted action = %q, want refresh", accepted.Payload.Action)
+	}
+	if accepted.Payload.SnapshotID != "dashboard-1-snapshot-001" {
+		t.Fatalf("snapshot_id = %q, want dashboard-1-snapshot-001", accepted.Payload.SnapshotID)
+	}
 
 	secondDone := make(chan advanceResult, 1)
 	go func() {
@@ -103,6 +122,10 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	reopenedTiles, _ := secondData["tiles"].([]any)
 	if got := len(reopenedTiles); got != 1 {
 		t.Fatalf("reopened tiles len = %d, want 1", got)
+	}
+	history, _ := secondData["snapshot_history"].([]any)
+	if got := len(history); got != 1 {
+		t.Fatalf("reopened snapshot_history len = %d, want 1", got)
 	}
 
 	writeWSFrame(t, conn, map[string]any{
@@ -150,6 +173,104 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	}
 	if len(state.Dashboard.Tiles) != 1 || state.Dashboard.Tiles[0].TileID != "tile-open" {
 		t.Fatalf("tiles = %#v", state.Dashboard.Tiles)
+	}
+}
+
+func TestDashboard_InvalidSubmitReturnsRejectedPayloadAndPreservesState(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "dashboard")
+	conn, _, err := websocket.Dial(context.Background(), rg.wsURL(roomID), nil)
+	if err != nil {
+		t.Fatalf("ws dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	done := make(chan advanceResult, 1)
+	go func() {
+		done <- callDashboard(t, rg, roomID, "dashboard-invalid-1", map[string]any{
+			"dashboard_id": "dashboard-invalid",
+			"title":        "Ops dashboard",
+			"tiles": []any{
+				map[string]any{"tile_id": "tile-open", "kind": "room_count", "title": "Open rooms"},
+			},
+		})
+	}()
+
+	select {
+	case early := <-done:
+		t.Fatalf("invalid dashboard returned before ws frame: err=%v isError=%v body=%s", early.err, early.result != nil && early.result.IsError, extractText(t, early.result))
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	_ = readWSFrame(t, conn, 3*time.Second)
+	writeWSFrame(t, conn, map[string]any{
+		"type":       "response",
+		"envelopeId": "dashboard-invalid-1",
+		"response": map[string]any{
+			"v":          1,
+			"envelopeId": "dashboard-invalid-1",
+			"kind":       "data",
+			"status":     "submitted",
+			"payload": map[string]any{
+				"dashboard_id": "dashboard-invalid",
+				"action":       "sideways",
+			},
+		},
+	})
+
+	res := <-done
+	if res.err != nil {
+		t.Fatalf("invalid dashboard transport err: %v", res.err)
+	}
+	if res.result.IsError {
+		t.Fatalf("invalid dashboard IsError=true: %s", extractText(t, res.result))
+	}
+
+	var rejected struct {
+		Payload struct {
+			Outcome string `json:"outcome"`
+			Errors  []struct {
+				Code string `json:"code"`
+			} `json:"errors"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, res.result)), &rejected); decodeErr != nil {
+		t.Fatalf("unmarshal rejected dashboard response: %v", decodeErr)
+	}
+	if rejected.Payload.Outcome != "rejected" {
+		t.Fatalf("rejected outcome = %q, want rejected", rejected.Payload.Outcome)
+	}
+	if len(rejected.Payload.Errors) != 1 || rejected.Payload.Errors[0].Code != "INVALID_ACTION" {
+		t.Fatalf("rejected errors = %#v, want INVALID_ACTION", rejected.Payload.Errors)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+	var state struct {
+		Dashboard *struct {
+			SnapshotHistory []struct {
+				SnapshotID string `json:"snapshot_id"`
+			} `json:"snapshot_history"`
+		} `json:"dashboard"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, getRes)), &state); decodeErr != nil {
+		t.Fatalf("unmarshal session_get: %v", decodeErr)
+	}
+	if state.Dashboard == nil {
+		t.Fatal("dashboard is nil")
+	}
+	if len(state.Dashboard.SnapshotHistory) != 0 {
+		t.Fatalf("snapshot_history len = %d, want 0", len(state.Dashboard.SnapshotHistory))
 	}
 }
 
