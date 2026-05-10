@@ -285,10 +285,10 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
     setDecisions((current) => ({
       ...current,
       [currentItem.id]: {
-        ...(current[currentItem.id] ?? {}),
         comment: "",
         action_id: "",
         defer_reason: "",
+        ...(current[currentItem.id] ?? {}),
         ...patch,
       },
     }));
