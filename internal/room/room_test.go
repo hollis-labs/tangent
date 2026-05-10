@@ -908,6 +908,15 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 				ActiveLayoutID: "layout-default",
 			},
 		},
+		ExportState: &room.DashboardExportState{
+			ExportID:       "dashboard-1-export-dashboard-1-snapshot-001",
+			SnapshotID:     "dashboard-1-snapshot-001",
+			GeneratedAt:    "2026-05-09T22:01:00Z",
+			ActiveLayoutID: "layout-default",
+			TileCount:      2,
+			RoomRefs:       []string{"room-123"},
+			ArtifactRefs:   []string{"artifact://summary-123"},
+		},
 		UpdatedAt: "2026-05-09T22:01:00Z",
 	}); err != nil {
 		t.Fatalf("SaveDashboardSnapshot: %v", err)
@@ -950,6 +959,9 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 	if got := len(view.SnapshotHistory); got != 1 {
 		t.Fatalf("snapshot_history len = %d, want 1", got)
 	}
+	if view.ExportState == nil || view.ExportState.SnapshotID != "dashboard-1-snapshot-001" {
+		t.Fatalf("export_state = %#v, want snapshot_id dashboard-1-snapshot-001", view.ExportState)
+	}
 
 	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
 	if err != nil {
@@ -973,6 +985,9 @@ func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
 	}
 	if got := reloadedView.SnapshotHistory[0].Action; got != "refresh" {
 		t.Fatalf("reloaded snapshot_history[0].action = %q, want refresh", got)
+	}
+	if got := reloadedView.ExportState.ArtifactRefs[0]; got != "artifact://summary-123" {
+		t.Fatalf("reloaded export_state.artifact_refs[0] = %q, want artifact://summary-123", got)
 	}
 }
 

@@ -33,6 +33,7 @@ var (
 	ErrInvalidDashboardQueryState         = errors.New("room: invalid dashboard query state")
 	ErrInvalidDashboardSummary            = errors.New("room: invalid dashboard summary")
 	ErrInvalidDashboardSnapshot           = errors.New("room: invalid dashboard snapshot")
+	ErrInvalidDashboardExport             = errors.New("room: invalid dashboard export")
 	ErrInvalidDiffReviewID                = errors.New("room: invalid diff review id")
 	ErrInvalidDiffReviewFile              = errors.New("room: invalid diff review file")
 	ErrInvalidDiffReviewFilterState       = errors.New("room: invalid diff review filter state")

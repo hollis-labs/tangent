@@ -17,6 +17,7 @@ const (
 	dashboardQueryStateKey      = "query_state"
 	dashboardSummaryKey         = "summary"
 	dashboardSnapshotHistoryKey = "snapshot_history"
+	dashboardExportStateKey     = "export_state"
 	dashboardUpdatedAtKey       = "updated_at"
 
 	dashboardTileIDKey       = "tile_id"
@@ -78,6 +79,14 @@ const (
 	dashboardSnapshotCreatedAtKey = "created_at"
 	dashboardSnapshotTileCountKey = "tile_count"
 	dashboardSnapshotLayoutIDKey  = "active_layout_id"
+
+	dashboardExportIDKey        = "export_id"
+	dashboardExportSnapshotKey  = "snapshot_id"
+	dashboardExportGeneratedKey = "generated_at"
+	dashboardExportLayoutIDKey  = "active_layout_id"
+	dashboardExportTileCountKey = "tile_count"
+	dashboardExportRoomRefsKey  = "room_refs"
+	dashboardExportArtifactKey  = "artifact_refs"
 )
 
 var allowedDashboardSortDirections = map[string]struct{}{
@@ -171,6 +180,16 @@ type DashboardSnapshotMeta struct {
 	ActiveLayoutID string `json:"active_layout_id,omitempty"`
 }
 
+type DashboardExportState struct {
+	ExportID       string   `json:"export_id"`
+	SnapshotID     string   `json:"snapshot_id"`
+	GeneratedAt    string   `json:"generated_at,omitempty"`
+	ActiveLayoutID string   `json:"active_layout_id,omitempty"`
+	TileCount      int      `json:"tile_count,omitempty"`
+	RoomRefs       []string `json:"room_refs"`
+	ArtifactRefs   []string `json:"artifact_refs"`
+}
+
 type DashboardStateView struct {
 	DashboardID     string                   `json:"dashboard_id"`
 	Title           string                   `json:"title,omitempty"`
@@ -181,6 +200,7 @@ type DashboardStateView struct {
 	QueryState      *DashboardQueryState     `json:"query_state,omitempty"`
 	Summary         *DashboardSummary        `json:"summary,omitempty"`
 	SnapshotHistory []DashboardSnapshotMeta  `json:"snapshot_history"`
+	ExportState     *DashboardExportState    `json:"export_state,omitempty"`
 	UpdatedAt       string                   `json:"updated_at,omitempty"`
 }
 
@@ -194,6 +214,7 @@ type DashboardSnapshot struct {
 	QueryState      *DashboardQueryState
 	Summary         *DashboardSummary
 	SnapshotHistory []DashboardSnapshotMeta
+	ExportState     *DashboardExportState
 	UpdatedAt       string
 }
 
@@ -251,6 +272,7 @@ func projectDashboardStateFromBlob(blob PhaseOutput) *DashboardStateView {
 		QueryState:      readDashboardQueryState(blob.Data[dashboardQueryStateKey]),
 		Summary:         readDashboardSummary(blob.Data[dashboardSummaryKey]),
 		SnapshotHistory: readDashboardSnapshotHistory(blob.Data[dashboardSnapshotHistoryKey]),
+		ExportState:     readDashboardExportState(blob.Data[dashboardExportStateKey]),
 		UpdatedAt:       readString(blob.Data, dashboardUpdatedAtKey),
 	}
 	if view.Tiles == nil {
@@ -303,6 +325,10 @@ func normalizeDashboardSnapshot(snapshot DashboardSnapshot) (DashboardSnapshot, 
 	if err != nil {
 		return DashboardSnapshot{}, err
 	}
+	exportState, err := normalizeDashboardExportState(snapshot.ExportState)
+	if err != nil {
+		return DashboardSnapshot{}, err
+	}
 	return DashboardSnapshot{
 		DashboardID:     dashboardID,
 		Title:           strings.TrimSpace(snapshot.Title),
@@ -313,6 +339,7 @@ func normalizeDashboardSnapshot(snapshot DashboardSnapshot) (DashboardSnapshot, 
 		QueryState:      queryState,
 		Summary:         summary,
 		SnapshotHistory: snapshotHistory,
+		ExportState:     exportState,
 		UpdatedAt:       strings.TrimSpace(snapshot.UpdatedAt),
 	}, nil
 }
@@ -549,6 +576,26 @@ func normalizeDashboardSnapshotHistory(items []DashboardSnapshotMeta) ([]Dashboa
 	return out, nil
 }
 
+func normalizeDashboardExportState(state *DashboardExportState) (*DashboardExportState, error) {
+	if state == nil {
+		return nil, nil
+	}
+	exportID := strings.TrimSpace(state.ExportID)
+	snapshotID := strings.TrimSpace(state.SnapshotID)
+	if exportID == "" || snapshotID == "" || state.TileCount < 0 {
+		return nil, ErrInvalidDashboardExport
+	}
+	return &DashboardExportState{
+		ExportID:       exportID,
+		SnapshotID:     snapshotID,
+		GeneratedAt:    strings.TrimSpace(state.GeneratedAt),
+		ActiveLayoutID: strings.TrimSpace(state.ActiveLayoutID),
+		TileCount:      state.TileCount,
+		RoomRefs:       normalizeStringSlice(state.RoomRefs),
+		ArtifactRefs:   normalizeStringSlice(state.ArtifactRefs),
+	}, nil
+}
+
 func dashboardBlobFromSnapshot(snapshot DashboardSnapshot) PhaseOutput {
 	record := map[string]any{
 		dashboardIDKey:           snapshot.DashboardID,
@@ -569,6 +616,9 @@ func dashboardBlobFromSnapshot(snapshot DashboardSnapshot) PhaseOutput {
 	}
 	if history := dashboardSnapshotHistoryAny(snapshot.SnapshotHistory); len(history) > 0 {
 		record[dashboardSnapshotHistoryKey] = history
+	}
+	if exportState := dashboardExportStateAny(snapshot.ExportState); len(exportState) > 0 {
+		record[dashboardExportStateKey] = exportState
 	}
 	return PhaseOutput{Version: phaseOutputVersion, Data: record}
 }
@@ -724,6 +774,21 @@ func dashboardSnapshotHistoryAny(items []DashboardSnapshotMeta) []map[string]any
 		})
 	}
 	return out
+}
+
+func dashboardExportStateAny(state *DashboardExportState) map[string]any {
+	if state == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		dashboardExportIDKey:        state.ExportID,
+		dashboardExportSnapshotKey:  state.SnapshotID,
+		dashboardExportGeneratedKey: state.GeneratedAt,
+		dashboardExportLayoutIDKey:  state.ActiveLayoutID,
+		dashboardExportTileCountKey: state.TileCount,
+		dashboardExportRoomRefsKey:  cloneStringSlice(state.RoomRefs),
+		dashboardExportArtifactKey:  cloneStringSlice(state.ArtifactRefs),
+	}
 }
 
 func readDashboardTiles(raw any) []DashboardTile {
@@ -890,6 +955,25 @@ func readDashboardSnapshotHistory(raw any) []DashboardSnapshotMeta {
 		})
 	}
 	return out
+}
+
+func readDashboardExportState(raw any) *DashboardExportState {
+	if raw == nil {
+		return nil
+	}
+	record, ok := raw.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return &DashboardExportState{
+		ExportID:       readString(record, dashboardExportIDKey),
+		SnapshotID:     readString(record, dashboardExportSnapshotKey),
+		GeneratedAt:    readString(record, dashboardExportGeneratedKey),
+		ActiveLayoutID: readString(record, dashboardExportLayoutIDKey),
+		TileCount:      readInt(record, dashboardExportTileCountKey),
+		RoomRefs:       readStringSliceValue(record[dashboardExportRoomRefsKey]),
+		ArtifactRefs:   readStringSliceValue(record[dashboardExportArtifactKey]),
+	}
 }
 
 func readDashboardInt(raw any) int {

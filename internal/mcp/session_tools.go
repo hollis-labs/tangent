@@ -375,6 +375,7 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		errors.Is(err, room.ErrInvalidDashboardQueryState),
 		errors.Is(err, room.ErrInvalidDashboardSummary),
 		errors.Is(err, room.ErrInvalidDashboardSnapshot),
+		errors.Is(err, room.ErrInvalidDashboardExport),
 		errors.Is(err, room.ErrInvalidFilePickerID),
 		errors.Is(err, room.ErrInvalidFilePickerBrowseRoot),
 		errors.Is(err, room.ErrInvalidFilePickerSelectionRef),

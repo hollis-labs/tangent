@@ -91,6 +91,15 @@ export interface DashboardEnvelope {
       tile_count?: number;
       active_layout_id?: string;
     }>;
+    export_state?: {
+      export_id: string;
+      snapshot_id: string;
+      generated_at?: string;
+      active_layout_id?: string;
+      tile_count?: number;
+      room_refs?: string[];
+      artifact_refs?: string[];
+    };
     updated_at?: string;
   };
 }
@@ -866,8 +875,12 @@ function readLayoutName(
 }
 
 function buildExportState(data: DashboardEnvelope["data"]) {
+  if (data?.export_state) {
+    return data.export_state;
+  }
   const tiles = data?.tiles ?? [];
   return {
+    export_id: "",
     dashboard_id: data?.dashboard_id ?? "",
     active_layout_id: data?.active_layout_id ?? "",
     accepted_snapshot_id: data?.summary?.accepted_snapshot_id ?? "",

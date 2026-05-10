@@ -174,6 +174,10 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	if got := len(history); got != 1 {
 		t.Fatalf("reopened snapshot_history len = %d, want 1", got)
 	}
+	exportState, _ := secondData["export_state"].(map[string]any)
+	if got := exportState["snapshot_id"]; got != "dashboard-1-snapshot-001" {
+		t.Fatalf("reopened export_state.snapshot_id = %v, want dashboard-1-snapshot-001", got)
+	}
 
 	writeWSFrame(t, conn, map[string]any{
 		"type":       "cancel",
@@ -206,6 +210,10 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 				LayoutID string `json:"layout_id"`
 				Name     string `json:"name"`
 			} `json:"saved_layouts"`
+			ExportState *struct {
+				ExportID   string `json:"export_id"`
+				SnapshotID string `json:"snapshot_id"`
+			} `json:"export_state"`
 			Tiles []struct {
 				TileID string `json:"tile_id"`
 			} `json:"tiles"`
@@ -228,6 +236,9 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	}
 	if len(state.Dashboard.SavedLayouts) != 1 || state.Dashboard.SavedLayouts[0].Name != "Focus" {
 		t.Fatalf("saved_layouts = %#v", state.Dashboard.SavedLayouts)
+	}
+	if state.Dashboard.ExportState == nil || state.Dashboard.ExportState.SnapshotID != "dashboard-1-snapshot-001" {
+		t.Fatalf("export_state = %#v", state.Dashboard.ExportState)
 	}
 	if len(state.Dashboard.Tiles) != 1 || state.Dashboard.Tiles[0].TileID != "tile-open" {
 		t.Fatalf("tiles = %#v", state.Dashboard.Tiles)

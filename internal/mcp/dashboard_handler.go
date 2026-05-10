@@ -161,6 +161,11 @@ func dashboardSnapshotFromEnvelope(
 		snapshotHistory = cloneDashboardSnapshotHistory(persisted.SnapshotHistory)
 	}
 
+	exportState := readDashboardExportStateValue(data["export_state"])
+	if reusePersisted && exportState == nil {
+		exportState = cloneDashboardExportState(persisted.ExportState)
+	}
+
 	updatedAt := readStringValue(data, "updated_at")
 	if updatedAt == "" {
 		updatedAt = nowRFC3339()
@@ -176,6 +181,7 @@ func dashboardSnapshotFromEnvelope(
 		QueryState:      queryState,
 		Summary:         summary,
 		SnapshotHistory: snapshotHistory,
+		ExportState:     exportState,
 		UpdatedAt:       updatedAt,
 	}
 }
@@ -207,6 +213,9 @@ func buildVisibleDashboardEnvelope(
 		data["summary"] = dashboardSummaryAnyForDispatch(view.Summary)
 	}
 	data["snapshot_history"] = dashboardSnapshotHistoryAnyForDispatch(view.SnapshotHistory)
+	if view.ExportState != nil {
+		data["export_state"] = dashboardExportStateAnyForDispatch(view.ExportState)
+	}
 	if view.UpdatedAt != "" {
 		data["updated_at"] = view.UpdatedAt
 	}
@@ -306,6 +315,13 @@ func (s *Server) normalizeDashboardSubmitResponse(
 			layout = cloneDashboardLayout(active.Tiles)
 		}
 	}
+	exportState := buildDashboardExportState(
+		persisted.DashboardID,
+		snapshotID,
+		now,
+		activeLayoutID,
+		persisted.Tiles,
+	)
 
 	if _, err := s.manager.SaveDashboardSnapshot(roomID, room.DashboardSnapshot{
 		DashboardID:     persisted.DashboardID,
@@ -317,6 +333,7 @@ func (s *Server) normalizeDashboardSubmitResponse(
 		QueryState:      queryState,
 		Summary:         summary,
 		SnapshotHistory: snapshotHistory,
+		ExportState:     exportState,
 		UpdatedAt:       now,
 	}); err != nil {
 		return nil, fmt.Errorf("dashboard submit: save room state: %w", err)
@@ -393,6 +410,17 @@ func readDashboardSnapshotHistoryValue(raw any) []room.DashboardSnapshotMeta {
 	return out
 }
 
+func readDashboardExportStateValue(raw any) *room.DashboardExportState {
+	if raw == nil {
+		return nil
+	}
+	var out room.DashboardExportState
+	if !decodeJSONValue(raw, &out) {
+		return nil
+	}
+	return &out
+}
+
 func decodeJSONValue(raw any, target any) bool {
 	buf, err := json.Marshal(raw)
 	if err != nil {
@@ -457,6 +485,20 @@ func cloneDashboardSummary(summary *room.DashboardSummary) *room.DashboardSummar
 		return nil
 	}
 	out := *summary
+	return &out
+}
+
+func cloneDashboardExportState(state *room.DashboardExportState) *room.DashboardExportState {
+	if state == nil {
+		return nil
+	}
+	out := *state
+	if state.RoomRefs != nil {
+		out.RoomRefs = append([]string(nil), state.RoomRefs...)
+	}
+	if state.ArtifactRefs != nil {
+		out.ArtifactRefs = append([]string(nil), state.ArtifactRefs...)
+	}
 	return &out
 }
 
@@ -680,6 +722,21 @@ func dashboardSnapshotHistoryAnyForDispatch(items []room.DashboardSnapshotMeta) 
 	return out
 }
 
+func dashboardExportStateAnyForDispatch(state *room.DashboardExportState) map[string]any {
+	if state == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"export_id":        state.ExportID,
+		"snapshot_id":      state.SnapshotID,
+		"generated_at":     state.GeneratedAt,
+		"active_layout_id": state.ActiveLayoutID,
+		"tile_count":       state.TileCount,
+		"room_refs":        cloneStringSliceAnyForDispatch(state.RoomRefs),
+		"artifact_refs":    cloneStringSliceAnyForDispatch(state.ArtifactRefs),
+	}
+}
+
 func cloneStringSliceAnyForDispatch(in []string) []any {
 	if len(in) == 0 {
 		return []any{}
@@ -687,6 +744,49 @@ func cloneStringSliceAnyForDispatch(in []string) []any {
 	out := make([]any, len(in))
 	for i, item := range in {
 		out[i] = item
+	}
+	return out
+}
+
+func buildDashboardExportState(
+	dashboardID string,
+	snapshotID string,
+	generatedAt string,
+	activeLayoutID string,
+	tiles []room.DashboardTile,
+) *room.DashboardExportState {
+	return &room.DashboardExportState{
+		ExportID:       fmt.Sprintf("%s-export-%s", dashboardID, snapshotID),
+		SnapshotID:     snapshotID,
+		GeneratedAt:    generatedAt,
+		ActiveLayoutID: activeLayoutID,
+		TileCount:      len(tiles),
+		RoomRefs:       uniqueDashboardStringRefs(tiles, func(tile room.DashboardTile) string { return tile.RoomID }),
+		ArtifactRefs: uniqueDashboardStringRefs(tiles, func(tile room.DashboardTile) string {
+			return tile.ArtifactRef
+		}),
+	}
+}
+
+func uniqueDashboardStringRefs(
+	tiles []room.DashboardTile,
+	read func(room.DashboardTile) string,
+) []string {
+	if len(tiles) == 0 {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(tiles))
+	for _, tile := range tiles {
+		value := read(tile)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
 	return out
 }

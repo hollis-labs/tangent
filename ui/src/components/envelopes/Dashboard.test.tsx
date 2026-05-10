@@ -89,6 +89,15 @@ describe("<Dashboard>", () => {
             created_at: "2026-05-09T22:30:00Z",
           },
         ],
+        export_state: {
+          export_id: "dashboard-1-export-snap-001",
+          snapshot_id: "snap-001",
+          generated_at: "2026-05-09T22:30:00Z",
+          active_layout_id: "layout-default",
+          tile_count: 2,
+          room_refs: ["room-123"],
+          artifact_refs: ["artifact://progress-1"],
+        },
       },
     };
 
@@ -99,7 +108,9 @@ describe("<Dashboard>", () => {
     expect(screen.getByTestId("dashboard-summary")).toHaveTextContent("2 workflows need attention");
     expect(screen.getByTestId("dashboard-query-state")).toHaveTextContent("scope: active");
     expect(screen.getByTestId("dashboard-snapshot-history")).toHaveTextContent("snap-001");
-    expect(screen.getByTestId("dashboard-export-state")).toHaveTextContent("artifact://progress-1");
+    expect(screen.getByTestId("dashboard-export-state")).toHaveTextContent(
+      "dashboard-1-export-snap-001",
+    );
     expect(screen.getByTestId("dashboard-open-room-tile-open")).toHaveAttribute(
       "href",
       "/r/room-123",
