@@ -276,7 +276,7 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
     const decision = decisions[item.id];
     return decision?.decision === "defer" && decision.defer_reason.trim().length === 0;
   });
-  const submitDisabled = items.length > 0 && (unresolvedCount > 0 || hasInvalidDefer);
+  const submitDisabled = items.length === 0 || unresolvedCount > 0 || hasInvalidDefer;
 
   function updateCurrentDecision(patch: Partial<DecisionState>) {
     if (!currentItem) {
@@ -315,18 +315,19 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
   }
 
   function handleExportAudit() {
+    const exportedAt = new Date().toISOString();
     const payload = {
       queue_id: queueID,
-      exported_at: new Date().toISOString(),
+      exported_at: exportedAt,
       decisions: buildOrderedDecisionArray(items, decisions),
       notes,
       audit_trail: envelope.data?.audit_trail ?? [],
     };
     const serialized = JSON.stringify(payload, null, 2);
-    const exportName = `${queueID || "approval-queue"}-audit-${new Date().toISOString()}.json`;
+    const exportBlob = new Blob([serialized], { type: "application/json" });
+    const exportName = `${sanitizeFilePart(queueID || "approval-queue")}-audit-${exportedAt.replaceAll(/[:.]/g, "-")}.json`;
     if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
-      const blob = new Blob([serialized], { type: "application/json" });
-      const href = URL.createObjectURL(blob);
+      const href = URL.createObjectURL(exportBlob);
       const anchor = document.createElement("a");
       anchor.href = href;
       anchor.download = exportName;
@@ -337,10 +338,10 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
       ...current,
       {
         name: exportName,
-        created_at: new Date().toISOString(),
+        created_at: exportedAt,
         item_count: items.length,
         decision_count: buildOrderedDecisionArray(items, decisions).length,
-        size_bytes: serialized.length,
+        size_bytes: exportBlob.size,
       },
     ]);
     setMessage(`Exported audit snapshot as ${exportName}.`);
@@ -834,16 +835,20 @@ function normalizeExportRefs(raw: unknown): ExportRef[] {
 }
 
 function clampIndex(index: number, length: number): number {
+  if (!Number.isFinite(index)) {
+    return 0;
+  }
+  const safeIndex = Math.trunc(index);
   if (length <= 0) {
     return 0;
   }
-  if (index < 0) {
+  if (safeIndex < 0) {
     return 0;
   }
-  if (index >= length) {
+  if (safeIndex >= length) {
     return length - 1;
   }
-  return index;
+  return safeIndex;
 }
 
 function readString(value: unknown): string {
@@ -852,4 +857,8 @@ function readString(value: unknown): string {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function sanitizeFilePart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }

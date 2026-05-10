@@ -48,7 +48,7 @@ export function loadApprovalQueueDraft(
       parsed.queueID !== queueID ||
       typeof parsed.envelopeId !== "string" ||
       typeof parsed.baseSeedKey !== "string" ||
-      typeof parsed.currentIndex !== "number" ||
+      !isValidDraftIndex(parsed.currentIndex) ||
       !Array.isArray(parsed.decisions) ||
       typeof parsed.notes !== "string" ||
       !Array.isArray(parsed.exportRefs) ||
@@ -97,4 +97,8 @@ function getStorage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+function isValidDraftIndex(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
 }

@@ -17,7 +17,7 @@ make build
 
 ## 2. Trigger the first approval-queue turn
 
-Ask Claude Code to call `tangent.approval_queue` with two items and one
+Ask Claude Code to call `tangent.approval-queue` with two items and one
 evidence pane per item.
 
 In the browser:
@@ -33,7 +33,7 @@ Claude should receive a structured `data` response with `queue_id`,
 
 ## 3. Reopen the same room
 
-Ask Claude Code to call `tangent.approval_queue` again with the same
+Ask Claude Code to call `tangent.approval-queue` again with the same
 `meta.roomID` and intentionally stale notes/current index.
 
 Expected:

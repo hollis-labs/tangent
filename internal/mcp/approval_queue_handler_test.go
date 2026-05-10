@@ -124,6 +124,14 @@ func TestApprovalQueue_SubmitReopenAndPersistState(t *testing.T) {
 	if len(secondDecisions) != 2 {
 		t.Fatalf("reopened decisions len = %d, want 2", len(secondDecisions))
 	}
+	secondItems, _ := secondData["items"].([]any)
+	if len(secondItems) != 2 {
+		t.Fatalf("reopened items len = %d, want 2", len(secondItems))
+	}
+	firstItem, _ := secondItems[0].(map[string]any)
+	if got := firstItem["title"]; got != "Update dependency" {
+		t.Fatalf("reopened first item title = %v, want Update dependency", got)
+	}
 
 	writeWSFrame(t, conn, map[string]any{
 		"type":       "cancel",
@@ -196,7 +204,7 @@ func callApprovalQueue(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.approval_queue",
+		Name: "tangent.approval-queue",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

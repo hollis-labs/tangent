@@ -50,6 +50,16 @@ describe("ApprovalQueue", () => {
 
   it("submits normalized decisions with comments and export refs", () => {
     const onSubmit = vi.fn<(response: ApprovalQueueResponse) => void>();
+    const click = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName: string) => {
+      if (tagName === "a") {
+        return { click, href: "", download: "" } as unknown as HTMLAnchorElement;
+      }
+      return originalCreateElement(tagName);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:approval-queue");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     render(
       <ApprovalQueue
         envelope={baseEnvelope}
@@ -73,6 +83,7 @@ describe("ApprovalQueue", () => {
     fireEvent.click(screen.getByTestId("approval-queue-submit"));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       envelopeId: "approval-1",
       kind: "data",
@@ -97,6 +108,9 @@ describe("ApprovalQueue", () => {
       },
     });
     expect(onSubmit.mock.calls[0][0].payload.export_refs).toHaveLength(1);
+    expect(onSubmit.mock.calls[0][0].payload.export_refs[0]?.name).toMatch(
+      /^queue-1-audit-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}/,
+    );
   });
 
   it("recovers unsent draft state across refresh", () => {
@@ -134,5 +148,45 @@ describe("ApprovalQueue", () => {
     expect(screen.getByTestId("approval-queue-message")).toHaveTextContent("Recovered");
     expect(screen.getByTestId("approval-queue-item-item-2")).toBeInTheDocument();
     expect(screen.getByTestId("approval-queue-comment")).toHaveValue("Not enough evidence");
+  });
+
+  it("drops corrupted draft indexes and disables submit when no items exist", () => {
+    window.localStorage.setItem(
+      getApprovalQueueDraftStorageKey("room-a", "queue-empty"),
+      JSON.stringify({
+        version: 1,
+        roomID: "room-a",
+        queueID: "queue-empty",
+        envelopeId: "approval-empty",
+        baseSeedKey: "{}",
+        currentIndex: Number.NaN,
+        decisions: [],
+        notes: "",
+        exportRefs: [],
+        savedAt: new Date().toISOString(),
+      }),
+    );
+
+    render(
+      <ApprovalQueue
+        envelope={{
+          ...baseEnvelope,
+          id: "approval-empty",
+          data: {
+            queue_id: "queue-empty",
+            title: "Empty queue",
+            current_index: 0,
+            items: [],
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        roomID="room-a"
+      />,
+    );
+
+    expect(window.localStorage.getItem(getApprovalQueueDraftStorageKey("room-a", "queue-empty"))).toBeNull();
+    expect(screen.getByTestId("approval-queue-submit")).toBeDisabled();
+    expect(screen.getByText("No queue items were provided.")).toBeInTheDocument();
   });
 });

@@ -30,7 +30,7 @@ async function main() {
     const roomID = await createRoom("approval-queue-mock");
     const ws = await openRoomSocket(roomID);
 
-    const firstCall = callTool("tangent.approval_queue", {
+    const firstCall = callTool("tangent.approval-queue", {
       envelope: {
         v: 1,
         id: "approval-1",
@@ -57,7 +57,7 @@ async function main() {
     });
     await verifyCall(firstCall);
 
-    const secondCall = callTool("tangent.approval_queue", {
+    const secondCall = callTool("tangent.approval-queue", {
       envelope: {
         v: 1,
         id: "approval-2",

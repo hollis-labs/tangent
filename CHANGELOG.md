@@ -14,7 +14,7 @@ export metadata.
 
 ### Added
 
-- **`tangent.approval_queue`.** A bundled room-backed approval queue
+- **`tangent.approval-queue`.** A bundled room-backed approval queue
   workflow with canonical agent-provided items, explicit submit/cancel,
   and room reuse via `meta.roomID`.
 - **Approval-queue room substrate.** `phase_outputs["approval-queue"]`

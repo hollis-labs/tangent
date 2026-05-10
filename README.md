@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.6.0`. The current branch adds `tangent.approval_queue`: a room-backed serialized approval workflow with explicit accept/reject/defer decisions, evidence panes, keyboard navigation, batch defer controls, local comment recovery, and durable audit export metadata. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.6.0`. The current branch adds `tangent.approval-queue`: a room-backed serialized approval workflow with explicit accept/reject/defer decisions, evidence panes, keyboard navigation, batch defer controls, local comment recovery, and durable audit export metadata. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -50,7 +50,7 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval_queue`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.

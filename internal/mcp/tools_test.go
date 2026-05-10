@@ -123,7 +123,7 @@ func TestServer_ListsTwentyTools(t *testing.T) {
 		"tangent.output_render":            false,
 		"tangent.whiteboard":               false,
 		"tangent.spreadsheet-review":       false,
-		"tangent.approval_queue":           false,
+		"tangent.approval-queue":           false,
 		"tangent.synthesis_notes":          false,
 		"tangent.session_create":           false,
 		"tangent.session_advance":          false,

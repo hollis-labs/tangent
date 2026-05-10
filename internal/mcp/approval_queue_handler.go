@@ -104,7 +104,9 @@ func approvalQueueSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.A
 	reusePersisted := persisted != nil && persisted.QueueID != "" && persisted.QueueID == queueID
 
 	items := readObjectSliceValue(data["items"])
-	if len(items) == 0 && persisted != nil {
+	if reusePersisted {
+		items = persisted.Items
+	} else if len(items) == 0 && persisted != nil {
 		items = persisted.Items
 	}
 	currentIndex := readIntValue(data["current_index"])

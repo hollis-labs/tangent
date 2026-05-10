@@ -78,7 +78,7 @@ claude mcp list
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
 `tangent.design-iteration`, `tangent.whiteboard`,
-`tangent.spreadsheet-review`, `tangent.approval_queue`, or the writing
+`tangent.spreadsheet-review`, `tangent.approval-queue`, or the writing
 sequence via `tangent.session_*`, `tangent.interview_question`,
 `tangent.synthesis_notes`, `tangent.block_draft`,
 `tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
@@ -146,7 +146,7 @@ Expected:
 "tangent.block_draft"
 "tangent.prose_revision"
 "tangent.output_render"
-"tangent.approval_queue"
+"tangent.approval-queue"
 "tangent.session_advance"
 "tangent.session_advance_phase"
 "tangent.session_close"

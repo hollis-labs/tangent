@@ -176,7 +176,7 @@ A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent.triage`,
 `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`,
 tangent.whiteboard`, `tangent.spreadsheet-review`,
-`tangent.approval_queue`, and the writing
+`tangent.approval-queue`, and the writing
 workflow kinds are the worked examples. If the workflow
 is multi-step,
 prefer reusing the `tangent.session_*` substrate and the room phase

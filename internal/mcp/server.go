@@ -243,7 +243,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build approval-queue input schema: %w", err)
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
-		Name:        "tangent.approval_queue",
+		Name:        "tangent.approval-queue",
 		Description: "Dispatch an approval-queue envelope through Tangent. Persists queue decisions, evidence context, and audit export metadata with an explicit submit boundary.",
 		InputSchema: approvalQueueSchema,
 	}, s.handleApprovalQueue)

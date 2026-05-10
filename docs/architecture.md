@@ -72,7 +72,7 @@ Twenty tools are advertised in the current build:
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
-- `tangent.approval_queue` — room-backed serialized approval review with explicit submit.
+- `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
 - `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
