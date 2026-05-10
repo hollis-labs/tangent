@@ -72,6 +72,7 @@ Twenty tools are advertised in the current build:
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
+- `tangent.dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
 - `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
@@ -151,6 +152,24 @@ surfaces a dedicated `spreadsheet_review` view when present:
 This keeps the table-review workflow on the same persistence path as
 other room-backed workflows instead of introducing a parallel store just
 for tabular review.
+
+The same substrate also carries dashboard room state under the
+`dashboard` phase projection. `tangent.session_get` surfaces a
+dedicated `dashboard` view when present:
+
+- `dashboard_id`
+- canonical `tiles`
+- normalized `layout`
+- room-backed `saved_layouts`
+- `active_layout_id`
+- normalized `query_state`
+- summary fields
+- append-only `snapshot_history`
+- deterministic `export_state`
+
+This keeps the dashboard workflow as a concise summary of Tangent's own
+room/workflow state rather than introducing a separate reporting store
+or external data sync path.
 
 The shipped v0.4 whiteboard state is persisted on the same room
 state path rather than in a separate table. `tangent.session_get`

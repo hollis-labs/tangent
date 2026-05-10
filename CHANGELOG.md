@@ -9,6 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _None._
 
+## [v0.11.0] - 2026-05-09
+
+Dashboard. Tangent now ships a persistent room-backed dashboard
+workflow for explicit refresh/update turns, saved layout reuse,
+browser-local layout draft recovery, room/artifact drill-down, and
+concise accepted snapshot export metadata.
+
+### Added
+
+- **`tangent.dashboard`.** A bundled room-backed dashboard workflow
+  with canonical tiles, explicit refresh/update submits, and room reuse
+  via `meta.roomID`.
+- **Dashboard room substrate.** `phase_outputs["dashboard"]` now
+  persists `dashboard_id`, canonical `tiles`, normalized `layout`,
+  room-backed `saved_layouts`, `active_layout_id`, normalized
+  `query_state`, summary fields, append-only `snapshot_history`, and
+  accepted `export_state`.
+- **Saved layouts and drill-down flows.** The shipped host now supports
+  reusable saved layouts, browser-local draft recovery for in-progress
+  layout edits, room-route drill-down, and artifact-ref handoff actions.
+- **Accepted export/share metadata.** Accepted dashboard submits persist
+  a deterministic `export_state` payload with snapshot id, active
+  layout, tile count, and stable room/artifact refs for downstream
+  inspection.
+- **Dashboard e2e coverage.** Added
+  `docs/manual-tests/dashboard-e2e.md`.
+
+### Changed
+
+- **`tangent.session_get` now projects dashboard state.** It exposes a
+  dedicated `dashboard` payload with canonical tiles, normalized
+  layout/query state, saved layouts, accepted snapshot history, and the
+  latest export/share metadata.
+- **Docs now describe dashboard as the newest bundled workflow.**
+  README, MCP integration, and manual test docs now reflect the new
+  tool surface and the localhost-only single-user posture of the
+  dashboard workflow.
+
+### Fixed
+
+- **Rejected dashboard submits no longer risk mutating accepted export
+  metadata.** Invalid payloads still return explicit rejected response
+  shapes while preserving the last accepted room-backed snapshot and
+  export state for reopen.
+
 ## [v0.10.0] - 2026-05-10
 
 Progress panel. Tangent now ships a persistent room-backed
