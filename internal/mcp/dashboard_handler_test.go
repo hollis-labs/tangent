@@ -37,6 +37,17 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 			"layout": []any{
 				map[string]any{"tile_id": "tile-open", "x": 0, "y": 0, "w": 2, "h": 1},
 			},
+			"saved_layouts": []any{
+				map[string]any{
+					"layout_id":  "layout-default",
+					"name":       "Default",
+					"is_default": true,
+					"tiles": []any{
+						map[string]any{"tile_id": "tile-open", "x": 0, "y": 0, "w": 2, "h": 1},
+					},
+				},
+			},
+			"active_layout_id": "layout-default",
 			"summary": map[string]any{
 				"headline":          "4 open rooms",
 				"active_room_count": 4,
@@ -68,6 +79,20 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 			"payload": map[string]any{
 				"dashboard_id": "dashboard-1",
 				"action":       "refresh",
+				"layout": []any{
+					map[string]any{"tile_id": "tile-open", "x": 0, "y": 0, "w": 3, "h": 1},
+				},
+				"saved_layouts": []any{
+					map[string]any{
+						"layout_id":  "layout-default",
+						"name":       "Focus",
+						"is_default": true,
+						"tiles": []any{
+							map[string]any{"tile_id": "tile-open", "x": 0, "y": 0, "w": 3, "h": 1},
+						},
+					},
+				},
+				"active_layout_id": "layout-default",
 				"query_state": map[string]any{
 					"search": "open",
 					"scope":  "active",
@@ -130,6 +155,17 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	if got := secondQueryState["search"]; got != "open" {
 		t.Fatalf("reopened query_state.search = %v, want open", got)
 	}
+	if got := secondData["active_layout_id"]; got != "layout-default" {
+		t.Fatalf("reopened active_layout_id = %v, want layout-default", got)
+	}
+	secondSavedLayouts, _ := secondData["saved_layouts"].([]any)
+	if got := len(secondSavedLayouts); got != 1 {
+		t.Fatalf("reopened saved_layouts len = %d, want 1", got)
+	}
+	secondLayout, _ := secondData["layout"].([]any)
+	if got := len(secondLayout); got != 1 {
+		t.Fatalf("reopened layout len = %d, want 1", got)
+	}
 	reopenedTiles, _ := secondData["tiles"].([]any)
 	if got := len(reopenedTiles); got != 1 {
 		t.Fatalf("reopened tiles len = %d, want 1", got)
@@ -163,9 +199,14 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	}
 	var state struct {
 		Dashboard *struct {
-			DashboardID string `json:"dashboard_id"`
-			Title       string `json:"title"`
-			Tiles       []struct {
+			DashboardID    string `json:"dashboard_id"`
+			Title          string `json:"title"`
+			ActiveLayoutID string `json:"active_layout_id"`
+			SavedLayouts   []struct {
+				LayoutID string `json:"layout_id"`
+				Name     string `json:"name"`
+			} `json:"saved_layouts"`
+			Tiles []struct {
 				TileID string `json:"tile_id"`
 			} `json:"tiles"`
 		} `json:"dashboard"`
@@ -181,6 +222,12 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	}
 	if state.Dashboard.Title != "Ops dashboard" {
 		t.Fatalf("title = %q, want Ops dashboard", state.Dashboard.Title)
+	}
+	if state.Dashboard.ActiveLayoutID != "layout-default" {
+		t.Fatalf("active_layout_id = %q, want layout-default", state.Dashboard.ActiveLayoutID)
+	}
+	if len(state.Dashboard.SavedLayouts) != 1 || state.Dashboard.SavedLayouts[0].Name != "Focus" {
+		t.Fatalf("saved_layouts = %#v", state.Dashboard.SavedLayouts)
 	}
 	if len(state.Dashboard.Tiles) != 1 || state.Dashboard.Tiles[0].TileID != "tile-open" {
 		t.Fatalf("tiles = %#v", state.Dashboard.Tiles)

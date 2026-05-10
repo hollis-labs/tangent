@@ -197,12 +197,13 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
-function DashboardAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+function DashboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <Dashboard
       envelope={envelope as DashboardEnvelope}
       onSubmit={onSubmit as (response: DashboardResponse) => void}
       onCancel={onCancel}
+      roomID={roomID}
     />
   );
 }

@@ -1,7 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  clearDashboardDraft,
+  DASHBOARD_DRAFT_AUTOSAVE_DEBOUNCE_MS,
+  loadDashboardDraft,
+  saveDashboardDraft,
+} from "@/lib/dashboard-draft-storage";
 import { cn } from "@/lib/utils";
 
 type DashboardTile = {
@@ -24,6 +30,15 @@ type DashboardLayoutItem = {
   y: number;
   w: number;
   h: number;
+};
+
+type DashboardSavedLayout = {
+  layout_id: string;
+  name: string;
+  description?: string;
+  tiles: DashboardLayoutItem[];
+  is_default?: boolean;
+  updated_at?: string;
 };
 
 type DashboardQueryState = {
@@ -50,6 +65,7 @@ type DashboardSummary = {
   active_room_count?: number;
   last_refresh_at?: string;
   accepted_snapshot_id?: string;
+  accepted_snapshot_at?: string;
 };
 
 export interface DashboardEnvelope {
@@ -63,11 +79,7 @@ export interface DashboardEnvelope {
     title?: string;
     tiles: DashboardTile[];
     layout?: DashboardLayoutItem[];
-    saved_layouts?: Array<{
-      layout_id: string;
-      name: string;
-      is_default?: boolean;
-    }>;
+    saved_layouts?: DashboardSavedLayout[];
     active_layout_id?: string;
     query_state?: DashboardQueryState;
     summary?: DashboardSummary;
@@ -92,6 +104,9 @@ export interface DashboardResponse {
     dashboard_id: string;
     action: "refresh" | "update";
     note?: string;
+    layout?: DashboardLayoutItem[];
+    saved_layouts?: DashboardSavedLayout[];
+    active_layout_id?: string;
     query_state?: DashboardQueryState;
   };
   completedAt?: string;
@@ -101,15 +116,19 @@ type DashboardProps = {
   envelope: DashboardEnvelope;
   onSubmit: (response: DashboardResponse) => void;
   onCancel: () => void;
+  roomID?: string;
 };
 
-export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
+export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardProps) {
   const dashboardID = envelope.data?.dashboard_id ?? "";
   const tiles = envelope.data?.tiles ?? [];
-  const layout = envelope.data?.layout ?? [];
   const summary = envelope.data?.summary;
   const queryState = envelope.data?.query_state;
   const snapshotHistory = envelope.data?.snapshot_history ?? [];
+  const exportState = useMemo(() => buildExportState(envelope.data), [envelope.data]);
+  const [draft] = useState(() =>
+    roomID && dashboardID ? loadDashboardDraft(roomID, dashboardID) : null,
+  );
   const [note, setNote] = useState("");
   const [search, setSearch] = useState(queryState?.search ?? "");
   const [scope, setScope] = useState(queryState?.scope ?? "");
@@ -119,11 +138,29 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
   );
   const [sortField, setSortField] = useState(queryState?.sort?.[0]?.field ?? "updated_at");
   const [sortDirection, setSortDirection] = useState(queryState?.sort?.[0]?.direction ?? "desc");
+  const [layout, setLayout] = useState<DashboardLayoutItem[]>(() =>
+    normalizeLayoutDraft(draft?.layout, envelope.data?.layout, tiles),
+  );
+  const [savedLayouts, setSavedLayouts] = useState<DashboardSavedLayout[]>(() =>
+    normalizeSavedLayoutsDraft(draft?.savedLayouts, envelope.data?.saved_layouts, tiles),
+  );
+  const [activeLayoutID, setActiveLayoutID] = useState(
+    draft?.activeLayoutID || envelope.data?.active_layout_id || "",
+  );
+  const [layoutName, setLayoutName] = useState(() =>
+    readLayoutName(
+      draft?.activeLayoutID || envelope.data?.active_layout_id || "",
+      draft?.savedLayouts,
+      envelope.data?.saved_layouts,
+    ),
+  );
+  const [layoutMessage, setLayoutMessage] = useState<string | null>(
+    draft ? "Recovered unsent dashboard layout edits from this browser." : null,
+  );
+  const [artifactMessage, setArtifactMessage] = useState<string | null>(null);
+  const lastSavedDraftRef = useRef<string | null>(draft ? JSON.stringify(draft) : null);
 
   const orderedTiles = useMemo(() => {
-    if (layout.length === 0) {
-      return tiles;
-    }
     const order = new Map(layout.map((item, index) => [item.tile_id, index]));
     return [...tiles].sort((left, right) => {
       const leftOrder = order.get(left.tile_id) ?? Number.MAX_SAFE_INTEGER;
@@ -135,11 +172,36 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
     });
   }, [layout, tiles]);
 
-  const activeLayout = envelope.data?.saved_layouts?.find(
-    (item) => item.layout_id === envelope.data?.active_layout_id,
+  const activeLayout = useMemo(
+    () => savedLayouts.find((item) => item.layout_id === activeLayoutID) ?? null,
+    [activeLayoutID, savedLayouts],
   );
 
+  useEffect(() => {
+    if (!roomID || !dashboardID) {
+      return;
+    }
+    const nextDraft = {
+      activeLayoutID,
+      layout,
+      savedLayouts,
+    };
+    const serialized = JSON.stringify(nextDraft);
+    if (serialized === lastSavedDraftRef.current) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      saveDashboardDraft(roomID, dashboardID, nextDraft);
+      lastSavedDraftRef.current = serialized;
+    }, DASHBOARD_DRAFT_AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [activeLayoutID, dashboardID, layout, roomID, savedLayouts]);
+
   const submit = (action: "refresh" | "update") => {
+    if (roomID && dashboardID) {
+      clearDashboardDraft(roomID, dashboardID);
+      lastSavedDraftRef.current = null;
+    }
     const normalizedFilterValues = statusFilter
       .split(",")
       .map((value) => value.trim())
@@ -153,6 +215,9 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
         dashboard_id: dashboardID,
         action,
         note: note.trim() || undefined,
+        layout,
+        saved_layouts: savedLayouts,
+        active_layout_id: activeLayoutID || undefined,
         query_state: {
           search: search.trim() || undefined,
           scope: scope || undefined,
@@ -173,6 +238,91 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
       },
       completedAt: new Date().toISOString(),
     });
+  };
+
+  const selectLayout = (layoutID: string) => {
+    setActiveLayoutID(layoutID);
+    const next = savedLayouts.find((item) => item.layout_id === layoutID) ?? null;
+    setLayout(next ? cloneLayout(next.tiles) : buildDefaultLayout(tiles));
+    setLayoutName(next?.name ?? "");
+    setLayoutMessage(
+      next ? `Loaded saved layout "${next.name}".` : "Switched back to the current session layout.",
+    );
+  };
+
+  const saveLayout = (mode: "update" | "duplicate") => {
+    const trimmedName = layoutName.trim();
+    if (!trimmedName) {
+      setLayoutMessage("Layout name is required before saving.");
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    const baseID =
+      mode === "update" && activeLayout ? activeLayout.layout_id : slugifyLayoutName(trimmedName);
+    const nextLayoutID =
+      mode === "update" && activeLayout
+        ? activeLayout.layout_id
+        : ensureUniqueLayoutID(savedLayouts, baseID || "layout");
+    const nextLayout: DashboardSavedLayout = {
+      layout_id: nextLayoutID,
+      name: trimmedName,
+      description: activeLayout?.description,
+      tiles: cloneLayout(layout),
+      is_default: activeLayout?.is_default ?? savedLayouts.length === 0,
+      updated_at: timestamp,
+    };
+    const remainder =
+      mode === "update"
+        ? savedLayouts.filter((item) => item.layout_id !== nextLayoutID)
+        : savedLayouts.slice();
+    const nextSavedLayouts = normalizeDefaultLayout([...remainder, nextLayout]);
+    setSavedLayouts(nextSavedLayouts);
+    setActiveLayoutID(nextLayoutID);
+    setLayoutName(trimmedName);
+    setLayoutMessage(
+      mode === "update"
+        ? `Saved changes to "${trimmedName}".`
+        : `Created saved layout "${trimmedName}".`,
+    );
+  };
+
+  const moveTile = (tileID: string, direction: -1 | 1) => {
+    const currentIndex = layout.findIndex((item) => item.tile_id === tileID);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= layout.length) {
+      return;
+    }
+    const nextLayout = cloneLayout(layout);
+    const [moved] = nextLayout.splice(currentIndex, 1);
+    nextLayout.splice(targetIndex, 0, moved);
+    setLayout(normalizeLayoutOrder(nextLayout));
+    setLayoutMessage(`Reordered ${readTileTitle(tiles, tileID)}.`);
+  };
+
+  const applyLayoutToSaved = () => {
+    if (!activeLayout) {
+      setLayoutMessage("Save the current arrangement as a named layout first.");
+      return;
+    }
+    setSavedLayouts(
+      normalizeDefaultLayout(
+        savedLayouts.map((item) =>
+          item.layout_id === activeLayout.layout_id
+            ? { ...item, tiles: cloneLayout(layout), updated_at: new Date().toISOString() }
+            : item,
+        ),
+      ),
+    );
+    setLayoutMessage(`Updated tile arrangement for "${activeLayout.name}".`);
+  };
+
+  const copyArtifactRef = async (artifactRef: string) => {
+    try {
+      await navigator.clipboard.writeText(artifactRef);
+      setArtifactMessage(`Copied ${artifactRef}.`);
+    } catch {
+      setArtifactMessage(`Artifact ref: ${artifactRef}`);
+    }
   };
 
   return (
@@ -344,6 +494,120 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
           </div>
         </section>
 
+        <section
+          className="grid gap-4 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]"
+          data-testid="dashboard-layouts"
+        >
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <label
+                htmlFor="dashboard-active-layout"
+                className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+              >
+                Saved layouts
+              </label>
+              <select
+                id="dashboard-active-layout"
+                value={activeLayoutID}
+                onChange={(event) => selectLayout(event.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                data-testid="dashboard-active-layout"
+              >
+                <option value="">Current session</option>
+                {savedLayouts.map((item) => (
+                  <option key={item.layout_id} value={item.layout_id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label
+                htmlFor="dashboard-layout-name"
+                className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+              >
+                Layout name
+              </label>
+              <input
+                id="dashboard-layout-name"
+                value={layoutName}
+                onChange={(event) => setLayoutName(event.target.value)}
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                data-testid="dashboard-layout-name"
+                placeholder="Focus, Reviews, Triage"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => saveLayout("update")}
+                data-testid="dashboard-save-layout"
+              >
+                Save layout
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => saveLayout("duplicate")}
+                data-testid="dashboard-save-layout-as-new"
+              >
+                Save as new
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={applyLayoutToSaved}
+                data-testid="dashboard-apply-layout-order"
+              >
+                Apply order
+              </Button>
+            </div>
+            {layoutMessage ? (
+              <p className="text-sm text-emerald-300" data-testid="dashboard-layout-message">
+                {layoutMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Tile order</p>
+            <div className="space-y-2" data-testid="dashboard-layout-order">
+              {orderedTiles.map((tile, index) => (
+                <div
+                  key={tile.tile_id}
+                  className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-zinc-100">{tile.title}</p>
+                    <p className="text-xs text-zinc-500">{tile.kind}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={index === 0}
+                      onClick={() => moveTile(tile.tile_id, -1)}
+                      data-testid={`dashboard-move-up-${tile.tile_id}`}
+                    >
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={index === orderedTiles.length - 1}
+                      onClick={() => moveTile(tile.tile_id, 1)}
+                      data-testid={`dashboard-move-down-${tile.tile_id}`}
+                    >
+                      Down
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" data-testid="dashboard-tiles">
           {orderedTiles.map((tile) => (
             <div
@@ -376,9 +640,42 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
                 {tile.workflow ? <span>{tile.workflow}</span> : null}
                 {tile.room_id ? <span>room {tile.room_id}</span> : null}
               </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {tile.room_id ? (
+                  <a
+                    href={`/r/${tile.room_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-200"
+                    data-testid={`dashboard-open-room-${tile.tile_id}`}
+                  >
+                    Open room
+                  </a>
+                ) : null}
+                {tile.artifact_ref ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      if (tile.artifact_ref) {
+                        void copyArtifactRef(tile.artifact_ref);
+                      }
+                    }}
+                    data-testid={`dashboard-copy-artifact-${tile.tile_id}`}
+                  >
+                    Copy artifact ref
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ))}
         </section>
+
+        {artifactMessage ? (
+          <p className="text-sm text-emerald-300" data-testid="dashboard-artifact-message">
+            {artifactMessage}
+          </p>
+        ) : null}
 
         {snapshotHistory.length > 0 ? (
           <section className="space-y-2" data-testid="dashboard-snapshot-history">
@@ -405,6 +702,18 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
             </div>
           </section>
         ) : null}
+
+        <section
+          className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4"
+          data-testid="dashboard-export-state"
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Export / share surface
+          </p>
+          <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-words text-xs text-zinc-300">
+            {JSON.stringify(exportState, null, 2)}
+          </pre>
+        </section>
 
         <section className="space-y-2">
           <label
@@ -442,4 +751,128 @@ export function Dashboard({ envelope, onSubmit, onCancel }: DashboardProps) {
       </CardContent>
     </Card>
   );
+}
+
+function normalizeLayoutDraft(
+  draftLayout: DashboardLayoutItem[] | undefined,
+  envelopeLayout: DashboardLayoutItem[] | undefined,
+  tiles: DashboardTile[],
+): DashboardLayoutItem[] {
+  if (draftLayout && draftLayout.length > 0) {
+    return normalizeLayoutOrder(filterKnownTiles(draftLayout, tiles));
+  }
+  if (envelopeLayout && envelopeLayout.length > 0) {
+    return normalizeLayoutOrder(filterKnownTiles(envelopeLayout, tiles));
+  }
+  return buildDefaultLayout(tiles);
+}
+
+function normalizeSavedLayoutsDraft(
+  draftLayouts: DashboardSavedLayout[] | undefined,
+  envelopeLayouts: DashboardSavedLayout[] | undefined,
+  tiles: DashboardTile[],
+): DashboardSavedLayout[] {
+  const source = draftLayouts && draftLayouts.length > 0 ? draftLayouts : (envelopeLayouts ?? []);
+  return normalizeDefaultLayout(
+    source.map((item) => ({
+      ...item,
+      tiles: normalizeLayoutOrder(filterKnownTiles(item.tiles ?? [], tiles)),
+    })),
+  );
+}
+
+function normalizeDefaultLayout(items: DashboardSavedLayout[]): DashboardSavedLayout[] {
+  let defaultAssigned = false;
+  return items.map((item, index) => {
+    const isDefault = item.is_default === true || (!defaultAssigned && index === 0);
+    if (isDefault) {
+      defaultAssigned = true;
+    }
+    return { ...item, is_default: isDefault };
+  });
+}
+
+function filterKnownTiles(
+  layout: DashboardLayoutItem[],
+  tiles: DashboardTile[],
+): DashboardLayoutItem[] {
+  const known = new Set(tiles.map((tile) => tile.tile_id));
+  const filtered = layout.filter((item) => known.has(item.tile_id));
+  const missing = tiles
+    .filter((tile) => !filtered.some((item) => item.tile_id === tile.tile_id))
+    .map((tile, index) => ({
+      tile_id: tile.tile_id,
+      x: filtered.length + index,
+      y: 0,
+      w: 1,
+      h: 1,
+    }));
+  return [...filtered, ...missing];
+}
+
+function buildDefaultLayout(tiles: DashboardTile[]): DashboardLayoutItem[] {
+  return tiles.map((tile, index) => ({
+    tile_id: tile.tile_id,
+    x: index,
+    y: 0,
+    w: 1,
+    h: 1,
+  }));
+}
+
+function normalizeLayoutOrder(layout: DashboardLayoutItem[]): DashboardLayoutItem[] {
+  return layout.map((item, index) => ({
+    ...item,
+    x: index,
+    y: 0,
+  }));
+}
+
+function cloneLayout(layout: DashboardLayoutItem[]): DashboardLayoutItem[] {
+  return layout.map((item) => ({ ...item }));
+}
+
+function readTileTitle(tiles: DashboardTile[], tileID: string): string {
+  return tiles.find((item) => item.tile_id === tileID)?.title ?? tileID;
+}
+
+function slugifyLayoutName(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function ensureUniqueLayoutID(savedLayouts: DashboardSavedLayout[], baseID: string): string {
+  const existing = new Set(savedLayouts.map((item) => item.layout_id));
+  if (!existing.has(baseID)) {
+    return baseID;
+  }
+  let suffix = 2;
+  while (existing.has(`${baseID}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseID}-${suffix}`;
+}
+
+function readLayoutName(
+  activeLayoutID: string,
+  draftLayouts: DashboardSavedLayout[] | undefined,
+  envelopeLayouts: DashboardSavedLayout[] | undefined,
+): string {
+  const combined = draftLayouts && draftLayouts.length > 0 ? draftLayouts : (envelopeLayouts ?? []);
+  return combined.find((item) => item.layout_id === activeLayoutID)?.name ?? "";
+}
+
+function buildExportState(data: DashboardEnvelope["data"]) {
+  const tiles = data?.tiles ?? [];
+  return {
+    dashboard_id: data?.dashboard_id ?? "",
+    active_layout_id: data?.active_layout_id ?? "",
+    accepted_snapshot_id: data?.summary?.accepted_snapshot_id ?? "",
+    accepted_snapshot_at: data?.summary?.accepted_snapshot_at ?? "",
+    room_refs: tiles.map((tile) => tile.room_id).filter(Boolean),
+    artifact_refs: tiles.map((tile) => tile.artifact_ref).filter(Boolean),
+  };
 }

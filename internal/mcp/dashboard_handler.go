@@ -16,10 +16,13 @@ type dashboardInput struct {
 }
 
 type dashboardSubmitDraft struct {
-	DashboardID string                    `json:"dashboard_id"`
-	Action      string                    `json:"action"`
-	Note        string                    `json:"note,omitempty"`
-	QueryState  *room.DashboardQueryState `json:"query_state,omitempty"`
+	DashboardID    string                        `json:"dashboard_id"`
+	Action         string                        `json:"action"`
+	Note           string                        `json:"note,omitempty"`
+	Layout         []room.DashboardTilePlacement `json:"layout,omitempty"`
+	SavedLayouts   []room.DashboardSavedLayout   `json:"saved_layouts,omitempty"`
+	ActiveLayoutID string                        `json:"active_layout_id,omitempty"`
+	QueryState     *room.DashboardQueryState     `json:"query_state,omitempty"`
 }
 
 type dashboardAcceptedPayload struct {
@@ -287,14 +290,30 @@ func (s *Server) normalizeDashboardSubmitResponse(
 	if draft.QueryState != nil {
 		queryState = cloneDashboardQueryState(draft.QueryState)
 	}
+	savedLayouts := cloneDashboardSavedLayouts(persisted.SavedLayouts)
+	if draft.SavedLayouts != nil {
+		savedLayouts = cloneDashboardSavedLayouts(draft.SavedLayouts)
+	}
+	activeLayoutID := persisted.ActiveLayoutID
+	if draft.ActiveLayoutID != "" || draft.SavedLayouts != nil {
+		activeLayoutID = draft.ActiveLayoutID
+	}
+	layout := cloneDashboardLayout(persisted.Layout)
+	if draft.Layout != nil {
+		layout = cloneDashboardLayout(draft.Layout)
+	} else if activeLayoutID != "" {
+		if active := findDashboardSavedLayout(savedLayouts, activeLayoutID); active != nil {
+			layout = cloneDashboardLayout(active.Tiles)
+		}
+	}
 
 	if _, err := s.manager.SaveDashboardSnapshot(roomID, room.DashboardSnapshot{
 		DashboardID:     persisted.DashboardID,
 		Title:           persisted.Title,
 		Tiles:           persisted.Tiles,
-		Layout:          persisted.Layout,
-		SavedLayouts:    persisted.SavedLayouts,
-		ActiveLayoutID:  persisted.ActiveLayoutID,
+		Layout:          layout,
+		SavedLayouts:    savedLayouts,
+		ActiveLayoutID:  activeLayoutID,
 		QueryState:      queryState,
 		Summary:         summary,
 		SnapshotHistory: snapshotHistory,
@@ -400,6 +419,39 @@ func cloneDashboardQueryState(state *room.DashboardQueryState) *room.DashboardQu
 	return &out
 }
 
+func cloneDashboardLayout(items []room.DashboardTilePlacement) []room.DashboardTilePlacement {
+	if items == nil {
+		return nil
+	}
+	if len(items) == 0 {
+		return []room.DashboardTilePlacement{}
+	}
+	out := make([]room.DashboardTilePlacement, len(items))
+	copy(out, items)
+	return out
+}
+
+func cloneDashboardSavedLayouts(items []room.DashboardSavedLayout) []room.DashboardSavedLayout {
+	if items == nil {
+		return nil
+	}
+	if len(items) == 0 {
+		return []room.DashboardSavedLayout{}
+	}
+	out := make([]room.DashboardSavedLayout, len(items))
+	for i, item := range items {
+		out[i] = room.DashboardSavedLayout{
+			LayoutID:    item.LayoutID,
+			Name:        item.Name,
+			Description: item.Description,
+			Tiles:       cloneDashboardLayout(item.Tiles),
+			IsDefault:   item.IsDefault,
+			UpdatedAt:   item.UpdatedAt,
+		}
+	}
+	return out
+}
+
 func cloneDashboardSummary(summary *room.DashboardSummary) *room.DashboardSummary {
 	if summary == nil {
 		return nil
@@ -442,11 +494,26 @@ func decodeDashboardSubmitDraft(raw any) (dashboardSubmitDraft, error) {
 		return dashboardSubmitDraft{}, fmt.Errorf("payload must be an object")
 	}
 	return dashboardSubmitDraft{
-		DashboardID: readStringValue(map[string]any{"dashboard_id": draft.DashboardID}, "dashboard_id"),
-		Action:      readStringValue(map[string]any{"action": draft.Action}, "action"),
-		Note:        readStringValue(map[string]any{"note": draft.Note}, "note"),
-		QueryState:  cloneDashboardQueryState(draft.QueryState),
+		DashboardID:    readStringValue(map[string]any{"dashboard_id": draft.DashboardID}, "dashboard_id"),
+		Action:         readStringValue(map[string]any{"action": draft.Action}, "action"),
+		Note:           readStringValue(map[string]any{"note": draft.Note}, "note"),
+		Layout:         cloneDashboardLayout(draft.Layout),
+		SavedLayouts:   cloneDashboardSavedLayouts(draft.SavedLayouts),
+		ActiveLayoutID: readStringValue(map[string]any{"active_layout_id": draft.ActiveLayoutID}, "active_layout_id"),
+		QueryState:     cloneDashboardQueryState(draft.QueryState),
 	}, nil
+}
+
+func findDashboardSavedLayout(
+	items []room.DashboardSavedLayout,
+	layoutID string,
+) *room.DashboardSavedLayout {
+	for i := range items {
+		if items[i].LayoutID == layoutID {
+			return &items[i]
+		}
+	}
+	return nil
 }
 
 func dashboardRejectedResponse(
