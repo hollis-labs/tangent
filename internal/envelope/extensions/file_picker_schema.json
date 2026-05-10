@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "properties": {
+    "picker_id": { "type": "string", "minLength": 1 },
+    "browse_roots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "root_id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" },
+          "path": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string" }
+        },
+        "required": ["root_id", "path"]
+      }
+    },
+    "selected_refs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "artifact_id": { "type": "string" },
+          "name": { "type": "string" },
+          "uri": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "kind": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "root_id": { "type": "string", "minLength": 1 },
+          "relative_path": { "type": "string", "minLength": 1 }
+        },
+        "required": ["root_id", "relative_path"]
+      }
+    },
+    "query_state": { "type": "object" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "artifact_id": { "type": "string" },
+          "name": { "type": "string" },
+          "uri": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "kind": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 },
+          "root_id": { "type": "string", "minLength": 1 },
+          "relative_path": { "type": "string", "minLength": 1 }
+        },
+        "required": ["root_id", "relative_path"]
+      }
+    }
+  },
+  "required": ["picker_id", "browse_roots"]
+}
