@@ -6,6 +6,7 @@ Use cases the chat window can't carry well:
 
 - diff-approval queues
 - design-comp triage
+- dashboard snapshots
 - screenshot annotation
 - persistent forms
 - brainstorm iteration
@@ -16,7 +17,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.10.0`. Tangent now ships `tangent.progress-panel`: a room-backed progress workflow with explicit update/reopen turns, append-only timeline entries, checkpoint summaries, browser-local recovery for operator context, and concise export snapshots for downstream inspection. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest published tag is `v0.11.0`. Tangent now ships `tangent.dashboard`: a room-backed workflow-state dashboard with explicit refresh/update turns, saved layouts, room/artifact drill-down affordances, and concise accepted snapshot export metadata for downstream inspection. The dashboard summarizes Tangent workflow state only; it is not a general external BI surface. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -25,7 +26,7 @@ Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped wit
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.10.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
 ```
 
 Run:
@@ -48,18 +49,18 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`, `tangent.dashboard`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What v0.10.0 adds
+### What v0.11.0 adds
 
-- Tangent now ships `tangent.progress-panel`, a room-backed progress workflow with explicit update/reopen turns.
-- Progress-panel turns persist canonical items, append-only updates, checkpoint summaries, completion-result metadata, and concise summary fields under `session_get.progress_panel`.
-- The browser host now supports timeline, checkpoint, and log inspection plus local operator-context recovery without changing canonical room history.
+- Tangent now ships `tangent.dashboard`, a room-backed workflow-state dashboard with explicit refresh/update turns.
+- Dashboard turns persist canonical tiles, saved layouts, accepted snapshot history, and deterministic `export_state` metadata under `session_get.dashboard`.
+- The browser host now supports saved layout reuse, browser-local layout draft recovery, room/artifact drill-down actions, and concise export/share inspection without introducing any cloud sync or multi-user state.
 
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
@@ -112,7 +113,11 @@ Shipped. Tangent added a room-backed file-picker workflow with allowed local bro
 
 ### v0.10 — Progress panel
 
-Current branch. Tangent adds a room-backed progress workflow with append-only updates, timeline/checkpoint/log inspection, local operator-context recovery, and concise summary/export inspection.
+Shipped. Tangent added a room-backed progress workflow with append-only updates, timeline/checkpoint/log inspection, local operator-context recovery, and concise summary/export inspection.
+
+### v0.11 — Dashboard
+
+Current branch. Tangent adds a room-backed dashboard workflow that summarizes Tangent room/workflow state through reusable saved layouts, explicit refresh/update submits, room/artifact drill-down, and deterministic export metadata.
 
 ### v0.8+ — Distribution and trust
 
@@ -190,6 +195,7 @@ More docs:
 - [`docs/manual-tests/diff-review-e2e.md`](./docs/manual-tests/diff-review-e2e.md) — full diff-review workflow with reopen, batch decisions, and summary export
 - [`docs/manual-tests/file-picker-e2e.md`](./docs/manual-tests/file-picker-e2e.md) — full file-picker workflow with reopen, local draft recovery, and artifact-ref handoff inspection
 - [`docs/manual-tests/progress-panel-e2e.md`](./docs/manual-tests/progress-panel-e2e.md) — full progress-panel workflow with update/reopen, checkpoint inspection, and export snapshot verification
+- [`docs/manual-tests/dashboard-e2e.md`](./docs/manual-tests/dashboard-e2e.md) — full dashboard workflow with saved layouts, drill-down, and export/share snapshot verification
 
 ## License
 

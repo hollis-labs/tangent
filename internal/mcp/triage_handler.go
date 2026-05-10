@@ -235,6 +235,10 @@ func RegisterWhiteboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tr
 	return dispatcher.Register(whiteboardEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }
 
+func RegisterDashboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register(dashboardEnvelopeType, envelope.HandlerFunc(handler.Handle))
+}
+
 func RegisterFilePickerOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
 	return dispatcher.Register(filePickerEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }

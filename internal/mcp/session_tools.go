@@ -66,6 +66,7 @@ type sessionGetResult struct {
 	CurrentPhase          string                           `json:"current_phase"`
 	PhasesVisited         []string                         `json:"phases_visited"`
 	PhaseOutputs          map[string]room.PhaseOutput      `json:"phase_outputs"`
+	Dashboard             *room.DashboardStateView         `json:"dashboard,omitempty"`
 	ProgressPanel         *room.ProgressPanelStateView     `json:"progress_panel,omitempty"`
 	FilePicker            *room.FilePickerStateView        `json:"file_picker,omitempty"`
 	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
@@ -155,6 +156,7 @@ func (s *Server) handleSessionGet(
 		CurrentPhase:          phaseState.CurrentPhase,
 		PhasesVisited:         phaseState.PhasesVisited,
 		PhaseOutputs:          phaseState.PhaseOutputs,
+		Dashboard:             room.ProjectDashboardState(phaseState),
 		ProgressPanel:         room.ProjectProgressPanelState(phaseState),
 		FilePicker:            room.ProjectFilePickerState(phaseState),
 		DiffReview:            room.ProjectDiffReviewState(phaseState),
@@ -287,6 +289,9 @@ func (s *Server) advanceRoomEnvelope(
 		if env.Type == whiteboardEnvelopeType {
 			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
 		}
+		if env.Type == dashboardEnvelopeType {
+			return s.normalizeDashboardSubmitResponse(roomID, env, resp)
+		}
 		if env.Type == filePickerEnvelopeType {
 			return s.normalizeFilePickerSubmitResponse(roomID, env, resp)
 		}
@@ -363,6 +368,14 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
+		errors.Is(err, room.ErrInvalidDashboardID),
+		errors.Is(err, room.ErrInvalidDashboardTile),
+		errors.Is(err, room.ErrInvalidDashboardLayout),
+		errors.Is(err, room.ErrInvalidDashboardSavedLayout),
+		errors.Is(err, room.ErrInvalidDashboardQueryState),
+		errors.Is(err, room.ErrInvalidDashboardSummary),
+		errors.Is(err, room.ErrInvalidDashboardSnapshot),
+		errors.Is(err, room.ErrInvalidDashboardExport),
 		errors.Is(err, room.ErrInvalidFilePickerID),
 		errors.Is(err, room.ErrInvalidFilePickerBrowseRoot),
 		errors.Is(err, room.ErrInvalidFilePickerSelectionRef),

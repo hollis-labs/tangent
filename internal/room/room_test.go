@@ -788,6 +788,253 @@ func TestRoom_SaveProgressPanelSnapshotRejectsInvalidUpdate(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveDashboardSnapshotEmptyDashboard(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	if err := rm.SaveDashboardSnapshot(room.DashboardSnapshot{
+		DashboardID:  "dashboard-empty",
+		Tiles:        []room.DashboardTile{},
+		Layout:       []room.DashboardTilePlacement{},
+		SavedLayouts: []room.DashboardSavedLayout{},
+		QueryState: &room.DashboardQueryState{
+			Filters: []room.DashboardFilterState{},
+			Sort:    []room.DashboardSortState{},
+		},
+		Summary: &room.DashboardSummary{},
+	}); err != nil {
+		t.Fatalf("SaveDashboardSnapshot empty: %v", err)
+	}
+
+	view := room.ProjectDashboardState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectDashboardState returned nil")
+	}
+	if got := len(view.Tiles); got != 0 {
+		t.Fatalf("tiles len = %d, want 0", got)
+	}
+	if got := len(view.Layout); got != 0 {
+		t.Fatalf("layout len = %d, want 0", got)
+	}
+	if got := len(view.SavedLayouts); got != 0 {
+		t.Fatalf("saved_layouts len = %d, want 0", got)
+	}
+}
+
+func TestRoom_SaveDashboardSnapshotPersistsAndReloads(t *testing.T) {
+	db := newTestDB(t)
+	defer func() {
+		_ = tangentdb.Close(db)
+	}()
+
+	mgr := room.NewManager(db)
+	rm := mgr.Create(map[string]string{"title": "dashboard"})
+
+	if err := rm.SaveDashboardSnapshot(room.DashboardSnapshot{
+		DashboardID: "dashboard-1",
+		Title:       "Operations Dashboard",
+		Tiles: []room.DashboardTile{
+			{
+				TileID:   "tile-open-rooms",
+				Kind:     "room_count",
+				Title:    "Open rooms",
+				Status:   "healthy",
+				Value:    "6",
+				Summary:  "Rooms waiting for operator review",
+				Workflow: "tangent.progress-panel",
+				Metadata: map[string]any{"color": "amber"},
+			},
+			{
+				TileID:      "tile-active-progress",
+				Kind:        "workflow_summary",
+				Title:       "Active progress panels",
+				Subtitle:    "Running workflows",
+				Status:      "busy",
+				Value:       "2",
+				RoomID:      "room-123",
+				Workflow:    "tangent.progress-panel",
+				ArtifactRef: "artifact://summary-123",
+				Metadata:    map[string]any{"owner": "codex"},
+			},
+		},
+		Layout: []room.DashboardTilePlacement{
+			{TileID: "tile-open-rooms", X: 0, Y: 0, W: 2, H: 1},
+			{TileID: "tile-active-progress", X: 2, Y: 0, W: 2, H: 2},
+		},
+		SavedLayouts: []room.DashboardSavedLayout{
+			{
+				LayoutID:    "layout-default",
+				Name:        "Default",
+				Description: "Operational starting point",
+				Tiles: []room.DashboardTilePlacement{
+					{TileID: "tile-open-rooms", X: 0, Y: 0, W: 2, H: 1},
+					{TileID: "tile-active-progress", X: 2, Y: 0, W: 2, H: 2},
+				},
+				IsDefault: true,
+				UpdatedAt: "2026-05-09T22:00:00Z",
+			},
+		},
+		ActiveLayoutID: "layout-default",
+		QueryState: &room.DashboardQueryState{
+			Search:  "progress",
+			Scope:   "active",
+			GroupBy: "workflow",
+			Filters: []room.DashboardFilterState{
+				{FilterID: "status", Label: "Status", Operator: "in", Values: []string{"running", "blocked"}},
+			},
+			Range: &room.DashboardRangeState{
+				Kind:     "relative",
+				Preset:   "24h",
+				Timezone: "America/Chicago",
+			},
+			Sort: []room.DashboardSortState{
+				{Field: "updated_at", Direction: "desc"},
+			},
+		},
+		Summary: &room.DashboardSummary{
+			Headline:           "2 workflows need attention",
+			Detail:             "One room is blocked and one is awaiting review",
+			Status:             "attention",
+			ActiveRoomCount:    6,
+			LastRefreshAt:      "2026-05-09T22:01:00Z",
+			AcceptedSnapshotID: "dashboard-1-snapshot-001",
+			AcceptedSnapshotAt: "2026-05-09T22:01:00Z",
+		},
+		SnapshotHistory: []room.DashboardSnapshotMeta{
+			{
+				SnapshotID:     "dashboard-1-snapshot-001",
+				Action:         "refresh",
+				Note:           "First accepted refresh",
+				CreatedAt:      "2026-05-09T22:01:00Z",
+				TileCount:      2,
+				ActiveLayoutID: "layout-default",
+			},
+		},
+		ExportState: &room.DashboardExportState{
+			ExportID:       "dashboard-1-export-dashboard-1-snapshot-001",
+			SnapshotID:     "dashboard-1-snapshot-001",
+			GeneratedAt:    "2026-05-09T22:01:00Z",
+			ActiveLayoutID: "layout-default",
+			TileCount:      2,
+			RoomRefs:       []string{"room-123"},
+			ArtifactRefs:   []string{"artifact://summary-123"},
+		},
+		UpdatedAt: "2026-05-09T22:01:00Z",
+	}); err != nil {
+		t.Fatalf("SaveDashboardSnapshot: %v", err)
+	}
+
+	view := room.ProjectDashboardState(rm.PhaseState())
+	if view == nil {
+		t.Fatal("ProjectDashboardState returned nil")
+	}
+	if got := view.DashboardID; got != "dashboard-1" {
+		t.Fatalf("dashboard_id = %q, want dashboard-1", got)
+	}
+	if got := view.Title; got != "Operations Dashboard" {
+		t.Fatalf("title = %q, want Operations Dashboard", got)
+	}
+	if got := len(view.Tiles); got != 2 {
+		t.Fatalf("tiles len = %d, want 2", got)
+	}
+	if got := view.Tiles[1].ArtifactRef; got != "artifact://summary-123" {
+		t.Fatalf("tiles[1].artifact_ref = %q, want artifact://summary-123", got)
+	}
+	if got := len(view.Layout); got != 2 {
+		t.Fatalf("layout len = %d, want 2", got)
+	}
+	if got := len(view.SavedLayouts); got != 1 {
+		t.Fatalf("saved_layouts len = %d, want 1", got)
+	}
+	if got := view.ActiveLayoutID; got != "layout-default" {
+		t.Fatalf("active_layout_id = %q, want layout-default", got)
+	}
+	if view.QueryState == nil || view.QueryState.Range == nil {
+		t.Fatalf("query_state = %#v, want non-nil range", view.QueryState)
+	}
+	if got := view.QueryState.Sort[0].Direction; got != "desc" {
+		t.Fatalf("sort[0].direction = %q, want desc", got)
+	}
+	if view.Summary == nil || view.Summary.TileCount != 2 {
+		t.Fatalf("summary = %#v, want tile_count 2", view.Summary)
+	}
+	if got := len(view.SnapshotHistory); got != 1 {
+		t.Fatalf("snapshot_history len = %d, want 1", got)
+	}
+	if view.ExportState == nil || view.ExportState.SnapshotID != "dashboard-1-snapshot-001" {
+		t.Fatalf("export_state = %#v, want snapshot_id dashboard-1-snapshot-001", view.ExportState)
+	}
+
+	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
+	if err != nil {
+		t.Fatalf("GetPhaseState reload: %v", err)
+	}
+	if !found {
+		t.Fatal("GetPhaseState found = false, want true")
+	}
+	reloadedView := room.ProjectDashboardState(reloaded)
+	if reloadedView == nil {
+		t.Fatal("reloaded ProjectDashboardState returned nil")
+	}
+	if got := reloadedView.Tiles[0].Metadata["color"]; got != "amber" {
+		t.Fatalf("reloaded tiles[0].metadata.color = %v, want amber", got)
+	}
+	if got := reloadedView.SavedLayouts[0].Tiles[1].TileID; got != "tile-active-progress" {
+		t.Fatalf("reloaded saved_layouts[0].tiles[1].tile_id = %q, want tile-active-progress", got)
+	}
+	if got := reloadedView.Summary.AcceptedSnapshotID; got != "dashboard-1-snapshot-001" {
+		t.Fatalf("reloaded summary.accepted_snapshot_id = %q, want dashboard-1-snapshot-001", got)
+	}
+	if got := reloadedView.SnapshotHistory[0].Action; got != "refresh" {
+		t.Fatalf("reloaded snapshot_history[0].action = %q, want refresh", got)
+	}
+	if got := reloadedView.ExportState.ArtifactRefs[0]; got != "artifact://summary-123" {
+		t.Fatalf("reloaded export_state.artifact_refs[0] = %q, want artifact://summary-123", got)
+	}
+}
+
+func TestRoom_SaveDashboardSnapshotRejectsInvalidConfiguration(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveDashboardSnapshot(room.DashboardSnapshot{
+		DashboardID: "dashboard-invalid-layout",
+		Tiles: []room.DashboardTile{
+			{TileID: "tile-1", Kind: "count", Title: "Tile 1", Metadata: map[string]any{}},
+		},
+		Layout: []room.DashboardTilePlacement{
+			{TileID: "missing-tile", X: 0, Y: 0, W: 1, H: 1},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidDashboardLayout) {
+		t.Fatalf("SaveDashboardSnapshot invalid layout err = %v, want ErrInvalidDashboardLayout", err)
+	}
+
+	err = rm.SaveDashboardSnapshot(room.DashboardSnapshot{
+		DashboardID: "dashboard-invalid-query",
+		Tiles: []room.DashboardTile{
+			{TileID: "tile-1", Kind: "count", Title: "Tile 1", Metadata: map[string]any{}},
+		},
+		QueryState: &room.DashboardQueryState{
+			Sort: []room.DashboardSortState{
+				{Field: "updated_at", Direction: "sideways"},
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidDashboardQueryState) {
+		t.Fatalf("SaveDashboardSnapshot invalid query err = %v, want ErrInvalidDashboardQueryState", err)
+	}
+
+	err = rm.SaveDashboardSnapshot(room.DashboardSnapshot{
+		DashboardID: "dashboard-invalid-summary",
+		Tiles: []room.DashboardTile{
+			{TileID: "tile-1", Kind: "count", Title: "Tile 1", Metadata: map[string]any{}},
+		},
+		Summary: &room.DashboardSummary{
+			TileCount: -1,
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidDashboardSummary) {
+		t.Fatalf("SaveDashboardSnapshot invalid summary err = %v, want ErrInvalidDashboardSummary", err)
+	}
+}
+
 func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
 	rm := newAnonRoom(t, nil)
 	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{

@@ -71,6 +71,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
 		t.Fatalf("RegisterWhiteboard: %v", regErr)
 	}
+	if regErr := extensions.RegisterDashboard(envSvc); regErr != nil {
+		t.Fatalf("RegisterDashboard: %v", regErr)
+	}
 	if regErr := extensions.RegisterFilePicker(envSvc); regErr != nil {
 		t.Fatalf("RegisterFilePicker: %v", regErr)
 	}
@@ -144,6 +147,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterWhiteboardOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterDashboardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterDashboardOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterFilePickerOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
@@ -845,6 +853,94 @@ func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
 	}
 	if state.FilePicker.Handoff == nil || len(state.FilePicker.Handoff.ArtifactRefs) != 1 {
 		t.Fatalf("handoff = %#v, want one artifact ref", state.FilePicker.Handoff)
+	}
+}
+
+func TestSession_GetIncludesDashboardProjection(t *testing.T) {
+	rg := newSessionRig(t)
+	defer rg.cleanup()
+
+	roomID, _ := createSession(t, rg, "dashboard")
+	if _, err := rg.mgr.SaveDashboardSnapshot(roomID, room.DashboardSnapshot{
+		DashboardID: "dashboard-1",
+		Title:       "Ops",
+		Tiles: []room.DashboardTile{
+			{
+				TileID:   "tile-open",
+				Kind:     "room_count",
+				Title:    "Open rooms",
+				Status:   "healthy",
+				Value:    "4",
+				Metadata: map[string]any{"owner": "codex"},
+			},
+		},
+		Layout: []room.DashboardTilePlacement{
+			{TileID: "tile-open", X: 0, Y: 0, W: 2, H: 1},
+		},
+		SavedLayouts: []room.DashboardSavedLayout{
+			{
+				LayoutID:  "layout-default",
+				Name:      "Default",
+				IsDefault: true,
+				Tiles: []room.DashboardTilePlacement{
+					{TileID: "tile-open", X: 0, Y: 0, W: 2, H: 1},
+				},
+			},
+		},
+		ActiveLayoutID: "layout-default",
+		QueryState: &room.DashboardQueryState{
+			Search: "open",
+			Filters: []room.DashboardFilterState{
+				{FilterID: "status", Operator: "in", Values: []string{"running"}},
+			},
+			Sort: []room.DashboardSortState{
+				{Field: "updated_at", Direction: "desc"},
+			},
+		},
+		Summary: &room.DashboardSummary{
+			Headline:           "4 open rooms",
+			ActiveRoomCount:    4,
+			AcceptedSnapshotID: "dashboard-1-snapshot-001",
+		},
+		UpdatedAt: "2026-05-09T22:15:00Z",
+	}); err != nil {
+		t.Fatalf("SaveDashboardSnapshot: %v", err)
+	}
+
+	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "tangent.session_get",
+		Arguments: map[string]any{"roomID": roomID},
+	})
+	if err != nil {
+		t.Fatalf("session_get: %v", err)
+	}
+	if getRes.IsError {
+		t.Fatalf("session_get IsError=true: %s", extractText(t, getRes))
+	}
+
+	var state struct {
+		Dashboard *room.DashboardStateView `json:"dashboard"`
+	}
+	if err := json.Unmarshal([]byte(extractText(t, getRes)), &state); err != nil {
+		t.Fatalf("unmarshal session_get: %v", err)
+	}
+	if state.Dashboard == nil {
+		t.Fatal("dashboard projection missing")
+	}
+	if got := state.Dashboard.DashboardID; got != "dashboard-1" {
+		t.Fatalf("dashboard_id = %q, want dashboard-1", got)
+	}
+	if got := state.Dashboard.Tiles[0].Metadata["owner"]; got != "codex" {
+		t.Fatalf("tiles[0].metadata.owner = %v, want codex", got)
+	}
+	if got := state.Dashboard.ActiveLayoutID; got != "layout-default" {
+		t.Fatalf("active_layout_id = %q, want layout-default", got)
+	}
+	if got := state.Dashboard.QueryState.Sort[0].Direction; got != "desc" {
+		t.Fatalf("sort[0].direction = %q, want desc", got)
+	}
+	if state.Dashboard.Summary == nil || state.Dashboard.Summary.AcceptedSnapshotID != "dashboard-1-snapshot-001" {
+		t.Fatalf("summary = %#v, want accepted_snapshot_id dashboard-1-snapshot-001", state.Dashboard.Summary)
 	}
 }
 

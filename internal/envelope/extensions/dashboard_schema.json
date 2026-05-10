@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "properties": {
+    "dashboard_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "tiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tile_id": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "subtitle": { "type": "string" },
+          "status": { "type": "string" },
+          "value": { "type": "string" },
+          "unit": { "type": "string" },
+          "summary": { "type": "string" },
+          "room_id": { "type": "string" },
+          "workflow": { "type": "string" },
+          "artifact_ref": { "type": "string" },
+          "metadata": { "type": "object" }
+        },
+        "required": ["tile_id", "kind", "title"]
+      }
+    },
+    "layout": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tile_id": { "type": "string", "minLength": 1 },
+          "x": { "type": "integer", "minimum": 0 },
+          "y": { "type": "integer", "minimum": 0 },
+          "w": { "type": "integer", "minimum": 1 },
+          "h": { "type": "integer", "minimum": 1 }
+        },
+        "required": ["tile_id", "x", "y", "w", "h"]
+      }
+    },
+    "saved_layouts": { "type": "array" },
+    "active_layout_id": { "type": "string" },
+    "query_state": { "type": "object" },
+    "summary": { "type": "object" },
+    "updated_at": { "type": "string" }
+  },
+  "required": ["dashboard_id", "tiles"]
+}

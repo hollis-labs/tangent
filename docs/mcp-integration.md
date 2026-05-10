@@ -18,6 +18,8 @@ for the file-picker flow see
 [`manual-tests/file-picker-e2e.md`](./manual-tests/file-picker-e2e.md);
 for the progress-panel flow see
 [`manual-tests/progress-panel-e2e.md`](./manual-tests/progress-panel-e2e.md);
+for the dashboard flow see
+[`manual-tests/dashboard-e2e.md`](./manual-tests/dashboard-e2e.md);
 for the generalized form flow see
 [`manual-tests/form-collect-e2e.md`](./manual-tests/form-collect-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
@@ -25,7 +27,7 @@ for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 ## Install
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.10.0
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
 ```
 
 Or build from source:
@@ -86,7 +88,7 @@ tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
 `tangent.design-iteration`, `tangent.whiteboard`,
 `tangent.spreadsheet-review`, `tangent.approval-queue`,
 `tangent.diff-review`, `tangent.file-picker`,
-`tangent.progress-panel`, or the writing
+`tangent.progress-panel`, `tangent.dashboard`, or the writing
 sequence via `tangent.session_*`, `tangent.interview_question`,
 `tangent.synthesis_notes`, `tangent.block_draft`,
 `tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
@@ -147,6 +149,7 @@ Expected:
 
 ```
 "tangent.design-iteration"
+"tangent.dashboard"
 "tangent.diff-review"
 "tangent.feedback"
 "tangent.file-picker"
@@ -221,6 +224,11 @@ workflow-neutral phase substrate:
   dedicated projection with `panel_id`, canonical `items`, append-only
   `updates`, derived `checkpoints`, and concise summary fields such as
   `current_status`, `last_checkpoint_label`, and `completion_result`.
+- `dashboard`: when a room has persisted dashboard state, a dedicated
+  projection with `dashboard_id`, canonical `tiles`, normalized
+  `layout`, reusable `saved_layouts`, normalized `query_state`,
+  accepted `snapshot_history`, and concise `export_state` metadata for
+  downstream handoff.
 - `approval_queue`: when a room has persisted approval-queue state, a
   dedicated projection with `queue_id`, canonical `items`,
   `current_index`, normalized `decisions`, queue `notes`, `updated_at`,

@@ -12,6 +12,11 @@ import {
   type BlockDraftResponse,
 } from "./components/envelopes/BlockDraft";
 import {
+  Dashboard,
+  type DashboardEnvelope,
+  type DashboardResponse,
+} from "./components/envelopes/Dashboard";
+import {
   DesignIteration,
   type DesignIterationEnvelope,
   type DesignIterationResponse,
@@ -192,6 +197,17 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+function DashboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <Dashboard
+      envelope={envelope as DashboardEnvelope}
+      onSubmit={onSubmit as (response: DashboardResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
 function DiffReviewAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <DiffReview
@@ -261,6 +277,7 @@ register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
+register("tangent.dashboard", DashboardAdapter);
 register("tangent.file-picker", FilePickerAdapter);
 register("tangent.progress-panel", ProgressPanelAdapter);
 register("tangent.diff-review", DiffReviewAdapter);
