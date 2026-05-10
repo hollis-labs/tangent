@@ -193,6 +193,10 @@ func normalizeFilePickerSnapshot(snapshot FilePickerSnapshot) (FilePickerSnapsho
 	if err != nil {
 		return FilePickerSnapshot{}, err
 	}
+	handoff, err := normalizeFilePickerHandoff(snapshot.Handoff, rootIDs)
+	if err != nil {
+		return FilePickerSnapshot{}, err
+	}
 	return FilePickerSnapshot{
 		PickerID:           pickerID,
 		BrowseRoots:        browseRoots,
@@ -200,7 +204,7 @@ func normalizeFilePickerSnapshot(snapshot FilePickerSnapshot) (FilePickerSnapsho
 		QueryState:         queryState,
 		SelectionRevisions: revisions,
 		SubmissionSummary:  normalizeFilePickerSubmissionSummary(snapshot.SubmissionSummary),
-		Handoff:            normalizeFilePickerHandoff(snapshot.Handoff, rootIDs),
+		Handoff:            handoff,
 		UpdatedAt:          strings.TrimSpace(snapshot.UpdatedAt),
 	}, nil
 }
@@ -331,13 +335,15 @@ func normalizeFilePickerSelectionRevisions(items []FilePickerSelectionRevision) 
 		return []FilePickerSelectionRevision{}, nil
 	}
 	out := make([]FilePickerSelectionRevision, 0, len(items))
-	prevID := ""
+	seen := map[string]struct{}{}
 	for _, item := range items {
 		revisionID := strings.TrimSpace(item.SelectionRevisionID)
-		if revisionID != "" && revisionID == prevID {
-			return nil, fmt.Errorf("%w: duplicate selection_revision_id %q", ErrInvalidFilePickerSelectionRevision, revisionID)
+		if revisionID != "" {
+			if _, exists := seen[revisionID]; exists {
+				return nil, fmt.Errorf("%w: duplicate selection_revision_id %q", ErrInvalidFilePickerSelectionRevision, revisionID)
+			}
+			seen[revisionID] = struct{}{}
 		}
-		prevID = revisionID
 		if item.SelectedCount < 0 {
 			return nil, ErrInvalidFilePickerSelectionRevision
 		}
@@ -370,19 +376,19 @@ func normalizeFilePickerSubmissionSummary(summary *FilePickerSubmissionSummary) 
 	return out
 }
 
-func normalizeFilePickerHandoff(handoff *FilePickerHandoff, validRootIDs map[string]struct{}) *FilePickerHandoff {
+func normalizeFilePickerHandoff(handoff *FilePickerHandoff, validRootIDs map[string]struct{}) (*FilePickerHandoff, error) {
 	if handoff == nil {
-		return nil
+		return nil, nil
 	}
 	refs, err := normalizeFilePickerArtifactRefs(handoff.ArtifactRefs, validRootIDs)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	return &FilePickerHandoff{
 		SelectionRevisionID: strings.TrimSpace(handoff.SelectionRevisionID),
 		ArtifactRefs:        refs,
 		Summary:             normalizeFilePickerSubmissionSummary(handoff.Summary),
-	}
+	}, nil
 }
 
 func filePickerBlobFromSnapshot(snapshot FilePickerSnapshot) PhaseOutput {

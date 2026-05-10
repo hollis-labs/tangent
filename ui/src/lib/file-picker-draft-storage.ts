@@ -1,3 +1,5 @@
+export const FILE_PICKER_AUTOSAVE_DEBOUNCE_MS = 400;
+
 const STORAGE_PREFIX = "tangent.file-picker.draft.v1";
 
 export type FilePickerDraft = {
@@ -9,12 +11,21 @@ export type FilePickerDraft = {
   previewKey: string;
 };
 
+export function getFilePickerDraftStorageKey(roomID: string, pickerID: string): string {
+  return `${STORAGE_PREFIX}:${roomID}:${pickerID}`;
+}
+
 export function loadFilePickerDraft(roomID: string, pickerID: string): FilePickerDraft | null {
+  const storage = getStorage();
+  if (!storage) {
+    return null;
+  }
+  const key = getFilePickerDraftStorageKey(roomID, pickerID);
+  const raw = storage.getItem(key);
+  if (!raw) {
+    return null;
+  }
   try {
-    const raw = window.localStorage.getItem(storageKey(roomID, pickerID));
-    if (!raw) {
-      return null;
-    }
     const parsed = JSON.parse(raw) as Partial<FilePickerDraft>;
     return {
       activeRootID: typeof parsed.activeRootID === "string" ? parsed.activeRootID : "",
@@ -27,6 +38,7 @@ export function loadFilePickerDraft(roomID: string, pickerID: string): FilePicke
       previewKey: typeof parsed.previewKey === "string" ? parsed.previewKey : "",
     };
   } catch {
+    storage.removeItem(key);
     return null;
   }
 }
@@ -36,13 +48,25 @@ export function saveFilePickerDraft(
   pickerID: string,
   draft: FilePickerDraft,
 ): void {
-  window.localStorage.setItem(storageKey(roomID, pickerID), JSON.stringify(draft));
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+  storage.setItem(getFilePickerDraftStorageKey(roomID, pickerID), JSON.stringify(draft));
 }
 
 export function clearFilePickerDraft(roomID: string, pickerID: string): void {
-  window.localStorage.removeItem(storageKey(roomID, pickerID));
+  const storage = getStorage();
+  if (!storage) {
+    return;
+  }
+  storage.removeItem(getFilePickerDraftStorageKey(roomID, pickerID));
 }
 
-function storageKey(roomID: string, pickerID: string): string {
-  return `${STORAGE_PREFIX}:${roomID}:${pickerID}`;
+function getStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
 }

@@ -1,10 +1,16 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  FILE_PICKER_AUTOSAVE_DEBOUNCE_MS,
+  getFilePickerDraftStorageKey,
+} from "@/lib/file-picker-draft-storage";
 import { FilePicker, type FilePickerEnvelope, type FilePickerResponse } from "./FilePicker";
 
 describe("<FilePicker>", () => {
   afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     window.localStorage.clear();
   });
 
@@ -167,7 +173,7 @@ describe("<FilePicker>", () => {
 
   it("recovers browser-local draft state before submit and shows preview metadata", () => {
     window.localStorage.setItem(
-      "tangent.file-picker.draft.v1:room-2:picker-3",
+      getFilePickerDraftStorageKey("room-2", "picker-3"),
       JSON.stringify({
         activeRootID: "workspace",
         currentDir: "docs",
@@ -210,6 +216,84 @@ describe("<FilePicker>", () => {
     expect(screen.getByTestId("file-picker-preview")).toHaveTextContent("128 bytes");
   });
 
+  it("debounces host-local draft writes and skips duplicate payloads", () => {
+    vi.useFakeTimers();
+    const storageKey = getFilePickerDraftStorageKey("room-5", "picker-5");
+    const envelope: FilePickerEnvelope = {
+      v: 1,
+      id: "picker-env-5",
+      type: "tangent.file-picker",
+      data: {
+        picker_id: "picker-5",
+        browse_roots: [{ root_id: "workspace", label: "Workspace", path: "/tmp/workspace" }],
+        files: [
+          {
+            artifact_id: "artifact-5",
+            name: "README.md",
+            uri: "artifact://artifact-5",
+            root_id: "workspace",
+            relative_path: "README.md",
+          },
+        ],
+      },
+    };
+
+    render(
+      <FilePicker envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} roomID="room-5" />,
+    );
+
+    fireEvent.change(screen.getByTestId("file-picker-search"), {
+      target: { value: "read" },
+    });
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(FILE_PICKER_AUTOSAVE_DEBOUNCE_MS - 1);
+    });
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+
+    expect(JSON.parse(window.localStorage.getItem(storageKey) ?? "null")).toMatchObject({
+      search: "read",
+      sort: "name:asc",
+    });
+    const firstSavedDraft = window.localStorage.getItem(storageKey);
+
+    fireEvent.change(screen.getByTestId("file-picker-search"), {
+      target: { value: "read" },
+    });
+    act(() => {
+      vi.advanceTimersByTime(FILE_PICKER_AUTOSAVE_DEBOUNCE_MS + 10);
+    });
+
+    expect(window.localStorage.getItem(storageKey)).toBe(firstSavedDraft);
+  });
+
+  it("clears invalid draft storage entries during recovery", () => {
+    const storageKey = getFilePickerDraftStorageKey("room-6", "picker-6");
+    window.localStorage.setItem(storageKey, "{not-json");
+    const envelope: FilePickerEnvelope = {
+      v: 1,
+      id: "picker-env-6",
+      type: "tangent.file-picker",
+      data: {
+        picker_id: "picker-6",
+        browse_roots: [{ root_id: "workspace", label: "Workspace", path: "/tmp/workspace" }],
+      },
+    };
+
+    render(
+      <FilePicker envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} roomID="room-6" />,
+    );
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(screen.queryByTestId("file-picker-message")).toBeNull();
+  });
+
   it("clears the local draft after successful submit", () => {
     const onSubmit = vi.fn<(response: FilePickerResponse) => void>();
     const envelope: FilePickerEnvelope = {
@@ -246,6 +330,8 @@ describe("<FilePicker>", () => {
 
     fireEvent.click(screen.getByTestId("file-picker-submit"));
 
-    expect(window.localStorage.getItem("tangent.file-picker.draft.v1:room-4:picker-4")).toBeNull();
+    expect(
+      window.localStorage.getItem(getFilePickerDraftStorageKey("room-4", "picker-4")),
+    ).toBeNull();
   });
 });

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   clearFilePickerDraft,
+  FILE_PICKER_AUTOSAVE_DEBOUNCE_MS,
   loadFilePickerDraft,
   saveFilePickerDraft,
 } from "@/lib/file-picker-draft-storage";
@@ -73,7 +74,9 @@ type FilePickerProps = {
 
 export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerProps) {
   const pickerID = envelope.data?.picker_id ?? "";
-  const draft = roomID && pickerID ? loadFilePickerDraft(roomID, pickerID) : null;
+  const [draft] = useState(() =>
+    roomID && pickerID ? loadFilePickerDraft(roomID, pickerID) : null,
+  );
   const browseRoots = useMemo(
     () => normalizeBrowseRoots(envelope.data?.browse_roots),
     [envelope.data],
@@ -111,6 +114,7 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
   const [message, setMessage] = useState<string | null>(
     draft ? "Recovered unsent file-picker state from this browser." : null,
   );
+  const lastSavedDraftRef = useRef<string | null>(draft ? JSON.stringify(draft) : null);
 
   const directoryOptions = useMemo(
     () => listDirectories(availableFiles, activeRootID, currentDir),
@@ -140,14 +144,23 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
     if (!roomID || !pickerID) {
       return;
     }
-    saveFilePickerDraft(roomID, pickerID, {
+    const nextDraft = {
       activeRootID,
       currentDir,
       search,
       sort,
       selectedKeys: [...selectedKeys],
       previewKey,
-    });
+    };
+    const serialized = JSON.stringify(nextDraft);
+    if (serialized === lastSavedDraftRef.current) {
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      saveFilePickerDraft(roomID, pickerID, nextDraft);
+      lastSavedDraftRef.current = serialized;
+    }, FILE_PICKER_AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
   }, [activeRootID, currentDir, pickerID, previewKey, roomID, search, selectedKeys, sort]);
 
   return (

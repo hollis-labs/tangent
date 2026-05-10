@@ -553,6 +553,48 @@ func TestRoom_SaveFilePickerSnapshotRejectsInvalidSelectionRef(t *testing.T) {
 	}
 }
 
+func TestRoom_SaveFilePickerSnapshotRejectsDuplicateRevisionIDs(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID: "picker-dup-revision",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Path: "/tmp/workspace"},
+		},
+		SelectionRevisions: []room.FilePickerSelectionRevision{
+			{SelectionRevisionID: "picker-dup-revision-001", SelectedCount: 1},
+			{SelectionRevisionID: "picker-dup-revision-002", SelectedCount: 1},
+			{SelectionRevisionID: "picker-dup-revision-001", SelectedCount: 2},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidFilePickerSelectionRevision) {
+		t.Fatalf("SaveFilePickerSnapshot duplicate revision err = %v, want ErrInvalidFilePickerSelectionRevision", err)
+	}
+}
+
+func TestRoom_SaveFilePickerSnapshotRejectsInvalidHandoffRef(t *testing.T) {
+	rm := newAnonRoom(t, nil)
+	err := rm.SaveFilePickerSnapshot(room.FilePickerSnapshot{
+		PickerID: "picker-invalid-handoff",
+		BrowseRoots: []room.FilePickerBrowseRoot{
+			{RootID: "workspace", Path: "/tmp/workspace"},
+		},
+		Handoff: &room.FilePickerHandoff{
+			SelectionRevisionID: "picker-invalid-handoff-001",
+			ArtifactRefs: []room.FilePickerArtifactRef{
+				{
+					ArtifactID:   "artifact-bad",
+					URI:          "file:///tmp/unsafe.txt",
+					RootID:       "workspace",
+					RelativePath: "unsafe.txt",
+				},
+			},
+		},
+	})
+	if !errors.Is(err, room.ErrInvalidFilePickerSelectionRef) {
+		t.Fatalf("SaveFilePickerSnapshot invalid handoff err = %v, want ErrInvalidFilePickerSelectionRef", err)
+	}
+}
+
 func TestRoom_SaveSpreadsheetReviewSnapshotEmptyTable(t *testing.T) {
 	rm := newAnonRoom(t, nil)
 	if err := rm.SaveSpreadsheetReviewSnapshot(room.SpreadsheetReviewSnapshot{
