@@ -27,6 +27,7 @@ type Pending = {
 
 type SessionStatePayload = {
   envelopes_history?: unknown[];
+  approval_queue?: unknown;
   form_collect?: unknown;
   spreadsheet_review?: unknown;
   whiteboard?: unknown;
@@ -100,7 +101,8 @@ export default function Room() {
       if (
         envelopeType === "tangent.whiteboard" ||
         envelopeType === "tangent.spreadsheet-review" ||
-        envelopeType === "tangent.form-collect"
+        envelopeType === "tangent.form-collect" ||
+        envelopeType === "tangent.approval-queue"
       ) {
         return;
       }
@@ -157,6 +159,7 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.block-draft" &&
     type !== "tangent.prose-revision" &&
     type !== "tangent.output-render" &&
+    type !== "tangent.approval-queue" &&
     type !== "tangent.form-collect" &&
     type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
@@ -179,6 +182,9 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.form-collect") {
       return attachFormCollectState(envelope, state.form_collect);
+    }
+    if (type === "tangent.approval-queue") {
+      return attachApprovalQueueState(envelope, state.approval_queue);
     }
     if (type === "tangent.spreadsheet-review") {
       return attachSpreadsheetReviewState(envelope, state.spreadsheet_review);
@@ -417,6 +423,45 @@ function attachWhiteboardState(envelope: unknown, whiteboard: unknown): unknown 
       if (current && typeof current === "object") {
         data.revision_id = (current as { revision_id?: unknown }).revision_id ?? data.revision_id;
       }
+    }
+  }
+  return { ...typed, data };
+}
+
+function attachApprovalQueueState(envelope: unknown, approvalQueue: unknown): unknown {
+  if (!envelope || typeof envelope !== "object") {
+    return envelope;
+  }
+  const typed = envelope as Record<string, unknown>;
+  const data =
+    typed.data && typeof typed.data === "object"
+      ? { ...(typed.data as Record<string, unknown>) }
+      : {};
+  if (approvalQueue && typeof approvalQueue === "object") {
+    const persisted = approvalQueue as Record<string, unknown>;
+    if (typeof persisted.queue_id === "string") {
+      data.queue_id = persisted.queue_id;
+    }
+    if (Array.isArray(persisted.items)) {
+      data.items = persisted.items;
+    }
+    if (typeof persisted.current_index === "number") {
+      data.current_index = persisted.current_index;
+    }
+    if (Array.isArray(persisted.decisions)) {
+      data.decisions = persisted.decisions;
+    }
+    if (typeof persisted.notes === "string") {
+      data.notes = persisted.notes;
+    }
+    if (Array.isArray(persisted.audit_trail)) {
+      data.audit_trail = persisted.audit_trail;
+    }
+    if (Array.isArray(persisted.export_refs)) {
+      data.export_refs = persisted.export_refs;
+    }
+    if (typeof persisted.updated_at === "string") {
+      data.updated_at = persisted.updated_at;
     }
   }
   return { ...typed, data };

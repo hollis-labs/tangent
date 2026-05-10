@@ -17,7 +17,7 @@ import (
 // clients pin against this string.
 const (
 	implementationName    = "tangent"
-	implementationVersion = "v0.6.0"
+	implementationVersion = "v0.7.0"
 )
 
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +
@@ -237,6 +237,16 @@ func (s *Server) registerTools() error {
 		Description: "Dispatch a spreadsheet-review envelope through Tangent. Persists canonical table state and renders a room-backed table host with explicit submit/cancel.",
 		InputSchema: spreadsheetReviewSchema,
 	}, s.handleSpreadsheetReview)
+
+	approvalQueueSchema, err := buildSchema(approvalQueueInputSchemaJSON, "approval_queue")
+	if err != nil {
+		return fmt.Errorf("build approval-queue input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name:        "tangent.approval-queue",
+		Description: "Dispatch an approval-queue envelope through Tangent. Persists queue decisions, evidence context, and audit export metadata with an explicit submit boundary.",
+		InputSchema: approvalQueueSchema,
+	}, s.handleApprovalQueue)
 
 	synthesisNotesSchema, err := buildSynthesisNotesInputSchema()
 	if err != nil {

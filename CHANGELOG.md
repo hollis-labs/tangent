@@ -7,7 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Post-v0.6 work lands here. See `README.md` Roadmap for the next phase._
+Approval queue. Tangent now ships a persistent room-backed serialized
+approval workflow for explicit accept/reject/defer review, evidence
+panes, batch defer controls, local comment recovery, and durable audit
+export metadata.
+
+### Added
+
+- **`tangent.approval-queue`.** A bundled room-backed approval queue
+  workflow with canonical agent-provided items, explicit submit/cancel,
+  and room reuse via `meta.roomID`.
+- **Approval-queue room substrate.** `phase_outputs["approval-queue"]`
+  now persists `queue_id`, canonical `items`, `current_index`,
+  normalized `decisions`, queue `notes`, `updated_at`, append-only
+  `audit_trail`, and lightweight `export_refs`.
+- **Evidence panes and keyboard navigation.** The shipped queue host
+  supports contextual evidence tabs plus quick decision/navigation keys.
+- **Batch defer controls and local draft recovery.** Approval-queue
+  turns can apply a decision across unresolved items, require defer
+  reasons when applicable, and autosave unsent per-item comments in the
+  browser for refresh recovery.
+- **Approval-queue e2e coverage.** Added
+  `docs/manual-tests/approval-queue-e2e.md` and
+  `scripts/approval-queue-mock-call.mjs`.
+
+### Changed
+
+- **`tangent.session_get` now projects approval-queue state.** It
+  exposes a dedicated `approval_queue` payload with canonical items,
+  normalized decisions, queue notes, durable audit metadata, and export
+  refs.
+- **Docs now describe approval queue as the next bundled workflow.**
+  README, MCP integration, architecture, and developer docs now reflect
+  the new tool surface and room projection.
+
+### Fixed
+
+- **Refresh no longer cancels active approval-queue work by default.**
+  The room keeps the pending approval turn alive while the browser
+  restores its unsent local comment/draft state.
 
 ## [v0.6.0] - 2026-05-09
 

@@ -153,6 +153,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register spreadsheet-review extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterApprovalQueue(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register approval-queue extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register synthesis-notes extension: %v\n", regErr)
 		os.Exit(1)
@@ -224,6 +228,10 @@ func main() {
 	}
 	if regErr := mcp.RegisterSpreadsheetReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: register spreadsheet-review handler: %v\n", regErr)
+		os.Exit(1)
+	}
+	if regErr := mcp.RegisterApprovalQueueOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register approval-queue handler: %v\n", regErr)
 		os.Exit(1)
 	}
 	if regErr := mcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {

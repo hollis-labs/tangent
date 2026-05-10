@@ -15,7 +15,7 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-v0.6.0 released. Tangent now ships persistent rooms, multi-envelope sessions, the full Interview Protocol writing path, the shared whiteboard workflow, spreadsheet review, and the new generalized `tangent.form-collect` workflow. Form collect is room-backed and explicit-submit: one persistent room shared between user and agent, with canonical schema-driven fields, conditional/repeatable sections, saved drafts/templates, local refresh recovery, attachment refs, and reopen from the latest submitted room state. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the full release entry.
+The latest published tag is `v0.6.0`. The current branch adds `tangent.approval-queue`: a room-backed serialized approval workflow with explicit accept/reject/defer decisions, evidence panes, keyboard navigation, batch defer controls, local comment recovery, and durable audit export metadata. Fast-Triage has been migrated and archived; if you are moving an existing setup, see [`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md). See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
 
 Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
 
@@ -50,7 +50,7 @@ If your `claude` rejects `--transport http`, fall back to SSE:
 claude mcp add --transport sse tangent http://localhost:7842/sse
 ```
 
-Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
+Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
@@ -100,11 +100,15 @@ Shipped. Tangent now includes a persistent, MCP-driven spreadsheet-review workfl
 
 Shipped. Tangent now includes a persistent, MCP-driven schema-first form workflow for rich field collection, conditional sections, repeatable groups, room-backed drafts/templates, attachment refs, and durable submission summaries.
 
-### v0.7 — Additional workflow expansion
+### v0.7 — Approval queue
 
-Approval queue, diff review, file picker, progress panel, dashboard, and wizard.
+Current branch. Tangent adds a room-backed approval queue for serialized review with evidence panes, durable decision history, defer reasons, batch controls, audit export metadata, and explicit submit/reopen turns.
 
-### v0.7 — Nanite-native side-channel
+### v0.8 — Additional workflow expansion
+
+Diff review, file picker, progress panel, dashboard, and wizard.
+
+### v0.9 — Nanite-native side-channel
 
 The premium transport tier with mid-turn event injection.
 
@@ -180,6 +184,7 @@ More docs:
 - [`docs/manual-tests/whiteboard-e2e.md`](./docs/manual-tests/whiteboard-e2e.md) — full whiteboard workflow with autosave, export, and revision browser
 - [`docs/manual-tests/spreadsheet-review-e2e.md`](./docs/manual-tests/spreadsheet-review-e2e.md) — full spreadsheet-review workflow with recovery, saved views, and CSV export metadata
 - [`docs/manual-tests/form-collect-e2e.md`](./docs/manual-tests/form-collect-e2e.md) — full form-collect workflow with conditional sections, recovery, and attachment refs
+- [`docs/manual-tests/approval-queue-e2e.md`](./docs/manual-tests/approval-queue-e2e.md) — full approval-queue workflow with reopen, defer reasons, and audit export metadata
 
 ## License
 

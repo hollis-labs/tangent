@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-Nineteen tools are advertised in the current build:
+Twenty tools are advertised in the current build:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -72,6 +72,7 @@ Nineteen tools are advertised in the current build:
 - `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
 - `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
+- `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
 - `tangent.interview_question` — one long-form question/answer turn inside a room.
 - `tangent.block_draft` — drafting-stage block review and accept/revise capture.
 - `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
@@ -170,6 +171,19 @@ need to load every scene blob eagerly.
 
 This keeps restart hydration and room replay simple while still
 supporting reopen/continue-from-revision inside the room UI.
+
+The same substrate also carries approval-queue room state under
+the `approval-queue` phase projection. `tangent.session_get`
+surfaces a dedicated `approval_queue` view when present:
+
+- `queue_id`
+- canonical `items`
+- `current_index`
+- normalized `decisions`
+- queue `notes`
+- `updated_at`
+- append-only `audit_trail`
+- lightweight audit `export_refs`
 
 The bundled v0.3 writing flow uses the canonical sequence:
 
