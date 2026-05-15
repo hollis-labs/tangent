@@ -1,0 +1,56 @@
+project:
+  id: tangent
+  display_name: Tangent
+  status: active
+  purpose: |
+    Tangent is an agent-summoned, app-sized interactive surface: a single
+    localhost binary that any MCP-speaking agent can summon when chat is the
+    wrong shape for the work — diff-approval queues, design-comp triage,
+    screenshot annotation, persistent forms, spreadsheet review, guided
+    wizards, and similar workflows. It is Mode 1 (the separate-window app
+    surface) of the interactive-collaboration-system idea, driven by the
+    Envelope UI Protocol over a shared envelope schema. Tangent absorbed and
+    superseded the earlier Fast-Triage project.
+catalog:
+  torque_project_id: null          # no Torque project registered for tangent yet
+  cerberus_project_id: null        # tangent is not a Cerberus-managed project
+  tether_catalog_project: null     # no ~/.tether/catalog/projects/tangent.yaml exists (only stale fast-triage.yaml)
+locations:
+  repo: ~/dev/hollis-labs/apps/tangent
+  agent_os_tracking: ~/dev/agent-os/workspaces/execution/tangent
+  state_dir: ~/.tangent
+  catalog: null                    # no per-project catalog dir; tangent uses no ~/.tangent/catalog
+  artifacts: null                  # no ~/.cerberus/apps/tangent — tangent has no Cerberus artifacts
+build:
+  authority: github_actions        # CI is GitHub Actions (.github/workflows/ci.yml); not Cerberus-managed
+  resource: null
+  command: 'make build'            # local build; release distribution is `go install github.com/hollis-labs/tangent/cmd/tangent@<tag>`
+deployment:
+  type: none                       # localhost on-demand tray/CLI binary; no launchd service, no server deploy
+  service_name: null
+  binary: ~/dev/hollis-labs/apps/tangent/tangent   # local build output; installed copy lands on $GOBIN via `go install`
+docs:
+  readme: README.md
+  architecture: docs/architecture.md
+  adrs: null                       # no docs/adrs/ directory exists
+  roadmap: null                    # no docs/roadmap.md; roadmap lives inline in README.md
+roadmap:
+  current_phase: 'v0.12 — Wizard (latest tag v0.12.0); v0.8+ distribution & trust pending'
+  pointer: null                    # no sprint/clockwork pointer recorded
+usage_examples:
+  - intent: Run Tangent locally for an agent to summon workflow windows
+    command: 'make build && ./tangent'
+    note: Serves http://localhost:7842/; override port with TANGENT_HTTP_PORT.
+  - intent: Wire Tangent into Claude Code as an MCP server
+    command: 'claude mcp add --transport http tangent http://localhost:7842/mcp'
+    note: Fall back to `--transport sse` at /sse if HTTP transport is rejected.
+  - intent: Develop the frontend with hot reload
+    command: 'make dev'
+    note: Go server on :7842 reverse-proxies non-API routes to Vite on :5173.
+  - intent: Regenerate envelope TypeScript types after a go-envelopes bump
+    command: 'make generate-envelopes'
+    note: CI gates on staleness via `make check-envelopes`; the generated file is committed.
+scopes:
+  - tangent.backend.main
+  - tangent.frontend.main
+related_projects: [go-envelopes, nanite, fast-triage, sigil, go-plugin]
