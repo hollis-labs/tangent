@@ -12,21 +12,21 @@ project:
     Envelope UI Protocol over a shared envelope schema. Tangent absorbed and
     superseded the earlier Fast-Triage project.
 catalog:
-  torque_project_id: null          # no Torque project registered for tangent yet
-  cerberus_project_id: null        # tangent is not a Cerberus-managed project
-  tether_catalog_project: null     # no ~/.tether/catalog/projects/tangent.yaml exists (only stale fast-triage.yaml)
+  torque_project_id: PRJ-20260825-0002
+  cerberus_project_id: tangent     # ~/.cerberus/projects/tangent.cerberus.yaml
+  tether_catalog_project: null     # no launch-project entry; MCP upstream is mcp-servers/tangent.yaml
 locations:
   repo: ~/dev/hollis-labs/apps/tangent
   agent_os_tracking: ~/dev/agent-os/workspaces/execution/tangent
   state_dir: ~/.tangent
   catalog: null                    # no per-project catalog dir; tangent uses no ~/.tangent/catalog
-  artifacts: null                  # no ~/.cerberus/apps/tangent — tangent has no Cerberus artifacts
+  artifacts: null                  # dev_session resource runs from the workspace; no installed artifact
 build:
-  authority: github_actions        # CI is GitHub Actions (.github/workflows/ci.yml); not Cerberus-managed
-  resource: null
-  command: 'make build'            # local build; release distribution is `go install github.com/hollis-labs/tangent/cmd/tangent@<tag>`
+  authority: cerberus
+  resource: tangent-dev
+  command: 'make build'
 deployment:
-  type: none                       # localhost on-demand tray/CLI binary; no launchd service, no server deploy
+  type: dev_session                # Cerberus-managed localhost process on port 7842
   service_name: null
   binary: ~/dev/hollis-labs/apps/tangent/tangent   # local build output; installed copy lands on $GOBIN via `go install`
 docs:
@@ -41,9 +41,9 @@ usage_examples:
   - intent: Run Tangent locally for an agent to summon workflow windows
     command: 'make build && ./tangent'
     note: Serves http://localhost:7842/; override port with TANGENT_HTTP_PORT.
-  - intent: Wire Tangent into Claude Code as an MCP server
-    command: 'claude mcp add --transport http tangent http://localhost:7842/mcp'
-    note: Fall back to `--transport sse` at /sse if HTTP transport is rejected.
+  - intent: Expose Tangent through the Tether MCP gateway
+    command: 'mux mcp --proxy'
+    note: Uses ~/.tether/catalog/mcp-servers/tangent.yaml and Tangent's legacy SSE endpoint at /sse.
   - intent: Develop the frontend with hot reload
     command: 'make dev'
     note: Go server on :7842 reverse-proxies non-API routes to Vite on :5173.
