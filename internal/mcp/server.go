@@ -16,6 +16,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
@@ -61,6 +62,12 @@ type Server struct {
 	// durable substrate — and the tool says so rather than inventing a report.
 	health *health.Reporter
 
+	// telemetry answers tangent.telemetry_query and is handed to the roomflow
+	// adapter so a workflow invocation is observed at the point it acquires
+	// its durable identity. Nil is valid; the tool then says so.
+	telemetry      *telemetry.Recorder
+	telemetryStore *telemetry.SQLStore
+
 	roomflowOptions []roomflow.Option
 
 	mcp *mcpsdk.Server
@@ -91,6 +98,25 @@ func WithHealthReporter(reporter *health.Reporter) Option {
 			return fmt.Errorf("mcp: health reporter is nil")
 		}
 		server.health = reporter
+		return nil
+	}
+}
+
+// WithTelemetry installs the correlation recorder and its durable store.
+//
+// Both are passed together because they answer different halves of one
+// question: the recorder is what observes, and the store is what a caller
+// queries afterwards. A build with a recorder and no store still emits metrics
+// and still exports spans; it simply cannot answer tangent.telemetry_query,
+// and the tool says that rather than returning an empty trace.
+func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Option {
+	return func(server *Server) error {
+		if recorder == nil {
+			return fmt.Errorf("mcp: telemetry recorder is nil")
+		}
+		server.telemetry = recorder
+		server.telemetryStore = store
+		server.roomflowOptions = append(server.roomflowOptions, roomflow.WithTelemetry(recorder))
 		return nil
 	}
 }
@@ -513,6 +539,9 @@ func (s *Server) registerTools() error {
 		return err
 	}
 	if err := s.registerHealthTool(); err != nil {
+		return err
+	}
+	if err := s.registerTelemetryTool(); err != nil {
 		return err
 	}
 	if s.interactions != nil {

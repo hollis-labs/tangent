@@ -266,6 +266,11 @@ func (r *Room) AttachConn(
 	if opts.Role != RoleObserver && (inheritsLease || r.lease.expired(now) || !r.leaseHolderLiveLocked()) {
 		r.grantLeaseLocked(connection, now)
 	}
+	// Recorded on the connection rather than returned, so adding the fact does
+	// not change AttachConn's signature for every caller and every test. It is
+	// written once, under the same lock that decided it, and read-only after.
+	connection.replaced = len(replaced) > 0
+	connection.inheritedLease = inheritsLease
 	r.connMu.Unlock()
 
 	r.signalAttachment()
@@ -1053,6 +1058,24 @@ func (r *Room) Sync(ctx context.Context) SurfaceSync {
 		return sync.Presentations[i].EnvelopeID < sync.Presentations[j].EnvelopeID
 	})
 	return sync
+}
+
+// DurableRevisionFor reads the canonical record behind one live presentation.
+//
+// It exists so a transport can file an observation about a refused frame under
+// the same correlation identity as the invocation it refused, without learning
+// anything about interaction records. It reads and never writes: a caller that
+// cannot get an answer records less, and nothing else changes.
+func (r *Room) DurableRevisionFor(ctx context.Context, envelopeID string) (DurableRevision, bool) {
+	pending := r.pendingByID(envelopeID)
+	if pending == nil || pending.disposition == nil {
+		return DurableRevision{}, false
+	}
+	durable, err := pending.disposition.DurableRevision(ctx)
+	if err != nil {
+		return DurableRevision{}, false
+	}
+	return durable, true
 }
 
 // HandleResponse resolves the matching pending envelope, if any.

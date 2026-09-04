@@ -621,12 +621,17 @@ func toolJSONResult[T any](payload T) (*mcpsdk.CallToolResult, T) {
 	}, payload
 }
 
+// logWorkflowRoomCreated logs the room identifier and never the assembled URL.
+//
+// ADR 0002 §8 names this call site explicitly: "logWorkflowRoomCreated logs
+// the room id instead of the assembled URL, and the log stays useful". The
+// rule is narrower than an authorization concern — ADR 0004 §5 already
+// establishes that a room URL is a locator and not authority — and stands on
+// its own footing: a whole URL is an unbounded string that will carry a query
+// or a fragment as soon as scoped launch capabilities exist, and there is no
+// reason to pre-commit to that leak. The room id is the identifier a person
+// pastes into `tangent.session_get` or appends to /r/ themselves.
 func (s *Server) logWorkflowRoomCreated(workflow, roomID, envelopeID string) {
-	url := s.roomURL(roomID)
-	if url != "" {
-		slog.Default().Info(workflow+" room created", "room", roomID, "url", url, "envelope", envelopeID)
-		return
-	}
 	slog.Default().Info(workflow+" room created", "room", roomID, "envelope", envelopeID)
 }
 

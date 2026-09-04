@@ -11,6 +11,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/roomflow"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // This file is the single seam where a tool call becomes a caller identity.
@@ -78,7 +79,37 @@ func (s *Server) authorizeRoom(
 	if s.roomflow == nil {
 		return nil
 	}
-	return s.roomflow.AuthorizeRoom(ctx, roomID, caller, capability, isolation)
+	err := s.roomflow.AuthorizeRoom(ctx, roomID, caller, capability, isolation)
+	if err != nil {
+		// Recorded here rather than at the dozen call sites that render the
+		// refusal, so a new room-backed tool acquires the observation by
+		// routing through the check it already has to route through. The
+		// ADR 0004 §5 split is preserved in the code: `not_found` is a
+		// cross-authority refusal and `forbidden` is one inside an authority,
+		// and collapsing them would lose the distinction the contract exists
+		// to make.
+		code := "forbidden"
+		if isNotFound(err) {
+			code = "not_found"
+		}
+		s.telemetry.Emit(ctx, telemetry.Event{
+			Name:    telemetry.EventCapabilityDenied,
+			Outcome: telemetry.OutcomeRefused,
+			Code:    code,
+			Correlation: telemetry.Correlation{
+				Trace:       telemetry.TraceForRoom(roomID),
+				Span:        telemetry.NewSpanID(),
+				RoomID:      roomID,
+				CallerScope: caller.Scope,
+			},
+			Attrs: []telemetry.Attr{
+				telemetry.String(telemetry.AttrNamespace, "object-access"),
+				telemetry.String(telemetry.AttrCapability, string(capability)),
+				telemetry.String(telemetry.AttrTransport, "mcp"),
+			},
+		})
+	}
+	return err
 }
 
 // roomAuthorizationError renders a refused room operation.

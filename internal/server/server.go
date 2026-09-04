@@ -19,6 +19,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // Config controls Server construction.
@@ -99,6 +100,15 @@ type Config struct {
 	// server without a database — production main always passes it, and
 	// leaving it nil is what the pre-ADR-0004 behavior was.
 	Participants *participant.Gate
+
+	// Telemetry records correlation-bearing observations for the browser
+	// transports this package owns: an object-access refusal at the
+	// participant gate, and a host-mediated effect the broker declined.
+	//
+	// Optional, and a nil recorder is a silent no-op rather than a nil
+	// dereference. A build with no telemetry serves exactly the same traffic;
+	// it just cannot answer what happened afterwards.
+	Telemetry *telemetry.Recorder
 }
 
 // MCPServer is the minimal contract internal/mcp satisfies. Declared as
@@ -192,7 +202,8 @@ func New(cfg Config) (*Server, error) {
 		// terminal response needs `resolve`.
 		hitlHandler := newHITLHTTPHandler(cfg.HITL)
 		guard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
-			return hitlSameOrigin(requireParticipant(cfg.Participants, capability, handler))
+			return hitlSameOrigin(requireParticipant(
+				cfg.Participants, cfg.Telemetry, capability, handler))
 		}
 		mux.Handle("GET /api/hitl", guard(authz.View, hitlHandler.inbox))
 		mux.Handle("GET /api/hitl/events", guard(authz.View, hitlHandler.events))
@@ -216,11 +227,11 @@ func New(cfg Config) (*Server, error) {
 		// what it may destroy.
 		roomHandler := newRoomHTTPHandler(cfg.Rooms)
 		mux.Handle("GET /api/rooms", hitlSameOrigin(requireParticipant(
-			cfg.Participants, authz.View, http.HandlerFunc(roomHandler.list))))
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.list))))
 		mux.Handle("GET /api/rooms/{roomID}", hitlSameOrigin(requireParticipant(
-			cfg.Participants, authz.View, http.HandlerFunc(roomHandler.inspect))))
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.inspect))))
 		mux.Handle("POST /api/rooms/{roomID}/close", hitlSameOrigin(requireParticipant(
-			cfg.Participants, authz.View, http.HandlerFunc(roomHandler.close))))
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.close))))
 	}
 
 	if cfg.Effects != nil && cfg.EffectContext != nil {
@@ -230,9 +241,9 @@ func New(cfg Config) (*Server, error) {
 		// no admitted session never reaches the broker at all, which keeps the
 		// audit table free of rows for requests that were never participant
 		// acts.
-		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext)
+		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext, cfg.Telemetry)
 		mux.Handle("POST /api/effects", hitlSameOrigin(requireParticipant(
-			cfg.Participants, authz.View, http.HandlerFunc(effectHandler.request))))
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(effectHandler.request))))
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)

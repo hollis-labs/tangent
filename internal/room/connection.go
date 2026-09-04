@@ -139,6 +139,16 @@ type Connection struct {
 	attachedAt  time.Time
 	sequence    uint64
 	participant ParticipantBinding
+	// replaced records that this attachment took the place of a live
+	// predecessor with the same client id — a refresh rather than a second
+	// tab. It is set once at attach and never changes, which is what makes it
+	// safe to read without the Room's lock.
+	replaced bool
+	// inheritedLease records that the replaced predecessor held the resolver
+	// lease and this attachment took it over. Together with replaced it is the
+	// whole of "a reconnect", which is one of the things telemetry has to be
+	// able to count without inventing parallel state.
+	inheritedLease bool
 
 	conn *websocket.Conn
 
@@ -169,6 +179,19 @@ func (c *Connection) ClientID() string { return c.clientID }
 
 // Participant returns the principal this connection acts as.
 func (c *Connection) Participant() ParticipantBinding { return c.participant }
+
+// ClientKind returns the descriptive label for the sort of client behind this
+// attachment.
+func (c *Connection) ClientKind() string { return c.clientKind }
+
+// Replaced reports whether this attachment replaced its own live predecessor.
+// A true value is exactly a reconnect: the same client id came back while the
+// previous socket was still attached.
+func (c *Connection) Replaced() bool { return c.replaced }
+
+// InheritedLease reports whether this attachment took over the resolver lease
+// its predecessor held. It is meaningful only when Replaced is true.
+func (c *Connection) InheritedLease() bool { return c.inheritedLease }
 
 // Synced returns the durable revisions this connection was last synchronized
 // to.
@@ -328,6 +351,23 @@ type DurableRevision struct {
 	InteractionRevision         int64
 	PresentedProjectionRevision int64
 	State                       string
+
+	// DefinitionKind and TraceID are correlation, not lifecycle.
+	//
+	// They are here so a transport that refuses a participant's frame can file
+	// the refusal under the same trace as the invocation it refused, without
+	// this package learning what an interaction record looks like. The
+	// disposition recomputes the trace from the durable record — see
+	// internal/telemetry/correlation.go — so nothing has to have been carried
+	// across the socket, and a refusal after a process restart still lands in
+	// the right trace.
+	//
+	// Neither is projected to the browser: PresentationSync, which is what a
+	// client receives, deliberately does not carry them. A trace id in a wire
+	// frame would be a correlation identifier this package cannot vouch for on
+	// the way back.
+	DefinitionKind string
+	TraceID        string
 }
 
 // LeaseConflictError reports that another live connection holds the resolver

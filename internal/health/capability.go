@@ -97,6 +97,12 @@ type CapabilityReport struct {
 	Effects EffectPosture `json:"effects"`
 
 	Action string `json:"operator_action,omitempty"`
+
+	// Correlation names the trace every observation about this kind is filed
+	// under — the boot-time materialization refusal, and every later
+	// submission that was turned away for it. Present only when the kind is
+	// not usable.
+	Correlation *Correlation `json:"correlation,omitempty"`
 }
 
 // CapabilitySummaryReport is every kind at once, bounded.
@@ -169,6 +175,7 @@ func (r *Reporter) Capability(kind string) CapabilityReport {
 	report.Status = StatusFail
 	report.Action = "No definition manifest and no registered envelope type in this build " +
 		"answers to that kind. Check the spelling against the kind list at /healthz/capability."
+	report.Correlation = correlationForKind(report.Kind)
 	return report
 }
 
@@ -261,6 +268,7 @@ func (r *Reporter) describe(materialized definition.Materialized) CapabilityRepo
 	}
 	report.Status = StatusFail
 	report.Action = unusableAction(materialized.State)
+	report.Correlation = correlationForKind(report.Kind)
 	return report
 }
 

@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/definition"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // Probe names. They appear in every response so a reader holding one JSON
@@ -111,6 +112,11 @@ type Check struct {
 	// Action says what the operator should do. Empty only when Status is
 	// StatusPass, because there is nothing to do.
 	Action string `json:"operator_action,omitempty"`
+	// Correlation names where this check's history lives. It is populated only
+	// for a check that is not passing: a passing check has no incident to
+	// correlate, and putting a trace id on every line would train a reader to
+	// skip them.
+	Correlation *Correlation `json:"correlation,omitempty"`
 }
 
 // LivenessReport is the whole of liveness.
@@ -204,6 +210,12 @@ type Reporter struct {
 	renderer func() RendererHost
 	delivery func() DeliveryWorker
 	runtime  Runtime
+
+	// telemetry records readiness transitions and links failures to the trace
+	// their history is filed under. Nil is a valid state: a build with no
+	// telemetry still reports, it just cannot say what happened before now.
+	telemetry   *telemetry.Recorder
+	transitions checkTransitions
 }
 
 // Option configures a Reporter.

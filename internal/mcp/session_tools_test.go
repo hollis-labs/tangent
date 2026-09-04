@@ -17,6 +17,7 @@ import (
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
@@ -24,6 +25,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
@@ -34,6 +36,8 @@ type sessionRig struct {
 	mcpSrv    *tangentmcp.Server
 	envSvc    *envelope.Service
 	inter     *interaction.Service
+	recorder  *telemetry.Recorder
+	observed  *telemetry.SQLStore
 	mcpClient *mcpsdk.ClientSession
 	httpURL   string
 	cleanup   func()
@@ -153,8 +157,32 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	wsHandler.SetOriginPatterns([]string{"*"})
 	wsSrv := httptest.NewServer(wsHandler)
 
+	// Telemetry is wired exactly as production wires it, over the same database
+	// handle, so every test in this package exercises the recording path rather
+	// than a build that happens to have it switched off.
+	observed, observedErr := telemetry.NewSQLStore(db)
+	if observedErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("telemetry.NewSQLStore: %v", observedErr)
+	}
+	recorder := telemetry.New(telemetry.WithSink(observed), telemetry.WithLogger(logger))
+	wsHandler.SetTelemetry(recorder)
+	// The health reporter is wired here for the same reason telemetry is: the
+	// correlation identifiers a non-passing report publishes are part of the
+	// contract this package tests, and a rig whose health tool answers
+	// `health_unavailable` cannot exercise them.
+	healthReporter := health.NewReporter(
+		health.WithDatabase(db),
+		health.WithDefinitionRegistry(envSvc),
+		health.WithTelemetry(recorder),
+	)
+
 	var interactions *interaction.Service
-	serverOptions := []tangentmcp.Option{}
+	serverOptions := []tangentmcp.Option{
+		tangentmcp.WithTelemetry(recorder, observed),
+		tangentmcp.WithHealthReporter(healthReporter),
+	}
 	if options.durable {
 		interactions, err = interaction.NewService(
 			interaction.NewStore(db),
@@ -162,6 +190,7 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 			interaction.WithAwaitPollInterval(5*time.Millisecond),
 			interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
 			interaction.WithDeliveryWorkerPolicy(roomflow.DeliveryWorkerPolicy{}),
+			interaction.WithTelemetry(recorder),
 		)
 		if err != nil {
 			wsSrv.Close()
@@ -320,6 +349,8 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 		mcpSrv:    mcpSrv,
 		envSvc:    envSvc,
 		inter:     interactions,
+		recorder:  recorder,
+		observed:  observed,
 		mcpClient: clientSession,
 		httpURL:   wsSrv.URL,
 		cleanup: func() {

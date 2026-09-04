@@ -7,6 +7,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // This file holds the process-wide security posture and the participant-session
@@ -144,6 +145,7 @@ func isSameOriginLoopback(r *http.Request) bool {
 // required capability, the owning scope, or the participant is a probe.
 func requireParticipant(
 	gate *participant.Gate,
+	recorder *telemetry.Recorder,
 	capability authz.Capability,
 	next http.Handler,
 ) http.Handler {
@@ -154,6 +156,7 @@ func requireParticipant(
 		session, err := gate.Resolve(r)
 		if err != nil {
 			writeParticipantRefusal(w)
+			reportObjectAccessDenial(r.Context(), recorder, capability, "browser-api")
 			return
 		}
 		// Through the matrix, not just the session's own grant set. A
@@ -162,6 +165,7 @@ func requireParticipant(
 		// what keeps that true in one place.
 		if gate.Authorize(session, participant.LocalSurfaces(), capability) != nil {
 			writeParticipantRefusal(w)
+			reportObjectAccessDenial(r.Context(), recorder, capability, "browser-api")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(participant.WithSession(r.Context(), session)))

@@ -71,10 +71,11 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	// 25 legacy + session tools, 11 generic durable interaction tools, 3
-	// definition-registry diagnostics, 4 HITL tools, and tangent.health_report
-	// (CW-20260825-0066). Changing this number is a public-API change.
-	if len(listed.Tools) != 44 {
-		t.Fatalf("production MCP topology = %d tools, want 44", len(listed.Tools))
+	// definition-registry diagnostics, 4 HITL tools, tangent.health_report
+	// (CW-20260825-0066), and tangent.telemetry_query (CW-20260825-0078).
+	// Changing this number is a public-API change.
+	if len(listed.Tools) != 45 {
+		t.Fatalf("production MCP topology = %d tools, want 45", len(listed.Tools))
 	}
 	want := map[string]bool{
 		"tangent.hitl_enqueue":   false,

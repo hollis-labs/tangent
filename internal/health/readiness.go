@@ -34,6 +34,15 @@ func (r *Reporter) Readiness(ctx context.Context) ReadinessReport {
 		r.checkDeliveryWorker(),
 	}
 	report.Status = summarize(report.Checks)
+	// Criterion 5: a failure names where the rest of its story is. The link is
+	// attached after the checks are built rather than inside each one, so a new
+	// check cannot be added without acquiring it.
+	for i := range report.Checks {
+		if report.Checks[i].Status != StatusPass {
+			report.Checks[i].Correlation = correlationForCheck(report.Checks[i].Name)
+		}
+	}
+	r.observeChecks(ctx, report)
 	return report
 }
 

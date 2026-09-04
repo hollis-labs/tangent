@@ -122,6 +122,26 @@ A common real finding here is a schema behind the binary: `/healthz` answers,
 `/readyz` reports `migrations: fail`, and the fix is `tangent --migrate-only`
 followed by a redeploy — not a restart loop.
 
+**A supervisor's `status: running` is not a live probe.** It reports what the
+supervisor believes it started, and a process that exited or was killed out
+from under it can leave that belief in place while nothing is listening on the
+port. Reconcile it against `/healthz` before trusting either — and note that a
+`/healthz` answered by a *different* process on the same port is the same class
+of mistake, which is why the launch-authority check above comes first.
+
+Every non-passing check in a readiness or capability report carries a
+`correlation` block: a `trace_id` and the tool that reads it. Passing it to
+`tangent.telemetry_query` returns that check's or that kind's history —
+when it started failing, how often, and what callers saw while it was failing —
+from the durable `telemetry_events` table rather than from stderr, so the
+answer survives a restart and a log rotation. The same tool takes an
+`interaction_id` from a pending receipt and returns one invocation's whole
+trail, and with `include_metrics` returns presentation and resolution latency,
+reconnects, stale clients, delivery lag and retries, draft conflicts, renderer
+failures, and capability denials. It carries no payload, participant text,
+path, session, effect handle, or URL — by construction rather than by
+filtering.
+
 > **Known issue — legacy `/sse` sessions go stale.** The server sets a
 > 30s `ReadTimeout`, and the long-lived MCP wrapper clears only the
 > *write* deadline, so a `GET /sse` stream is torn down after ~30s of

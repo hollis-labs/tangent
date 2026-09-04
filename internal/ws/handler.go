@@ -46,6 +46,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // Wire error codes. They are stable strings the SPA branches on, so a losing
@@ -111,6 +112,10 @@ type Handler struct {
 
 	// participant establishes the principal an attachment acts as.
 	participant ParticipantResolver
+
+	// telemetry records connection lifecycle and refused frames. A nil
+	// recorder is a no-op, so an embedder that wires none still serves.
+	telemetry *telemetry.Recorder
 }
 
 // New constructs a Handler with the given room manager and logger.
@@ -136,6 +141,13 @@ func New(manager *room.Manager, logger *slog.Logger) *Handler {
 // default until v0.2 bakes in proper auth.
 func (h *Handler) SetOriginPatterns(patterns []string) {
 	h.originPatterns = patterns
+}
+
+// SetTelemetry installs the correlation recorder. Passing nil disables
+// recording, which is what a transport-level test that wires no durable state
+// wants.
+func (h *Handler) SetTelemetry(recorder *telemetry.Recorder) {
+	h.telemetry = recorder
 }
 
 // SetParticipantResolver installs the principal resolver for new attachments.
@@ -234,6 +246,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("ws: connection attached",
 		"room", roomID, "connection", connection.ID(),
 		"client", connection.ClientID(), "role", rm.RoleOf(connection))
+	h.reportAttachment(r.Context(), rm, connection)
 
 	// Connection state first, then the durable revision snapshot, then the
 	// envelopes themselves. A client therefore knows who else is here and what
@@ -258,6 +271,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	wasAttached := rm.DetachConn(connection)
 	h.logger.Info("ws: connection detached",
 		"room", roomID, "connection", connection.ID(), "was_attached", wasAttached)
+	// Deliberately detached from the request context, which is already
+	// cancelled by the time a read loop exits: an observation of a
+	// disconnection that is dropped because the connection went away is no
+	// observation at all.
+	h.reportDetachment(context.WithoutCancel(r.Context()), rm, connection, wasAttached)
 }
 
 // clientKind labels the sort of client behind an attachment for
@@ -399,6 +417,7 @@ func (h *Handler) authorize(
 	})
 	h.logger.Info("ws: frame refused",
 		"room", rm.ID, "connection", c.ID(), "ws_type", msg.Type)
+	h.reportCapabilityDenial(ctx, rm, c, msg, capability)
 	return false
 }
 
@@ -416,12 +435,14 @@ func (h *Handler) handleDispositionConflict(
 	case errors.Is(err, room.ErrResolverLeaseHeld):
 		h.reportLeaseConflict(ctx, rm, c, msg, err)
 	case errors.Is(err, room.ErrStaleConnection):
+		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeStalePresentation)
 		h.logger.Debug("ws: ignored disposition from detached connection",
 			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
 	case errors.Is(err, room.ErrRoomClosed):
 		h.sendError(ctx, c, outboundError{
 			Code: errorCodeRoomClosed, Message: err.Error(), EnvelopeID: msg.EnvelopeID,
 		})
+		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeRoomClosed)
 	case errors.Is(err, room.ErrPresentationRevisionConflict):
 		h.logger.Debug("ws: stale presentation revision; resynchronizing",
 			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
@@ -431,6 +452,7 @@ func (h *Handler) handleDispositionConflict(
 			EnvelopeID: msg.EnvelopeID,
 			Revision:   msg.Revision,
 		})
+		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeStalePresentation)
 		if replayErr := rm.ReplayEnvelope(ctx, c, msg.EnvelopeID); replayErr != nil &&
 			!errors.Is(replayErr, room.ErrStaleConnection) {
 			h.logger.Info("ws: revision resync failed",
@@ -470,6 +492,7 @@ func (h *Handler) reportLeaseConflict(
 	}
 	h.logger.Info("ws: resolver lease conflict",
 		"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
+	h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeResolverLeaseHeld)
 }
 
 func (h *Handler) sendError(ctx context.Context, c *room.Connection, frame outboundError) {

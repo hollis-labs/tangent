@@ -12,6 +12,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // The browser effect API: the one channel a renderer uses to ask the host to
@@ -82,12 +83,17 @@ type effectResponse struct {
 }
 
 type effectHTTPHandler struct {
-	broker   *effect.Broker
-	contexts EffectContextResolver
+	broker    *effect.Broker
+	contexts  EffectContextResolver
+	telemetry *telemetry.Recorder
 }
 
-func newEffectHTTPHandler(broker *effect.Broker, contexts EffectContextResolver) *effectHTTPHandler {
-	return &effectHTTPHandler{broker: broker, contexts: contexts}
+func newEffectHTTPHandler(
+	broker *effect.Broker,
+	contexts EffectContextResolver,
+	recorder *telemetry.Recorder,
+) *effectHTTPHandler {
+	return &effectHTTPHandler{broker: broker, contexts: contexts, telemetry: recorder}
 }
 
 // maximumEffectRequestBytes bounds a request body. A write's content is the
@@ -169,6 +175,7 @@ func (h *effectHTTPHandler) request(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if result.Receipt.Decision == effect.DecisionRefused {
 		status = effectRefusalStatus(result.Receipt.Code)
+		reportEffectRefusal(r.Context(), h.telemetry, result.Receipt, binding, ownerScope)
 	}
 	response := effectResponse{Receipt: result.Receipt}
 	if len(result.Content) > 0 {

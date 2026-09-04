@@ -109,11 +109,12 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 
 // TestServer_ListsBaseToolSurface asserts the tool surface a server booted
 // without the durable interaction substrate exposes: the 25 legacy and session
-// tools callers integrate against, plus the 3 definition-registry diagnostics
-// and tangent.health_report, which do not depend on that substrate — an
-// embedder without it still has to be able to ask why a kind is not being
-// served, and whether this host is ready to serve at all. Treat this as a
-// contract test: changing names or the count is a public-API change.
+// tools callers integrate against, plus the 3 definition-registry diagnostics,
+// tangent.health_report, and tangent.telemetry_query, none of which depend on
+// that substrate — an embedder without it still has to be able to ask why a
+// kind is not being served, whether this host is ready to serve at all, and
+// what happened to a request it already made. Treat this as a contract test:
+// changing names or the count is a public-API change.
 func TestServer_ListsBaseToolSurface(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
@@ -122,16 +123,17 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 29 {
+	if len(res.Tools) != 30 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 29 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 30 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
 		"tangent.list_workflows":           false,
+		"tangent.telemetry_query":          false,
 		"tangent.triage":                   false,
 		"tangent.feedback":                 false,
 		"tangent.form-collect":             false,

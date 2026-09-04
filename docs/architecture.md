@@ -621,6 +621,7 @@ into a silent one; separating them is what closes that.
 | `GET /healthz/capability` | Which kinds can it serve? | The materialized registry. Bounded listing of everything unservable. |
 | `GET /healthz/capability/{kind}` | Can it serve *this* kind? | One definition's materialization state and effect posture. |
 | `tangent.health_report` (MCP) | All three, over the channel the work arrives on. | The same reporter. |
+| `tangent.telemetry_query` (MCP) | What happened to this invocation, this kind, or this check? | The append-only `telemetry_events` table, plus the in-process metric snapshot. |
 
 **Liveness deliberately touches nothing.** The managed-runtime health probe in
 `~/.cerberus/projects/tangent.cerberus.yaml` points at `/healthz`, and that
@@ -648,6 +649,85 @@ thing in the process to be pasted into a chat window, so it names no path, no
 payload, no participant text, no session, and no capability material — only
 host-published facts and one sentence saying what to do. Detail strings, the
 per-kind listing, and the whole response body each have a ceiling.
+
+## Correlation and payload-safe telemetry
+
+`internal/telemetry/` — one caller invocation gets one identity that survives
+every boundary it crosses, and what happened to it is recorded somewhere that
+is not the process log.
+
+**The identity is derived, not propagated.**
+
+```
+trace_id = SHA-256("tangent/interaction-trace/v1" ‖ caller_scope ‖ idempotency_key)[:16]
+```
+
+Both inputs are columns on `interactions`. A context-propagated trace id would
+survive none of the boundaries that matter here: the browser is a separate
+process, the store outlives every process, and a delivery can happen after the
+transport that asked for it is gone. A derived identity is recomputed instead —
+by the MCP adapter that admits the request, by the WebSocket handler that
+refuses a stale frame, by the delivery that hands the outcome back, and by a
+health report naming a broken kind — so a restart, a refresh, and an idempotent
+retry all land in the same trace without anything having carried a header.
+
+**How far it genuinely reaches.** The trace covers the server's observation of
+every stage: admission, definition resolution, presentation, the participant's
+terminal action as the server received it, persistence, and delivery. It does
+**not** contain browser spans. The renderer's own work — paint, interaction,
+submit — is not instrumented, and Tangent deliberately does not accept a
+client-supplied trace header, because a trace id asserted by a tab is a
+correlation identifier the host cannot vouch for. Connection lifecycle and
+per-kind renderer failures are filed under their own derived traces
+(`TraceForRoom`, `TraceForKind`) rather than being forced into an invocation's,
+because neither is part of one request.
+
+**Audit records are a table, not a log.** `telemetry_events` (migration 0011)
+is append-only, indexed by trace, interaction, room, event, and time, and read
+through `tangent.telemetry_query`. It is separate from the existing
+`surface_events` / `interaction_events` / `delivery_events` journals for three
+reasons: a telemetry write must never be able to fail the operation it
+observes, half of what has to be counted (a lease refusal, a failed
+compare-and-set, a capability denial, an unservable renderer) advances no
+record revision and therefore has no journal row, and a lifecycle journal has
+no trace identity and cannot acquire one without altering an immutable audit
+table. Retention is bounded by age and row count and swept at boot; `DELETE` is
+permitted on this one audit table for exactly that reason, `UPDATE` is not.
+
+**Redaction is structural.** ADR 0002 §8 is implemented as a type rather than a
+convention: a closed attribute-key allowlist, closed value vocabularies per
+key, an identifier shape that rejects paths, URLs, and prose outright, and —
+the load-bearing part — **no free-text field anywhere**. There is no `message`,
+`detail`, `reason`, or `error` key, so `err.Error()`, a terminal reason, a
+close reason, a participant's words, and a SQLite error carrying the database
+path have nowhere to go. Failures are recorded as *typed codes* drawn from a
+closed set; anything else becomes `unclassified`. Keys the allowlist does not
+name are dropped and counted, and a test asserts that count is zero across the
+shipped paths.
+
+**Metrics** cover presentation and resolution latency, reconnects, stale
+clients, delivery lag and retries, draft conflicts, renderer failures, and
+capability denials — each sourced from the mechanism that already owned the
+fact, never from parallel state. Trust-class denials and host-policy denials
+stay separate, because widening host policy lifts one and does nothing to the
+other. They live in a bounded in-process registry (lost on restart, which is
+what the durable aggregate is for) and are mirrored to OpenTelemetry.
+
+**OpenTelemetry is the API only, and off by default.** Tangent depends on
+`go.opentelemetry.io/otel` and its `trace`/`metric` sub-modules and on nothing
+else from that ecosystem: no SDK, no OTLP exporter, no gRPC, no protobuf. With
+no SDK installed the global providers are no-ops, and the bridge is
+additionally gated behind `TANGENT_OTEL` because those providers are
+process-global and a single-user loopback host must not start exporting because
+some other dependency installed one. An embedder turns it on by adding an SDK
+to their own module, installing it before Tangent records anything, and setting
+the flag — no instrumentation changes.
+
+**Health links failures to safe correlation identifiers.** Every non-passing
+readiness check and every unusable kind carries a `correlation` block naming
+the trace its history is filed under and `tangent.telemetry_query` as the
+reader. Readiness observations are emitted on *transitions* only, so a
+supervisor polling on a timer does not bury the moment something changed.
 
 ## Limits (v0.5)
 

@@ -506,11 +506,13 @@ WHERE room_id = 'room-completion' AND envelope_id = 'env-completion'`).Scan(&ack
 		t.Fatal("projection did not surface the caller acknowledgement")
 	}
 
+	// Every migration above 0006 has to come off before 0006 itself can —
 	// 0007 (the definition registry), 0008 (participant sessions), 0009 (effect
-	// handles and receipts), and 0010 (renderer trust classes on the receipt)
-	// all sit above 0006, so undoing 0006 means rolling back five migrations,
-	// not one.
-	rollbackTo(t, database, 5)
+	// handles and receipts), 0010 (renderer trust classes on the receipt),
+	// 0011 (interaction telemetry), and whatever lands next. The count is
+	// derived from the embedded set rather than written down, so adding a
+	// migration does not silently turn this assertion into a different one.
+	rollbackTo(t, database, durableMigrationsAboveV012(t)-3)
 	if _, err := database.Exec(`SELECT 1 FROM terminal_outcome_acknowledgements LIMIT 1`); err == nil ||
 		!strings.Contains(err.Error(), "no such table") {
 		t.Fatalf("acknowledgements after rollback = %v, want no such table", err)

@@ -11,6 +11,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // roomDisposition is the canonical lifecycle authority behind one room
@@ -36,12 +37,16 @@ type roomDisposition struct {
 // the record simply names the most recent delivery.
 func (d *roomDisposition) Presented(
 	ctx context.Context,
-	_ string,
-	_ *envelopes.Envelope,
+	roomID string,
+	env *envelopes.Envelope,
 	revision int64,
 	connectionID string,
 ) error {
-	_, err := d.ensurePresented(ctx, revision, connectionID)
+	envelopeID := ""
+	if env != nil {
+		envelopeID = env.ID
+	}
+	_, err := d.ensurePresented(ctx, roomID, envelopeID, revision, connectionID)
 	return err
 }
 
@@ -65,6 +70,14 @@ func (d *roomDisposition) DurableRevision(ctx context.Context) (room.DurableRevi
 		InteractionID:       record.ID,
 		InteractionRevision: record.Revision,
 		State:               string(record.State),
+		DefinitionKind:      record.Definition.Kind,
+		// The trace is recomputed from the record here rather than being
+		// carried from the caller's goroutine, which is the whole reason the
+		// identity is derived: this call happens on a WebSocket's goroutine,
+		// possibly in a different process generation from the one that
+		// admitted the request, and it still produces the same trace.
+		TraceID: telemetry.TraceForRecord(
+			record.CallerScope, record.IdempotencyKey, record.ID).String(),
 	}
 	if record.PresentedProjectionRevision != nil {
 		revision.PresentedProjectionRevision = *record.PresentedProjectionRevision
@@ -94,7 +107,7 @@ func (d *roomDisposition) Resolve(
 	env *envelopes.Envelope,
 	resp *envelopes.Response,
 ) error {
-	record, err := d.ensurePresented(ctx, 0, "")
+	record, err := d.ensurePresented(ctx, roomID, env.ID, 0, "")
 	if err != nil {
 		return err
 	}
@@ -136,23 +149,69 @@ func (d *roomDisposition) Resolve(
 		SubmittedAt:                 time.Now().UTC(),
 		Capability:                  surfaceCapability,
 	})
+	correlation := correlationFor(record, roomID, env.ID)
 	switch {
 	case err == nil:
 		d.service.logger.Info("roomflow: recorded durable resolution",
 			"room", roomID, "envelope", env.ID, "interaction", record.ID)
+		// The duration is presentation → resolution: how long the human took.
+		// It is measured from the record's own presented_at rather than from
+		// anything this process remembers, so a resolution that follows a
+		// restart still reports the real interval.
+		d.service.emit(ctx, telemetry.Event{
+			Name:        telemetry.EventInteractionResolved,
+			Outcome:     telemetry.OutcomeOK,
+			Correlation: correlation,
+			Duration:    sincePresented(record, d.service.telemetry.Now()),
+			Attrs: []telemetry.Attr{
+				telemetry.Int(telemetry.AttrRevision, record.Revision),
+				telemetry.Int(telemetry.AttrPresentedRevision, presented),
+				telemetry.String(telemetry.AttrTransport, "websocket"),
+			},
+		})
 		return nil
 	case errors.Is(err, interaction.ErrTerminal):
+		d.reportDispositionRefusal(ctx, correlation, "terminal")
 		return fmt.Errorf("%w: %s", room.ErrDispositionTerminal, record.ID)
 	default:
+		d.reportDispositionRefusal(ctx, correlation,
+			telemetry.CodeForError(err, interactionErrorCodes))
 		return err
 	}
+}
+
+// reportDispositionRefusal records a terminal participant action the canonical
+// authority declined. It is a refusal and not a failure: the interaction is
+// intact and the participant can act again.
+func (d *roomDisposition) reportDispositionRefusal(
+	ctx context.Context,
+	correlation telemetry.Correlation,
+	code string,
+) {
+	d.service.emit(ctx, telemetry.Event{
+		Name:        telemetry.EventPresentationRefused,
+		Outcome:     telemetry.OutcomeRefused,
+		Code:        code,
+		Correlation: correlation.WithSpan(),
+		Attrs:       []telemetry.Attr{telemetry.String(telemetry.AttrTransport, "websocket")},
+	})
+}
+
+// sincePresented is presentation → now, from the durable record's own
+// timestamp. A record with no presented_at reports no duration rather than a
+// misleading one measured from creation.
+func sincePresented(record interaction.InteractionRecord, now time.Time) time.Duration {
+	if record.PresentedAt == nil {
+		return 0
+	}
+	return since(*record.PresentedAt, now)
 }
 
 // Cancel records an explicit participant cancellation. Participant
 // cancellation is one of only two authorized ways an interaction becomes
 // terminal; a lost socket or an expired caller never reaches this path.
 func (d *roomDisposition) Cancel(ctx context.Context, roomID string, env *envelopes.Envelope) error {
-	record, err := d.ensurePresented(ctx, 0, "")
+	record, err := d.ensurePresented(ctx, roomID, env.ID, 0, "")
 	if err != nil {
 		return err
 	}
@@ -162,14 +221,29 @@ func (d *roomDisposition) Cancel(ctx context.Context, roomID string, env *envelo
 		Reason:     "participant cancelled the room workflow",
 		Capability: surfaceCapability,
 	})
+	correlation := correlationFor(record, roomID, env.ID)
 	switch {
 	case err == nil:
 		d.service.logger.Info("roomflow: recorded participant cancellation",
 			"room", roomID, "envelope", env.ID, "interaction", record.ID)
+		d.service.emit(ctx, telemetry.Event{
+			Name:        telemetry.EventInteractionCanceled,
+			Outcome:     telemetry.OutcomeOK,
+			Correlation: correlation,
+			Duration:    sincePresented(record, d.service.telemetry.Now()),
+			Attrs: []telemetry.Attr{
+				telemetry.String(telemetry.AttrTerminalCause,
+					string(interaction.TerminalCauseParticipantCanceled)),
+				telemetry.String(telemetry.AttrTransport, "websocket"),
+			},
+		})
 		return nil
 	case errors.Is(err, interaction.ErrTerminal):
+		d.reportDispositionRefusal(ctx, correlation, "terminal")
 		return fmt.Errorf("%w: %s", room.ErrDispositionTerminal, record.ID)
 	default:
+		d.reportDispositionRefusal(ctx, correlation,
+			telemetry.CodeForError(err, interactionErrorCodes))
 		return err
 	}
 }
@@ -183,6 +257,8 @@ func (d *roomDisposition) Cancel(ctx context.Context, roomID string, env *envelo
 // itself rather than trusting that the earlier report succeeded.
 func (d *roomDisposition) ensurePresented(
 	ctx context.Context,
+	roomID string,
+	envelopeID string,
 	revision int64,
 	connectionID string,
 ) (interaction.InteractionRecord, error) {
@@ -209,11 +285,33 @@ func (d *roomDisposition) ensurePresented(
 		if projection < 1 {
 			projection = 1
 		}
-		if _, err := d.service.interactions.AcknowledgePresentation(ctx, interaction.PresentInteractionInput{
-			InteractionID: record.ID, ExpectedRevision: record.Revision,
-			PresentedProjectionRevision: projection, Participant: Participant,
-			ConnectionID: connectionID, Capability: surfaceCapability,
-		}); err != nil {
+		acknowledged, err := d.service.interactions.AcknowledgePresentation(
+			ctx, interaction.PresentInteractionInput{
+				InteractionID: record.ID, ExpectedRevision: record.Revision,
+				PresentedProjectionRevision: projection, Participant: Participant,
+				ConnectionID: connectionID, Capability: surfaceCapability,
+			})
+		if err == nil {
+			// This is the one place presentation actually happens, so it is
+			// the only place that may measure it. The duration is admission →
+			// presentation: how long the caller's request waited before a
+			// human could see it, taken from the record's own created_at so a
+			// restart between the two does not lose the interval.
+			correlation := correlationFor(record, roomID, envelopeID)
+			correlation.ConnectionID = connectionID
+			d.service.emit(ctx, telemetry.Event{
+				Name:        telemetry.EventInteractionPresented,
+				Outcome:     telemetry.OutcomeOK,
+				Correlation: correlation,
+				Duration:    since(record.CreatedAt, d.service.telemetry.Now()),
+				Attrs: []telemetry.Attr{
+					telemetry.Int(telemetry.AttrPresentedRevision, projection),
+					telemetry.Int(telemetry.AttrRevision, acknowledged.Revision),
+					telemetry.String(telemetry.AttrTransport, "websocket"),
+				},
+			})
+		}
+		if err != nil {
 			if errors.Is(err, interaction.ErrRevisionConflict) ||
 				errors.Is(err, interaction.ErrNotRespondable) {
 				// Another attachment advanced it first; re-read and use theirs.

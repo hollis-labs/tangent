@@ -33,6 +33,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
@@ -63,6 +64,18 @@ const (
 	// reports phrase themselves generically rather than sending an operator to
 	// a resource that is not there.
 	envManagedResource = "TANGENT_MANAGED_RESOURCE"
+
+	// envOpenTelemetry opts this process into the OpenTelemetry bridge.
+	//
+	// It is off by default and has to be turned on deliberately. Tangent
+	// depends on the OTel *API* and ships no SDK and no exporter, so the
+	// default providers are no-ops and nothing leaves the machine; the flag
+	// exists because those providers are process-global and a future
+	// dependency that installs an SDK for its own reasons must not thereby
+	// start exporting a single user's interaction telemetry. Setting it on a
+	// build with no SDK installed changes nothing observable, which is the
+	// honest state of the seam. See internal/telemetry/otel.go.
+	envOpenTelemetry = "TANGENT_OTEL"
 )
 
 func main() {
@@ -135,6 +148,40 @@ func main() {
 	if *migrateOnly {
 		logger.Info("applied tangent migrations")
 		return
+	}
+
+	// Correlation telemetry (CW-20260825-0078). It is constructed before
+	// anything it observes, and it shares the one database handle: an
+	// observation whose interaction lives in another transaction is an
+	// observation that can go missing.
+	//
+	// Every consumer below takes the recorder as an optional dependency and
+	// treats nil as a no-op, so nothing downstream can fail for want of
+	// telemetry. The store's only failure mode is a nil database handle, which
+	// is a build defect rather than an operator condition, so it is fatal here
+	// for the same reason every other composition-root construction is.
+	telemetryStore, telemetryStoreErr := telemetry.NewSQLStore(sqlDB)
+	if telemetryStoreErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build telemetry store: %v\n", telemetryStoreErr)
+		os.Exit(1)
+	}
+	recorder := telemetry.New(
+		telemetry.WithSink(telemetryStore),
+		telemetry.WithLogger(logger),
+		telemetry.WithOpenTelemetry(os.Getenv(envOpenTelemetry) != ""),
+	)
+	// Retention is applied at boot rather than on a timer. The table carries no
+	// content and its rows are small, so the only thing an in-process sweeper
+	// would buy is a goroutine to shut down cleanly; a restart is frequent
+	// enough on a single-user desktop tool to keep the ceiling honest.
+	if pruned, pruneErr := telemetryStore.Prune(
+		context.Background(),
+		time.Now().UTC().Add(-telemetry.DefaultRetention),
+		telemetry.DefaultRetainedRows,
+	); pruneErr != nil {
+		logger.Warn("tangent: telemetry retention sweep incomplete")
+	} else if pruned > 0 {
+		logger.Info("pruned telemetry observations", "count", pruned)
 	}
 
 	// The host authority: a Cerberus Workspace where one is composed, and
@@ -210,6 +257,7 @@ func main() {
 		// call site and a test.
 		interaction.WithPrivilegedActorPolicy(
 			interaction.NewEffectPrivilegedActorPolicy(hostAuthority)),
+		interaction.WithTelemetry(recorder),
 	)
 	if interactionErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: build interaction service: %v\n", interactionErr)
@@ -248,6 +296,7 @@ func main() {
 		os.Exit(1)
 	}
 	wsHandler := tangentws.New(roomMgr, logger)
+	wsHandler.SetTelemetry(recorder)
 
 	// The authenticated browser participant session (ADR 0004 §4). It is what
 	// moves room authority off a URL that the product deliberately publishes —
@@ -305,7 +354,14 @@ func main() {
 			}
 		}),
 		health.WithRuntime(health.Runtime{ManagedResource: os.Getenv(envManagedResource)}),
+		health.WithTelemetry(recorder),
 	)
+	// Record every kind this build cannot serve, once, while the answer is
+	// complete: materialization has finished and host policy has been applied.
+	// A capability health report naming a broken kind therefore points at a
+	// trace that already holds the reason, rather than at an empty one that
+	// only fills up after a caller trips over it.
+	healthReporter.ObserveDefinitions(context.Background())
 
 	// Use 127.0.0.1 to match the listener's actual bind so the URL
 	// hint we log when triage creates a room resolves correctly even
@@ -330,6 +386,7 @@ func main() {
 		mcp.WithHITLService(hitlService),
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
+		mcp.WithTelemetry(recorder, telemetryStore),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
@@ -436,6 +493,7 @@ func main() {
 		Effects:        effectBroker,
 		EffectContext:  interactionService,
 		Health:         healthReporter,
+		Telemetry:      recorder,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

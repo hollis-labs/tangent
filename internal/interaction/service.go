@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 var (
@@ -27,6 +29,11 @@ type Service struct {
 	surfaces     SurfaceAccessPolicy
 	pollInterval time.Duration
 	maximumAwait time.Duration
+	// observer records refused draft revisions. It is the only telemetry this
+	// service emits: everything else about an interaction's lifecycle is
+	// observed by the adapter that owns the invocation, which is the one that
+	// knows the room, the envelope, and the caller's mode.
+	observer *telemetry.Recorder
 }
 
 type ServiceOption func(*Service)
@@ -97,6 +104,15 @@ func WithSurfaceAccessPolicy(policy SurfaceAccessPolicy) ServiceOption {
 	return func(service *Service) {
 		if policy != nil {
 			service.surfaces = policy
+		}
+	}
+}
+
+// WithTelemetry installs the correlation recorder. A nil recorder is a no-op.
+func WithTelemetry(recorder *telemetry.Recorder) ServiceOption {
+	return func(service *Service) {
+		if recorder != nil {
+			service.observer = recorder
 		}
 	}
 }
@@ -544,7 +560,7 @@ func (s *Service) SaveDraft(ctx context.Context, input SaveDraftInput) (DraftRev
 	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {
 		return DraftRevision{}, ErrUnauthorized
 	}
-	return s.store.SaveDraftRevision(ctx, DraftRevision{
+	draft, err := s.store.SaveDraftRevision(ctx, DraftRevision{
 		InteractionID: input.InteractionID, Revision: input.DraftRevision,
 		InteractionRevision:  input.InteractionRevision,
 		ParticipantScope:     input.Participant.Scope,
@@ -554,6 +570,47 @@ func (s *Service) SaveDraft(ctx context.Context, input SaveDraftInput) (DraftRev
 		DefinitionVersion:    input.DefinitionVersion, Payload: input.Payload,
 		Sensitivity: input.Sensitivity, ExpiresAt: input.ExpiresAt,
 	})
+	if err != nil {
+		// A draft conflict is a refusal, not a failure: the participant's
+		// browser held a revision the record has moved past, and the correct
+		// response is to resynchronize and try again. The payload is not
+		// touched here and cannot be — the observation carries revisions and a
+		// code, which is the whole of what is safe to say about a draft.
+		s.observer.Emit(ctx, telemetry.Event{
+			Name:    telemetry.EventDraftRefused,
+			Outcome: telemetry.OutcomeRefused,
+			Code:    telemetry.CodeForError(err, draftErrorCodes),
+			Correlation: telemetry.Correlation{
+				Trace: telemetry.TraceForRecord(
+					current.CallerScope, current.IdempotencyKey, current.ID),
+				Span:              telemetry.NewSpanID(),
+				SurfaceID:         current.SurfaceID,
+				InteractionID:     current.ID,
+				DefinitionKind:    current.Definition.Kind,
+				DefinitionVersion: current.Definition.Version,
+				CallerScope:       current.CallerScope,
+				ParticipantScope:  input.Participant.Scope,
+			},
+			Attrs: []telemetry.Attr{
+				telemetry.Int(telemetry.AttrRevision, current.Revision),
+				telemetry.Int(telemetry.AttrExpectedRevision, input.InteractionRevision),
+				telemetry.String(telemetry.AttrState, string(current.State)),
+			},
+		})
+	}
+	return draft, err
+}
+
+// draftErrorCodes maps the store's draft refusals onto typed codes. It is a
+// table rather than a switch so a new sentinel that is not classified reaches
+// telemetry as `unclassified` instead of as its message.
+var draftErrorCodes = []telemetry.ErrorCode{
+	{Sentinel: ErrRevisionConflict, Code: "revision_conflict"},
+	{Sentinel: ErrTerminal, Code: "terminal"},
+	{Sentinel: ErrNotRespondable, Code: "not_respondable"},
+	{Sentinel: ErrUnauthorized, Code: "unauthorized"},
+	{Sentinel: ErrNotFound, Code: "not_found"},
+	{Sentinel: ErrInvalidRecord, Code: "invalid_record"},
 }
 
 type ResolveInteractionInput struct {

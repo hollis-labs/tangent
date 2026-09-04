@@ -36,6 +36,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // CompatibilityWindow is how long a wait-mode call blocks before returning a
@@ -158,6 +159,7 @@ type Service struct {
 	roomURLBase  string
 	window       time.Duration
 	logger       *slog.Logger
+	telemetry    *telemetry.Recorder
 }
 
 // Option customizes a Service.
@@ -178,6 +180,17 @@ func WithLogger(logger *slog.Logger) Option {
 	return func(s *Service) {
 		if logger != nil {
 			s.logger = logger
+		}
+	}
+}
+
+// WithTelemetry installs the correlation recorder. Omitting it leaves a nil
+// recorder, which is a no-op rather than a nil dereference: an embedder that
+// wires no telemetry still runs every workflow, it simply observes none of it.
+func WithTelemetry(recorder *telemetry.Recorder) Option {
+	return func(s *Service) {
+		if recorder != nil {
+			s.telemetry = recorder
 		}
 	}
 }
@@ -315,9 +328,22 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 	if caller == (interaction.ActorBinding{}) {
 		caller = DefaultCaller
 	}
+	// Admission is timed from here, so the presentation histogram measures
+	// what a caller actually waited for rather than what the store did.
+	admitted := s.telemetry.Now()
+	key := WorkflowIdempotencyKey(request.Envelope.Type, request.Envelope.ID)
 
 	record, err := s.ensureInteraction(ctx, request, caller)
 	if err != nil {
+		s.emit(ctx, telemetry.Event{
+			Name:        telemetry.EventInteractionRefused,
+			Outcome:     telemetry.OutcomeRefused,
+			Code:        telemetry.CodeForError(err, interactionErrorCodes),
+			Correlation: pendingCorrelation(caller, key, request.Envelope.Type, request.RoomID, request.Envelope.ID),
+			Duration:    since(admitted, s.telemetry.Now()),
+			Attrs:       []telemetry.Attr{telemetry.String(telemetry.AttrMode, completionMode(request.Mode))},
+		})
+		s.reportUnservableDefinition(ctx, err)
 		if conflict := (*ConflictError)(nil); errors.As(err, &conflict) {
 			return Outcome{
 				Status:                StatusConflict,
@@ -326,6 +352,18 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		}
 		return Outcome{}, err
 	}
+	correlation := correlationFor(record, request.RoomID, request.Envelope.ID)
+	s.emit(ctx, telemetry.Event{
+		Name:        telemetry.EventInteractionAdmitted,
+		Outcome:     telemetry.OutcomeOK,
+		Correlation: correlation,
+		Duration:    since(admitted, s.telemetry.Now()),
+		Attrs: []telemetry.Attr{
+			telemetry.String(telemetry.AttrMode, completionMode(request.Mode)),
+			telemetry.String(telemetry.AttrState, string(record.State)),
+			telemetry.Int(telemetry.AttrRevision, record.Revision),
+		},
+	})
 	handle := s.handleFor(record, request.RoomID, request.Envelope.ID)
 
 	if isTerminal(record.State) {
@@ -349,6 +387,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 	}
 
 	if request.Mode == ModeAsync {
+		s.reportPending(ctx, correlation, ModeAsync, admitted)
 		return Outcome{Status: StatusPendingOutcome, Handle: handle, Receipt: s.receipt(handle)}, nil
 	}
 
@@ -369,6 +408,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		// The waiter expired. That is a fact about this transport only: the
 		// interaction stays exactly as it was, still presented, still
 		// answerable, and now addressable by the handle in the receipt.
+		s.reportPending(ctx, correlation, ModeWait, admitted)
 		return Outcome{Status: StatusPendingOutcome, Handle: handle, Receipt: s.receipt(handle)}, nil
 	default:
 		return Outcome{}, err
@@ -591,7 +631,7 @@ func (s *Service) projectTerminal(
 		result.TerminalErrorCode = outcome.Interaction.TerminalErrorCode
 		result.TerminalMessage = terminalMessage(outcome.Interaction)
 	}
-	s.recordDelivery(ctx, record.ID, handle)
+	s.recordDelivery(ctx, outcome, handle)
 	return result, nil
 }
 
@@ -599,18 +639,63 @@ func (s *Service) projectTerminal(
 // back over the caller's own request. It is intentionally best-effort and
 // never changes what the caller receives: a delivery journal that could fail
 // the delivery it is journaling would be worse than one that logs.
-func (s *Service) recordDelivery(ctx context.Context, interactionID string, handle Handle) {
-	if _, _, err := s.interactions.RecordTerminalOutcomeDelivery(ctx, interaction.RecordTerminalOutcomeDeliveryInput{
-		Worker: DeliveryWorker, InteractionID: interactionID,
+func (s *Service) recordDelivery(
+	ctx context.Context,
+	outcome interaction.TerminalOutcome,
+	handle Handle,
+) {
+	record := outcome.Interaction
+	correlation := correlationFor(record, handle.RoomID, handle.EnvelopeID).WithSpan()
+	// Delivery lag is resolution recorded → outcome handed back. It is
+	// measured from the immutable resolution's own recorded_at, which is what
+	// makes it survive the caller transport that produced the resolution
+	// having already gone: the whole failure this adapter exists to fix.
+	lag := time.Duration(0)
+	if outcome.Resolution != nil {
+		lag = since(outcome.Resolution.RecordedAt, s.telemetry.Now())
+	}
+	delivery, delivered, err := s.interactions.RecordTerminalOutcomeDelivery(ctx, interaction.RecordTerminalOutcomeDeliveryInput{
+		Worker: DeliveryWorker, InteractionID: record.ID,
 		Receipt: json.RawMessage(mustJSON(map[string]any{
 			"transport":   "mcp-tool-result",
 			"room_id":     handle.RoomID,
 			"envelope_id": handle.EnvelopeID,
 		})),
-	}); err != nil && !errors.Is(err, context.Canceled) {
+	})
+	if err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Warn("roomflow: record terminal outcome delivery",
-			"interaction", interactionID, "room", handle.RoomID, "err", err)
+			"interaction", record.ID, "room", handle.RoomID, "err", err)
 	}
+	if err != nil {
+		s.emit(ctx, telemetry.Event{
+			Name:        telemetry.EventDeliveryFailed,
+			Outcome:     telemetry.OutcomeFailed,
+			Code:        telemetry.CodeForError(err, interactionErrorCodes),
+			Correlation: correlation,
+			Attrs:       []telemetry.Attr{telemetry.String(telemetry.AttrTransport, "mcp")},
+		})
+		return
+	}
+	// The attempt number and delivery state come from the durable delivery
+	// record rather than from a process-local counter, which is what makes
+	// retries countable across a restart: the journal is append-only and the
+	// counter would not be.
+	attrs := []telemetry.Attr{
+		telemetry.String(telemetry.AttrTransport, "mcp"),
+		telemetry.String(telemetry.AttrState, string(record.State)),
+	}
+	if delivered {
+		attrs = append(attrs,
+			telemetry.String(telemetry.AttrDeliveryState, string(delivery.State)),
+			telemetry.Int(telemetry.AttrAttempt, delivery.AttemptNumber))
+	}
+	s.emit(ctx, telemetry.Event{
+		Name:        telemetry.EventDeliveryRecorded,
+		Outcome:     telemetry.OutcomeOK,
+		Correlation: correlation,
+		Duration:    lag,
+		Attrs:       attrs,
+	})
 }
 
 func cancelledResponse(envelopeID string, terminalAt *time.Time) *envelopes.Response {
