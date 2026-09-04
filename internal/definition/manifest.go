@@ -619,13 +619,24 @@ func (m *Manifest) validateRenderer() error {
 			"%w: %s: renderer.fallback.preserves_meaning is true but no fallback renderer_id is declared",
 			ErrInvalidManifest, m.Kind)
 	}
-	// ADR 0003 §7 T6: sandboxed-frame executes untrusted markup, so it may
-	// never request core-trusted. Catching it here means the trust decision
-	// cannot be smuggled in through a renderer convention.
-	if m.Renderer.Class == RendererSandboxedFrame && m.Renderer.TrustClass == TrustCoreTrusted {
+	// ADR 0003 §7 T6, generalized. The narrow form of this rule was
+	// "sandboxed-frame cannot request core-trusted", which caught one pair out
+	// of twenty. The general rule is that a renderer's *shape* and its trust
+	// class have to describe the same thing: a `react-component` calling
+	// itself `sandboxed-code` is not sandboxed, it is mislabeled, and a
+	// `sandboxed-frame` calling itself `core-trusted` is untrusted markup
+	// claiming the host's own authority. Both are refused by the same table
+	// (see trust.go), so the trust decision cannot be smuggled in through a
+	// renderer convention in either direction.
+	profile, ok := TrustProfileFor(m.Renderer.TrustClass)
+	if !ok {
+		return fmt.Errorf("%w: %s: renderer.trust_class %q has no profile in this build",
+			ErrInvalidManifest, m.Kind, m.Renderer.TrustClass)
+	}
+	if !profile.AdmitsRendererClass(m.Renderer.Class) {
 		return fmt.Errorf(
-			"%w: %s: renderer.class sandboxed-frame cannot request trust_class core-trusted",
-			ErrInvalidManifest, m.Kind)
+			"%w: %s: renderer.class %q cannot request trust_class %q",
+			ErrInvalidManifest, m.Kind, m.Renderer.Class, m.Renderer.TrustClass)
 	}
 	return nil
 }

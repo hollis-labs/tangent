@@ -539,8 +539,38 @@ user still gets something debuggable.
 calls. Both are participant-session authenticated, origin guarded, and
 `Cache-Control: no-store`. The same-origin guard also covers `/mcp`, `/sse`,
 and `/ws`; it permits header-less non-browser clients, so MCP clients are
-unaffected. Every response carries `Referrer-Policy: no-referrer` and
-`X-Content-Type-Options: nosniff`.
+unaffected. Every response carries `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a
+`Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` of
+`same-origin`, a `Permissions-Policy` denying every powerful feature Tangent
+does not use, and a `Content-Security-Policy`.
+
+## Renderer trust classes and presentation sandboxing
+
+Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md).
+The full model is [`renderer-trust-classes.md`](renderer-trust-classes.md).
+
+**A trust class decides two things**: an *isolation* — where the renderer's code
+runs — and a *capability ceiling* over the effect namespace, ordered
+`core-trusted ⊃ portfolio-trusted ⊃ sandboxed-code ⊃ declarative = external-surface = ∅`.
+The ceiling is evaluated before host policy's grant, so widening
+`GrantableCapabilities` widens nothing a class already closed. Isolation is the
+host's derivation from the granted class, never a manifest field.
+
+**Untrusted code runs in an opaque origin.** A `sandboxed-code` renderer draws
+inside `sandbox="allow-scripts"` with no `allow-same-origin`, no
+`allow-downloads`, and no `allow-forms`, under a `default-src 'none'` frame
+policy whose `script-src` is a hash of Tangent's own shim — so agent-authored
+scripts in a preview do not execute at all. Messages back are accepted only when
+source, origin, nonce, and schema all check out; a check that is skipped when
+its input is absent is not a check.
+
+**The document CSP is what made `network.fetch` real.** `connect-src` admits
+this origin and its own WebSocket schemes and nothing else, so no renderer can
+reach an external origin. `clipboard.write` and `export.download` remain
+enforced only inside a frame — no CSP directive covers either — which is why
+`effect.Mediation` is a function of the capability *and* the isolation, and why
+every receipt records both.
 
 ## Host-mediated capabilities
 

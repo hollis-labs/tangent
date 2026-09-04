@@ -8,6 +8,7 @@
 // those into one "status: ..." line is what made the old view misleading.
 
 import { Button } from "@/components/ui/button";
+import { describeRefusal } from "@/lib/refusal";
 import { cn } from "@/lib/utils";
 import type { ConnectionState, ServerError, SurfaceSync } from "@/lib/ws-client";
 
@@ -137,21 +138,38 @@ function describeHolder(label: string): string {
   return label.trim() === "" ? "Another client" : label;
 }
 
+// The mapping from wire code to Refused copy. The *sentence shape* lives in
+// lib/refusal so the renderer-trust and sandbox-payload refusals introduced by
+// CW-20260825-0073 — neither of which arrives on this channel — read
+// identically without retyping the punctuation.
+//
+// No case is added here for a renderer trust denial, deliberately. A definition
+// this host will not serve is refused before an envelope is ever pushed, and
+// its ADR 0003 §8 C7 code reaches the MCP caller rather than this socket. A
+// `case` for a code that cannot arrive is untestable dead TypeScript, which is
+// this document's own rule for when a case is worth adding.
 function describeServerError(error: ServerError): string {
   switch (error.code) {
     case "resolver_lease_held":
-      return `Not submitted: ${describeHolder(
-        error.lease?.label ?? error.lease?.connection_id ?? "",
-      )} holds the resolver lease. Take over to answer here.`;
+      return describeRefusal(
+        `${describeHolder(error.lease?.label ?? error.lease?.connection_id ?? "")} holds the resolver lease`,
+        "Take over to answer here.",
+      );
     case "stale_presentation":
-      return "Not submitted: this view was out of date. It has been refreshed — please answer again.";
+      return describeRefusal(
+        "this view was out of date",
+        "It has been refreshed — please answer again.",
+      );
     case "room_closed":
       return "Not submitted: this room is closed.";
     case "not_authorized":
       // A room URL is a locator, not a credential: this tab reached the room
       // but its browser session may not answer here. Reloading mints a fresh
       // session, which is the whole recovery.
-      return "Not submitted: this browser session is not authorized to answer here. Reload Tangent, then try again.";
+      return describeRefusal(
+        "this browser session is not authorized to answer here",
+        "Reload Tangent, then try again.",
+      );
     default:
       return error.message || `Not submitted: ${error.code}`;
   }

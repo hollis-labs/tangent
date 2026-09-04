@@ -1038,6 +1038,83 @@ half is host-derived and enforced. If allowed-origins is meant to be real, it
 needs a consumer named — and it cannot be enforced at all for a renderer the
 browser lets `fetch()` directly, which is B4 again from the other side.
 
+## Amendments required by CW-20260825-0073
+
+**Status: proposed, pending review.** `CW-20260825-0073` made §2.3's
+`renderer.trust_class` decide something. Before it, the field was validated for
+spelling and copied through; a `sandboxed-code` renderer and a `core-trusted`
+one ran in the same React tree with the same authority. Five things this ADR
+says, or leaves unsaid, did not survive that.
+
+Nothing below is adopted. The implementation took the fail-closed reading in
+each case and said so at the point of the choice. The full model is
+[`../renderer-trust-classes.md`](../renderer-trust-classes.md).
+
+### D1 — §2.3 names five trust classes and assigns them no consequence
+
+The §2.3 table defines `renderer.trust_class` as an enum and says Tangent policy
+decides it. It never says *what a class decides*, so two implementations could
+both satisfy the ADR while granting a sandboxed renderer everything a core one
+gets.
+
+**Amend §2.3** to state the two facts a granted class produces: an **isolation**
+(`main-origin` | `host-primitive` | `sandboxed-frame` | `external-surface`) and
+a **capability ceiling** over §2.5's namespace, ordered
+`core ⊃ portfolio ⊃ sandboxed ⊃ declarative = external = ∅`. Isolation is the
+host's derivation and never a manifest field: a publisher that could name its
+own isolation could name the one whose enforcement table flatters it.
+
+### D2 — §7 T6's trust test catches one renderer pair out of twenty
+
+T6 says a `sandboxed-frame` "cannot be `core-trusted` unless it ships and is
+reviewed with the Tangent release", and that is the only shape-versus-class rule
+in the ADR. It leaves `react-component` free to declare `sandboxed-code` — a
+renderer that is not sandboxed, wearing the label of the class that is.
+
+**Amend §7 T6** to the general rule: a manifest's `renderer.class` and
+`renderer.trust_class` must describe the same thing, in both directions, and a
+disagreement is a manifest error rather than a value to reinterpret.
+
+### D3 — "reviewed with the release" has no mechanical test in the ADR
+
+T6's condition is a review obligation with no expressible check, which is how a
+trust class becomes self-assigned. Three facts about a manifest *are*
+mechanically checkable and together approximate it: the publisher namespace, a
+grantable `trust.assurance`, and an empty `renderer.asset_digest` (a separately
+distributed bundle is by definition not the one the release reviewed).
+
+**Amend §7 T6** to name those three as the necessary conditions for a
+release-provenance class, and to record that they are necessary and not
+sufficient — the review itself stays a human obligation.
+
+### D4 — §2.5's mediation is not a property of a capability
+
+This is `CW-20260825-0077`'s B4 completed rather than restated. That amendment
+observed that "capability-mediated" is not one thing; what this task found is
+that it is not even one thing *per capability*. `clipboard.write` is a bare DOM
+call from Tangent's origin and an impossibility from an opaque-origin frame, so
+mediation is a function of the capability **and** the isolation.
+
+**Amend §2.5** to say so, and to require that any audit record of an effect
+carry the isolation beside the mediation. Without it, a receipt reading
+`clipboard.write / host` is indistinguishable between a genuinely contained
+renderer and a mislabeled one. `effect_receipts` carries both from migration
+`0010`.
+
+### D5 — §8 C5's fallback rule has no browser-side statement
+
+C5 governs what Tangent does when a *definition* has no usable renderer. It says
+nothing about the browser refusing to dispatch to a renderer that no manifest
+classified, which is the case that actually occurred: `main.tsx` registered
+components by string literal, so a component registered under any name ran with
+the host's authority whether or not a manifest existed for it.
+
+**Amend §8 C5** to extend the fail-closed rule to dispatch: a renderer with no
+manifest classification is refused, and the JSON debug affordance remains
+reachable only because it executes no publisher code. Note also that a
+`preserves_meaning: false` fallback must never be named in a projection a client
+could act on — the generated renderer table omits it for that reason.
+
 ## References
 
 - [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md) — §3

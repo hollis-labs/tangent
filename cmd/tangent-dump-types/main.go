@@ -130,6 +130,21 @@ type dumpDefinition struct {
 	RendererClass      string `json:"rendererClass"`
 	RendererEntry      string `json:"rendererEntry"`
 	RendererTrustClass string `json:"rendererTrustClass"`
+	// RendererIsolation is where the *granted* trust class runs the renderer
+	// (CW-20260825-0073). It is derived by the host from the granted class and
+	// dumped rather than re-derived in TypeScript, because a second mapping is
+	// a second answer.
+	RendererIsolation string `json:"rendererIsolation"`
+	// InlinePayloadLimitBytes is §2.6's publisher limit after the host ceiling.
+	// The SPA reads it to bound untrusted display content before it reaches a
+	// renderer, which is the browser half of the same limit.
+	InlinePayloadLimitBytes int64 `json:"inlinePayloadLimitBytes"`
+	// Fallback is §2.3's declared safe fallback, projected exactly as
+	// Materialized.SafeFallback decides it: a renderer id appears only when the
+	// publisher declared one and preserves_meaning is true.
+	FallbackRendererID       string `json:"fallbackRendererId,omitempty"`
+	FallbackPreservesMeaning bool   `json:"fallbackPreservesMeaning"`
+	FallbackDegradation      string `json:"fallbackDegradation,omitempty"`
 	// CompatibilityResponseSchema is "present" or "absent" (ADR 0003 §8 C4).
 	CompatibilityResponseSchema string `json:"compatibilityResponseSchema"`
 	// NamedDefinitions are the stable $defs entry points and what each is for.
@@ -149,8 +164,54 @@ type dumpDoc struct {
 	// manifest_digest) set. A generated artifact carries it, and
 	// tangent.definition_registry_list reports the live value, so a client can
 	// refuse to submit against a definition it was not generated for.
-	DefinitionSourceDigest string     `json:"definitionSourceDigest"`
-	Types                  []dumpType `json:"types"`
+	DefinitionSourceDigest string `json:"definitionSourceDigest"`
+	// TrustProfiles is the whole renderer trust model, dumped so the SPA's copy
+	// is generated from the host's table rather than hand-mirrored. ADR 0003
+	// §2.3 makes Tangent policy the decider of a trust class; a second,
+	// hand-typed policy table in TypeScript would be a second decider.
+	TrustProfiles []dumpTrustProfile `json:"trustProfiles"`
+	Types         []dumpType         `json:"types"`
+}
+
+// dumpTrustProfile is one renderer trust class's projection: where it runs,
+// whether publisher code executes there, whether that place carries Tangent's
+// ambient authority, and the host-mediated effect capabilities the class may
+// ever declare.
+type dumpTrustProfile struct {
+	Class                 string   `json:"class"`
+	Isolation             string   `json:"isolation"`
+	ExecutesPublisherCode bool     `json:"executesPublisherCode"`
+	AmbientHostAuthority  bool     `json:"ambientHostAuthority"`
+	RendererClasses       []string `json:"rendererClasses"`
+	Capabilities          []string `json:"capabilities"`
+}
+
+// trustProfiles projects internal/definition's trust table for the dump.
+func trustProfiles() []dumpTrustProfile {
+	out := make([]dumpTrustProfile, 0, len(definition.TrustClasses()))
+	for _, class := range definition.TrustClasses() {
+		profile, ok := definition.TrustProfileFor(class)
+		if !ok {
+			continue
+		}
+		rendererClasses := make([]string, 0, len(profile.RendererClasses))
+		for _, rendererClass := range profile.RendererClasses {
+			rendererClasses = append(rendererClasses, string(rendererClass))
+		}
+		capabilities := profile.Capabilities
+		if capabilities == nil {
+			capabilities = []string{}
+		}
+		out = append(out, dumpTrustProfile{
+			Class:                 string(profile.Class),
+			Isolation:             string(profile.Isolation),
+			ExecutesPublisherCode: profile.ExecutesPublisherCode,
+			AmbientHostAuthority:  profile.Isolation.AmbientHostAuthority(),
+			RendererClasses:       rendererClasses,
+			Capabilities:          capabilities,
+		})
+	}
+	return out
 }
 
 func main() {
@@ -180,6 +241,7 @@ func run() error {
 		EnvelopesVersion:       envelopesVersion,
 		HostVersion:            envelope.HostVersion,
 		DefinitionSourceDigest: sourceDigest,
+		TrustProfiles:          trustProfiles(),
 		Types:                  make([]dumpType, 0, len(specs)),
 	}
 	for _, spec := range specs {
@@ -271,7 +333,12 @@ func describeDefinition(materialized definition.Materialized, requestSchema []by
 		RendererID:         manifest.Renderer.ID,
 		RendererClass:      string(manifest.Renderer.Class),
 		RendererEntry:      manifest.Renderer.Entry,
-		RendererTrustClass: string(manifest.Renderer.TrustClass),
+		RendererTrustClass: string(materialized.TrustClass),
+		RendererIsolation:  string(materialized.Isolation),
+
+		InlinePayloadLimitBytes:  materialized.EffectiveInlineLimitBytes,
+		FallbackPreservesMeaning: manifest.Renderer.Fallback.PreservesMeaning,
+		FallbackDegradation:      string(manifest.Renderer.Fallback.Degradation),
 
 		CompatibilityResponseSchema: string(manifest.CompatibilityResponseSchema),
 		NamedDefinitions:            manifest.NamedDefinitions,
@@ -279,6 +346,12 @@ func describeDefinition(materialized definition.Materialized, requestSchema []by
 	}
 	if out.CompatibilityResponseSchema == "" {
 		out.CompatibilityResponseSchema = string(definition.ResponseSchemaPresent)
+	}
+	// Named only when Tangent is actually permitted to use it (§8 C5). A
+	// declared fallback whose preserves_meaning is false is not a fallback, and
+	// putting its id in a generated table would invite a consumer to render it.
+	if fallback, ok := materialized.SafeFallback(); ok {
+		out.FallbackRendererID = fallback.RendererID
 	}
 	return out
 }

@@ -22,6 +22,76 @@ export type RendererTrustClass =
   | 'sandboxed-code'
   | 'external-surface';
 
+/** Where a granted trust class runs a renderer. Derived by the host, never declared. */
+export type RendererIsolation =
+  | 'main-origin'
+  | 'host-primitive'
+  | 'sandboxed-frame'
+  | 'external-surface';
+
+/**
+ * What one trust class may do.
+ *
+ * ADR 0003 §2.3 makes Tangent policy the decider of a renderer's trust class.
+ * This table is generated from internal/definition/trust.go for that reason: a
+ * hand-typed policy table in the SPA would be a second decider, and the two
+ * would disagree the first time one of them was edited.
+ */
+export interface RendererTrustProfile {
+  class: RendererTrustClass;
+  isolation: RendererIsolation;
+  /** False for the classes where no publisher-authored code executes at all. */
+  executesPublisherCode: boolean;
+  /** Whether this isolation can reach Tangent's own origin, storage, and session. */
+  ambientHostAuthority: boolean;
+  rendererClasses: readonly string[];
+  /** Host-mediated effect capability ids this class may ever declare. */
+  capabilities: readonly string[];
+}
+
+export const RENDERER_TRUST_PROFILES: readonly RendererTrustProfile[] = [
+  {
+    class: "core-trusted",
+    isolation: "main-origin",
+    executesPublisherCode: true,
+    ambientHostAuthority: true,
+    rendererClasses: ["react-component","declarative"],
+    capabilities: ["file.read_scoped","file.write_scoped","evidence.preview","export.download","clipboard.write","network.fetch","process.exec"],
+  },
+  {
+    class: "portfolio-trusted",
+    isolation: "main-origin",
+    executesPublisherCode: true,
+    ambientHostAuthority: true,
+    rendererClasses: ["react-component","declarative"],
+    capabilities: ["file.read_scoped","file.write_scoped","evidence.preview","export.download","clipboard.write","network.fetch"],
+  },
+  {
+    class: "declarative",
+    isolation: "host-primitive",
+    executesPublisherCode: false,
+    ambientHostAuthority: false,
+    rendererClasses: ["declarative"],
+    capabilities: [],
+  },
+  {
+    class: "sandboxed-code",
+    isolation: "sandboxed-frame",
+    executesPublisherCode: true,
+    ambientHostAuthority: false,
+    rendererClasses: ["sandboxed-frame"],
+    capabilities: ["file.read_scoped","evidence.preview","export.download","clipboard.write","network.fetch"],
+  },
+  {
+    class: "external-surface",
+    isolation: "external-surface",
+    executesPublisherCode: false,
+    ambientHostAuthority: false,
+    rendererClasses: ["external-surface"],
+    capabilities: [],
+  },
+] as const;
+
 export interface RendererBinding {
   /** Wire name of the kind this renderer serves. */
   kind: string;
@@ -31,7 +101,16 @@ export interface RendererBinding {
   rendererClass: RendererClass;
   /** Module specifier and exported symbol, for react-component renderers. */
   entry: string;
+  /** The trust class Tangent granted. A requested class the evidence did not support is quarantined, never downgraded. */
   trustClass: RendererTrustClass;
+  /** Where that class runs this renderer. */
+  isolation: RendererIsolation;
+  /** Manifest inline payload ceiling, after the host cap. The browser-side bound on untrusted display content. */
+  inlinePayloadLimitBytes: number;
+  /** Declared safe fallback renderer, present only when preserves_meaning is true (ADR 0003 §8 C5). */
+  fallbackRendererId: string;
+  fallbackPreservesMeaning: boolean;
+  fallbackDegradation: string;
   /** Legacy ui.component slug, empty for kinds that render through their own route. */
   component: string;
   packageId: string;
@@ -49,6 +128,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/ApprovalQueue#ApprovalQueue",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "ApprovalQueueView",
     packageId: "tangent.review",
     state: "available",
@@ -61,6 +145,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/BlockDraft#BlockDraft",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "BlockDraftView",
     packageId: "tangent.writing",
     state: "available",
@@ -73,6 +162,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/Dashboard#Dashboard",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "DashboardView",
     packageId: "tangent.canvas",
     state: "available",
@@ -85,6 +179,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "sandboxed-frame",
     entry: "components/envelopes/DesignIteration#DesignIteration",
     trustClass: "sandboxed-code",
+    isolation: "sandboxed-frame",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "DesignIterationView",
     packageId: "tangent.canvas",
     state: "available",
@@ -97,6 +196,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/DiffReview#DiffReview",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "DiffReviewView",
     packageId: "tangent.review",
     state: "available",
@@ -109,6 +213,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/Feedback#Feedback",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "FeedbackView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -121,6 +230,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/FilePicker#FilePicker",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "FilePickerView",
     packageId: "tangent.workspace",
     state: "available",
@@ -133,6 +247,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/FormCollect#FormCollect",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "FormCollectView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -145,6 +264,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "routes/HITLInbox#HITLInbox",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "",
     packageId: "tangent.hitl",
     state: "available",
@@ -157,6 +281,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/InterviewQuestion#InterviewQuestion",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "InterviewQuestionView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -169,6 +298,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/OutputRender#OutputRender",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "OutputRenderView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -181,6 +315,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/ProgressPanel#ProgressPanel",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "ProgressPanelView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -193,6 +332,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/ProseRevision#ProseRevision",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "ProseRevisionView",
     packageId: "tangent.writing",
     state: "available",
@@ -205,6 +349,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/SpreadsheetReview#SpreadsheetReview",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "SpreadsheetReviewView",
     packageId: "tangent.review",
     state: "available",
@@ -217,6 +366,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/SynthesisNotes#SynthesisNotes",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "SynthesisNotesView",
     packageId: "tangent.writing",
     state: "available",
@@ -229,6 +383,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/Triage#Triage",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "TriageView",
     packageId: "tangent.generic-candidate",
     state: "available",
@@ -241,6 +400,11 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/Whiteboard#Whiteboard",
     trustClass: "portfolio-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "WhiteboardView",
     packageId: "tangent.canvas",
     state: "available",
@@ -253,12 +417,33 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     rendererClass: "react-component",
     entry: "components/envelopes/Wizard#Wizard",
     trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
     component: "WizardView",
     packageId: "tangent.compound",
     state: "available",
     contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8",
   },
 ] as const;
+
+/**
+ * Look one binding up by wire kind.
+ *
+ * A kind with no binding has no manifest-declared renderer, which is not a
+ * lookup miss to paper over: it means nothing classified the renderer, so
+ * nothing may assume it is trusted.
+ */
+export function rendererBindingFor(kind: string): RendererBinding | null {
+  return RENDERER_BINDINGS.find((binding) => binding.kind === kind) ?? null;
+}
+
+/** The profile for one trust class, or null when this build does not implement it. */
+export function trustProfileFor(trustClass: string): RendererTrustProfile | null {
+  return RENDERER_TRUST_PROFILES.find((profile) => profile.class === trustClass) ?? null;
+}
 
 /** Kinds whose manifest says a React component in Tangent's own tree draws them. */
 export const REACT_COMPONENT_KINDS: readonly string[] = RENDERER_BINDINGS

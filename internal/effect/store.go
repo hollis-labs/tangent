@@ -144,12 +144,14 @@ func (s *SQLStore) RevokeHandlesForInteraction(ctx context.Context, interactionI
 func (s *SQLStore) RecordReceipt(ctx context.Context, receipt Receipt, requestDigest string) error {
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO effect_receipts (
-  id, capability, decision, code, mediation, handle_id, interaction_id,
+  id, capability, decision, code, mediation, renderer_trust_class, renderer_isolation,
+  handle_id, interaction_id,
   participant_scope, binding_digest, idempotency_key, request_digest,
   intent_control_id, intent_revision, issued_at, byte_count, content_sha256, media_type
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		receipt.ID, string(receipt.Capability), string(receipt.Decision), receipt.Code,
-		string(receipt.Mediation), receipt.HandleID, receipt.InteractionID,
+		string(receipt.Mediation), receipt.TrustClass, string(receipt.Isolation),
+		receipt.HandleID, receipt.InteractionID,
 		receipt.ParticipantScope, receipt.BindingDigest, receipt.IdempotencyKey, requestDigest,
 		receipt.IntentControlID, receipt.IntentRevision, receipt.IssuedAt,
 		receipt.Bytes, receipt.ContentSHA256, receipt.MediaType,
@@ -172,15 +174,18 @@ func (s *SQLStore) ReceiptForKey(
 		capabilityRaw string
 		decision      string
 		mediation     string
+		isolation     string
 		requestDigest string
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, capability, decision, code, mediation, handle_id, interaction_id,
+SELECT id, capability, decision, code, mediation, renderer_trust_class, renderer_isolation,
+       handle_id, interaction_id,
        participant_scope, binding_digest, idempotency_key, request_digest,
        intent_control_id, intent_revision, issued_at, byte_count, content_sha256, media_type
 FROM effect_receipts WHERE idempotency_key = ? AND capability = ?`,
 		key, string(capability)).Scan(
 		&receipt.ID, &capabilityRaw, &decision, &receipt.Code, &mediation,
+		&receipt.TrustClass, &isolation,
 		&receipt.HandleID, &receipt.InteractionID, &receipt.ParticipantScope,
 		&receipt.BindingDigest, &receipt.IdempotencyKey, &requestDigest,
 		&receipt.IntentControlID, &receipt.IntentRevision, &receipt.IssuedAt,
@@ -195,6 +200,7 @@ FROM effect_receipts WHERE idempotency_key = ? AND capability = ?`,
 	receipt.Capability = Capability(capabilityRaw)
 	receipt.Decision = Decision(decision)
 	receipt.Mediation = Mediation(mediation)
+	receipt.Isolation = Isolation(isolation)
 	return receipt, requestDigest, true, nil
 }
 

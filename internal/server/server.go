@@ -254,7 +254,7 @@ func New(cfg Config) (*Server, error) {
 		// headers and outside the routes so a document navigation has a
 		// session before any route reads one; logging stays innermost so it
 		// measures the handler rather than the middleware.
-		Handler:           securityHeaders(mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux))),
+		Handler:           securityHeaders(cfg.DevFrontendURL, mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux))),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       httpServerReadTimeout,
 		WriteTimeout:      httpServerWriteTimeout,

@@ -48,13 +48,22 @@ right-hand column above without inventing a third surface:
    never speaks for the server, and `SubmitGateNotice` never renders a server
    reason.
 
+The one Refused surface that *is* rendered inside a workflow component is
+`DesignIteration`'s payload-limit refusal, and it does not break rule 4: it is
+not a server rejection being relayed. It is the renderer's own refusal to make
+untrusted content active, decided in the browser against the manifest's
+`inline_payload_limit_bytes` before anything is sent. It is Refused rather than
+Blocked because no amount of the operator's typing changes it — the agent has to
+send a smaller variant. See
+[`renderer-trust-classes.md`](renderer-trust-classes.md).
+
 If a rejection is genuinely the operator's unfinished work rather than a server
 decision — a field the server validates that the client could have validated —
 the fix is a client-side gate requirement, not a red banner.
 
 ## The primitives
 
-Three modules, and no others. Adding a fourth needs a reason.
+Four modules, and no others. Adding a fifth needs a reason.
 
 - **`ui/src/lib/submit-gate.ts`** — the model. `SubmitRequirement`
   (`controlID`, `label`, `message`, optional `reveal`), `buildSubmitGate`,
@@ -64,6 +73,16 @@ Three modules, and no others. Adding a fourth needs a reason.
   (a hint or a `role="alert"` error, always with an `id` so a control can point
   at it).
 - **`ui/src/components/ui/submit-gate-notice.tsx`** — the adjacent explanation.
+- **`ui/src/lib/refusal.ts`** — `describeRefusal(reason, remedy)`, the Refused
+  sentence itself. The reason for the fourth module, per the rule above:
+  `CW-20260825-0073` added two refusal *producers* that do not arrive on the
+  WebSocket error channel `describeServerError` switches on — a renderer whose
+  trust class this build will not dispatch, and a sandboxed payload over its
+  declared limit. Both are Refused, both are red and `role="alert"`, and neither
+  has a `ServerError` to map. The alternative to a shared function was retyping
+  the sentence in three files with three sets of punctuation, which is how the
+  two surfaces started blurring in the first place. `describeServerError` still
+  owns the *mapping* from wire code to copy; this owns only the shape.
 
 `ui/src/components/envelopes/ApprovalQueue.tsx` is the worked exemplar. Copy its
 shape.

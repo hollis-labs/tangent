@@ -1,0 +1,34 @@
+-- Renderer trust classes on the effect audit trail (CW-20260825-0073),
+-- completing docs/adr/0003-definition-and-package-ownership.md §2.3 and §2.7.
+--
+-- Migration 0009 gave every effect request a receipt carrying a `mediation`
+-- column: `host` when the host is the only possible actor, `declared` when the
+-- browser hands the renderer the same power directly. That column was correct
+-- and, on its own, uninterpretable — because after CW-20260825-0073 mediation
+-- is not a property of a capability. It is a property of a capability *and the
+-- isolation the renderer runs in*.
+--
+-- `clipboard.write` with `mediation = 'host'` is a true row about a renderer in
+-- an opaque-origin sandboxed frame, which cannot reach `navigator.clipboard`
+-- at all, and a false one about a renderer in Tangent's own tree, which can.
+-- Without the isolation beside it the two rows are byte-identical. These two
+-- columns are what make the mediation column readable a year from now, and
+-- they are on the receipt rather than looked up later because the definition
+-- registry is mutable and an audit row is not: re-materializing a definition
+-- under a different trust class must not retroactively change what an old
+-- receipt appears to say.
+--
+-- `renderer_trust_class` is the class Tangent *granted*, never the class the
+-- manifest requested. A request the trust evidence does not support is
+-- quarantined at materialization and never reaches an interaction, so a
+-- receipt can only ever carry a granted class.
+--
+-- Both default to '' rather than NULL for the same reason every other text
+-- column in this schema does: a receipt written before this migration recorded
+-- a real decision under the pre-0073 model, and rewriting history to claim it
+-- knew an isolation it did not would be worse than an empty string that reads
+-- as "not recorded". The immutability trigger on effect_receipts means these
+-- columns are only ever written at insert.
+
+ALTER TABLE effect_receipts ADD COLUMN renderer_trust_class TEXT NOT NULL DEFAULT '';
+ALTER TABLE effect_receipts ADD COLUMN renderer_isolation TEXT NOT NULL DEFAULT '';

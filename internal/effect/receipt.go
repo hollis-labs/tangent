@@ -97,6 +97,17 @@ type Receipt struct {
 	// reader of an audit trail can tell a barrier from a declaration without
 	// consulting a table elsewhere.
 	Mediation Mediation `json:"mediation"`
+	// TrustClass and Isolation are the renderer trust class the definition was
+	// granted and the place that class runs.
+	//
+	// They are on the receipt because without them Mediation is not
+	// interpretable. `clipboard.write` with `mediation: host` is a true
+	// statement about a sandboxed frame and a false one about Tangent's own
+	// tree, and an audit row that carried only the answer would be
+	// indistinguishable between the two. Recording the isolation is what makes
+	// the mediation column readable a year later.
+	TrustClass string    `json:"renderer_trust_class,omitempty"`
+	Isolation  Isolation `json:"renderer_isolation,omitempty"`
 	// HandleID is the scope the effect was requested against, when one
 	// applies.
 	HandleID string `json:"handle_id,omitempty"`

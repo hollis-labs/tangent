@@ -118,16 +118,18 @@ const (
 	// effect. These are the capabilities that are genuinely enforced.
 	MediationHost Mediation = "host"
 
-	// MediationDeclared means the browser hands a same-origin renderer the
-	// same power directly — `navigator.clipboard`, an `<a download>` over a
-	// Blob, a bare `fetch()`. Routing it through the host produces a
-	// declaration, an audit trail, and a scoped path for renderers that
-	// cooperate; it is not a barrier against one that does not.
+	// MediationDeclared means the browser hands a renderer in this isolation
+	// the same power directly — `navigator.clipboard`, an `<a download>` over
+	// a Blob. Routing it through the host produces a declaration, an audit
+	// trail, and a scoped path for renderers that cooperate; it is not a
+	// barrier against one that does not.
 	//
-	// It becomes MediationHost for a renderer that CW-20260825-0073 places in
-	// a sandboxed trust class with a CSP, because then the browser stops
-	// handing it the power. Until that lands, nothing here may be described
-	// as enforced.
+	// It is no longer a property of a capability alone. CW-20260825-0073 made
+	// mediation a function of the capability *and* the isolation the renderer
+	// runs in — see [MediationFor] — because the same `clipboard.write` is a
+	// bare DOM call from Tangent's own origin and an impossibility from an
+	// opaque-origin frame. A receipt records the answer for the isolation the
+	// request actually came from.
 	MediationDeclared Mediation = "declared"
 
 	// MediationUnimplemented means this build ships no executor at all. The
@@ -158,10 +160,20 @@ var catalog = map[Capability]struct {
 	// merged-namespace mistake.
 	FileWriteScoped: {authz.Draft, MediationHost},
 
-	// The browser gives a same-origin renderer all three of these directly.
+	// `connect-src 'self'` on the Tangent document means no renderer, in any
+	// isolation, can reach an external origin itself. The host is the only
+	// possible actor, in every isolation, so this row is unconditionally
+	// enforced — and, with no performer registered, unconditionally refused
+	// with `effect_unavailable` rather than admitted and left to the renderer.
+	NetworkFetch: {authz.View, MediationHost},
+
+	// The browser still gives a *main-origin* renderer these two directly:
+	// `navigator.clipboard` is governed by Permissions Policy rather than CSP,
+	// and no CSP directive covers a download at all. [MediationFor] is where
+	// that stops being true — inside a sandboxed frame both are impossible, so
+	// the entry here is the main-origin answer and the weakest of the two.
 	ExportDownload: {authz.View, MediationDeclared},
 	ClipboardWrite: {authz.View, MediationDeclared},
-	NetworkFetch:   {authz.View, MediationDeclared},
 
 	// Nothing holds `administer` in the shipped binary (ADR 0004 §7), and
 	// there is no executor. Both facts are load-bearing; neither is a
@@ -191,14 +203,110 @@ func ObjectPrecondition(capability Capability) authz.Capability {
 	return entry.precondition
 }
 
-// MediationOf reports how much of a capability this build enforces. An unknown
-// capability is [MediationUnimplemented].
+// MediationOf reports how much of a capability this build enforces for a
+// renderer running in Tangent's own origin. An unknown capability is
+// [MediationUnimplemented].
+//
+// It is [MediationFor] at [IsolationMainOrigin], kept as its own name because
+// that is the weakest answer the model gives and therefore the safe one for a
+// caller that does not know the renderer's isolation.
 func MediationOf(capability Capability) Mediation {
+	return MediationFor(capability, IsolationMainOrigin)
+}
+
+// Isolation is where the requesting renderer's code runs.
+//
+// It mirrors definition.Isolation value for value and is deliberately a
+// separate type in a separate package: internal/definition depends on nothing
+// but the standard library and a YAML parser, and internal/effect must not be
+// the thing that changes that. TestIsolationVocabulariesAgree holds the two
+// sets equal by value across the boundary.
+type Isolation string
+
+const (
+	// IsolationMainOrigin is Tangent's own document origin.
+	IsolationMainOrigin Isolation = "main-origin"
+	// IsolationHostPrimitive is a declarative renderer: no publisher code.
+	IsolationHostPrimitive Isolation = "host-primitive"
+	// IsolationSandboxedFrame is an opaque-origin frame with no
+	// `allow-same-origin`, no `allow-downloads`, no `allow-forms`, and a
+	// `connect-src 'none'` policy.
+	IsolationSandboxedFrame Isolation = "sandboxed-frame"
+	// IsolationExternalSurface is a handoff to another application.
+	IsolationExternalSurface Isolation = "external-surface"
+)
+
+// MediationFor reports how much of a capability the host enforces for a
+// renderer in one isolation.
+//
+// This is the function CW-20260825-0077 said it could not write. Its report
+// listed `clipboard.write`, `export.download`, and `network.fetch` as
+// permanently `declared`, because "the browser hands a same-origin renderer
+// those powers directly and there is no document CSP". Both halves of that
+// sentence were true and only one of them is still true, so the answer is now
+// a table with two axes rather than one:
+//
+//	                    main-origin   host-primitive  sandboxed-frame  external
+//	file.read_scoped    host          host            host             host
+//	file.write_scoped   host          host            host             host
+//	evidence.preview    host          host            host             host
+//	network.fetch       host          host            host             host
+//	export.download     declared      host            host             host
+//	clipboard.write     declared      host            host             host
+//	process.exec        unimplemented (every isolation)
+//
+// The three interesting cells, and exactly what makes each one true:
+//
+//   - **`network.fetch` at main-origin is now genuinely enforced.** The
+//     document carries `connect-src 'self' ws://<host> wss://<host>`
+//     (internal/server/security.go). CSP's `connect-src` is the one directive
+//     that governs `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, and
+//     `navigator.sendBeacon` alike, so a renderer in Tangent's origin can no
+//     longer reach an external origin at all. `network.fetch` means "retrieve
+//     an external origin's bytes"; the browser now refuses that, and the host
+//     is the only remaining possible actor. There is no performer registered
+//     for it, so the honest consequence is that a declared and granted
+//     `network.fetch` is refused with `effect_unavailable` instead of being
+//     admitted and silently performed by the renderer.
+//
+//   - **`clipboard.write` at main-origin is still only declared.** CSP has no
+//     clipboard directive; the control is Permissions Policy, whose
+//     `clipboard-write` allowlist Tangent sets to `(self)`. `self` is exactly
+//     the main origin, so the policy denies every frame and permits the host's
+//     own tree — which is the enforcement a sandboxed renderer meets and the
+//     absence of one a main-origin renderer meets. Setting it to `()` would
+//     enforce it, and would break three shipped core-trusted components that
+//     copy to the clipboard today; that is a capability backfill, not a trust
+//     boundary, and it is named in the limitations rather than done here.
+//
+//   - **`export.download` at main-origin is still only declared.** A
+//     same-origin renderer can build a Blob and click an `<a download>`. No
+//     CSP directive covers downloads; the only browser control is the `sandbox`
+//     token `allow-downloads`, which is a property of a frame and cannot be
+//     applied to the top-level document without sandboxing the whole
+//     application.
+//
+// `host-primitive` returns `host` for every implemented capability for a
+// different reason than the frame does: there is no publisher code in that
+// isolation at all, so nothing but the host can act.
+//
+// The zero Isolation is [IsolationMainOrigin]. An unset field must never buy a
+// stronger claim than the model has evidence for, and main-origin is the
+// weakest cell in every row.
+func MediationFor(capability Capability, isolation Isolation) Mediation {
 	entry, ok := catalog[capability]
 	if !ok {
 		return MediationUnimplemented
 	}
-	return entry.mediation
+	if entry.mediation != MediationDeclared {
+		return entry.mediation
+	}
+	switch isolation {
+	case IsolationMainOrigin, "":
+		return MediationDeclared
+	default:
+		return MediationHost
+	}
 }
 
 // Capabilities returns every known effect capability, sorted. It is what the

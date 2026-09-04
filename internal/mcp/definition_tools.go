@@ -63,25 +63,36 @@ type definitionRegistryDiagnosticsInput struct{}
 // definitionSummary is one row of the registry listing: identity, ownership,
 // renderer binding, state, and digests — never schema bodies.
 type definitionSummary struct {
-	Kind               string `json:"kind"`
-	Version            string `json:"version"`
-	Revision           int64  `json:"revision"`
-	Title              string `json:"title,omitempty"`
-	Publisher          string `json:"publisher"`
-	PackageID          string `json:"package_id"`
-	PackageVersion     string `json:"package_version"`
-	OwnershipClass     string `json:"ownership_class"`
-	ResponseKind       string `json:"response_kind"`
-	State              string `json:"materialization_state"`
-	StateReason        string `json:"state_reason,omitempty"`
-	ErrorCode          string `json:"error_code,omitempty"`
-	Available          bool   `json:"available"`
-	RendererID         string `json:"renderer_id"`
-	RendererClass      string `json:"renderer_class"`
+	Kind           string `json:"kind"`
+	Version        string `json:"version"`
+	Revision       int64  `json:"revision"`
+	Title          string `json:"title,omitempty"`
+	Publisher      string `json:"publisher"`
+	PackageID      string `json:"package_id"`
+	PackageVersion string `json:"package_version"`
+	OwnershipClass string `json:"ownership_class"`
+	ResponseKind   string `json:"response_kind"`
+	State          string `json:"materialization_state"`
+	StateReason    string `json:"state_reason,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	Available      bool   `json:"available"`
+	RendererID     string `json:"renderer_id"`
+	RendererClass  string `json:"renderer_class"`
+	// RendererTrustClass is the class Tangent *granted*. A requested class the
+	// trust evidence did not support is quarantined rather than downgraded, so
+	// this field is empty exactly when the evidence gate refused.
 	RendererTrustClass string `json:"renderer_trust_class"`
-	TrustAssurance     string `json:"trust_assurance"`
-	ManifestDigest     string `json:"manifest_digest"`
-	ContractDigest     string `json:"contract_digest"`
+	// RendererIsolation is where that class runs the renderer, and it is the
+	// field that makes a trust class mean something to a reader: `main-origin`
+	// carries Tangent's own authority, `sandboxed-frame` carries none.
+	RendererIsolation string `json:"renderer_isolation"`
+	// AmbientHostAuthority is the same fact as a boolean, so a caller checking
+	// "does untrusted code run with host authority here" does not have to know
+	// the isolation vocabulary to answer it.
+	AmbientHostAuthority bool   `json:"renderer_ambient_host_authority"`
+	TrustAssurance       string `json:"trust_assurance"`
+	ManifestDigest       string `json:"manifest_digest"`
+	ContractDigest       string `json:"contract_digest"`
 }
 
 type definitionRegistryListResult struct {
@@ -138,6 +149,16 @@ type definitionDetail struct {
 	RequiredCapabilities []definition.Capability `json:"required_renderer_effect_capabilities"`
 	GrantedCapabilities  []definition.Capability `json:"granted_renderer_effect_capabilities"`
 	DeniedCapabilities   []definition.Capability `json:"denied_renderer_effect_capabilities,omitempty"`
+	// TrustDeniedCapabilities is what the *trust class* refuses, which is a
+	// different fact from host policy declining to grant something and is
+	// reported separately so an operator is not told to widen a policy that
+	// would not help. The ceiling is evaluated before the grant, so nothing
+	// here can be recovered by an operator.
+	TrustDeniedCapabilities []definition.Capability `json:"trust_denied_renderer_effect_capabilities,omitempty"`
+	// PermittedCapabilities is the whole ceiling for this renderer's trust
+	// class: what a manifest in that class may ever declare, whether or not
+	// this one does.
+	PermittedCapabilities []string `json:"trust_class_permitted_capabilities,omitempty"`
 
 	DraftCustody string `json:"draft_custody"`
 	// RetentionClass is nil when the publisher authored nothing, which is the
@@ -312,9 +333,10 @@ func (s *Server) handleDefinitionGet(
 		RendererEntry:       manifest.Renderer.Entry,
 		RendererAssetDigest: manifest.Renderer.AssetDigest,
 
-		RequiredCapabilities: nonNilCapabilities(manifest.RequiredCapabilities),
-		GrantedCapabilities:  nonNilCapabilities(materialized.GrantedCapabilities),
-		DeniedCapabilities:   materialized.DeniedCapabilities,
+		RequiredCapabilities:    nonNilCapabilities(manifest.RequiredCapabilities),
+		GrantedCapabilities:     nonNilCapabilities(materialized.GrantedCapabilities),
+		DeniedCapabilities:      materialized.DeniedCapabilities,
+		TrustDeniedCapabilities: materialized.TrustDeniedCapabilities,
 
 		DraftCustody:                string(manifest.DraftCustody),
 		RetentionClass:              manifest.RetentionClass,
@@ -338,6 +360,9 @@ func (s *Server) handleDefinitionGet(
 	if fallback, ok := materialized.SafeFallback(); ok {
 		detail.FallbackRendererID = fallback.RendererID
 		detail.FallbackDegradation = string(fallback.Degradation)
+	}
+	if profile, ok := definition.TrustProfileFor(manifest.Renderer.TrustClass); ok {
+		detail.PermittedCapabilities = profile.Capabilities
 	}
 	detail.RequestSchema = projectSchema(
 		material.RequestSchema, materialized.Derived.RequestSchemaDigest, input.IncludeSchemas, true)
@@ -408,10 +433,12 @@ func summarize(materialized definition.Materialized) definitionSummary {
 		State: string(materialized.State), StateReason: materialized.StateReason,
 		ErrorCode: materialized.ErrorCode, Available: materialized.State.Servable(),
 		RendererID: manifest.Renderer.ID, RendererClass: string(manifest.Renderer.Class),
-		RendererTrustClass: string(manifest.Renderer.TrustClass),
-		TrustAssurance:     string(materialized.Assurance),
-		ManifestDigest:     materialized.Derived.ManifestDigest,
-		ContractDigest:     materialized.Derived.ContractDigest,
+		RendererTrustClass:   string(materialized.TrustClass),
+		RendererIsolation:    string(materialized.Isolation),
+		AmbientHostAuthority: materialized.Isolation.AmbientHostAuthority(),
+		TrustAssurance:       string(materialized.Assurance),
+		ManifestDigest:       materialized.Derived.ManifestDigest,
+		ContractDigest:       materialized.Derived.ContractDigest,
 	}
 }
 

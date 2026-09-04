@@ -112,15 +112,30 @@ capability, in the type system rather than in a comment:
 
 | Mediation | Meaning | Capabilities |
 |---|---|---|
-| `host` | The host is the only possible actor. Refusing the request refuses the effect. **Genuinely enforced.** | `file.read_scoped`, `file.write_scoped`, `evidence.preview` |
-| `declared` | The browser hands a same-origin renderer the same power directly — `navigator.clipboard`, an `<a download>` over a Blob, a bare `fetch()`. The grant is a declaration, an audit trail, and a scoped path for renderers that cooperate. **Not a barrier against one that does not.** | `export.download`, `clipboard.write`, `network.fetch` |
+| `host` | The host is the only possible actor. Refusing the request refuses the effect. **Genuinely enforced.** | `file.read_scoped`, `file.write_scoped`, `evidence.preview`, `network.fetch` |
+| `declared` | The browser hands a *main-origin* renderer the same power directly — `navigator.clipboard`, an `<a download>` over a Blob. The grant is a declaration, an audit trail, and a scoped path for renderers that cooperate. **Not a barrier against one that does not.** | `export.download`, `clipboard.write` |
 | `unimplemented` | This build ships no executor. Every request is refused with `effect_unavailable`. | `process.exec` |
 
-A `declared` capability becomes `host` for a renderer that
-`CW-20260825-0073` places in a sandboxed trust class with a CSP, because then
-the browser stops handing it the power. **Until that lands, nothing in the
-`declared` row may be described as enforced.** The receipt says `declared` so
-an audit trail cannot be misread as one.
+**`CW-20260825-0073` landed, and mediation is no longer a property of a
+capability alone.** It is `effect.MediationFor(capability, isolation)`, and the
+table above is the `main-origin` column. Two things changed:
+
+- `network.fetch` moved to `host` in **every** isolation, because the Tangent
+  document now carries `connect-src 'self' ws://<host> wss://<host>` and no
+  renderer can reach an external origin. With no performer registered, a
+  declared and granted `network.fetch` is refused with `effect_unavailable`
+  rather than admitted — the honest consequence of the host being the only
+  possible actor and having no executor.
+- `export.download` and `clipboard.write` became `host` inside a
+  `sandboxed-frame` isolation — no `allow-downloads` token, and a
+  `Permissions-Policy: clipboard-write=(self)` an opaque origin cannot satisfy —
+  and stayed `declared` in the main origin, where no CSP directive covers
+  either.
+
+Every receipt now carries `renderer_trust_class` and `renderer_isolation`
+(migration `0010`) because `mediation` alone is not interpretable: the same
+value is a true statement about one isolation and a false one about another. See
+[`renderer-trust-classes.md`](renderer-trust-classes.md).
 
 The `MediationHost` row is real because Tangent has no other filesystem, exec,
 or outbound-HTTP path at all: there is exactly one filesystem write in the Go
@@ -238,21 +253,29 @@ implementer extends that function rather than inventing a second pattern.
 
 Stated plainly, because a stub that looks enforced is worse than an honest gap.
 
-1. **`clipboard.write` cannot be enforced.** `navigator.clipboard.writeText` is
-   the renderer's own DOM API. The host can declare, scope, and audit it; it
-   cannot prevent it. Four shipped components call it directly today and this
-   change does not stop them.
+1. **`clipboard.write` cannot be enforced in the main origin.** CSP has no
+   clipboard directive. `CW-20260825-0073` added
+   `Permissions-Policy: clipboard-write=(self)`, which denies every embedded
+   frame — so the capability *is* enforced for a `sandboxed-code` renderer — but
+   `self` is Tangent's own tree, where three shipped components still call
+   `navigator.clipboard.writeText` directly without declaring the capability.
+   Tightening the allowlist to `()` would enforce it and break them; that is a
+   capability backfill, not a trust boundary.
 
-2. **`export.download` cannot be enforced.** A same-origin renderer can build a
-   `Blob` and an `<a download>` without asking. Five shipped components do.
-   What the host *can* control is the half it owns — the caller-supplied
-   filename — and that is now sanitized.
+2. **`export.download` cannot be enforced in the main origin.** A same-origin
+   renderer can build a `Blob` and an `<a download>` without asking, and no CSP
+   directive covers downloads. The only browser control is the `sandbox` token
+   `allow-downloads`, which is a property of a frame — so this too is enforced
+   for a sandboxed renderer and not for a main-origin one. Five shipped
+   components build downloads. What the host *can* control is the half it owns —
+   the caller-supplied filename — and that is sanitized.
 
-3. **`network.fetch` cannot be enforced without a CSP.** There is no
-   `Content-Security-Policy` on the SPA document at all, so a renderer can
-   `fetch()` any origin. Closing the whiteboard-asset hole at the *authority*
-   (rejecting the source string) is real and lands here; closing it at the
-   *browser* needs a document CSP, which belongs with renderer trust classes.
+3. ~~**`network.fetch` cannot be enforced without a CSP.**~~ **Resolved by
+   `CW-20260825-0073`.** The SPA document now carries a
+   `Content-Security-Policy` whose `connect-src` admits this origin and its own
+   WebSocket schemes and nothing else, so no renderer in any isolation can reach
+   an external origin. Closing the whiteboard-asset hole at the *authority*
+   still landed here; the browser half is now closed too.
 
 4. **`process.exec` has no executor and is not implemented.** It is reserved so
    the manifest format does not change later. It is refused twice over.

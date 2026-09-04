@@ -128,11 +128,33 @@ type Materialized struct {
 	// host policy. Persisted into the binding so a resolution records what
 	// the renderer could actually do.
 	GrantedCapabilities []Capability `json:"granted_capabilities"`
-	// DeniedCapabilities records what was asked for and refused, so a
-	// quarantine explains itself.
+	// DeniedCapabilities records what was asked for and refused by *host
+	// policy*, so a quarantine explains itself.
 	DeniedCapabilities []Capability `json:"denied_capabilities,omitempty"`
+	// TrustDeniedCapabilities records what the renderer's own trust class
+	// refuses, which is a different fact from host policy declining to grant
+	// it and is reported separately for the same reason the broker has two
+	// refusal codes for `undeclared` and `denied`: an operator who widens
+	// policy will not widen this one, and needs to be told so.
+	TrustDeniedCapabilities []Capability `json:"trust_denied_capabilities,omitempty"`
 	// QuarantineReason is set only when State is StateQuarantined (§2.7).
 	QuarantineReason string `json:"quarantine_reason,omitempty"`
+
+	// TrustClass is the class Tangent *granted*, which is the manifest's
+	// request only when the trust evidence supported it. A request the
+	// evidence does not support is quarantined rather than downgraded — a
+	// silently demoted renderer is a renderer running somewhere its author did
+	// not design for, and ADR 0003 §8 C2 makes a change of class a version
+	// bump rather than something a host does behind the publisher's back.
+	//
+	// It is empty when the evidence check refused, and populated on every
+	// state reached after it, including a quarantine for a capability the
+	// class does not permit — where naming the class is the explanation.
+	TrustClass TrustClass `json:"renderer_trust_class,omitempty"`
+	// Isolation is where the granted class runs the renderer. It is the fact
+	// every browser-side and effect-side enforcement decision reads, and it is
+	// derived here rather than by each consumer so there is one answer.
+	Isolation Isolation `json:"renderer_isolation,omitempty"`
 
 	VerifiedAt  time.Time `json:"verified_at"`
 	HostVersion string    `json:"host_version"`
@@ -194,10 +216,26 @@ func Materialize(manifest *Manifest, material Material, policy HostPolicy) (Mate
 	if !manifest.Trust.Assurance.Grantable() {
 		out.Assurance = manifest.Trust.Assurance
 		return out.quarantined(
-			fmt.Sprintf("trust.assurance %q has no verifier in this build", manifest.Trust.Assurance),
-			ErrorCodeCapabilityDenied), nil
+			fmt.Sprintf("trust.assurance %q has no verifier in this build", manifest.Trust.Assurance)), nil
 	}
 	out.Assurance = manifest.Trust.Assurance
+
+	// Trust evidence is evaluated against the *requested class*, not against
+	// the manifest in general. This is the step ADR 0003 §2.3 describes as
+	// "a manifest requests a class; Tangent policy decides", and until
+	// CW-20260825-0073 it had no implementation at all: the field was
+	// validated for spelling and then copied through.
+	profile, known := TrustProfileFor(manifest.Renderer.TrustClass)
+	if !known {
+		return out.quarantined(
+			fmt.Sprintf("renderer.trust_class %q has no profile in this build",
+				manifest.Renderer.TrustClass)), nil
+	}
+	if supported, reason := trustEvidenceSupports(manifest, out.Assurance, profile); !supported {
+		return out.quarantined(reason), nil
+	}
+	out.TrustClass = profile.Class
+	out.Isolation = profile.Isolation
 	out.State = StateVerified
 
 	// verified -> materialized: compatibility ranges. Checked after trust so
@@ -207,15 +245,38 @@ func Materialize(manifest *Manifest, material Material, policy HostPolicy) (Mate
 	}
 	out.State = StateMaterialized
 
-	// materialized -> available: capability intersection, then host switches.
-	granted, denied := intersectCapabilities(manifest.RequiredCapabilities, policy.GrantableCapabilities)
+	// materialized -> available: the trust ceiling, then the host's own
+	// intersection, then host switches.
+	//
+	// The ceiling comes first and the order is the decision. A capability the
+	// renderer's trust class does not permit is refused whatever host policy
+	// says, so an operator who widens `GrantableCapabilities` widens nothing
+	// the class already closed — which is what stops "grant it and see" from
+	// being an escalation path for a sandboxed renderer.
+	if trustDenied := trustCeilingDenials(manifest.RequiredCapabilities, profile); len(trustDenied) > 0 {
+		out.TrustDeniedCapabilities = trustDenied
+		for _, capability := range trustDenied {
+			if capability.Optional {
+				continue
+			}
+			return out.quarantined(
+				fmt.Sprintf("renderer.trust_class %q does not permit required capability %q",
+					profile.Class, capability.ID)), nil
+		}
+	}
+	permitted := make([]Capability, 0, len(manifest.RequiredCapabilities))
+	for _, capability := range manifest.RequiredCapabilities {
+		if profile.Permits(capability.ID) {
+			permitted = append(permitted, capability)
+		}
+	}
+	granted, denied := intersectCapabilities(permitted, policy.GrantableCapabilities)
 	out.GrantedCapabilities = granted
 	out.DeniedCapabilities = denied
 	for _, capability := range denied {
 		if !capability.Optional {
 			return out.quarantined(
-				fmt.Sprintf("required capability %q is not granted by host policy", capability.ID),
-				ErrorCodeCapabilityDenied), nil
+				fmt.Sprintf("required capability %q is not granted by host policy", capability.ID)), nil
 		}
 	}
 	if policy.DisabledKinds[manifest.Kind] {
@@ -298,11 +359,20 @@ func (m Materialized) incompatible(reason string) Materialized {
 	return m
 }
 
-func (m Materialized) quarantined(reason, code string) Materialized {
+// quarantined is trust and capability evaluation refusing a definition.
+//
+// It takes no error code because there is only one: ADR 0003 §8 C7 reuses the
+// upstream vocabulary rather than extending it, and every reason a definition
+// reaches this state — an assurance with no verifier, a trust class the
+// evidence does not support, a capability the class does not permit, a
+// capability host policy did not grant — is `capability-denied` in that
+// vocabulary. The reason string carries which one; the code carries that it was
+// refused rather than merely unavailable.
+func (m Materialized) quarantined(reason string) Materialized {
 	m.State = StateQuarantined
 	m.StateReason = reason
 	m.QuarantineReason = reason
-	m.ErrorCode = code
+	m.ErrorCode = ErrorCodeCapabilityDenied
 	return m
 }
 

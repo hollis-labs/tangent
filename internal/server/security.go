@@ -18,8 +18,8 @@ import (
 // server-held session named by an HttpOnly cookie, which a link does not carry
 // and a log line cannot leak.
 
-// securityHeaders applies the two response headers that belong on every
-// response this process emits.
+// securityHeaders applies the response headers that belong on every response
+// this process emits.
 //
 // `Referrer-Policy: no-referrer` because `design-iteration` renders untrusted
 // agent-authored HTML and evidence payloads may carry links: locators are not
@@ -27,13 +27,32 @@ import (
 // `X-Content-Type-Options: nosniff` because the same untrusted material must
 // never be re-typed by a browser's content sniffer.
 //
+// `Content-Security-Policy` and `Permissions-Policy` are the browser-side half
+// of the renderer trust classes, and they are why three effect capabilities
+// stopped being declarations (see csp.go, which explains each directive and
+// each thing it deliberately does not do). `X-Frame-Options` duplicates the
+// policy's `frame-ancestors` for browsers that read only the older header.
+//
+// `Cross-Origin-Opener-Policy` severs the `window.opener` relationship a page
+// that navigated to Tangent would otherwise keep, and
+// `Cross-Origin-Resource-Policy` stops another site from loading Tangent's
+// responses as subresources. Both are free on a single-origin loopback
+// application and both close a class of cross-origin read that no capability
+// check would ever see.
+//
 // It wraps the mux rather than each route: a header that is applied per route
 // is a header that the next route forgets.
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(devFrontendURL string, next http.Handler) http.Handler {
+	permissions := permissionsPolicy()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := w.Header()
 		header.Set("Referrer-Policy", "no-referrer")
 		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("Content-Security-Policy", contentSecurityPolicy(r, devFrontendURL))
+		header.Set("Permissions-Policy", permissions)
+		header.Set("X-Frame-Options", "DENY")
+		header.Set("Cross-Origin-Opener-Policy", "same-origin")
+		header.Set("Cross-Origin-Resource-Policy", "same-origin")
 		next.ServeHTTP(w, r)
 	})
 }

@@ -101,6 +101,90 @@ var responseSchemaBackfilled = []string{
 	FormCollectEnvelopeType,
 }
 
+// TestEveryShippedRendererIsExplicitlyClassified is CW-20260825-0073's
+// acceptance criterion 5.
+//
+// Every shipped manifest already *spelled* a trust class before this task; what
+// it did not have was a consequence. The class now decides an isolation, a
+// capability ceiling, and — through effect.MediationFor — whether an effect is
+// enforced or merely declared. So the classification is written out here kind
+// by kind rather than derived from the manifests, which would assert nothing:
+// ADR 0003 §8 C2 makes raising a trust class a major version bump, and this
+// list is what turns that rule into a failing build.
+func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
+	t.Parallel()
+	// Seventeen kinds draw with React components reviewed and shipped in
+	// Tangent's own tree. `tangent.whiteboard` is portfolio-trusted because it
+	// embeds tldraw — a third-party editor whose code Tangent hosts but does
+	// not author — and `tangent.design-iteration` is the one renderer that
+	// executes agent-authored markup, so it is the only sandboxed-code class in
+	// the distribution.
+	classified := map[string]definition.TrustClass{
+		"tangent.approval-queue":     definition.TrustCoreTrusted,
+		"tangent.block-draft":        definition.TrustCoreTrusted,
+		"tangent.dashboard":          definition.TrustCoreTrusted,
+		"tangent.design-iteration":   definition.TrustSandboxedCode,
+		"tangent.diff-review":        definition.TrustCoreTrusted,
+		"tangent.feedback":           definition.TrustCoreTrusted,
+		"tangent.file-picker":        definition.TrustCoreTrusted,
+		"tangent.form-collect":       definition.TrustCoreTrusted,
+		"tangent.hitl-item":          definition.TrustCoreTrusted,
+		"tangent.interview-question": definition.TrustCoreTrusted,
+		"tangent.output-render":      definition.TrustCoreTrusted,
+		"tangent.progress-panel":     definition.TrustCoreTrusted,
+		"tangent.prose-revision":     definition.TrustCoreTrusted,
+		"tangent.spreadsheet-review": definition.TrustCoreTrusted,
+		"tangent.synthesis-notes":    definition.TrustCoreTrusted,
+		"tangent.triage":             definition.TrustCoreTrusted,
+		"tangent.whiteboard":         definition.TrustPortfolioTrusted,
+		"tangent.wizard":             definition.TrustCoreTrusted,
+	}
+
+	svc := registeredService(t)
+	materialized := svc.MaterializedDefinitions()
+	if len(materialized) != len(classified) {
+		t.Fatalf("materialized %d definitions, classified %d: a new kind needs a line here",
+			len(materialized), len(classified))
+	}
+	for _, item := range materialized {
+		kind := item.Manifest.Kind
+		want, listed := classified[kind]
+		if !listed {
+			t.Errorf("%s has no reviewed trust class in this test", kind)
+			continue
+		}
+		// The *granted* class, not the requested one. They are equal on an
+		// available definition by construction — a request the evidence does
+		// not support is quarantined — and asserting the granted one is what
+		// makes that construction load-bearing rather than incidental.
+		if item.TrustClass != want {
+			t.Errorf("%s granted trust class = %q, want %q", kind, item.TrustClass, want)
+		}
+		if item.Manifest.Renderer.TrustClass != want {
+			t.Errorf("%s requests trust class %q, want %q",
+				kind, item.Manifest.Renderer.TrustClass, want)
+		}
+		if got := definition.IsolationFor(want); item.Isolation != got {
+			t.Errorf("%s isolation = %q, want %q", kind, item.Isolation, got)
+		}
+		// Nothing in v0.x declares an effect capability, so nothing is denied
+		// by either gate. A kind that starts declaring one has to come through
+		// this test, which is where a reviewer will see the ceiling.
+		if len(item.TrustDeniedCapabilities) != 0 {
+			t.Errorf("%s has capabilities its trust class refuses: %v",
+				kind, item.TrustDeniedCapabilities)
+		}
+	}
+
+	// The one renderer that runs untrusted code runs it nowhere near Tangent's
+	// own authority. This is acceptance criterion 1 stated against the shipped
+	// set rather than against the model.
+	if definition.IsolationFor(definition.TrustSandboxedCode).AmbientHostAuthority() {
+		t.Error("tangent.design-iteration would execute agent-authored markup with " +
+			"Tangent main-origin authority")
+	}
+}
+
 func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 	t.Parallel()
 	// The kinds that ship a browser-local draft-storage module today. ADR 0003

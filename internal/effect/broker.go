@@ -58,6 +58,17 @@ type Binding struct {
 	BindingDigest string
 	Required      []Capability
 	Granted       []Capability
+	// TrustClass and Isolation are the granted renderer trust class and the
+	// place it runs, both pinned on the interaction record at submission time
+	// (CW-20260825-0073). They are copied from the record like everything else
+	// here and never read from the request: a renderer that could name its own
+	// isolation could name the one whose mediation table flatters it.
+	//
+	// TrustClass is carried for the audit trail only — the broker never
+	// branches on it, because the enforceable fact is the isolation and a
+	// class is a label for one. Isolation selects the [MediationFor] column.
+	TrustClass string
+	Isolation  Isolation
 }
 
 // Intent is the participant's evidence that they asked for this.
@@ -333,7 +344,9 @@ func (b *Broker) Request(ctx context.Context, request Request) (Result, error) {
 			Capability: request.Capability,
 			Decision:   DecisionRefused,
 			Code:       CodeInvalidRequest,
-			Mediation:  MediationOf(request.Capability),
+			Mediation:  MediationFor(request.Capability, request.Binding.Isolation),
+			TrustClass: request.Binding.TrustClass,
+			Isolation:  request.Binding.Isolation,
 			IssuedAt:   now,
 		}}, nil
 	}
@@ -381,8 +394,8 @@ func (b *Broker) Request(ctx context.Context, request Request) (Result, error) {
 		return refuse(CodeCapabilityDenied)
 	}
 
-	// 5. Mediation.
-	mediation := MediationOf(request.Capability)
+	// 5. Mediation, in the isolation this renderer actually runs in.
+	mediation := MediationFor(request.Capability, request.Binding.Isolation)
 	if mediation == MediationUnimplemented {
 		return refuse(CodeUnavailable)
 	}
@@ -542,7 +555,9 @@ func (b *Broker) receipt(request Request, now time.Time, decision Decision, code
 		Capability:       request.Capability,
 		Decision:         decision,
 		Code:             code,
-		Mediation:        MediationOf(request.Capability),
+		Mediation:        MediationFor(request.Capability, request.Binding.Isolation),
+		TrustClass:       strings.TrimSpace(request.Binding.TrustClass),
+		Isolation:        request.Binding.Isolation,
 		HandleID:         strings.TrimSpace(request.HandleID),
 		InteractionID:    strings.TrimSpace(request.InteractionID),
 		ParticipantScope: authz.Normalize(request.Principal.Scope),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
 )
 
@@ -41,12 +42,23 @@ func (s *Service) ResolveEffectContext(
 	if err != nil {
 		return effect.Binding{}, "", err
 	}
+	// The trust class comes from the pin too, and the isolation is derived
+	// from it rather than stored beside it. That is deliberate: storing both
+	// would let a record exist whose class and isolation disagree, and the
+	// mapping is a host decision (definition.IsolationFor) that must be the
+	// same one materialization applied. A pinned class this build no longer
+	// implements resolves to `external-surface` — the position with no
+	// Tangent-granted authority — so an unrecognized pin never buys the main
+	// origin by omission.
+	trustClass := record.Definition.RendererTrustClass
 	return effect.Binding{
 		Kind:          record.Definition.Kind,
 		Version:       record.Definition.Version,
 		BindingDigest: record.Definition.Digest,
 		Required:      effect.CapabilitiesFromManifestJSON(record.Definition.RequiredCapabilities),
 		Granted:       effect.CapabilitiesFromManifestJSON(record.Definition.GrantedCapabilities),
+		TrustClass:    trustClass,
+		Isolation:     effect.Isolation(definition.IsolationFor(definition.TrustClass(trustClass))),
 	}, record.CallerScope, nil
 }
 
