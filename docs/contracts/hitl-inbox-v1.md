@@ -9,7 +9,7 @@
 **Decision basis:** [ADR 0001](../adr/0001-lifecycle-boundaries.md)
 
 **Machine-readable contract:**
-[`hitl_item_schema.json`](../../internal/envelope/extensions/hitl_item_schema.json)
+[`packages/tangent.hitl/hitl-item/request.schema.json`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json)
 
 This contract defines one item in Tangent's persistent operator-owned `/hitl`
 inbox. It covers approval and persistent-attention requests, participant
@@ -53,6 +53,21 @@ has an explicit object root. TypeScript generation emits the named definitions
 and discriminated unions from their `enum` and `oneOf` constraints. Typed
 conflicts use `HITLStaleRevisionErrorV1` or
 `HITLIdempotencyConflictErrorV1` as applicable.
+
+These entry points are now declared in the package's own
+[`manifest.yaml`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/manifest.yaml)
+under `named_definitions`, so the table above has a machine-readable
+counterpart the registry serves through `tangent.definition_get`. The
+`response_schema` and `error_schema` the manifest references are projections of
+this same bundle — `HITLResponseV1`, and a `oneOf` of the two typed conflicts —
+committed as files and drift-tested against it.
+
+`ui/src/lib/hitl-api.ts` remains hand-written. It carries a
+`@definition-source` stamp over this bundle's `$defs` plus a test asserting the
+match, which is the floor
+[ADR 0003 §4.7](../adr/0003-definition-and-package-ownership.md) accepts when
+full generation is out of scope. A stamp mismatch means the file must be
+reviewed against the new bundle before the stamp is updated.
 
 ## Item request
 

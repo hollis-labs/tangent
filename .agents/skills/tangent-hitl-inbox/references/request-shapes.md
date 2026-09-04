@@ -4,7 +4,7 @@ These shapes target the strict `tangent.hitl-item` contract version `1.0`.
 Unknown fields are rejected. For every field, variant, bound, result, and typed
 error, use [`docs/contracts/hitl-inbox-v1.md`](../../../../docs/contracts/hitl-inbox-v1.md)
 and the embedded
-[`hitl_item_schema.json`](../../../../internal/envelope/extensions/hitl_item_schema.json).
+[`packages/tangent.hitl/hitl-item/request.schema.json`](../../../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json).
 The examples below are executable smoke fixtures. Replace their assertions and
 evidence with facts you actually have; omit optional correlations or evidence
 rather than fabricating an ID, revision, digest, label, or content.

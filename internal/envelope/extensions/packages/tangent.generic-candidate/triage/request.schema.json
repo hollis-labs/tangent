@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "title": "Triage envelope data",
+  "description": "Tangent v0.1 triage payload. Permissive shape: items + optional prompt + optional context fields. v0.3 will tighten when triage upstreams to go-envelopes core.",
+  "properties": {
+    "prompt": {"type": "string", "description": "Optional human-facing instruction shown above the items."},
+    "items": {
+      "type": "array",
+      "description": "Items to triage. Strings are rendered as labels; objects pass through to the frontend untouched.",
+      "items": {
+        "oneOf": [
+          {"type": "string"},
+          {"type": "object"}
+        ]
+      }
+    },
+    "context": {"type": "object", "description": "Free-form context bag (links, metadata) passed through to the frontend."}
+  },
+  "additionalProperties": true
+}

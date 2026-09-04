@@ -248,6 +248,20 @@ func (s *Service) SubmitInteraction(
 	if validationErr := s.catalog.ValidateInteractionRequest(ctx, binding, input.Request); validationErr != nil {
 		return InteractionHandle{}, validationErr
 	}
+	// Retain the exact material this binding was cut from before the record
+	// that pins it exists. ADR 0001 §3 requires an interaction to pin "the
+	// exact definition Tangent used", which is only true for as long as those
+	// bytes can still be found: a later release that bumps this kind's version
+	// would otherwise leave the record pinned to material nothing holds.
+	//
+	// Deliberately outside the record transaction and deliberately first. The
+	// row is content-addressed on the binding digest, so a crash between the
+	// two writes leaves an orphan material row — harmless, and reused verbatim
+	// by the retry. The reverse order would leave a record whose pin cannot be
+	// resolved, which is the failure this exists to prevent.
+	if retainErr := s.catalog.RetainDefinitionMaterial(ctx, binding); retainErr != nil {
+		return InteractionHandle{}, retainErr
+	}
 	result, err := s.store.CreateInteraction(ctx, CreateInteractionParams{
 		ID: input.ID, SurfaceID: input.SurfaceID, CallerScope: input.Caller.Scope,
 		CallerPrincipalRef: input.Caller.PrincipalRef, CallerAuthority: input.Caller.Authority,
@@ -861,4 +875,15 @@ func callerPullTerminalNotification(
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", operation, interaction.ID, interaction.Revision),
 		Policy:         json.RawMessage(`{"delivery":"durable-caller-pull"}`),
 	}
+}
+
+// RetainedDefinitionCount reports how many definitions have durable retained
+// material — the coverage of the replay guarantee in ADR 0001 §3. Surfaced
+// through registry diagnostics so an operator can see that the pins in the
+// record store still have something to resolve against.
+func (s *Service) RetainedDefinitionCount(ctx context.Context) (int64, error) {
+	if s == nil || s.store == nil {
+		return 0, fmt.Errorf("%w: store is required", ErrInvalidRecord)
+	}
+	return s.store.CountRetainedDefinitions(ctx)
 }

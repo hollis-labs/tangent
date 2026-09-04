@@ -50,10 +50,22 @@ func (testDefinitionCatalog) ResolveInteractionDefinition(
 		return DefinitionBinding{}, ErrDefinitionNotFound
 	}
 	return DefinitionBinding{
-		Publisher: "test", Kind: "test.generic", Version: "1.0", Revision: "r1",
+		Publisher: "test", Kind: "test.generic", Version: "1.0", Revision: 1,
 		Digest: "sha256:test-definition", Source: "test", SchemaIdentity: "test.generic@1.0#data",
 		SchemaDigest: "sha256:test-schema", HostVersion: "test", Assurance: "test",
 	}, nil
+}
+
+// RetainDefinitionMaterial is a no-op for the stub catalogs: they synthesize a
+// binding rather than resolving one from registered material, so there is
+// nothing to retain. The production catalog is covered by
+// TestPinnedInteractionReplaysAfterVersionChange.
+func (testDefinitionCatalog) RetainDefinitionMaterial(context.Context, DefinitionBinding) error {
+	return nil
+}
+
+func (unavailableDefinitionCatalog) RetainDefinitionMaterial(context.Context, DefinitionBinding) error {
+	return nil
 }
 
 func (testDefinitionCatalog) ValidateInteractionRequest(

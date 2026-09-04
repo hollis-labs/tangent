@@ -125,9 +125,16 @@ func main() {
 	// Dispatcher is shared across transports. PR 4 registers the
 	// triage handler that bridges to a WebSocket-connected room.
 	dispatcher := envelope.NewDispatcher(envSvc)
+	// One store, shared: it persists the interaction records and, through
+	// interaction.WithRetainedMaterialStore, the exact definition material each
+	// record pins. Those have to be the same database — a pin whose material
+	// lives somewhere the record's own transaction cannot see is a pin that can
+	// go missing.
+	interactionStore := interaction.NewStore(sqlDB)
 	interactionService, interactionErr := interaction.NewService(
-		interaction.NewStore(sqlDB),
-		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion),
+		interactionStore,
+		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion,
+			interaction.WithRetainedMaterialStore(interactionStore)),
 		interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers

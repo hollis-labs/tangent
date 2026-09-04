@@ -519,7 +519,7 @@ func testInteractionParams(surfaceID, callerScope, idempotencyKey, summary strin
 			Publisher:      "hollis-labs/tangent",
 			Kind:           "tangent.hitl-item",
 			Version:        "1.0",
-			Revision:       "1",
+			Revision:       1,
 			Digest:         "sha256:definition",
 			Source:         "built-in",
 			SchemaIdentity: "tangent.hitl-item.request.v1",

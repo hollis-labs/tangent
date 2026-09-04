@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -32,7 +33,11 @@ SELECT i.id, i.surface_id, i.caller_scope, i.caller_principal_ref,
        i.legacy_room_id, i.legacy_envelope_id,
        d.interaction_id, d.publisher, d.kind, d.version, d.revision,
        d.digest, d.source, d.schema_identity, d.schema_digest,
-       d.host_version, d.assurance, d.bound_at
+       d.host_version, d.assurance, d.bound_at,
+       d.manifest_digest, d.contract_digest, d.response_schema_digest,
+       d.package_id, d.package_version, d.ownership_class, d.compatibility_class,
+       d.renderer_id, d.renderer_class, d.renderer_trust_class,
+       d.required_capabilities, d.granted_capabilities, d.materialization_state
 FROM interactions i
 JOIN definition_bindings d ON d.interaction_id = i.id
 `
@@ -119,6 +124,14 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 	var legacyRoomID, legacyEnvelopeID sql.NullString
 	var definitionDigest, schemaIdentity, schemaDigest, hostVersion sql.NullString
 	var definitionBoundAt any
+	// Every ADR 0003 §2.9 identity column is nullable: rows written before
+	// migration 0007 had no authored manifest to project, and inventing a
+	// value for them would be fabricating provenance.
+	var definitionRevision string
+	var manifestDigest, contractDigest, responseSchemaDigest sql.NullString
+	var packageID, packageVersion, ownershipClass, compatibilityClass sql.NullString
+	var rendererID, rendererClass, rendererTrustClass sql.NullString
+	var requiredCapabilities, grantedCapabilities, materializationState sql.NullString
 	err := row.Scan(
 		&record.ID, &record.SurfaceID, &record.CallerScope, &callerPrincipalRef,
 		&record.CallerAuthority, &record.CallerAssurance, &record.IdempotencyKey,
@@ -130,9 +143,13 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 		&legacyRoomID, &legacyEnvelopeID,
 		&record.Definition.InteractionID, &record.Definition.Publisher,
 		&record.Definition.Kind, &record.Definition.Version,
-		&record.Definition.Revision, &definitionDigest, &record.Definition.Source,
+		&definitionRevision, &definitionDigest, &record.Definition.Source,
 		&schemaIdentity, &schemaDigest, &hostVersion,
 		&record.Definition.Assurance, &definitionBoundAt,
+		&manifestDigest, &contractDigest, &responseSchemaDigest,
+		&packageID, &packageVersion, &ownershipClass, &compatibilityClass,
+		&rendererID, &rendererClass, &rendererTrustClass,
+		&requiredCapabilities, &grantedCapabilities, &materializationState,
 	)
 	if err != nil {
 		return InteractionRecord{}, scanError("interaction", err)
@@ -161,6 +178,29 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 	record.Definition.SchemaIdentity = schemaIdentity.String
 	record.Definition.SchemaDigest = schemaDigest.String
 	record.Definition.HostVersion = hostVersion.String
+	record.Definition.ManifestDigest = manifestDigest.String
+	record.Definition.ContractDigest = contractDigest.String
+	record.Definition.ResponseSchemaDigest = responseSchemaDigest.String
+	record.Definition.PackageID = packageID.String
+	record.Definition.PackageVersion = packageVersion.String
+	record.Definition.OwnershipClass = ownershipClass.String
+	record.Definition.CompatibilityClass = compatibilityClass.String
+	record.Definition.RendererID = rendererID.String
+	record.Definition.RendererClass = rendererClass.String
+	record.Definition.RendererTrustClass = rendererTrustClass.String
+	if requiredCapabilities.Valid {
+		record.Definition.RequiredCapabilities = json.RawMessage(requiredCapabilities.String)
+	}
+	if grantedCapabilities.Valid {
+		record.Definition.GrantedCapabilities = json.RawMessage(grantedCapabilities.String)
+	}
+	record.Definition.MaterializationState = materializationState.String
+	// Migration 0007 normalized legacy rows, which held a copy of the version
+	// string, to "1". A value that still does not parse belongs to a row this
+	// build cannot explain, so it reads as 0 rather than being guessed at.
+	if parsedRevision, revisionErr := strconv.ParseInt(definitionRevision, 10, 64); revisionErr == nil {
+		record.Definition.Revision = parsedRevision
+	}
 
 	var parseErr error
 	record.PresentedAt, parseErr = parseNullableTime(presentedAt)

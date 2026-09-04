@@ -1,4 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
+// @definition-source sha256:641c3e43c015b73bc85c08ca74306ae41a8e4fefcc66c550d05dbcd27f93b98c
 // Generated from go-envelopes v0.1.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -1149,3 +1150,70 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "timeline-card",
   "todo-list",
 ] as const;
+
+/** The @definition-source stamp above, as a value. */
+export const DEFINITION_SOURCE_DIGEST = "sha256:641c3e43c015b73bc85c08ca74306ae41a8e4fefcc66c550d05dbcd27f93b98c";
+
+/** The Tangent release these types were generated against. */
+export const DEFINITION_HOST_VERSION = "v0.12.0";
+
+/** One manifest's contribution to the source digest. */
+export interface DefinitionSourceEntry {
+  kind: string;
+  version: string;
+  revision: number;
+  manifestDigest: string;
+  contractDigest: string;
+}
+
+/** Per-kind manifest identity, so drift can name the kind that moved. */
+export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
+  { kind: "tangent.approval-queue", version: "0.7", revision: 1, manifestDigest: "sha256:f6cc05239c2acf08167587fcb008781bf870c7afeb2a74c46d157e89c6adde01", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
+  { kind: "tangent.block-draft", version: "0.3", revision: 1, manifestDigest: "sha256:d5152653f4dba5f2a67695329cbb5fc4e56116b2d2bde0cb9065991681fd46a5", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
+  { kind: "tangent.dashboard", version: "0.11", revision: 1, manifestDigest: "sha256:0428fe0d6b1118ed2d38059de52b38b172b1b0d46b512c0a72420f16816b6847", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
+  { kind: "tangent.design-iteration", version: "0.2", revision: 1, manifestDigest: "sha256:a92bcfba76f7135c0395204cc1f36a8878b71632c3c7b1f80a92e968046ddd51", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
+  { kind: "tangent.diff-review", version: "0.8", revision: 1, manifestDigest: "sha256:865c9205fb40232aafddaea19c9ecbcea4068599a29e14d55e7e3c87416ecc60", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
+  { kind: "tangent.feedback", version: "0.2", revision: 1, manifestDigest: "sha256:8234446c309f043da6e22a2c5ccdbc330fc3dc02e6816915ac6c7cecc075ca66", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
+  { kind: "tangent.file-picker", version: "0.9", revision: 1, manifestDigest: "sha256:b5a87fd5030dfe3e8a99b4f6a9699975e6da4e3a4d932eacb7eaebcbd02ca52d", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
+  { kind: "tangent.form-collect", version: "0.6", revision: 1, manifestDigest: "sha256:c5781ef4cc773f93d81bf383349e955a66dafa083fc517c2f471a41e1b5c4267", contractDigest: "sha256:a175bb4e256d9c5a224776b8d2910727f7ba0fee03d0f1c24249abe56a81b491" },
+  { kind: "tangent.hitl-item", version: "1.0", revision: 1, manifestDigest: "sha256:ec83fea418e7cd34789ff33c9e259a1eefc04b30b5dd5e771760de0d7949f8e8", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
+  { kind: "tangent.interview-question", version: "0.3", revision: 1, manifestDigest: "sha256:931b76a8835c34167d9e67bb4cc1dec6006f93dbb6bb5129095bc8ff904a2d7d", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
+  { kind: "tangent.output-render", version: "0.3", revision: 1, manifestDigest: "sha256:e7e10151125ffe1a7610f3856699de5da2d668acc54572e0eb038bd4ea5b6345", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },
+  { kind: "tangent.progress-panel", version: "0.10", revision: 1, manifestDigest: "sha256:eadd6152480cf6376076b23ddc253ce417b1f24cfd2141126e3224b004d0e695", contractDigest: "sha256:6ac28915e72d3eaf60d849e50888c2d3b3f74f3a78f27698d874e2d766296b59" },
+  { kind: "tangent.prose-revision", version: "0.3", revision: 1, manifestDigest: "sha256:cc6e1df5da24bea61c523edcb2844830728a9b81b72444452b328a32d4f84319", contractDigest: "sha256:0a1d37050af23dc3e6e61a6e6aea04dac6720b2644ba4d5f815f015347602f11" },
+  { kind: "tangent.spreadsheet-review", version: "0.5", revision: 1, manifestDigest: "sha256:25f741f14715048aa35e326b1390a8c7f450d3ccf2422b4b96f258a933e41f32", contractDigest: "sha256:16282b257eff5d6c7e9ad27ca178980aa5ee7ddb67f1a2edba22af66b3c8c1d9" },
+  { kind: "tangent.synthesis-notes", version: "0.3", revision: 1, manifestDigest: "sha256:7ef213e865d60689fded40b233b389f64859b3fa4906ad47f358285565908880", contractDigest: "sha256:9884a5ead5775b887689cf468454f8dca1eccc2c2eb0f9633640af85d0381342" },
+  { kind: "tangent.triage", version: "0.1", revision: 1, manifestDigest: "sha256:bed4f9b67f40b88c2dd2546a0d280f4917af663b018c2cea6f7dcc0285c2ff77", contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368" },
+  { kind: "tangent.whiteboard", version: "0.4", revision: 1, manifestDigest: "sha256:6f6297ef0fe1370ea1706f755c384409c465e6f41e888f7ea056be8641e629c1", contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c" },
+  { kind: "tangent.wizard", version: "0.12", revision: 1, manifestDigest: "sha256:793a679e9c9877af09b4e683f4db170249b2f93ca19570f604f3a1b66df15388", contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8" },
+] as const;
+
+/**
+ * Digest of a kind's request-schema `$defs` bundle, for the kinds that ship
+ * one. A hand-written adapter over such a bundle stamps itself with this
+ * value and asserts the match in a test — ADR 0003 §4.7's accepted floor
+ * when full generation of that adapter is out of scope.
+ */
+export const DEFINITION_DEFS_DIGESTS: Readonly<Record<string, string>> = {
+  "tangent.hitl-item": "sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8",
+};
+
+/** Stable `$defs` entry points a kind declares, and what each is for. */
+export const DEFINITION_NAMED_DEFINITIONS: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "tangent.hitl-item": {
+    "HITLAwaitCommandV1": "Wait for one item's terminal outcome without changing its lifecycle.",
+    "HITLGetCommandV1": "Retrieve one item by durable handle.",
+    "HITLIdempotencyConflictErrorV1": "Typed idempotency conflict for a reused key with different content.",
+    "HITLItemHandleV1": "Durable handle returned at enqueue.",
+    "HITLItemRequestV1": "Enqueue request root: one operator-owned approval or attention item.",
+    "HITLItemViewV1": "Operator-facing projection of one item, including typed evidence.",
+    "HITLResolutionCommandV1": "Operator resolution command, carrying the expected interaction and projection revisions.",
+    "HITLResponseV1": "Resolution response payload: an approval decision or an attention acknowledgement.",
+    "HITLRetrievalResultV1": "Retrieval projection distinguishing terminal delivery from acknowledgement.",
+    "HITLStaleRevisionErrorV1": "Typed stale-revision conflict carrying the current revision.",
+    "HITLTerminalOutcomeV1": "Immutable per-item terminal outcome across resolved, canceled, expired, failed, and superseded.",
+    "HITLWithdrawCommandV1": "Caller withdrawal of an outstanding item.",
+  },
+};

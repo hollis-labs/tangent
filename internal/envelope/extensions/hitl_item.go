@@ -2,12 +2,15 @@ package extensions
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
+
+// HITLPackageID is the package tangent.hitl-item ships in. ADR 0003 §6
+// designates it the reference implementation of the package boundary.
+const HITLPackageID = "tangent.hitl"
 
 // HITLItemEnvelopeType is the immutable definition kind used by items in the
 // durable operator-owned HITL inbox. The public MCP tools remain operation
@@ -35,19 +38,16 @@ const (
 	HITLIdempotencyConflictDefinition = "HITLIdempotencyConflictErrorV1"
 )
 
-var hitlItemManifest = []byte(`type: tangent.hitl-item
-version: "1.0"
-description: "Durable HITL inbox item: one operator-owned approval or persistent-attention interaction with typed evidence and an immutable per-item terminal outcome."
-responseKind: data
-`)
-
 // hitlItemSchema is the canonical JSON Schema bundle for the HITL v1 contract.
 // Its root validates enqueue/item requests. Reusable $defs specify resolution
 // commands, terminal outcomes, handles, retrieval views, and stale-revision
 // errors for the HTTP, WebSocket, MCP, and TypeScript adapters built on top.
 //
-//go:embed hitl_item_schema.json
-var hitlItemSchema []byte
+// It is read from the shipped package tree rather than embedded separately, so
+// the bundle the contract adapters validate against and the bundle the
+// registry digests as this definition's request_schema are necessarily the
+// same bytes. A read failure here is a broken build, not a runtime condition.
+var hitlItemSchema = mustPackageFile(HITLPackageID, HITLItemEnvelopeType, requestSchemaFileName)
 
 // HITLItemContractSchema returns a defensive copy of the complete v1 schema
 // bundle. Callers that need one operation schema should use
@@ -87,11 +87,5 @@ func HITLContractDefinitionSchema(name string) ([]byte, error) {
 // registration so the persisted binding and advertised operation schemas are
 // derived from the same immutable contract material.
 func RegisterHITLItem(svc *envelope.Service) error {
-	if svc == nil {
-		return fmt.Errorf("extensions: envelope service is nil")
-	}
-	if err := svc.RegisterTypeFromManifest(HITLItemEnvelopeType, hitlItemManifest, hitlItemSchema, PluginID); err != nil {
-		return fmt.Errorf("extensions: register hitl-item: %w", err)
-	}
-	return nil
+	return registerPackagedDefinition(svc, HITLPackageID, HITLItemEnvelopeType)
 }

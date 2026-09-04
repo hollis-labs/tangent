@@ -3,14 +3,17 @@
  * Envelope Type Generator (Tangent)
  *
  * Reads the registry catalog from `go run ./cmd/tangent-dump-types` and
- * generates TypeScript interfaces + a discriminated envelope union +
- * a component-slug map for the renderer registry.
+ * generates:
  *
- * Output: ui/src/generated/envelope-types.ts
+ *   ui/src/generated/envelope-types.ts     interfaces, the discriminated
+ *                                          envelope union, the component-slug
+ *                                          map, and the source-digest table
+ *   ui/src/generated/renderer-bindings.ts  each kind's manifest-declared
+ *                                          renderer binding
  *
  * Usage:
  *   node scripts/generate-envelope-types.mjs
- *   node scripts/generate-envelope-types.mjs --check  # diff against committed file; exit 1 if stale
+ *   node scripts/generate-envelope-types.mjs --check  # exit 1 if stale
  *
  * There are two sources of truth and the dump tool merges them: the
  * embedded YAML manifest + per-type JSON Schemas in
@@ -20,6 +23,16 @@
  * uses, so every kind Tangent renders is typed here (ADR 0003 §9 S1).
  * This script consumes whatever the dump surfaces and defines nothing of
  * its own.
+ *
+ * Every emitted file carries a `@definition-source sha256:<hex>` header — the
+ * stable hash over the ordered (kind, version, revision, manifest_digest) set
+ * of every manifest that contributed to it (ADR 0003 §4.1). --check compares
+ * that stamp against a freshly computed one and reports *which kind* drifted,
+ * rather than reporting that some byte somewhere differs. It then also compares
+ * bytes, because a stamp alone cannot notice a hand-edit to a generated file:
+ * the digest question is "is this generated from the current manifests" and the
+ * byte question is "is this what the generator produces". Both matter, and they
+ * fail with different messages.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -29,6 +42,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const OUTPUT_FILE = join(ROOT, 'ui', 'src', 'generated', 'envelope-types.ts');
+const RENDERER_FILE = join(ROOT, 'ui', 'src', 'generated', 'renderer-bindings.ts');
 
 const CHECK_MODE = process.argv.includes('--check');
 
@@ -194,6 +208,7 @@ function generate(catalog) {
   const pluginCount = types.length - coreCount;
 
   lines.push('// AUTO-GENERATED FILE — DO NOT EDIT MANUALLY');
+  lines.push(`// @definition-source ${catalog.definitionSourceDigest}`);
   lines.push(`// Generated from go-envelopes ${catalog.envelopesVersion} — do not edit.`);
   lines.push('// Run `make generate-envelopes` to regenerate.');
   lines.push('//');
@@ -325,38 +340,287 @@ function generate(catalog) {
   lines.push('] as const;');
   lines.push('');
 
+  // --- Drift detection surface (ADR 0003 §4) ------------------------------
+  //
+  // The stamp above is a comment, which makes it readable but not usable by
+  // running code. These exports are the same values as data, so a client can
+  // compare them against what tangent.definition_registry_list reports and
+  // refuse to submit against a definition it was not generated for (§4.4),
+  // and so a hand-written adapter over a $defs bundle can assert it still
+  // matches the bundle it was written against (§4.7).
+  lines.push('/** The @definition-source stamp above, as a value. */');
+  lines.push(`export const DEFINITION_SOURCE_DIGEST = ${JSON.stringify(catalog.definitionSourceDigest)};`);
+  lines.push('');
+  lines.push('/** The Tangent release these types were generated against. */');
+  lines.push(`export const DEFINITION_HOST_VERSION = ${JSON.stringify(catalog.hostVersion)};`);
+  lines.push('');
+  lines.push('/** One manifest\'s contribution to the source digest. */');
+  lines.push('export interface DefinitionSourceEntry {');
+  lines.push('  kind: string;');
+  lines.push('  version: string;');
+  lines.push('  revision: number;');
+  lines.push('  manifestDigest: string;');
+  lines.push('  contractDigest: string;');
+  lines.push('}');
+  lines.push('');
+  lines.push('/** Per-kind manifest identity, so drift can name the kind that moved. */');
+  lines.push('export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [');
+  for (const t of types) {
+    if (!t.definition) continue;
+    const d = t.definition;
+    lines.push(
+      `  { kind: ${JSON.stringify(t.name)}, version: ${JSON.stringify(t.version)}, ` +
+      `revision: ${d.revision}, manifestDigest: ${JSON.stringify(d.manifestDigest)}, ` +
+      `contractDigest: ${JSON.stringify(d.contractDigest)} },`,
+    );
+  }
+  lines.push('] as const;');
+  lines.push('');
+  lines.push('/**');
+  lines.push(' * Digest of a kind\'s request-schema `$defs` bundle, for the kinds that ship');
+  lines.push(' * one. A hand-written adapter over such a bundle stamps itself with this');
+  lines.push(' * value and asserts the match in a test — ADR 0003 §4.7\'s accepted floor');
+  lines.push(' * when full generation of that adapter is out of scope.');
+  lines.push(' */');
+  lines.push('export const DEFINITION_DEFS_DIGESTS: Readonly<Record<string, string>> = {');
+  for (const t of types) {
+    if (!t.definition || !t.definition.defsDigest) continue;
+    lines.push(`  ${JSON.stringify(t.name)}: ${JSON.stringify(t.definition.defsDigest)},`);
+  }
+  lines.push('};');
+  lines.push('');
+  lines.push('/** Stable `$defs` entry points a kind declares, and what each is for. */');
+  lines.push('export const DEFINITION_NAMED_DEFINITIONS: Readonly<');
+  lines.push('  Record<string, Readonly<Record<string, string>>>');
+  lines.push('> = {');
+  for (const t of types) {
+    const named = t.definition && t.definition.namedDefinitions;
+    if (!named || Object.keys(named).length === 0) continue;
+    lines.push(`  ${JSON.stringify(t.name)}: {`);
+    for (const name of Object.keys(named).sort()) {
+      lines.push(`    ${JSON.stringify(name)}: ${JSON.stringify(named[name])},`);
+    }
+    lines.push('  },');
+  }
+  lines.push('};');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+/**
+ * Emit the renderer bindings each manifest declares.
+ *
+ * Before ADR 0003 a kind bound to a renderer by three unrelated conventions: a
+ * dead `ui.component` slug in the manifest, a string-literal `register()` call
+ * in ui/src/main.tsx, and one bespoke route. This table is the manifest's
+ * answer, generated, so the registration in main.tsx can be checked against it
+ * instead of being the authority (§4.5). It is deliberately data and not a
+ * module map: resolving an entry to an imported component is a runtime
+ * decision, and CW-20260825-0073 is where trust class starts gating it.
+ */
+function generateRendererBindings(catalog) {
+  const lines = [];
+  const managed = catalog.types.filter((t) => t.definition);
+
+  lines.push('// AUTO-GENERATED FILE — DO NOT EDIT MANUALLY');
+  lines.push(`// @definition-source ${catalog.definitionSourceDigest}`);
+  lines.push('// Run `make generate-envelopes` to regenerate.');
+  lines.push('//');
+  lines.push(`// The renderer binding declared by each of the ${managed.length} manifests under`);
+  lines.push('// internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the');
+  lines.push('// single answer to "what draws this kind"; ui/src/main.tsx is checked against');
+  lines.push('// this table rather than being a second source of truth.');
+  lines.push('');
+  lines.push('/** How a renderer is isolated. */');
+  lines.push('export type RendererClass =');
+  lines.push("  | 'react-component'");
+  lines.push("  | 'declarative'");
+  lines.push("  | 'sandboxed-frame'");
+  lines.push("  | 'external-surface';");
+  lines.push('');
+  lines.push('/** The trust level a manifest requests; the host decides what it grants. */');
+  lines.push('export type RendererTrustClass =');
+  lines.push("  | 'core-trusted'");
+  lines.push("  | 'portfolio-trusted'");
+  lines.push("  | 'declarative'");
+  lines.push("  | 'sandboxed-code'");
+  lines.push("  | 'external-surface';");
+  lines.push('');
+  lines.push('export interface RendererBinding {');
+  lines.push('  /** Wire name of the kind this renderer serves. */');
+  lines.push('  kind: string;');
+  lines.push('  version: string;');
+  lines.push('  /** Stable renderer identity, distinct from kind so one renderer can serve several. */');
+  lines.push('  rendererId: string;');
+  lines.push('  rendererClass: RendererClass;');
+  lines.push('  /** Module specifier and exported symbol, for react-component renderers. */');
+  lines.push('  entry: string;');
+  lines.push('  trustClass: RendererTrustClass;');
+  lines.push('  /** Legacy ui.component slug, empty for kinds that render through their own route. */');
+  lines.push('  component: string;');
+  lines.push('  packageId: string;');
+  lines.push('  /** Materialization state at generation time. */');
+  lines.push('  state: string;');
+  lines.push('  /** The contract this renderer was generated against. */');
+  lines.push('  contractDigest: string;');
+  lines.push('}');
+  lines.push('');
+  lines.push('export const RENDERER_BINDINGS: readonly RendererBinding[] = [');
+  for (const t of managed) {
+    const d = t.definition;
+    const component = (t.ui && typeof t.ui.component === 'string') ? t.ui.component : '';
+    lines.push('  {');
+    lines.push(`    kind: ${JSON.stringify(t.name)},`);
+    lines.push(`    version: ${JSON.stringify(t.version)},`);
+    lines.push(`    rendererId: ${JSON.stringify(d.rendererId)},`);
+    lines.push(`    rendererClass: ${JSON.stringify(d.rendererClass)},`);
+    lines.push(`    entry: ${JSON.stringify(d.rendererEntry)},`);
+    lines.push(`    trustClass: ${JSON.stringify(d.rendererTrustClass)},`);
+    lines.push(`    component: ${JSON.stringify(component)},`);
+    lines.push(`    packageId: ${JSON.stringify(d.packageId)},`);
+    lines.push(`    state: ${JSON.stringify(d.state)},`);
+    lines.push(`    contractDigest: ${JSON.stringify(d.contractDigest)},`);
+    lines.push('  },');
+  }
+  lines.push('] as const;');
+  lines.push('');
+  lines.push('/** Kinds whose manifest says a React component in Tangent\'s own tree draws them. */');
+  lines.push('export const REACT_COMPONENT_KINDS: readonly string[] = RENDERER_BINDINGS');
+  lines.push("  .filter((binding) => binding.rendererClass === 'react-component')");
+  lines.push('  .map((binding) => binding.kind);');
+  lines.push('');
   return lines.join('\n');
 }
 
 // --- Main -----------------------------------------------------------------
 
 const catalog = loadCatalog();
-const output = generate(catalog);
+
+const artifacts = [
+  { path: OUTPUT_FILE, label: 'envelope types', content: generate(catalog) },
+  { path: RENDERER_FILE, label: 'renderer bindings', content: generateRendererBindings(catalog) },
+];
+
+/** Read the `@definition-source sha256:...` stamp out of a generated file. */
+function readStamp(text) {
+  const match = /^\/\/ @definition-source (\S+)$/m.exec(text);
+  return match ? match[1] : null;
+}
+
+/**
+ * Report which kinds moved, by diffing the committed per-kind digest table
+ * against the fresh one. Naming the kind is the whole point of digest-based
+ * staleness detection: a whole-file byte diff can only say "line 412 differs",
+ * which is true of a description edit and of a schema rewrite alike.
+ */
+function reportDriftedKinds(committed) {
+  const parseEntries = (text) => {
+    const table = /export const DEFINITION_SOURCE_ENTRIES[^[]*\[(.*?)\n\] as const;/s.exec(text);
+    const entries = new Map();
+    if (!table) return entries;
+    const row = /kind: "([^"]+)", version: "([^"]*)", revision: (\d+), manifestDigest: "([^"]*)"/g;
+    let found;
+    while ((found = row.exec(table[1])) !== null) {
+      entries.set(found[1], { version: found[2], revision: Number(found[3]), manifestDigest: found[4] });
+    }
+    return entries;
+  };
+  const before = parseEntries(committed);
+  const after = new Map(
+    catalog.types
+      .filter((t) => t.definition)
+      .map((t) => [
+        t.name,
+        { version: t.version, revision: t.definition.revision, manifestDigest: t.definition.manifestDigest },
+      ]),
+  );
+
+  let reported = 0;
+  for (const [kind, fresh] of after) {
+    const old = before.get(kind);
+    if (!old) {
+      console.error(`  + ${kind}@${fresh.version} is newly registered`);
+      reported += 1;
+    } else if (old.manifestDigest !== fresh.manifestDigest) {
+      console.error(
+        `  ~ ${kind}: manifest changed (${old.version} rev ${old.revision} -> ${fresh.version} rev ${fresh.revision})`,
+      );
+      reported += 1;
+    }
+  }
+  for (const kind of before.keys()) {
+    if (!after.has(kind)) {
+      console.error(`  - ${kind} is no longer registered`);
+      reported += 1;
+    }
+  }
+  if (reported === 0) {
+    console.error('  (no per-kind difference — the committed digest table itself is stale)');
+  }
+}
 
 if (CHECK_MODE) {
-  if (!existsSync(OUTPUT_FILE)) {
-    console.error('generated file does not exist:', OUTPUT_FILE);
-    console.error('run: make generate-envelopes');
-    process.exit(1);
-  }
-  const existing = readFileSync(OUTPUT_FILE, 'utf-8');
-  if (existing !== output) {
-    const committed = existing.split('\n');
-    const fresh = output.split('\n');
-    const at = fresh.findIndex((line, i) => committed[i] !== line);
-    console.error(`generated envelope types are stale (${catalog.types.length} kinds registered).`);
-    if (at !== -1) {
-      console.error(`first difference at line ${at + 1}:`);
-      console.error(`  committed: ${committed[at] ?? '<end of file>'}`);
-      console.error(`  expected:  ${fresh[at]}`);
+  let failed = false;
+  // The per-kind report is printed once, from the artifact that carries the
+  // digest table. Repeating it per artifact would read as several independent
+  // drifts when there is only ever one: every artifact is stamped with the same
+  // registry-wide digest.
+  let reportedDriftedKinds = false;
+  for (const artifact of artifacts) {
+    if (!existsSync(artifact.path)) {
+      console.error(`generated file does not exist: ${artifact.path}`);
+      failed = true;
+      continue;
     }
+    const existing = readFileSync(artifact.path, 'utf-8');
+    const committedStamp = readStamp(existing);
+    const freshStamp = catalog.definitionSourceDigest;
+
+    // Digest first: it answers "were these generated from the current
+    // manifests", and it can say which kind moved.
+    if (committedStamp !== freshStamp) {
+      console.error(`${artifact.label} are stale — @definition-source does not match the registry.`);
+      console.error(`  committed: ${committedStamp ?? '<no stamp>'}`);
+      console.error(`  registry:  ${freshStamp}`);
+      if (!reportedDriftedKinds && existing.includes('DEFINITION_SOURCE_ENTRIES')) {
+        reportDriftedKinds(existing);
+        reportedDriftedKinds = true;
+      }
+      failed = true;
+      continue;
+    }
+
+    // Bytes second: the stamp cannot notice a hand-edit to a generated file,
+    // and a generated file nobody may hand-edit is worth actually enforcing.
+    if (existing !== artifact.content) {
+      const committedLines = existing.split('\n');
+      const freshLines = artifact.content.split('\n');
+      const at = freshLines.findIndex((line, i) => committedLines[i] !== line);
+      console.error(
+        `${artifact.label} match the current manifests but not the current generator output.`,
+      );
+      if (at !== -1) {
+        console.error(`  first difference at line ${at + 1}:`);
+        console.error(`    committed: ${committedLines[at] ?? '<end of file>'}`);
+        console.error(`    expected:  ${freshLines[at]}`);
+      }
+      failed = true;
+    }
+  }
+  if (failed) {
     console.error('run: make generate-envelopes');
     process.exit(1);
   }
-  console.log(`envelope types are up to date (${catalog.types.length} kinds).`);
+  console.log(
+    `generated artifacts are up to date (${catalog.types.length} kinds, ${catalog.definitionSourceDigest}).`,
+  );
   process.exit(0);
 }
 
-mkdirSync(dirname(OUTPUT_FILE), { recursive: true });
-writeFileSync(OUTPUT_FILE, output, 'utf-8');
-console.log(`generated ${catalog.types.length} envelope type definitions to ${OUTPUT_FILE}`);
+for (const artifact of artifacts) {
+  mkdirSync(dirname(artifact.path), { recursive: true });
+  writeFileSync(artifact.path, artifact.content, 'utf-8');
+  console.log(`generated ${artifact.label} to ${artifact.path}`);
+}
+console.log(`definition source digest: ${catalog.definitionSourceDigest}`);

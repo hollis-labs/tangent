@@ -7,7 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_None._
+### Added
+
+- **Versioned interaction-definition registry.** Every Tangent-owned kind now
+  ships as a package under `internal/envelope/extensions/packages/` with an
+  authored `manifest.yaml`: identity, request/response/error schemas, renderer
+  binding and trust class, host-mediated effect capabilities, draft custody and
+  sensitivity, trust evidence, telemetry, and compatibility ranges. See
+  [ADR 0003](docs/adr/0003-definition-and-package-ownership.md).
+- **Durable definition material.** Migration `0007` adds the immutable
+  `definition_manifests` table and extends `definition_bindings` with the full
+  manifest identity. A submitted interaction retains the exact material behind
+  its pinned digest, so it can still be validated and replayed after a restart,
+  after the installed catalog changes, and after the current version moves on.
+- **`tangent.definition_registry_list`, `tangent.definition_get`,
+  `tangent.definition_registry_diagnostics`.** Payload-bounded registry
+  diagnostics reporting materialization state, ownership, renderer binding,
+  digests, and retained-material coverage. Production `tools/list` is now 43.
+- **Response-schema validation.** `envelope.Service.RegisterDefinition` carries
+  a response schema into `TypeSpec.PayloadSchema` and into the binding digest.
+  `tangent.hitl-item` is the first kind to use it; the other seventeen declare
+  `compatibility_response_schema: absent` and keep today's response-kind-only
+  check until they are backfilled.
+- **Definition source digests on generated artifacts.** Every generated file
+  carries a `@definition-source` stamp, `make check-envelopes` reports which
+  kind drifted rather than which byte, and `ui/src/generated/renderer-bindings.ts`
+  makes the manifest's renderer binding checkable against `main.tsx`.
+
+### Changed
+
+- **`definition_bindings.revision` is a real field.** It previously held a copy
+  of `version`. Migration `0007` normalizes existing rows to `1`; new bindings
+  carry the manifest's own monotonic revision.
+- **Definitions that cannot be served are distinguishable.** `incompatible`,
+  `quarantined`, and `unavailable` surface as `definition_incompatible`,
+  `definition_quarantined`, and `definition_unavailable`, each carrying a reused
+  go-envelopes error code. No shipped kind is in any of those states.
+
+No wire name, version, request schema, response payload, MCP tool name, room
+id, route, persisted history, or phase projection changed.
 
 ## [v0.12.0] - 2026-05-10
 

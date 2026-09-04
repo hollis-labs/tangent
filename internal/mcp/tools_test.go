@@ -107,10 +107,13 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	return clientSession, dispatcher, cleanup
 }
 
-// TestServer_ListsTwentyFiveTools asserts the tool surface includes the legacy
-// and session tools callers integrate against. Treat this as a
-// contract test: changing names is a public-API change.
-func TestServer_ListsTwentyFiveTools(t *testing.T) {
+// TestServer_ListsBaseToolSurface asserts the tool surface a server booted
+// without the durable interaction substrate exposes: the 25 legacy and session
+// tools callers integrate against, plus the 3 definition-registry diagnostics,
+// which do not depend on that substrate — an embedder without it still has to
+// be able to ask why a kind is not being served. Treat this as a contract test:
+// changing names or the count is a public-API change.
+func TestServer_ListsBaseToolSurface(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
 
@@ -118,12 +121,12 @@ func TestServer_ListsTwentyFiveTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 25 {
+	if len(res.Tools) != 28 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 25 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 28 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
@@ -152,6 +155,12 @@ func TestServer_ListsTwentyFiveTools(t *testing.T) {
 		"tangent.session_set_phase_output": false,
 		"tangent.session_close":            false,
 		"tangent.session_list":             false,
+		// Definition-registry diagnostics (CW-20260825-0065, ADR 0003 §4.4
+		// and §8 C7): available whenever an envelope service is, independent
+		// of the durable interaction substrate.
+		"tangent.definition_registry_list":        false,
+		"tangent.definition_get":                  false,
+		"tangent.definition_registry_diagnostics": false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {

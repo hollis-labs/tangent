@@ -48,6 +48,6 @@ Full contract: `docs/room-workflow-completion.md`
 - Smoke runbook: `docs/manual-tests/workflow-smoke-tests.md`
 - Integration guide: `docs/mcp-integration.md`
 - Envelope extension: `internal/envelope/extensions/spreadsheet_review.go`
-- Data schema: `internal/envelope/extensions/spreadsheet_review_schema.json`
+- Data schema: `internal/envelope/extensions/packages/tangent.review/spreadsheet-review/request.schema.json`
 - Handler: `internal/mcp/spreadsheet_review_handler.go`
 - Completion contract: `docs/room-workflow-completion.md`

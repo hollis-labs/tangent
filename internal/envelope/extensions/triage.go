@@ -1,89 +1,51 @@
-// Package extensions registers Tangent-owned envelope types via the
-// go-envelopes plugin extension API. Tangent does NOT fork the upstream
-// manifest — it ships small in-tree manifest fragments here and registers
-// them at boot through Registry.RegisterTypeFromManifest with
-// pluginID="tangent". When go-envelopes upstreams a kind into core (e.g.
-// `triage` planned for v0.3), the corresponding fragment can be deleted
-// without touching call sites.
+// Package extensions registers Tangent-owned interaction definitions.
+//
+// Each kind ships as a package under packages/<package-id>/<kind>/: an
+// authored manifest.yaml plus the schema files it references, embedded with
+// //go:embed and registered through envelope.Service.RegisterDefinition.
+// Tangent does NOT fork the upstream go-envelopes manifest — it hosts
+// publisher-owned definitions beside the core catalog, and ADR 0003 §5 is
+// explicit that a definition living in this tree because it is bundled with
+// the release is still publisher-owned content Tangent hosts.
+//
+// The Go files here carry only wire-name constants and one-line registration
+// entry points. Everything a definition declares — schemas, renderer binding,
+// trust class, capabilities, custody, telemetry — lives in its manifest, so
+// there is exactly one place to read and exactly one set of bytes to digest.
 package extensions
 
 import (
-	"fmt"
-
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
 
-// PluginID is the namespace recorded on every Tangent-registered TypeSpec.
-// Used both as the registration tag (so UnregisterPlugin can sweep the
-// whole set on hot-reload) and as a debugging aid in registry dumps.
+// PluginID is the namespace recorded on every Tangent-registered TypeSpec and
+// the publisher every shipped manifest declares. Used as the registration tag
+// (so UnregisterPlugin can sweep the whole set), as the manifest's `publisher`
+// — RegisterDefinition rejects a mismatch — and as a debugging aid in registry
+// dumps.
 const PluginID = "tangent"
 
-// TriageEnvelopeType is the canonical wire name for the v0.1 triage
-// kind, registered via the plugin extension API. The dotted-namespace
-// form is required by go-envelopes' Registry — un-namespaced names are
-// reserved for core types and rejected with ErrInvalidName. When core
-// upstreams its own `triage` kind in v0.3, this constant flips to the
-// bare name and the manifest fragment is deleted.
+// TriageEnvelopeType is the canonical wire name for the triage kind. The
+// dotted-namespace form is required by go-envelopes' Registry — un-namespaced
+// names are reserved for core types and rejected with ErrInvalidName.
+//
+// Triage envelope: ask a human to accept, reject, or annotate an item.
+// Tangent v0.1 plugin-registered; planned for go-envelopes core in v0.3.
+//
+// ADR 0003 §6 labels it for the go-envelopes generic catalog; that is a
+// destination and not a plan, so it ships bundled under the holding
+// package until go-envelopes retains source bytes for core kinds and a
+// second host consumes one.
 const TriageEnvelopeType = "tangent.triage"
 
-// triageManifest is the YAML manifest fragment for the triage kind.
-// Type is in the dotted-namespace form so RegisterTypeFromManifest
-// preserves it verbatim (no prefix mangling). Bare "triage" would
-// trigger automatic "<pluginID>.<type>" namespacing which is the same
-// final string but encoded indirectly; spelling it out keeps the wire
-// shape obvious from the source.
-var triageManifest = []byte(`type: tangent.triage
-version: "0.1"
-description: "Triage envelope: ask a human to accept, reject, or annotate an item. Tangent v0.1 plugin-registered; planned for go-envelopes core in v0.3."
-responseKind: data
-ui:
-  component: TriageView
-`)
-
-// triageSchema is the JSON Schema for the triage envelope's `data` field.
-// Intentionally permissive in v0.1: clients populate `items` (array of
-// strings or objects) and an optional `prompt`; the WS-bridged frontend
-// renders whatever shape arrives. The hand-rolled MCP InputSchema in
-// internal/mcp/triage_schema.go tightens the envelope-level constraints
-// for direct MCP calls; this schema only governs envelope.data.
-var triageSchema = []byte(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "title": "Triage envelope data",
-  "description": "Tangent v0.1 triage payload. Permissive shape: items + optional prompt + optional context fields. v0.3 will tighten when triage upstreams to go-envelopes core.",
-  "properties": {
-    "prompt": {"type": "string", "description": "Optional human-facing instruction shown above the items."},
-    "items": {
-      "type": "array",
-      "description": "Items to triage. Strings are rendered as labels; objects pass through to the frontend untouched.",
-      "items": {
-        "oneOf": [
-          {"type": "string"},
-          {"type": "object"}
-        ]
-      }
-    },
-    "context": {"type": "object", "description": "Free-form context bag (links, metadata) passed through to the frontend."}
-  },
-  "additionalProperties": true
-}`)
-
-// RegisterTriage registers the triage envelope type with the given
-// envelope service via the plugin extension API. Idempotent across
-// process lifetimes (the registry rejects duplicate names with a
-// well-defined error from go-envelopes); idempotent within a process
-// only if the caller checks Has() first — RegisterTypeFromManifest will
-// error on a re-register, which is the correct behavior for boot-time
-// callers that expect a single registration site.
+// RegisterTriage registers the triage definition from its shipped package. The
+// manifest at packages/tangent.generic-candidate/triage/manifest.yaml is the
+// single authored source; nothing about this kind is declared here.
 //
-// Returns nil on success or a non-nil error if the manifest fails to
-// parse or the schema fails to compile.
+// Registration is not idempotent within a process: go-envelopes rejects a
+// duplicate name, which is the correct behavior for a boot-time call site.
+// Production goes through RegisterAll; this entry point stays exported for
+// tests that deliberately boot a partial registry.
 func RegisterTriage(svc *envelope.Service) error {
-	if svc == nil {
-		return fmt.Errorf("extensions: envelope service is nil")
-	}
-	if err := svc.RegisterTypeFromManifest(TriageEnvelopeType, triageManifest, triageSchema, PluginID); err != nil {
-		return fmt.Errorf("extensions: register triage: %w", err)
-	}
-	return nil
+	return registerPackagedDefinition(svc, "tangent.generic-candidate", TriageEnvelopeType)
 }

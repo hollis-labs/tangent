@@ -281,6 +281,16 @@ func (s *Server) interactionResult(value any, err error) (*mcpsdk.CallToolResult
 
 func (s *Server) interactionError(err error) (*mcpsdk.CallToolResult, any, error) {
 	code := "interaction_error"
+	// A definition this host cannot serve is a distinguishable state, not one
+	// opaque failure (ADR 0003 §8 C7): a caller's next move differs between
+	// "this host is too old for that definition", "its capability request was
+	// refused", and "an operator turned it off". These codes are additive —
+	// before the versioned registry every shipped definition was available, so
+	// no caller can have been relying on the collapsed code.
+	var definitionState *interaction.DefinitionStateError
+	if errors.As(err, &definitionState) {
+		return toolErrorResult("definition_"+definitionState.State, definitionState.Error()), nil, nil
+	}
 	switch {
 	case errors.Is(err, interaction.ErrIdempotencyConflict):
 		code = "idempotency_conflict"

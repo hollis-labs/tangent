@@ -395,6 +395,48 @@ agent's reply as an envelope response. Handlers register themselves at
 startup (see `internal/envelope/extensions/triage.go` for the v0.1
 precedent).
 
+### Interaction definition registry
+
+`internal/definition/` owns the **interaction definition manifest**: the one
+immutable document a publisher authors per `kind@version`, specified by
+[ADR 0003](adr/0003-definition-and-package-ownership.md) §2. It carries
+identity, request/response/error schemas, the renderer binding and its trust
+class, host-mediated effect capabilities, draft custody and sensitivity, trust
+evidence, telemetry declarations, and compatibility ranges. Tangent derives
+every digest and every grant; a manifest that authors one is rejected.
+
+Each shipped kind is a package under
+`internal/envelope/extensions/packages/<package-id>/<kind>/`: an authored
+`manifest.yaml` plus the schema files it names, embedded as one tree. The
+package id is the ADR 0003 §6 ownership assignment made mechanical, and
+`internal/envelope/extensions/register_all.go` is the single table that binds
+a wire name to it.
+
+`envelope.Service` holds the **version-indexed registry** — `kind -> version ->
+material` — beside the upstream go-envelopes registry, which stays the
+single-current-version validator. `Service.RegisterDefinition` builds the
+`TypeSpec` directly so it can populate `TypeSpec.PayloadSchema`, which no
+upstream manifest path reaches; nothing in go-envelopes changes.
+
+A submission pins a composite `binding_digest` covering the manifest and schema
+bytes, the identity triple, the contract digest, the renderer binding, both
+capability sets, the trust assurance, and `envelopeDefinitionValidatorRevision`.
+`interaction.Service.SubmitInteraction` retains the exact material behind that
+digest in `definition_manifests` (migration 0007, immutable) *before* writing
+the record. Validation then resolves material by the pinned digest — from the
+in-memory index only when recomputing its digest reproduces the pin, otherwise
+from the retained table — and never through the current registry entry. That is
+what makes a pinned interaction still validatable after a restart, after the
+installed catalog changes, and after the current version moves on.
+
+A definition the host cannot serve is a *state*, not an error to paper over:
+`incompatible`, `quarantined`, and `unavailable` are distinguishable in
+`tangent.definition_registry_list` and in the typed resolution failure, each
+carrying a reused go-envelopes error code. A fallback renderer is used only
+when the manifest declares one whose `preserves_meaning` is true.
+`tangent.definition_get` and `tangent.definition_registry_diagnostics` complete
+the payload-bounded diagnostics surface.
+
 ### go-envelopes registry
 
 `github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared
@@ -403,16 +445,31 @@ extensions—including the non-renderer `tangent.hitl-item` interaction
 definition—for 44 definitions in the shipped process. Extensions use the
 plugin API rather than forking the registry.
 
-`ui/src/generated/envelope-types.ts` is generated from all 44 shipped
-definitions (`make generate-envelopes`) and CI gates it with
+`ui/src/generated/envelope-types.ts` and
+`ui/src/generated/renderer-bindings.ts` are generated from all 44 shipped
+definitions (`make generate-envelopes`) and CI gates them with
 `make check-envelopes`. The dump tool builds its registry through the same
 `extensions.RegisterAll` the server calls, so the staleness gate watches the
 kinds Tangent actually renders (ADR 0003 §9 S1). Tangent-owned workflow
 schemas remain alongside their extension registrations; the generated types
 are a typed mirror of them, not a replacement for the hand-written component
-props. The strict HITL request/result bundle is
-`internal/envelope/extensions/hitl_item_schema.json`; the dedicated `/hitl`
-client types live with `ui/src/lib/hitl-api.ts` and the evidence component.
+props.
+
+Every generated artifact carries a `// @definition-source sha256:<hex>` stamp
+over the ordered `(kind, version, revision, manifest_digest)` set (ADR 0003
+§4). `make check-envelopes` compares that stamp first and reports *which kind*
+drifted, then compares bytes to catch a hand-edit; a Go test asserts the same
+stamp on every `go test ./...`. `tangent.definition_registry_list` reports the
+live digest, so a client can refuse to submit against a definition it was not
+generated for. `ui/src/lib/hitl-api.ts` is hand-written over the HITL `$defs`
+bundle and carries ADR 0003 §4.7’s accepted floor — a `@definition-source`
+stamp plus a drift test asserting it still matches the bundle.
+
+The strict HITL request/result bundle is
+`internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json`,
+and its response and error schemas are drift-tested projections of the same
+`$defs`. The dedicated `/hitl` client types live with `ui/src/lib/hitl-api.ts`
+and the evidence component.
 
 ## Wails note
 

@@ -48,6 +48,6 @@ Full contract: `docs/room-workflow-completion.md`
 - Smoke runbook: `docs/manual-tests/workflow-smoke-tests.md`
 - Integration guide: `docs/mcp-integration.md`
 - Envelope extension: `internal/envelope/extensions/whiteboard.go`
-- Data schema: `internal/envelope/extensions/whiteboard_schema.json`
+- Data schema: `internal/envelope/extensions/packages/tangent.canvas/whiteboard/request.schema.json`
 - Handler: `internal/mcp/whiteboard_handler.go`
 - Completion contract: `docs/room-workflow-completion.md`

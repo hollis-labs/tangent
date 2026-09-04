@@ -20,8 +20,12 @@ import (
 // initialize response. Keep them stable across minor versions; v0.1
 // clients pin against this string.
 const (
-	implementationName    = "tangent"
-	implementationVersion = "v0.12.0"
+	implementationName = "tangent"
+	// implementationVersion is the same string definitions declare
+	// compatibility against in `compatible_host_versions`, so it is taken from
+	// the package that owns the definition registry rather than declared twice.
+	// TestHostVersionHasOneSource keeps the alias honest.
+	implementationVersion = envelope.HostVersion
 	// HostVersion is persisted in immutable definition bindings created by
 	// the production registry adapter.
 	HostVersion = implementationVersion
@@ -453,6 +457,13 @@ func (s *Server) registerTools() error {
 		InputSchema: sessionListSchema,
 	}, s.handleSessionList)
 
+	// Registry diagnostics do not depend on the durable interaction substrate:
+	// the definition registry exists whenever an envelope service does, and an
+	// embedder without the substrate still needs to be able to ask why a kind
+	// is not being served.
+	if err := s.registerDefinitionTools(); err != nil {
+		return err
+	}
 	if s.interactions != nil {
 		if err := s.registerInteractionTools(); err != nil {
 			return fmt.Errorf("register interaction tools: %w", err)

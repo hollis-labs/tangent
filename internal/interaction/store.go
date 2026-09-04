@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -240,7 +241,7 @@ func (s *Store) CreateInteraction(ctx context.Context, params CreateInteractionP
 		return CreateInteractionResult{}, fmt.Errorf("%w: caller authority and assurance are required", ErrInvalidRecord)
 	}
 	if params.Definition.Publisher == "" || params.Definition.Kind == "" || params.Definition.Version == "" ||
-		params.Definition.Revision == "" || params.Definition.Source == "" || params.Definition.Assurance == "" {
+		params.Definition.Revision < 1 || params.Definition.Source == "" || params.Definition.Assurance == "" {
 		return CreateInteractionResult{}, fmt.Errorf("%w: complete immutable definition binding is required", ErrInvalidRecord)
 	}
 	externalRefs, externalRefsErr := canonicalJSON(params.ExternalRefs, "{}")
@@ -307,13 +308,26 @@ INSERT INTO interactions (
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO definition_bindings (
   interaction_id, publisher, kind, version, revision, digest, source,
-  schema_identity, schema_digest, host_version, assurance, bound_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  schema_identity, schema_digest, host_version, assurance, bound_at,
+  manifest_digest, contract_digest, response_schema_digest,
+  package_id, package_version, ownership_class, compatibility_class,
+  renderer_id, renderer_class, renderer_trust_class,
+  required_capabilities, granted_capabilities, materialization_state
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, params.Definition.Publisher, params.Definition.Kind,
-		params.Definition.Version, params.Definition.Revision,
+		params.Definition.Version, strconv.FormatInt(params.Definition.Revision, 10),
 		nullString(params.Definition.Digest), params.Definition.Source,
 		nullString(params.Definition.SchemaIdentity), nullString(params.Definition.SchemaDigest),
 		nullString(params.Definition.HostVersion), params.Definition.Assurance, now,
+		nullString(params.Definition.ManifestDigest), nullString(params.Definition.ContractDigest),
+		nullString(params.Definition.ResponseSchemaDigest),
+		nullString(params.Definition.PackageID), nullString(params.Definition.PackageVersion),
+		nullString(params.Definition.OwnershipClass), nullString(params.Definition.CompatibilityClass),
+		nullString(params.Definition.RendererID), nullString(params.Definition.RendererClass),
+		nullString(params.Definition.RendererTrustClass),
+		nullString(string(params.Definition.RequiredCapabilities)),
+		nullString(string(params.Definition.GrantedCapabilities)),
+		nullString(params.Definition.MaterializationState),
 	); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("insert definition binding: %w", err)
 	}

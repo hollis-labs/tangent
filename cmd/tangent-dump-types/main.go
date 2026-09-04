@@ -48,6 +48,13 @@
 // the plugin:// resource identity go-envelopes assigned at registration.
 // The schemas themselves are inlined so the Node generator never has to
 // traverse the module cache.
+//
+// Every Tangent-owned kind additionally carries its manifest identity —
+// revision, manifest digest, contract digest, package, ownership class, and
+// renderer binding — and the document carries the registry-wide
+// definitionSourceDigest. That is what lets a generated artifact be stamped
+// with the source that produced it, so drift is *detected* rather than
+// inferred from a successful build (ADR 0003 §4).
 package main
 
 import (
@@ -59,6 +66,7 @@ import (
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
+	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 )
@@ -92,11 +100,57 @@ type dumpType struct {
 	// Node generator does not need to traverse the Go module cache to
 	// resolve schemas. Empty when HasSchema is false.
 	Schema map[string]any `json:"schema,omitempty"`
+
+	// Definition is the manifest identity, present only for kinds that ship
+	// an authored manifest. Core kinds have none: go-envelopes retains no
+	// source bytes for them, so there is nothing to digest.
+	Definition *dumpDefinition `json:"definition,omitempty"`
+}
+
+// dumpDefinition is the manifest half of one dumped kind. It carries no schema
+// bodies — those are already in Schema — only the identity a generated artifact
+// needs to stamp itself and the renderer binding a generated registry needs to
+// key on.
+type dumpDefinition struct {
+	Revision       int64  `json:"revision"`
+	Title          string `json:"title,omitempty"`
+	ManifestDigest string `json:"manifestDigest"`
+	ContractDigest string `json:"contractDigest"`
+	PackageID      string `json:"packageId"`
+	PackageVersion string `json:"packageVersion"`
+	OwnershipClass string `json:"ownershipClass"`
+	// State is the materialization state. A kind that is registered but not
+	// available still appears in the dump, and the generated artifact records
+	// the state rather than silently omitting the kind.
+	State string `json:"state"`
+	// RendererID / RendererClass / RendererEntry / RendererTrustClass replace
+	// ui/src/main.tsx's string-literal registration as the authority for what
+	// draws a kind (ADR 0003 §4.5).
+	RendererID         string `json:"rendererId"`
+	RendererClass      string `json:"rendererClass"`
+	RendererEntry      string `json:"rendererEntry"`
+	RendererTrustClass string `json:"rendererTrustClass"`
+	// CompatibilityResponseSchema is "present" or "absent" (ADR 0003 §8 C4).
+	CompatibilityResponseSchema string `json:"compatibilityResponseSchema"`
+	// NamedDefinitions are the stable $defs entry points and what each is for.
+	NamedDefinitions map[string]string `json:"namedDefinitions,omitempty"`
+	// DefsDigest is the digest of the request schema's $defs sub-document, when
+	// it has one. It is what a hand-written adapter over that bundle stamps
+	// itself with — see ADR 0003 §4.7 and ui/src/lib/hitl-api.ts.
+	DefsDigest string `json:"defsDigest,omitempty"`
 }
 
 type dumpDoc struct {
-	EnvelopesVersion string     `json:"envelopesVersion"`
-	Types            []dumpType `json:"types"`
+	EnvelopesVersion string `json:"envelopesVersion"`
+	// HostVersion is the release definitions declare compatibility against.
+	HostVersion string `json:"hostVersion"`
+	// DefinitionSourceDigest is the @definition-source stamp for the whole
+	// registry: a stable hash over the ordered (kind, version, revision,
+	// manifest_digest) set. A generated artifact carries it, and
+	// tangent.definition_registry_list reports the live value, so a client can
+	// refuse to submit against a definition it was not generated for.
+	DefinitionSourceDigest string     `json:"definitionSourceDigest"`
+	Types                  []dumpType `json:"types"`
 }
 
 func main() {
@@ -116,10 +170,17 @@ func run() error {
 	}
 	manifestFS := envelopes.EmbeddedFS()
 
+	sourceDigest, digestErr := svc.DefinitionSourceDigest()
+	if digestErr != nil {
+		return fmt.Errorf("derive definition source digest: %w", digestErr)
+	}
+
 	specs := svc.All()
 	out := dumpDoc{
-		EnvelopesVersion: envelopesVersion,
-		Types:            make([]dumpType, 0, len(specs)),
+		EnvelopesVersion:       envelopesVersion,
+		HostVersion:            envelope.HostVersion,
+		DefinitionSourceDigest: sourceDigest,
+		Types:                  make([]dumpType, 0, len(specs)),
 	}
 	for _, spec := range specs {
 		dt := dumpType{
@@ -137,6 +198,9 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("read schema for %q: %w", spec.Name, err)
 			}
+		}
+		if material, ok := svc.LookupDefinitionMaterial(spec.Name); ok && material.Definition != nil {
+			dt.Definition = describeDefinition(*material.Definition, material.RequestSchema)
 		}
 		out.Types = append(out.Types, dt)
 	}
@@ -185,6 +249,65 @@ func schemaFor(
 		return "", nil, err
 	}
 	return path, doc, nil
+}
+
+// describeDefinition projects one materialized manifest into the dump. It
+// deliberately reads from the same materialization the server holds rather than
+// re-parsing the manifest file: a generator that parsed the tree itself could
+// disagree with the running host, which is the class of drift this whole
+// pipeline exists to make impossible.
+func describeDefinition(materialized definition.Materialized, requestSchema []byte) *dumpDefinition {
+	manifest := materialized.Manifest
+	out := &dumpDefinition{
+		Revision:       manifest.Revision,
+		Title:          manifest.Title,
+		ManifestDigest: materialized.Derived.ManifestDigest,
+		ContractDigest: materialized.Derived.ContractDigest,
+		PackageID:      manifest.PackageID,
+		PackageVersion: manifest.PackageVersion,
+		OwnershipClass: string(manifest.OwnershipClass),
+		State:          string(materialized.State),
+
+		RendererID:         manifest.Renderer.ID,
+		RendererClass:      string(manifest.Renderer.Class),
+		RendererEntry:      manifest.Renderer.Entry,
+		RendererTrustClass: string(manifest.Renderer.TrustClass),
+
+		CompatibilityResponseSchema: string(manifest.CompatibilityResponseSchema),
+		NamedDefinitions:            manifest.NamedDefinitions,
+		DefsDigest:                  schemaDefsDigest(requestSchema),
+	}
+	if out.CompatibilityResponseSchema == "" {
+		out.CompatibilityResponseSchema = string(definition.ResponseSchemaPresent)
+	}
+	return out
+}
+
+// schemaDefsDigest digests one schema's $defs sub-document, or returns empty
+// when it has none. Re-encoding the decoded map rather than slicing the source
+// bytes is what makes the digest stable against formatting: a reindented schema
+// file must not read as a contract change.
+func schemaDefsDigest(schema []byte) string {
+	if len(schema) == 0 {
+		return ""
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(schema, &document); err != nil {
+		return ""
+	}
+	defs, ok := document["$defs"]
+	if !ok {
+		return ""
+	}
+	var normalized map[string]any
+	if err := json.Unmarshal(defs, &normalized); err != nil {
+		return ""
+	}
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return ""
+	}
+	return definition.Digest(encoded)
 }
 
 // parseSchema decodes schema bytes as a generic JSON document so the Node
