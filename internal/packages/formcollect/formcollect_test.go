@@ -188,6 +188,32 @@ func TestEncodeRefusesInvalidState(t *testing.T) {
 			}},
 			formcollect.ErrInvalidAttachmentRef,
 		},
+		// An attachment is participant-typed metadata, never bytes this host
+		// fetched. A URI that is not `artifact://` is a request for a
+		// host-mediated effect (ADR 0003 §2.5), and an effect goes through
+		// internal/effect with a declared capability and a receipt — not
+		// through a text field a person pasted into a form.
+		{
+			"attachment ref naming a remote origin",
+			formcollect.Snapshot{FormID: "form-1", AttachmentRefs: []formcollect.AttachmentRef{
+				{ID: "attachment-1", Name: "spec.pdf", URI: "https://files.example.test/spec.pdf"},
+			}},
+			formcollect.ErrInvalidAttachmentRef,
+		},
+		{
+			"attachment ref naming a local file",
+			formcollect.Snapshot{FormID: "form-1", AttachmentRefs: []formcollect.AttachmentRef{
+				{ID: "attachment-1", Name: "spec.pdf", URI: "file:///etc/passwd"},
+			}},
+			formcollect.ErrInvalidAttachmentRef,
+		},
+		{
+			"attachment ref carrying an inline payload",
+			formcollect.Snapshot{FormID: "form-1", AttachmentRefs: []formcollect.AttachmentRef{
+				{ID: "attachment-1", Name: "spec.pdf", URI: "data:application/pdf;base64,AAA"},
+			}},
+			formcollect.ErrInvalidAttachmentRef,
+		},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

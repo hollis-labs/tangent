@@ -20,6 +20,8 @@ import (
 	"time"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/definition"
+	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -125,11 +127,31 @@ func main() {
 		return
 	}
 
+	// The host authority: a Cerberus Workspace where one is composed, and
+	// otherwise the standalone one, which registers no workspace root, grants
+	// no host-mediated effect capability, and holds no administrator
+	// (ADR 0004 §10). Composition is never mandatory; standalone is the normal
+	// configuration, not a degraded one.
+	//
+	// It is constructed first because two things downstream are derived from
+	// it and neither may be spelled independently: the definition registry's
+	// grantable-capability set, and the privileged-actor policy.
+	hostAuthority := effect.Standalone()
+
 	// Boot context governs envelope-registry load. Cancellation tears
 	// down the schema-compile loop cleanly; we rebind it once the
 	// service is up.
 	bootCtx, cancelBoot := context.WithCancel(context.Background())
-	envSvc, err := envelope.New(bootCtx)
+	envSvc, err := envelope.New(bootCtx, envelope.WithHostPolicy(definition.HostPolicy{
+		HostVersion:     envelope.HostVersion,
+		ProtocolVersion: envelope.ProtocolVersion,
+		// This field has had no producer until now. It is the host half of
+		// ADR 0003 §2.5's capability intersection, and it is empty for a
+		// standalone Tangent — so a definition that requires a non-optional
+		// capability is quarantined rather than served, which is the
+		// fail-closed behavior §8 C7 requires.
+		GrantableCapabilities: effect.GrantableCapabilityIDs(bootCtx, hostAuthority),
+	}))
 	cancelBoot()
 	if err != nil {
 		// Fail fast: a half-loaded registry would let unknown envelope
@@ -170,6 +192,14 @@ func main() {
 		// assert that a terminal outcome was delivered. Direct MCP callers
 		// never hold that authority.
 		interaction.WithDeliveryWorkerPolicy(roomflow.DeliveryWorkerPolicy{}),
+		// ADR 0004 §Q10 assigned CW-20260825-0077 the choice of whether to
+		// supply a real PrivilegedActorPolicy. The choice is: wire the seam,
+		// keep the default deny. Over the standalone authority this denies
+		// both host-policy and administrator questions — the same answer the
+		// unwired fallback gave, now reached through a construction that has a
+		// call site and a test.
+		interaction.WithPrivilegedActorPolicy(
+			interaction.NewEffectPrivilegedActorPolicy(hostAuthority)),
 	)
 	if interactionErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: build interaction service: %v\n", interactionErr)
@@ -228,6 +258,20 @@ func main() {
 	// credential. The resolver runs before the upgrade, so a refusal is an
 	// ordinary 403 rather than a socket that closes without explanation.
 	wsHandler.SetParticipantResolver(participantGate.ResolveBinding)
+
+	// The host-mediated effect broker (ADR 0003 §2.5). It shares the same
+	// database handle as everything else: a receipt whose interaction lives in
+	// another transaction is a receipt that can go missing.
+	effectStore, effectStoreErr := effect.NewSQLStore(sqlDB)
+	if effectStoreErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build effect store: %v\n", effectStoreErr)
+		os.Exit(1)
+	}
+	effectBroker, effectBrokerErr := effect.NewBroker(effectStore, hostAuthority)
+	if effectBrokerErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build effect broker: %v\n", effectBrokerErr)
+		os.Exit(1)
+	}
 
 	// Use 127.0.0.1 to match the listener's actual bind so the URL
 	// hint we log when triage creates a room resolves correctly even
@@ -354,6 +398,8 @@ func main() {
 		HITL:           hitlService,
 		Rooms:          mcpSrv,
 		Participants:   participantGate,
+		Effects:        effectBroker,
+		EffectContext:  interactionService,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

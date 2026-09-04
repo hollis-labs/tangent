@@ -926,6 +926,118 @@ are the cheapest (no state file, no normalizer) and prove the least;
 `tangent.dashboard` and `tangent.whiteboard` are the most expensive and would
 prove the most.
 
+## Amendments required by CW-20260825-0077
+
+**Status: proposed, pending review.** `CW-20260825-0077` made §2.5's effect
+capabilities real: `internal/effect` holds the namespace, the scoped handles
+that replace path strings, the broker every effect passes through, and the
+typed receipt each one produces. Six things this ADR says, or does not say,
+did not survive contact.
+
+Nothing below is adopted. The implementation took the least wire-visible
+reading in each case and said so at the point of the choice. The full model is
+[`../host-mediated-capabilities.md`](../host-mediated-capabilities.md).
+
+### B1 — There is a third capability namespace, and §2.5 does not know about it
+
+§2.5 and [ADR 0004 §2](0004-caller-participant-and-room-access-authority.md)
+carefully separate two namespaces. `internal/hitl/evidence.go` ships a third:
+`ArtifactPreviewCapability{Authority, CapabilityID}`, with its own registry
+(`RegisterArtifactPreviewAdapter`) and its own spelling. Its intent is already
+right — its comment states that Tangent never treats an authority, artifact id,
+path, URI, or action id in an evidence payload as permission to read anything —
+but a reader who trusts §2.5's "two namespaces" framing will not find it.
+
+**Amend §2.5** to name it, and to state that
+`ArtifactPreviewCapability` is an instance of the effect namespace whose
+capability id is `evidence.preview`. `CW-20260825-0077` maps the id and leaves
+the registry alone: no preview adapter is registered in production, so
+`/preview` always answers `evidence_unsupported`, and collapsing a registry
+nothing exercises would be churn without a test that could catch a mistake.
+
+### B2 — `granted_capabilities` had no producer, and §2.5 does not say who
+
+§2.5 marks `granted_capabilities` "Tangent policy, at materialization" and
+`HostPolicy.GrantableCapabilities` says `CW-20260825-0077` populates it — but
+neither says *from what*. `envelope.WithHostPolicy` had no non-test caller, so
+production built `definition.HostPolicy{HostVersion, ProtocolVersion}` and the
+field was structurally unreachable.
+
+**Amend §2.5** to name the source: an `effect.Authority` installed at
+construction, whose grant set is filtered to capabilities this build both knows
+and can execute. The filter matters — an authority that grants `process.exec`
+must not make a definition materialize as `available` on the strength of a
+grant nothing can honor — and it is a rule about `granted_capabilities` that
+belongs in this ADR, not only in the code.
+
+### B3 — §2.5 does not say what a renderer names instead of a path
+
+"A path string is not a capability" is the right rule and an incomplete one: it
+says what a `Capability.scope` may not contain and never says how a renderer
+addresses the file it is allowed to read. Without an answer, the first
+implementation puts the path in the request and constrains it against the
+scope, which is the shape the sentence was trying to forbid.
+
+**Amend §2.5** with the handle: a host-minted, scoped, expiring, use-counted
+reference, whose id is a *locator* and not a credential in the same sense
+[ADR 0004 §5](0004-caller-participant-and-room-access-authority.md) makes a
+room URL one. That last part is load-bearing for
+[ADR 0002 §5](0002-retention-and-draft-custody.md): a handle id has to be able
+to travel in a renderer payload, and it can only do that if possessing one
+grants nothing.
+
+### B4 — "capability-mediated" is not one thing, and §2.5 implies it is
+
+§2.5's five example ids sit in one table as though the host could refuse any of
+them. It cannot. `file.read_scoped` is genuinely enforced, because Tangent is
+the only actor that can open a file. `clipboard.write`, `export.download`, and
+`network.fetch` are not, because the browser hands a same-origin renderer the
+same power directly — `navigator.clipboard`, an `<a download>` over a Blob, a
+bare `fetch()` — and five shipped components already use two of them without
+asking anyone.
+
+**Amend §2.5** to classify each capability by how much of it the host can
+enforce, and to state that a declaration-only capability is audited and never
+described as enforced. `internal/effect` makes this a type (`effect.Mediation`)
+and stamps it on every receipt. It becomes enforcement for a renderer that
+`CW-20260825-0073` places behind a sandbox and a CSP; that dependency should be
+recorded here rather than discovered there.
+
+### B5 — §8 C7 fails closed on capabilities that no longer exist in isolation
+
+C7 quarantines a definition requiring an ungranted non-optional capability.
+That is correct and it is now reachable for the first time, because
+`GrantableCapabilities` has a producer. The consequence C7 does not state: a
+host that composes an authority, materializes definitions under its grant set,
+and then loses the authority will re-materialize the same definitions into
+`quarantined` on the next boot, with live interactions pinned to bindings whose
+grants no longer exist.
+
+**Amend §8** to say what happens to a pinned binding whose granted capability
+set is narrower on re-materialization. `CW-20260825-0077` takes the fail-closed
+reading — a handle is scoped to the binding digest that admitted it, and a
+changed binding refuses every handle minted under the old one — but the ADR
+should say whether the *interaction* is also affected or only its effects.
+
+### B6 — `Capability.scope` describes a constraint nothing consumes
+
+§2.5 defines `Capability.scope` as "a grant-shaped constraint (allowed roots,
+allowed origins, byte ceilings)" and pairs it with "a path string is not a
+capability". The implementation answers two of those three from the *host*
+instead: allowed roots come from an `effect.Authority` registration, and byte
+ceilings come from the registered root. Allowed origins has no consumer at all.
+
+That is deliberate and, for roots, stronger than the ADR: which directories a
+renderer may reach is the host's answer, not the publisher's, and a
+publisher-authored allowed-roots list would be a caller declaring its own
+sandbox. But as written, §2.5 promises enforcement of a field nothing reads.
+
+**Amend §2.5** to say which half of `scope` is publisher-authored and advisory
+(a declaration of intent, shown at grant time alongside `rationale`) and which
+half is host-derived and enforced. If allowed-origins is meant to be real, it
+needs a consumer named — and it cannot be enforced at all for a renderer the
+browser lets `fetch()` directly, which is B4 again from the other side.
+
 ## References
 
 - [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md) — §3

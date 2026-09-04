@@ -506,9 +506,10 @@ WHERE room_id = 'room-completion' AND envelope_id = 'env-completion'`).Scan(&ack
 		t.Fatal("projection did not surface the caller acknowledgement")
 	}
 
-	// 0007 (the definition registry) and 0008 (participant sessions) both sit
-	// above 0006, so undoing 0006 means rolling back three migrations, not one.
-	rollbackTo(t, database, 3)
+	// 0007 (the definition registry), 0008 (participant sessions), and 0009
+	// (effect handles and receipts) all sit above 0006, so undoing 0006 means
+	// rolling back four migrations, not one.
+	rollbackTo(t, database, 4)
 	if _, err := database.Exec(`SELECT 1 FROM terminal_outcome_acknowledgements LIMIT 1`); err == nil ||
 		!strings.Contains(err.Error(), "no such table") {
 		t.Fatalf("acknowledgements after rollback = %v, want no such table", err)

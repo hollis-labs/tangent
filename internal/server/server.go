@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
@@ -69,6 +70,17 @@ type Config struct {
 	// the SPA's direct /mcp POSTs (ADR 0004 §11). Optional in Config for the
 	// same reason MCP and HITL are; production main always passes it.
 	Rooms RoomService
+
+	// Effects is the host-mediated effect broker (ADR 0003 §2.5,
+	// CW-20260825-0077). When set together with EffectContext the server
+	// mounts POST /api/effects, the single channel a renderer uses to ask the
+	// host to act on the world. Optional in Config for the same reason MCP,
+	// HITL, and Rooms are.
+	Effects *effect.Broker
+
+	// EffectContext resolves the pinned definition binding whose granted
+	// capabilities govern an interaction's effects.
+	EffectContext EffectContextResolver
 
 	// Participants is the authenticated browser participant session gate.
 	//
@@ -200,6 +212,18 @@ func New(cfg Config) (*Server, error) {
 			cfg.Participants, authz.View, http.HandlerFunc(roomHandler.inspect))))
 		mux.Handle("POST /api/rooms/{roomID}/close", hitlSameOrigin(requireParticipant(
 			cfg.Participants, authz.View, http.HandlerFunc(roomHandler.close))))
+	}
+
+	if cfg.Effects != nil && cfg.EffectContext != nil {
+		// `view` is the route's floor, not its decision. Every effect names
+		// its own object-access precondition (effect.ObjectPrecondition) and
+		// the broker evaluates it; requiring `view` here means a browser with
+		// no admitted session never reaches the broker at all, which keeps the
+		// audit table free of rows for requests that were never participant
+		// acts.
+		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext)
+		mux.Handle("POST /api/effects", hitlSameOrigin(requireParticipant(
+			cfg.Participants, authz.View, http.HandlerFunc(effectHandler.request))))
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)

@@ -503,7 +503,7 @@ func callWhiteboard(
 						map[string]any{
 							"artifact_id": "artifact-1",
 							"uri":         "artifact://artifact-1",
-							"source":      "https://assets.example.test/reference.png",
+							"source":      "artifact://artifact-1",
 							"kind":        "reference_image",
 						},
 					},
@@ -511,7 +511,7 @@ func callWhiteboard(
 						map[string]any{
 							"artifact_id": "artifact-1",
 							"uri":         "artifact://artifact-1",
-							"source":      "https://assets.example.test/reference.png",
+							"source":      "artifact://artifact-1",
 							"kind":        "reference_image",
 						},
 					},

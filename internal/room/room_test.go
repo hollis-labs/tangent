@@ -1968,7 +1968,7 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "https://assets.example.test/screenshot.png",
+				Source:     "artifact://artifact-1",
 				URI:        "artifact://artifact-1",
 				Kind:       "reference_image",
 				Width:      1200,
@@ -2014,7 +2014,7 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "https://assets.example.test/screenshot.png",
+				Source:     "artifact://artifact-1",
 				URI:        "artifact://artifact-1",
 				Kind:       "reference_image",
 				Width:      1200,
@@ -2247,4 +2247,36 @@ func nullableString(v sql.NullString) string {
 		return ""
 	}
 	return v.String
+}
+
+// TestRoom_WhiteboardStateRejectsARemoteAssetSource is the regression for the
+// one place in the tree where an unmediated host-mediated effect was actually
+// happening.
+//
+// `assets[].source` is written into a tldraw asset record's `props.src` by
+// ui/src/lib/whiteboard-assets.ts, so a caller-supplied `https://…` made the
+// operator's browser fetch an origin the caller chose — `effect.NetworkFetch`
+// with no declaration, no grant, and no receipt. `uri` had always been held to
+// `artifact://`; `source` now is too. Admitting a remote origin again requires
+// a definition that declares `network.fetch` and a host policy that grants it.
+func TestRoom_WhiteboardStateRejectsARemoteAssetSource(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	for _, source := range []string{
+		"https://assets.example.test/reference.png",
+		"http://127.0.0.1:9/reference.png",
+		"file:///etc/passwd",
+	} {
+		err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+			BoardID: "board-remote",
+			Assets: []room.WhiteboardAssetRef{
+				{AssetID: "asset-remote", Source: source},
+			},
+		})
+		if !errors.Is(err, room.ErrInvalidWhiteboardAssetRef) {
+			t.Errorf("SaveWhiteboardSnapshot(source=%q) = %v, want ErrInvalidWhiteboardAssetRef", source, err)
+		}
+	}
 }

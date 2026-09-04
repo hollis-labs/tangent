@@ -354,6 +354,12 @@ func normalizeActions(items []Action) ([]Action, error) {
 	return out, nil
 }
 
+// attachmentArtifactScheme is the only locator form an attachment may carry.
+// It is spelled here rather than imported from internal/room because a
+// publisher package owns its own validation (ADR 0003 §5) and must not grow a
+// dependency on core to state a rule about its own fields.
+const attachmentArtifactScheme = "artifact://"
+
 func normalizeAttachmentRefs(items []AttachmentRef) ([]AttachmentRef, error) {
 	out := make([]AttachmentRef, 0, len(items))
 	for _, item := range items {
@@ -361,11 +367,21 @@ func normalizeAttachmentRefs(items []AttachmentRef) ([]AttachmentRef, error) {
 		if name == "" {
 			return nil, ErrInvalidAttachmentRef
 		}
+		// An attachment is participant-typed metadata, never bytes this host
+		// fetched. Holding its URI to `artifact://` keeps it that way: any
+		// other scheme is a request for a host-mediated effect
+		// (ADR 0003 §2.5), and an effect goes through internal/effect with a
+		// declared capability and a receipt, not through a text field a person
+		// pasted into a form.
+		uri := strings.TrimSpace(item.URI)
+		if uri != "" && !strings.HasPrefix(uri, attachmentArtifactScheme) {
+			return nil, ErrInvalidAttachmentRef
+		}
 		out = append(out, AttachmentRef{
 			ID:         strings.TrimSpace(item.ID),
 			Name:       name,
 			ArtifactID: strings.TrimSpace(item.ArtifactID),
-			URI:        strings.TrimSpace(item.URI),
+			URI:        uri,
 			MIMEType:   strings.TrimSpace(item.MIMEType),
 			Kind:       strings.TrimSpace(item.Kind),
 			SizeBytes:  item.SizeBytes,

@@ -542,6 +542,41 @@ and `/ws`; it permits header-less non-browser clients, so MCP clients are
 unaffected. Every response carries `Referrer-Policy: no-referrer` and
 `X-Content-Type-Options: nosniff`.
 
+## Host-mediated capabilities
+
+Implements [ADR 0003 §2.5](adr/0003-definition-and-package-ownership.md). The
+full model, including what is enforced and what is only declared, is
+[`host-mediated-capabilities.md`](host-mediated-capabilities.md).
+
+**Two capability namespaces, one gate.** `internal/authz` answers "may this
+principal perform this operation on this Tangent object" (`view`, `submit`,
+`draft`, `resolve`, `cancel`, `close`, `administer`). `internal/effect` answers
+"may this definition's renderer cause the host to act on the world"
+(`file.read_scoped`, `evidence.preview`, `export.download`, `clipboard.write`,
+`network.fetch`, `process.exec`). They are different Go types in different
+packages and never substitute for one another — but they are not independent:
+every effect names an object-access precondition, and `effect.Broker.Request`
+requires it, the manifest's declaration, the host's grant, a scoped handle, a
+participant intent, and an unused idempotency key, all together.
+
+**A handle replaces a path string.** `effect.Handle` is host-minted, scoped to
+one root, one interaction, one participant realm, and one pinned binding
+digest, with an expiry and a granted-use budget. Its id is a locator on the
+same footing as a room URL: possessing one grants nothing. A renderer never
+sees a root id or a path. Filesystem effects resolve through `os.Root`, which
+is race-safe against symlink swaps rather than checking a name and then opening
+it.
+
+**Every request writes an immutable receipt**, granted or refused, carrying a
+byte count and a content digest and never any content, path, or session.
+
+**Nothing composes an authority in the shipped binary.** `effect.Standalone()`
+registers no workspace root, grants no capability, and holds no administrator —
+so `definition.HostPolicy.GrantableCapabilities` is empty, no shipped
+definition declares a `required_capability`, and every request through
+`POST /api/effects` is refused with `effect_capability_undeclared`.
+`PrivilegedActorPolicy` is wired to the same authority and denies.
+
 ## Limits (v0.5)
 
 - **Localhost only.** No remote access. Authorization is object-scoped (ADR
@@ -550,6 +585,11 @@ unaffected. Every response carries `Referrer-Policy: no-referrer` and
   authority off the URL; it does not defend against that.
 - **`standalone-local` partitions are advisory.** See "Room access and caller
   scope" above. They prevent accident, not intent.
+- **Clipboard, ad-hoc download, and renderer-initiated fetch are declared, not
+  enforced.** The browser hands a same-origin renderer those powers directly,
+  and there is no document CSP. `effect.Mediation` records the difference on
+  every receipt; closing it needs the renderer trust classes and the CSP that
+  `CW-20260825-0073` owns.
 - **Single-user.** Multiple concurrent agent sessions are supported
   (multi-room), but they share one machine, one process, one user.
 - **One active pending envelope per room.** History persists, but only one

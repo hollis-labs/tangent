@@ -207,6 +207,7 @@ make test            # go test -race + vitest
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
+- [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
 - [`docs/manual-tests/workflow-smoke-tests.md`](./docs/manual-tests/workflow-smoke-tests.md) — quick smoke pass across every shipped workflow

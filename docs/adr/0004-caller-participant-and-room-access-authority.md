@@ -685,6 +685,62 @@ following material choices as locked:
 The review disposition was: accept this decision with full enforcement and the
 SPA migration in scope.
 
+## Amendments required by CW-20260825-0077
+
+**Status: proposed, pending review.** `CW-20260825-0077` reconciled this ADR's
+object-access capabilities with
+[ADR 0003 §2.5](0003-definition-and-package-ownership.md)'s host-mediated
+effect capabilities, and wired `PrivilegedActorPolicy`. Three things this ADR
+says did not survive contact. The full model is
+[`../host-mediated-capabilities.md`](../host-mediated-capabilities.md).
+
+### C1 — "the two never substitute for one another" is necessary and not sufficient
+
+§2 and ADR 0003 §2.5 both say the namespaces never substitute for one another,
+and both stop there. Non-substitutability alone is satisfied by two systems
+that ignore each other, which is the failure mode the reciprocal note warned
+about from the other direction.
+
+**Amend §2** to state the positive rule: an effect is admitted only when its
+*object-access precondition* is also satisfied, evaluated through
+`authz.Authorize` like every other refusal in the process. A renderer that may
+not `view` an interaction may not read a file on its behalf, however complete
+its effect grant. `effect.ObjectPrecondition` is the mapping, and it is a
+mapping and not an equivalence — it says which question must be answered first,
+never that the two capabilities are the same power.
+
+### C2 — §Q10's "supplies a real one" admits a reading this task refused
+
+§10 and §Q10 say `CW-20260825-0077` "supplies the real `PrivilegedActorPolicy`
+when a Cerberus Workspace authority is present", which reads as licence to ship
+an administrator. It should not, and this task did not: §12 puts credential
+custody out of scope, and §7 says nothing administers in the shipped binary.
+
+**Amend §Q10** to distinguish the two things it currently conflates: *wiring
+the seam* (done — `cmd/tangent` constructs a policy over
+`effect.Standalone()`, which denies both questions, so the composition point
+has a call site and a test) from *granting the capability* (not done, and not
+grantable without the credential-custody decision §12 defers). A composition
+point that only ever ran with the deny answer had not been tested; one that has
+never granted anything is still correct.
+
+### C3 — §6 enumerates capability material as a closed set, and it is not
+
+§6.1 says "the only capability material in the system is the participant
+session id" and lists the two places it may appear. That was true at `0a45caa`
+and stopped being true the moment scoped grants existed. An effect handle is
+not a credential — possessing one grants nothing without the session and the
+pinned binding — but it is short-lived grant *material* in the sense
+[ADR 0002 §5](0002-retention-and-draft-custody.md) cares about, and §6 gives no
+rule for it.
+
+**Amend §6** to distinguish capability material (never leaves the session
+store) from scoped locators (may travel, because they are re-authorized on
+every use and grant nothing alone). Without that distinction the honest reading
+of §6 forbids a handle id in a renderer payload, which would make the whole
+model unimplementable — and the dishonest reading treats the handle as a bearer
+token, which is worse.
+
 ## References
 
 - [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md) — §3 identity

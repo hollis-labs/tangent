@@ -813,7 +813,7 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 			{
 				AssetID:    "asset-1",
 				ArtifactID: "artifact-1",
-				Source:     "https://assets.example.test/reference.png",
+				Source:     "artifact://artifact-1",
 				URI:        "artifact://artifact-1",
 				Kind:       "reference_image",
 				MIMEType:   "image/png",

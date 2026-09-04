@@ -407,6 +407,19 @@ func normalizeDiffReviewArtifactRef(ref *DiffReviewArtifactRef) (*DiffReviewArti
 	if out.SizeBytes < 0 {
 		return nil, ErrInvalidDiffReviewArtifactRef
 	}
+	// `before_ref`, `after_ref`, and `export_refs[]` carried no scheme rule at
+	// all, while the structurally identical fields in `tangent.file-picker`
+	// and `tangent.whiteboard` were held to `artifact://`. They render as text
+	// today, so nothing dereferenced them — but "the current renderer does not
+	// make it an href" is not a boundary, and the next one will.
+	uri, uriErr := NormalizeArtifactURI(out.URI)
+	if uriErr != nil {
+		return nil, ErrInvalidDiffReviewArtifactRef
+	}
+	out.URI = uri
+	if out.URI == "" && out.ArtifactID != "" {
+		out.URI = artifactURIScheme + out.ArtifactID
+	}
 	return out, nil
 }
 
