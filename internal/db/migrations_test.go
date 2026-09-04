@@ -523,3 +523,112 @@ WHERE room_id = 'room-completion' AND envelope_id = 'env-completion'`).Scan(&ack
 		t.Fatalf("previous projection did not come back: %v", err)
 	}
 }
+
+// TestExpectedMigrationVersionTracksTheEmbeddedTree holds the derivation
+// honest: the expected version comes from the embedded migrations rather than
+// a constant, so adding a migration cannot forget to update it.
+func TestExpectedMigrationVersionTracksTheEmbeddedTree(t *testing.T) {
+	t.Parallel()
+
+	expected, err := ExpectedMigrationVersion()
+	if err != nil {
+		t.Fatalf("ExpectedMigrationVersion: %v", err)
+	}
+	entries, err := migrationsFS.ReadDir(migrationsDir)
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	var ups int
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".up.sql") {
+			ups++
+		}
+	}
+	if int(expected) != ups {
+		t.Fatalf("expected version %d but the tree holds %d up-migrations; the numbering has a "+
+			"gap or a duplicate, and a readiness probe would report the wrong target", expected, ups)
+	}
+}
+
+// TestInspectMigrationsDistinguishesTheDegradedSchemaStates covers what a
+// readiness probe has to be able to tell apart. Each state is constructed for
+// real — migrated, rolled back, marked dirty — rather than described.
+func TestInspectMigrationsDistinguishesTheDegradedSchemaStates(t *testing.T) {
+	t.Parallel()
+
+	expected, err := ExpectedMigrationVersion()
+	if err != nil {
+		t.Fatalf("ExpectedMigrationVersion: %v", err)
+	}
+	database, openErr := Open(filepath.Join(t.TempDir(), "inspect.db"))
+	if openErr != nil {
+		t.Fatalf("Open: %v", openErr)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+
+	// Never migrated: the bookkeeping table does not exist. That is a state to
+	// describe, not an error to return.
+	status, err := InspectMigrations(ctx, database)
+	if err != nil {
+		t.Fatalf("InspectMigrations on a fresh database: %v", err)
+	}
+	if status.Initialized || status.UpToDate() || status.Expected != expected {
+		t.Fatalf("fresh database status = %+v, want uninitialized at expected %d", status, expected)
+	}
+
+	if migrateErr := RunMigrations(database); migrateErr != nil {
+		t.Fatalf("RunMigrations: %v", migrateErr)
+	}
+	status, err = InspectMigrations(ctx, database)
+	if err != nil {
+		t.Fatalf("InspectMigrations after migrate: %v", err)
+	}
+	if !status.UpToDate() || status.Applied != expected {
+		t.Fatalf("migrated status = %+v, want up to date at %d", status, expected)
+	}
+
+	if rollbackErr := RollbackOne(database); rollbackErr != nil {
+		t.Fatalf("RollbackOne: %v", rollbackErr)
+	}
+	status, err = InspectMigrations(ctx, database)
+	if err != nil {
+		t.Fatalf("InspectMigrations after rollback: %v", err)
+	}
+	if status.UpToDate() || status.Applied != expected-1 {
+		t.Fatalf("rolled-back status = %+v, want applied %d and not up to date", status, expected-1)
+	}
+
+	if _, dirtyErr := database.Exec(`UPDATE schema_migrations SET dirty = 1;`); dirtyErr != nil {
+		t.Fatalf("mark dirty: %v", dirtyErr)
+	}
+	status, err = InspectMigrations(ctx, database)
+	if err != nil {
+		t.Fatalf("InspectMigrations on a dirty schema: %v", err)
+	}
+	if !status.Dirty || status.UpToDate() {
+		t.Fatalf("dirty status = %+v, want dirty and not up to date", status)
+	}
+}
+
+// TestInspectMigrationsFailsLoudlyOnAClosedDatabase: "cannot be read" is a
+// different answer from "has never been migrated", and collapsing them would
+// let a readiness probe recommend running a migration against a database that
+// is not there.
+func TestInspectMigrationsFailsLoudlyOnAClosedDatabase(t *testing.T) {
+	t.Parallel()
+
+	database, openErr := Open(filepath.Join(t.TempDir(), "closed.db"))
+	if openErr != nil {
+		t.Fatalf("Open: %v", openErr)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := InspectMigrations(context.Background(), database); err == nil {
+		t.Fatal("InspectMigrations reported a schema state for a closed database")
+	}
+	if _, err := InspectMigrations(context.Background(), nil); err == nil {
+		t.Fatal("InspectMigrations reported a schema state for a nil handle")
+	}
+}

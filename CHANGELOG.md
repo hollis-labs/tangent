@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Separate liveness, readiness, and capability health.** `/healthz` proved
+  only that the process was responding while reporting `{"status":"ok"}` for a
+  host whose database, migrations, registry, renderer host, or requested kind
+  was unavailable. Three probes now answer three questions: `GET /healthz`
+  (liveness — touches no dependency, so a supervisor never restarts a
+  repairable process in a loop), `GET /readyz` (readiness — database, schema
+  version against the version this binary embeds, definition registry, renderer
+  host, delivery-worker authorization; `ok`/`degraded`/`unavailable`, 503 only
+  on the last), and `GET /healthz/capability[/{kind}]` (per-kind, reported in
+  `internal/definition`'s existing `available`/`incompatible`/`quarantined`/
+  `unavailable` vocabulary rather than a second one). `tangent.health_report`
+  exposes all three over MCP for a Tether-connected client with no HTTP path to
+  the host; production `tools/list` is now 44. Every non-passing check carries
+  an operator action, and no report carries a payload, participant text,
+  filesystem path, session, or capability material.
 - **Versioned interaction-definition registry.** Every Tangent-owned kind now
   ships as a package under `internal/envelope/extensions/packages/` with an
   authored `manifest.yaml`: identity, request/response/error schemas, renderer
@@ -23,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **`tangent.definition_registry_list`, `tangent.definition_get`,
   `tangent.definition_registry_diagnostics`.** Payload-bounded registry
   diagnostics reporting materialization state, ownership, renderer binding,
-  digests, and retained-material coverage. Production `tools/list` is now 43.
+  digests, and retained-material coverage.
 - **Response-schema validation.** `envelope.Service.RegisterDefinition` carries
   a response schema into `TypeSpec.PayloadSchema` and into the binding digest.
   `tangent.hitl-item` is the first kind to use it; the other seventeen declare

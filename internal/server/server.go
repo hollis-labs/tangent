@@ -16,6 +16,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -82,6 +83,14 @@ type Config struct {
 	// capabilities govern an interaction's effects.
 	EffectContext EffectContextResolver
 
+	// Health answers the three operability questions liveness, readiness, and
+	// per-capability health (CW-20260825-0066). Optional in Config for the
+	// same reason MCP and HITL are: a transport-level test constructs a server
+	// without a database. When nil, /healthz still answers — liveness reads no
+	// dependency — and every other probe reports that the reporter is missing
+	// rather than 404ing, so an unwired build is visible instead of silent.
+	Health *health.Reporter
+
 	// Participants is the authenticated browser participant session gate.
 	//
 	// When set, document navigations mint a session, the browser APIs and the
@@ -135,7 +144,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealth)
+	registerHealthRoutes(mux, cfg.Health)
 
 	if cfg.MCP != nil {
 		// Streamable-HTTP transport (modern MCP clients). The SDK's
@@ -364,13 +373,6 @@ func buildRootHandler(cfg Config, logger *slog.Logger) (http.Handler, error) {
 		_, _ = io.WriteString(w, "tangent dev: frontend unreachable at "+cfg.DevFrontendURL+"\n")
 	}
 	return proxy, nil
-}
-
-// handleHealth returns a tiny liveness probe. Useful for `curl` smoke
-// checks and for later container/orchestrator probes.
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
 
 // roomFallbackHandler validates the {roomID} path variable against the

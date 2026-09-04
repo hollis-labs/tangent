@@ -10,6 +10,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
@@ -55,6 +56,11 @@ type Server struct {
 	// this task did not migrate still do.
 	packages *interactionpkg.Registry
 
+	// health answers liveness, readiness, and per-capability health. Nil is a
+	// valid state — a transport-level test constructs an MCP server with no
+	// durable substrate — and the tool says so rather than inventing a report.
+	health *health.Reporter
+
 	roomflowOptions []roomflow.Option
 
 	mcp *mcpsdk.Server
@@ -72,6 +78,19 @@ func WithInteractionService(service *interaction.Service) Option {
 			return fmt.Errorf("mcp: interaction service is nil")
 		}
 		server.interactions = service
+		return nil
+	}
+}
+
+// WithHealthReporter enables tangent.health_report. Omitting it leaves the
+// tool registered and answering `health_unavailable`, which is the honest
+// answer for a build that cannot measure its own readiness.
+func WithHealthReporter(reporter *health.Reporter) Option {
+	return func(server *Server) error {
+		if reporter == nil {
+			return fmt.Errorf("mcp: health reporter is nil")
+		}
+		server.health = reporter
 		return nil
 	}
 }
@@ -491,6 +510,9 @@ func (s *Server) registerTools() error {
 	// embedder without the substrate still needs to be able to ask why a kind
 	// is not being served.
 	if err := s.registerDefinitionTools(); err != nil {
+		return err
+	}
+	if err := s.registerHealthTool(); err != nil {
 		return err
 	}
 	if s.interactions != nil {

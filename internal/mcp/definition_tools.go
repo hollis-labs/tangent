@@ -212,8 +212,13 @@ type definitionRegistryDiagnosticsResult struct {
 	PackageCounts map[string]int `json:"package_counts"`
 	// CapabilityRequests lists every host-mediated effect capability any
 	// shipped definition asks for. Empty in v0.x; CW-20260825-0077 is what
-	// gives this content, and CW-20260825-0066 extends this result with
-	// readiness and capability health.
+	// would give it content.
+	//
+	// Readiness and capability health are deliberately *not* folded in here.
+	// CW-20260825-0066 kept them a separate tool (tangent.health_report) and a
+	// separate set of HTTP probes, because this result answers "what is in the
+	// registry" and those answer "can this process serve" — collapsing the two
+	// is the same mistake as a /healthz that returns 200 with no database.
 	CapabilityRequests []string `json:"renderer_effect_capability_requests"`
 }
 

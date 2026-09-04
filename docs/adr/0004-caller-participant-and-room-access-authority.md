@@ -431,7 +431,11 @@ the operation is bounded by any caller identity at all in the shipped process.
 | `tangent.hitl_await` | Asserted `caller.application_id` | `view`, own items only | Named item |
 | `tangent.hitl_withdraw` | Asserted `caller.application_id` | `cancel`, own items only, cause `caller_withdrawn` | Named item |
 
-Non-MCP surfaces, for completeness: `/healthz` stays open; `/mcp`, `/sse`, and
+Non-MCP surfaces, for completeness: `/healthz` stays open, as do the readiness
+and capability probes added beside it (`/readyz`, `/healthz/capability`,
+`/healthz/capability/{kind}`) — they are operator probes that must be reachable
+by `curl` with no session, and they carry no payload, participant text, path,
+or session material to protect; `/mcp`, `/sse`, and
 `/ws` gain the same-origin guard; the five `/api/hitl/*` routes gain the
 participant-session requirement on top of the origin guard they already have;
 `/r/{roomID}` and `/` keep serving the SPA bundle without a capability check.

@@ -98,13 +98,29 @@ After a reboot, a logout, or an MCP catalog refresh, confirm the
 runtime is singular before debugging anything else:
 
 ```bash
-curl -fsS http://127.0.0.1:7842/healthz          # -> {"status":"ok"}
+curl -fsS http://127.0.0.1:7842/healthz          # -> {"status":"ok","probe":"liveness"}
 lsof -nP -iTCP:7842 -sTCP:LISTEN                 # -> exactly one PID
+curl -fsS http://127.0.0.1:7842/readyz | jq .    # -> "status":"ok" and five passing checks
 ```
 
 If `lsof` shows more than one listener, or `healthz` answers but your
 supervisor reports the resource stopped, you have two launch
 authorities. Stop the unmanaged copy, not the supervised one.
+
+`/healthz` proves only that the process is responding — it deliberately
+touches no dependency, because the supervisor restarts on it and a probe
+that failed on a slow query would restart a repairable process in a loop.
+**A 200 from `/healthz` is not evidence that Tangent can serve.** `/readyz`
+is: it checks the database, the schema version against the version the
+running binary embeds, the definition registry, the renderer host, and the
+delivery worker, and returns 503 with a per-check `operator_action` when any
+of them fails. Per-kind answers are at `/healthz/capability/{kind}`, and the
+same three reports are available over MCP as `tangent.health_report` for a
+client that has no HTTP path to the host.
+
+A common real finding here is a schema behind the binary: `/healthz` answers,
+`/readyz` reports `migrations: fail`, and the fix is `tangent --migrate-only`
+followed by a redeploy — not a restart loop.
 
 > **Known issue — legacy `/sse` sessions go stale.** The server sets a
 > 30s `ReadTimeout`, and the long-lived MCP wrapper clears only the

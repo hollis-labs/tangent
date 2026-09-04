@@ -24,6 +24,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/mcp"
@@ -53,6 +54,15 @@ const (
 
 	// envDBPath overrides the default ~/.tangent/tangent.db location.
 	envDBPath = "TANGENT_DB_PATH"
+
+	// envManagedResource names the managed-runtime resource that owns this
+	// process's lifecycle, when one does (Cerberus resource `tangent-dev` in
+	// the reference installation). Health reports use it to recommend a
+	// concrete restart command instead of describing a wish. Unset is normal
+	// and supported: an unmanaged `./tangent` has no resource to name, and the
+	// reports phrase themselves generically rather than sending an operator to
+	// a resource that is not there.
+	envManagedResource = "TANGENT_MANAGED_RESOURCE"
 )
 
 func main() {
@@ -273,6 +283,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The three operability probes (CW-20260825-0066). The reporter is built
+	// here, at the composition root, because it is the only place that holds
+	// all five readiness dependencies at once — and because every one of them
+	// is passed as the live object rather than a snapshot, so a probe reports
+	// the process now instead of the process at boot.
+	devFrontendURL := os.Getenv(envDevFrontendURL)
+	healthReporter := health.NewReporter(
+		health.WithDatabase(sqlDB),
+		health.WithDefinitionRegistry(envSvc),
+		health.WithRendererHost(server.RendererHostProbe(devFrontendURL)),
+		// The delivery worker is a policy, not a goroutine: what readiness
+		// asks is whether the installed DeliveryWorkerPolicy admits the
+		// in-process caller-pull adapter. A build where it does not still
+		// serves rooms and still collects answers — it just never hands an
+		// outcome back to the caller.
+		health.WithDeliveryWorker(func() health.DeliveryWorker {
+			return health.DeliveryWorker{
+				Authorized: interactionService.AuthorizesDeliveryWorker(roomflow.DeliveryWorker),
+				Scope:      roomflow.DeliveryWorker.Scope,
+			}
+		}),
+		health.WithRuntime(health.Runtime{ManagedResource: os.Getenv(envManagedResource)}),
+	)
+
 	// Use 127.0.0.1 to match the listener's actual bind so the URL
 	// hint we log when triage creates a room resolves correctly even
 	// on IPv6-preferring systems where "localhost" lands on ::1.
@@ -295,6 +329,7 @@ func main() {
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithInteractionPackages(interactionPackages),
+		mcp.WithHealthReporter(healthReporter),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
@@ -389,7 +424,7 @@ func main() {
 
 	srv, err := server.New(server.Config{
 		Port:           *port,
-		DevFrontendURL: os.Getenv(envDevFrontendURL),
+		DevFrontendURL: devFrontendURL,
 		Logger:         logger,
 		Envelope:       envSvc,
 		MCP:            mcpSrv,
@@ -400,6 +435,7 @@ func main() {
 		Participants:   participantGate,
 		Effects:        effectBroker,
 		EffectContext:  interactionService,
+		Health:         healthReporter,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

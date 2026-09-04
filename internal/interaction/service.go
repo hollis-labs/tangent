@@ -54,6 +54,18 @@ type denyDeliveryWorkers struct{}
 
 func (denyDeliveryWorkers) AuthorizeDeliveryWorker(ActorBinding) bool { return false }
 
+// AuthorizesDeliveryWorker asks the installed policy whether an actor may
+// deliver terminal outcomes, without performing or claiming a delivery.
+//
+// It exists for readiness reporting. A build whose policy denies the
+// in-process caller-pull adapter still accepts participant resolutions and
+// still answers /healthz — it simply never hands an outcome back, which is the
+// failure mode that looks healthiest from outside and therefore the one worth
+// being able to ask about directly.
+func (s *Service) AuthorizesDeliveryWorker(actor ActorBinding) bool {
+	return s.delivery.AuthorizeDeliveryWorker(actor)
+}
+
 // SurfaceAccessPolicy lets a host reserve named surfaces without teaching the
 // generic interaction service any workflow-specific IDs. Capabilities are
 // application-internal and must never be accepted from untrusted wire input.

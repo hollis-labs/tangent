@@ -109,10 +109,11 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 
 // TestServer_ListsBaseToolSurface asserts the tool surface a server booted
 // without the durable interaction substrate exposes: the 25 legacy and session
-// tools callers integrate against, plus the 3 definition-registry diagnostics,
-// which do not depend on that substrate — an embedder without it still has to
-// be able to ask why a kind is not being served. Treat this as a contract test:
-// changing names or the count is a public-API change.
+// tools callers integrate against, plus the 3 definition-registry diagnostics
+// and tangent.health_report, which do not depend on that substrate — an
+// embedder without it still has to be able to ask why a kind is not being
+// served, and whether this host is ready to serve at all. Treat this as a
+// contract test: changing names or the count is a public-API change.
 func TestServer_ListsBaseToolSurface(t *testing.T) {
 	cs, _, done := connect(t)
 	defer done()
@@ -121,12 +122,12 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 28 {
+	if len(res.Tools) != 29 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 28 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 29 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{
@@ -161,6 +162,10 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 		"tangent.definition_registry_list":        false,
 		"tangent.definition_get":                  false,
 		"tangent.definition_registry_diagnostics": false,
+		// Operability probes (CW-20260825-0066): registered unconditionally so
+		// a build without a health reporter answers `health_unavailable`
+		// rather than silently lacking the tool.
+		"tangent.health_report": false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {

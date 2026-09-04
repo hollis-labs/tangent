@@ -248,3 +248,20 @@ func (s *Service) All() []envelopes.TypeSpec {
 // Len reports the number of registered envelope types. Used at startup
 // for the "loaded N envelope types" log line.
 func (s *Service) Len() int { return s.registry.Len() }
+
+// RegisteredKinds returns every registered envelope type name, sorted.
+//
+// It is deliberately narrower than All: a caller that only needs to know
+// *whether* a kind exists should not have to hold a compiled schema to find
+// out. Health reporting is the caller this exists for — it distinguishes a
+// kind that carries a definition manifest from one registered through the
+// legacy path from one this build has never heard of, and the middle case is
+// invisible without this.
+func (s *Service) RegisteredKinds() []string {
+	specs := s.registry.All()
+	kinds := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		kinds = append(kinds, spec.Name)
+	}
+	return kinds
+}

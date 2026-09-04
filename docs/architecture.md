@@ -607,6 +607,48 @@ definition declares a `required_capability`, and every request through
 `POST /api/effects` is refused with `effect_capability_undeclared`.
 `PrivilegedActorPolicy` is wired to the same authority and denies.
 
+## Operability: liveness, readiness, and capability health
+
+`internal/health/` — three probes that answer three different questions. A
+single `/healthz` that returned 200 while the store, migrations, registry,
+renderer host, or a requested kind was unavailable converted a loud failure
+into a silent one; separating them is what closes that.
+
+| Surface | Question | Touches |
+|---|---|---|
+| `GET /healthz` | Is this process responding? | Nothing. No database, no lock, no registry read. |
+| `GET /readyz` | Can it serve traffic right now? | Database ping + one statement, schema version against the version this binary embeds, definition registry, renderer host, delivery-worker authorization. |
+| `GET /healthz/capability` | Which kinds can it serve? | The materialized registry. Bounded listing of everything unservable. |
+| `GET /healthz/capability/{kind}` | Can it serve *this* kind? | One definition's materialization state and effect posture. |
+| `tangent.health_report` (MCP) | All three, over the channel the work arrives on. | The same reporter. |
+
+**Liveness deliberately touches nothing.** The managed-runtime health probe in
+`~/.cerberus/projects/tangent.cerberus.yaml` points at `/healthz`, and that
+probe feeds a supervisor's restart decision. Pointing a supervisor at readiness
+turns one slow query into a restart loop, so `/healthz` keeps its path and its
+`{"status":"ok"}` body, and readiness is what an operator and
+`cerberus resource doctor` read instead.
+
+**Readiness returns `ok`, `degraded`, or `unavailable`.** Degraded still serves
+— a quarantined kind on a host that serves seventeen others is not an outage —
+and answers 200; only `unavailable` answers 503.
+
+**Capability health reuses the materialization-state vocabulary** from
+`internal/definition` rather than inventing a second one. `incompatible`,
+`quarantined`, `unavailable`, and an intermediate state are four different
+fixes, and a report that collapsed them into "unhealthy" would cost an operator
+the difference. It also reports the effect posture truthfully: with no manifest
+declaring a capability, every kind reports
+`effect_request_outcome: effect_capability_undeclared` rather than silence,
+because silence reads as "effects work".
+
+**Every failing check carries an operator action, and no report carries
+content.** A health response is read during an incident and is the most likely
+thing in the process to be pasted into a chat window, so it names no path, no
+payload, no participant text, no session, and no capability material — only
+host-published facts and one sentence saying what to do. Detail strings, the
+per-kind listing, and the whole response body each have a ceiling.
+
 ## Limits (v0.5)
 
 - **Localhost only.** No remote access. Authorization is object-scoped (ADR
