@@ -4,7 +4,7 @@
  *
  * Reads the registry catalog from `go run ./cmd/tangent-dump-types` and
  * generates TypeScript interfaces + a discriminated envelope union +
- * a component-slug map for the renderer registry (PR 5).
+ * a component-slug map for the renderer registry.
  *
  * Output: ui/src/generated/envelope-types.ts
  *
@@ -12,11 +12,14 @@
  *   node scripts/generate-envelope-types.mjs
  *   node scripts/generate-envelope-types.mjs --check  # diff against committed file; exit 1 if stale
  *
- * Source of truth is the embedded YAML manifest + per-type JSON Schemas
- * in github.com/hollis-labs/go-envelopes. Tangent does NOT define its
- * own envelope schemas; this script consumes whatever the dump tool
- * surfaces. Tangent-specific types, when introduced, will register
- * through the plugin extension API and flow through the same dump.
+ * There are two sources of truth and the dump tool merges them: the
+ * embedded YAML manifest + per-type JSON Schemas in
+ * github.com/hollis-labs/go-envelopes for the core catalog, and
+ * internal/envelope/extensions for the Tangent-owned kinds. The dump tool
+ * builds the registry through the same extensions.RegisterAll the server
+ * uses, so every kind Tangent renders is typed here (ADR 0003 §9 S1).
+ * This script consumes whatever the dump surfaces and defines nothing of
+ * its own.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -62,10 +65,16 @@ function loadCatalog() {
 
 // --- Naming ---------------------------------------------------------------
 
-/** Convert "info-card" → "InfoCard". */
+/**
+ * Convert a wire name to a PascalCase identifier stem:
+ * "info-card" → "InfoCard", "tangent.diff-review" → "TangentDiffReview".
+ * The dot separator matters — plugin kinds are namespaced, and a bare
+ * split on "-" would leave an illegal "." in the emitted identifier.
+ */
 function toPascal(typeName) {
   return typeName
-    .split('-')
+    .split(/[.\-_]/)
+    .filter(Boolean)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join('');
 }
@@ -161,17 +170,38 @@ function generateInterface(name, schema, indent = '') {
   return lines.join('\n');
 }
 
+/**
+ * Emit a named declaration for one schema. Object schemas with properties
+ * become interfaces; everything else (a `oneOf` union, a bare `$ref` at
+ * the document root — both of which the HITL v1 bundle uses) becomes a
+ * type alias, because an interface for a non-object schema would silently
+ * emit an empty body.
+ */
+function generateDeclaration(name, schema) {
+  if (schema && schema.type === 'object' && schema.properties) {
+    return generateInterface(name, schema);
+  }
+  return `export type ${name} = ${jsonTypeToTS(schema)};`;
+}
+
 // --- Code generation ------------------------------------------------------
 
 function generate(catalog) {
   const lines = [];
   const types = catalog.types;
 
+  const coreCount = types.filter((t) => t.source === 'core').length;
+  const pluginCount = types.length - coreCount;
+
   lines.push('// AUTO-GENERATED FILE — DO NOT EDIT MANUALLY');
   lines.push(`// Generated from go-envelopes ${catalog.envelopesVersion} — do not edit.`);
   lines.push('// Run `make generate-envelopes` to regenerate.');
   lines.push('//');
-  lines.push('// Source of truth: github.com/hollis-labs/go-envelopes');
+  lines.push(`// Coverage: ${types.length} registered kinds — ${coreCount} go-envelopes core,`);
+  lines.push(`// ${pluginCount} Tangent-owned (internal/envelope/extensions).`);
+  lines.push('//');
+  lines.push('// Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)');
+  lines.push('// and internal/envelope/extensions (Tangent kinds).');
   lines.push('// Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs');
   lines.push('');
 
@@ -184,7 +214,7 @@ function generate(catalog) {
       if (defsEmitted.has(defName)) continue;
       defsEmitted.add(defName);
       lines.push(`/** Shared type used by "${t.name}" */`);
-      lines.push(generateInterface(defName, defSchema));
+      lines.push(generateDeclaration(defName, defSchema));
       lines.push('');
     }
   }
@@ -200,7 +230,7 @@ function generate(catalog) {
       lines.push(`/** Envelope data for "${t.name}" (no schema registered). */`);
     }
     if (t.hasSchema && t.schema) {
-      lines.push(generateInterface(dataName, t.schema));
+      lines.push(generateDeclaration(dataName, t.schema));
     } else {
       lines.push(`export type ${dataName} = Record<string, unknown>;`);
     }
@@ -247,7 +277,7 @@ function generate(catalog) {
   }
   lines.push('');
 
-  lines.push('/** Discriminated union of every envelope type known to go-envelopes core. */');
+  lines.push('/** Discriminated union of every envelope type Tangent has registered. */');
   lines.push('export type Envelope =');
   for (let i = 0; i < types.length; i += 1) {
     const armName = toEnvelopeInterfaceName(types[i].name);
@@ -276,7 +306,7 @@ function generate(catalog) {
 
   // EnvelopeKindMap: type → component slug. Source = ui.component when set.
   // Used by the renderer registry in PR 5 to look up React components.
-  lines.push('/** Maps envelope type -> component import slug from the YAML manifest. */');
+  lines.push('/** Maps envelope type -> component slug declared in the kind\'s manifest. */');
   lines.push('/** Empty string means the type has no frontend component yet. */');
   lines.push('export const EnvelopeKindMap = {');
   for (const t of types) {
@@ -311,11 +341,19 @@ if (CHECK_MODE) {
   }
   const existing = readFileSync(OUTPUT_FILE, 'utf-8');
   if (existing !== output) {
-    console.error('generated envelope types are stale.');
+    const committed = existing.split('\n');
+    const fresh = output.split('\n');
+    const at = fresh.findIndex((line, i) => committed[i] !== line);
+    console.error(`generated envelope types are stale (${catalog.types.length} kinds registered).`);
+    if (at !== -1) {
+      console.error(`first difference at line ${at + 1}:`);
+      console.error(`  committed: ${committed[at] ?? '<end of file>'}`);
+      console.error(`  expected:  ${fresh[at]}`);
+    }
     console.error('run: make generate-envelopes');
     process.exit(1);
   }
-  console.log('envelope types are up to date.');
+  console.log(`envelope types are up to date (${catalog.types.length} kinds).`);
   process.exit(0);
 }
 
