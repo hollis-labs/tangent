@@ -12,7 +12,8 @@ import (
 )
 
 type wizardInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type wizardSubmitDraft struct {
@@ -83,7 +84,7 @@ func (s *Server) handleWizard(
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, buildVisibleWizardEnvelope(&args.Envelope, room.ProjectWizardState(phaseState)))
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleWizardEnvelope(&args.Envelope, room.ProjectWizardState(phaseState)), args.Completion)
 }
 
 func wizardSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.WizardStateView) room.WizardSnapshot {

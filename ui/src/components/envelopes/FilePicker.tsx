@@ -2,13 +2,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import {
   clearFilePickerDraft,
   FILE_PICKER_AUTOSAVE_DEBOUNCE_MS,
   loadFilePickerDraft,
   saveFilePickerDraft,
 } from "@/lib/file-picker-draft-storage";
+import { buildSubmitGate, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// Control ids. The file checkboxes are the only repeated control, so they
+// derive their id from the same ref key the selection set is keyed by — which
+// is what lets the submit gate point at a specific checkbox.
+const SEARCH_ID = "file-picker-search";
+const SORT_ID = "file-picker-sort";
+const FILES_HINT_ID = "file-picker-files-hint";
+
+function fileControlID(key: string): string {
+  return `file-picker-file-checkbox-${key}`;
+}
 
 type BrowseRoot = {
   root_id: string;
@@ -110,7 +124,6 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
   const [previewKey, setPreviewKey] = useState(
     () => draft?.previewKey || refKey(initialSelected[0] ?? { root_id: "", relative_path: "" }),
   );
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(
     draft ? "Recovered unsent file-picker state from this browser." : null,
   );
@@ -163,6 +176,53 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
     return () => window.clearTimeout(handle);
   }, [activeRootID, currentDir, pickerID, previewKey, roomID, search, selectedKeys, sort]);
 
+  const revealRequirement = useRevealRequirement();
+
+  // Submit stays live and validates on click — that is this picker's shape, and
+  // it is unchanged. What changes is where the answer lands: the failure used
+  // to render inside the file-browser card, above the list, while the button
+  // sits below the whole preview card, so an operator scrolled to Submit saw
+  // nothing happen at all. The gate notice sits in the button's own row, and
+  // the click takes focus to the first checkbox that can clear it.
+  const gate = buildSubmitGate([
+    selectedRefs.length === 0 && {
+      controlID: visibleFiles.length > 0 ? fileControlID(refKey(visibleFiles[0])) : "",
+      label: "the file list",
+      message:
+        visibleFiles.length > 0
+          ? "no files are selected — tick at least one file in the list."
+          : "no files are selected, and this root has no file candidates to tick.",
+    },
+  ]);
+
+  const handleSubmit = () => {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
+      return;
+    }
+    setMessage(null);
+    if (roomID && pickerID) {
+      clearFilePickerDraft(roomID, pickerID);
+    }
+    onSubmit({
+      v: 1,
+      envelopeId: envelope.id,
+      kind: "data",
+      status: "submitted",
+      payload: {
+        picker_id: pickerID,
+        selected_refs: selectedRefs,
+        query_state: {
+          ...normalizeQueryState(envelope.data?.query_state),
+          current_root_id: activeRootID || undefined,
+          current_dir: currentDir || undefined,
+          search: search || undefined,
+          sort,
+        },
+      },
+    });
+  };
+
   return (
     <Card data-testid="file-picker-root">
       <CardHeader className="space-y-2">
@@ -175,13 +235,21 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
       <CardContent className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <div className="space-y-3">
           <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">Roots</p>
-            <div className="space-y-2" data-testid="file-picker-roots">
+            <fieldset
+              className="m-0 min-w-0 space-y-2 border-0 p-0"
+              data-testid="file-picker-roots"
+            >
+              <legend className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+                Roots
+              </legend>
               {browseRoots.map((root) => (
                 <button
                   key={root.root_id}
                   type="button"
                   data-testid={`file-picker-root-${root.root_id}`}
+                  // One choice, not several actions: the active root was
+                  // distinguishable only by an emerald border.
+                  aria-pressed={activeRootID === root.root_id}
                   onClick={() => {
                     setActiveRootID(root.root_id);
                     setCurrentDir("");
@@ -197,7 +265,7 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                   <div className="text-xs text-zinc-500">{root.path}</div>
                 </button>
               ))}
-            </div>
+            </fieldset>
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
@@ -227,10 +295,20 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                 </p>
               </div>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2" data-testid="file-picker-breadcrumbs">
+            {/*
+              The root crumb's entire accessible name was the literal "/", and
+              nothing said which crumb was the directory currently shown.
+            */}
+            <nav
+              className="mt-3 flex flex-wrap gap-2"
+              data-testid="file-picker-breadcrumbs"
+              aria-label="Current directory"
+            >
               <button
                 type="button"
                 className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+                aria-label="Root of this browse root"
+                aria-current={currentDir === "" ? "location" : undefined}
                 onClick={() => setCurrentDir("")}
               >
                 /
@@ -242,33 +320,46 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                     key={nextDir}
                     type="button"
                     className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+                    aria-current={nextDir === currentDir ? "location" : undefined}
                     onClick={() => setCurrentDir(nextDir)}
                   >
                     {segment}
                   </button>
                 );
               })}
-            </div>
+            </nav>
             <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_180px]">
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search file names or paths"
-                data-testid="file-picker-search"
-                className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
-              />
-              <select
-                value={sort}
-                onChange={(event) => setSort(event.target.value)}
-                data-testid="file-picker-sort"
-                className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
-              >
-                <option value="name:asc">Name asc</option>
-                <option value="name:desc">Name desc</option>
-                <option value="path:asc">Path asc</option>
-                <option value="path:desc">Path desc</option>
-              </select>
+              <div className="space-y-1">
+                <label className="block text-xs text-zinc-400" htmlFor={SEARCH_ID}>
+                  Search files
+                </label>
+                <input
+                  id={SEARCH_ID}
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search file names or paths"
+                  data-testid="file-picker-search"
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs text-zinc-400" htmlFor={SORT_ID}>
+                  Sort files
+                </label>
+                <select
+                  id={SORT_ID}
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value)}
+                  data-testid="file-picker-sort"
+                  className="w-full rounded-xl border border-zinc-800 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-100"
+                >
+                  <option value="name:asc">Name asc</option>
+                  <option value="name:desc">Name desc</option>
+                  <option value="path:asc">Path asc</option>
+                  <option value="path:desc">Path desc</option>
+                </select>
+              </div>
             </div>
             {directoryOptions.length > 0 ? (
               <div className="mt-3 flex flex-wrap gap-2" data-testid="file-picker-directories">
@@ -284,23 +375,47 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                 ))}
               </div>
             ) : null}
-            {submitError ? (
-              <p className="mt-3 text-sm text-amber-300" data-testid="file-picker-submit-error">
-                {submitError}
-              </p>
-            ) : null}
+            {/*
+              Draft-recovery notice, not validation: it stays with the browser
+              state it describes. The "nothing selected" refusal moved to the
+              Submit row, where the operator who triggered it is looking.
+            */}
             {message ? (
-              <p className="mt-3 text-sm text-emerald-300" data-testid="file-picker-message">
+              <p
+                className="mt-3 text-sm text-emerald-300"
+                data-testid="file-picker-message"
+                role="status"
+                aria-live="polite"
+              >
                 {message}
               </p>
             ) : null}
-            <div className="mt-3 space-y-2" data-testid="file-picker-files">
+            {/*
+              The checkboxes had no id, no name and no grouping, so "at least
+              one file" — the only rule this workflow has — had no programmatic
+              expression at all. The fieldset carries the rule; each checkbox
+              carries an id the gate can focus.
+            */}
+            <fieldset
+              className="mt-3 min-w-0 space-y-2 border-0 p-0"
+              data-testid="file-picker-files"
+              aria-describedby={FILES_HINT_ID}
+            >
+              <legend className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+                Files
+                <RequiredMark
+                  active={selectedRefs.length === 0}
+                  testID="file-picker-files-required"
+                />
+              </legend>
               {visibleFiles.map((item) => {
                 const key = refKey(item);
                 const checked = selectedKeys.has(key);
+                const controlID = fileControlID(key);
                 return (
                   <label
                     key={key}
+                    htmlFor={controlID}
                     data-testid={`file-picker-file-${key}`}
                     className={cn(
                       "flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 transition",
@@ -310,8 +425,12 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                     )}
                   >
                     <input
+                      id={controlID}
+                      name="file-picker-selection"
                       type="checkbox"
                       checked={checked}
+                      data-testid={`file-picker-file-checkbox-${key}`}
+                      aria-label={`${item.name ?? basename(item.relative_path)} (${item.relative_path})`}
                       onClick={() => setPreviewKey(key)}
                       onChange={() => {
                         setSelectedKeys((current) => {
@@ -337,7 +456,10 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
                   </label>
                 );
               })}
-            </div>
+              <FieldMessage id={FILES_HINT_ID}>
+                Select at least one file. Every ticked file is submitted as a durable artifact ref.
+              </FieldMessage>
+            </fieldset>
           </div>
 
           <div
@@ -366,41 +488,22 @@ export function FilePicker({ envelope, onSubmit, onCancel, roomID }: FilePickerP
             )}
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <SubmitGateNotice
+              gate={gate}
+              testID="file-picker-submit-gate"
+              action="Submit"
+              mode="attempt"
+              onReveal={revealRequirement}
+            />
             <Button type="button" variant="outline" onClick={onCancel}>
               Cancel
             </Button>
             <Button
               type="button"
               data-testid="file-picker-submit"
-              onClick={() => {
-                if (selectedRefs.length === 0) {
-                  setSubmitError("Select at least one file before submit.");
-                  return;
-                }
-                setSubmitError(null);
-                setMessage(null);
-                if (roomID && pickerID) {
-                  clearFilePickerDraft(roomID, pickerID);
-                }
-                onSubmit({
-                  v: 1,
-                  envelopeId: envelope.id,
-                  kind: "data",
-                  status: "submitted",
-                  payload: {
-                    picker_id: pickerID,
-                    selected_refs: selectedRefs,
-                    query_state: {
-                      ...normalizeQueryState(envelope.data?.query_state),
-                      current_root_id: activeRootID || undefined,
-                      current_dir: currentDir || undefined,
-                      search: search || undefined,
-                      sort,
-                    },
-                  },
-                });
-              }}
+              onClick={handleSubmit}
+              aria-describedby={gate.blocked ? "file-picker-submit-gate" : undefined}
             >
               Submit selection
             </Button>

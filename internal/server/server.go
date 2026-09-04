@@ -86,7 +86,10 @@ type Server struct {
 	envelope *envelope.Service
 }
 
-const httpServerWriteTimeout = 60 * time.Second
+const (
+	httpServerWriteTimeout = 60 * time.Second
+	httpServerReadTimeout  = 30 * time.Second
+)
 
 // New constructs a Server with the embedded-SPA or dev-proxy handler.
 //
@@ -172,7 +175,7 @@ func New(cfg Config) (*Server, error) {
 		Addr:              addr,
 		Handler:           loggingMiddleware(logger, mux),
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
+		ReadTimeout:       httpServerReadTimeout,
 		WriteTimeout:      httpServerWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -186,13 +189,21 @@ func New(cfg Config) (*Server, error) {
 	}, nil
 }
 
-// longLivedMCPHandler removes the server-wide response write deadline for MCP
-// transports. Room-backed tools deliberately wait for a human response, and
-// SSE subscriptions are likewise long-lived; both may validly outlive the
-// ordinary HTTP timeout. Request-context cancellation remains authoritative.
+// longLivedMCPHandler removes both server-wide deadlines for MCP transports.
+// Room-backed tools deliberately wait for a human response, and SSE
+// subscriptions are likewise long-lived; both may validly outlive the ordinary
+// HTTP timeouts. Request-context cancellation remains authoritative.
+//
+// Clearing the write deadline alone is not enough. A legacy `/sse` session is a
+// GET whose request body is never closed by the client, so the server-wide
+// ReadTimeout keeps counting against the connection and tears the stream down
+// mid-session — the MCP session id then disappears and the next POST answers
+// "session not found". Both deadlines must go.
 func longLivedMCPHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		controller := http.NewResponseController(w)
+		_ = controller.SetWriteDeadline(time.Time{})
+		_ = controller.SetReadDeadline(time.Time{})
 		next.ServeHTTP(w, r)
 	})
 }

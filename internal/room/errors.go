@@ -3,12 +3,20 @@ package room
 import "errors"
 
 var (
-	ErrUserCancelled                      = errors.New("user cancelled envelope")
-	ErrRoomDisconnected                   = errors.New("room: disconnected")
-	ErrRoomClosed                         = errors.New("room: closed")
-	ErrNoConn                             = errors.New("room: no active websocket connection")
-	ErrStaleConnection                    = errors.New("room: stale websocket connection")
-	ErrPresentationRevisionConflict       = errors.New("room: presentation revision conflict")
+	ErrUserCancelled                = errors.New("user cancelled envelope")
+	ErrRoomDisconnected             = errors.New("room: disconnected")
+	ErrRoomClosed                   = errors.New("room: closed")
+	ErrNoConn                       = errors.New("room: no active websocket connection")
+	ErrStaleConnection              = errors.New("room: stale websocket connection")
+	ErrPresentationRevisionConflict = errors.New("room: presentation revision conflict")
+	// ErrResolverLeaseHeld reports that another live connection holds the
+	// surface's resolver lease. The submission changed nothing; the losing
+	// client must resynchronize or take the lease over explicitly.
+	ErrResolverLeaseHeld = errors.New("room: resolver lease held by another connection")
+	// ErrDispositionTerminal reports that the canonical interaction behind a
+	// presentation is already terminal. The presentation is stale; the
+	// immutable outcome is unchanged and no second result is recorded.
+	ErrDispositionTerminal                = errors.New("room: interaction already terminal")
 	ErrRoomNotFound                       = errors.New("room: not found")
 	ErrInvalidPhaseID                     = errors.New("room: invalid phase id")
 	ErrInvalidPhaseKey                    = errors.New("room: invalid phase output key")

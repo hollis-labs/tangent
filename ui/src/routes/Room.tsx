@@ -8,6 +8,12 @@
 //   - The Room only owns the WS transport; envelope-shape decisions
 //     live in the component layer.
 //
+// Two lifecycles, rendered separately. `pending` is the interaction this tab
+// is looking at; `connection`/`sync` are who is attached to the surface and
+// which durable revisions this tab holds. Neither implies the other, so
+// ConnectionStatus is drawn whether or not there is an envelope, and the
+// envelope pane says nothing about sockets.
+//
 // Lifecycle:
 //   1. On mount, open WSClient(roomID).
 //   2. On `onEnvelope`, store the envelope id + payload in state.
@@ -17,9 +23,15 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
-import { connect } from "../lib/ws-client";
+import {
+  type ConnectionState,
+  connect,
+  type ServerError,
+  type SurfaceSync,
+} from "../lib/ws-client";
 
 type Pending = {
   envelopeId: string;
@@ -48,7 +60,11 @@ type SessionStatePayload = {
 export default function Room() {
   const { roomID } = useParams<{ roomID: string }>();
   const [pending, setPending] = useState<Pending | null>(null);
-  const [status, setStatus] = useState<string>("connecting...");
+  const [status, setStatus] = useState<string>("waiting for envelope...");
+  const [transport, setTransport] = useState<string>("connecting...");
+  const [connection, setConnection] = useState<ConnectionState | null>(null);
+  const [sync, setSync] = useState<SurfaceSync | null>(null);
+  const [serverError, setServerError] = useState<ServerError | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lifecycleRef = useRef<RoomLifecycle | null>(null);
   const initialRoomRef = useRef<string | null>(roomID ?? null);
@@ -76,6 +92,7 @@ export default function Room() {
       }
       setPending({ envelopeId, envelope: enriched, revision, roomID: targetRoomID });
       setStatus("envelope received");
+      setServerError(null);
     },
   );
 
@@ -86,12 +103,34 @@ export default function Room() {
     }
     const client = connect(initialRoomRef.current, {
       onOpen: () => {
-        setStatus("connected");
+        setTransport("connected");
       },
       onEnvelope: handleEnvelope,
+      onConnectionState: (state) => {
+        lifecycleRef.current?.receiveConnectionState(state);
+        setConnection(state);
+        setServerError(lifecycleRef.current?.lastServerError() ?? null);
+      },
+      onSync: (next) => {
+        lifecycleRef.current?.receiveSync(next);
+        setSync(next);
+      },
+      onServerError: (refused) => {
+        // A refused action did not happen. The lifecycle restores the envelope
+        // it optimistically cleared so the operator can act again once the
+        // reason — a lease held elsewhere, or a stale view — is resolved.
+        lifecycleRef.current?.receiveServerError(refused);
+        setServerError(refused);
+        setPending((current) => current ?? restoredPending(lifecycleRef.current));
+        setStatus("submission refused");
+      },
       onClose: (reason) => {
+        // Losing the socket is a connection fact only: the envelope stays
+        // presented server-side, and this tab clears its local view because it
+        // can no longer be sure the view is current.
         lifecycleRef.current?.clearEnvelope();
-        setStatus(`disconnected: ${reason}`);
+        setTransport(`disconnected: ${reason}`);
+        setConnection(null);
         setPending(null);
       },
       onError: (err) => {
@@ -114,7 +153,11 @@ export default function Room() {
       return;
     }
     setPending(null);
-    setStatus("switching rooms...");
+    setConnection(null);
+    setSync(null);
+    setServerError(null);
+    setTransport("switching rooms...");
+    setStatus("waiting for envelope...");
   }, [roomID]);
 
   const handleSubmit = (response: unknown) => {
@@ -131,8 +174,17 @@ export default function Room() {
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
-      <header className="mb-4 space-y-1">
+      <header className="mb-4 space-y-2">
         <h1 className="text-lg font-medium">Room {roomID}</h1>
+        <ConnectionStatus
+          transport={transport}
+          connection={connection}
+          sync={sync}
+          serverError={serverError}
+          onTakeOver={() => lifecycleRef.current?.claimResolver(true)}
+          onRelease={() => lifecycleRef.current?.releaseResolver()}
+          onResync={() => lifecycleRef.current?.resync()}
+        />
         <p className="text-xs text-zinc-400">status: {status}</p>
         {error ? <p className="text-xs text-red-400">error: {error}</p> : null}
       </header>
@@ -152,6 +204,22 @@ export default function Room() {
       )}
     </main>
   );
+}
+
+// restoredPending re-derives the render state from the presentation the
+// lifecycle held back. Enrichment is not re-run: the envelope was already
+// enriched when it was first presented.
+function restoredPending(lifecycle: RoomLifecycle | null): Pending | null {
+  const active = lifecycle?.activeEnvelope();
+  if (!lifecycle || !active) {
+    return null;
+  }
+  return {
+    envelopeId: active.envelopeId,
+    envelope: active.envelope,
+    revision: active.revision,
+    roomID: lifecycle.currentRoomID(),
+  };
 }
 
 async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknown> {

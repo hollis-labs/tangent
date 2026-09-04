@@ -25,8 +25,9 @@ type sessionCreateInput struct {
 }
 
 type sessionAdvanceInput struct {
-	RoomID   string             `json:"roomID"`
-	Envelope envelopes.Envelope `json:"envelope"`
+	RoomID     string             `json:"roomID"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type sessionGetInput struct {
@@ -82,6 +83,12 @@ type sessionGetResult struct {
 	FinalOutput           *room.FinalOutputView            `json:"final_output,omitempty"`
 	EnvelopesHistory      []room.EnvelopeHistory           `json:"envelopes_history"`
 	CurrentEnvelope       *envelopes.Envelope              `json:"current_envelope,omitempty"`
+	// Connections reports the room's Connection lifecycle: who is attached and
+	// which client holds the resolver lease. It is deliberately a sibling of
+	// the interaction projections rather than folded into Status, because a
+	// room can be active with nobody looking and connected with nothing to
+	// answer.
+	Connections *room.ConnectionState `json:"connections,omitempty"`
 }
 
 type sessionPhaseStateResult struct {
@@ -129,7 +136,7 @@ func (s *Server) handleSessionAdvance(
 	_ *mcpsdk.CallToolRequest,
 	args sessionAdvanceInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	return s.advanceRoomEnvelope(ctx, args.RoomID, &args.Envelope)
+	return s.advanceRoomEnvelope(ctx, args.RoomID, &args.Envelope, nil, args.Completion)
 }
 
 func (s *Server) handleSessionGet(
@@ -177,6 +184,8 @@ func (s *Server) handleSessionGet(
 		result.Status = "active"
 		result.Phase = "active"
 		result.CurrentEnvelope = rm.CurrentEnvelope()
+		state := rm.ConnectionState()
+		result.Connections = &state
 	}
 	toolRes, payload := toolJSONResult(result)
 	return toolRes, payload, nil
@@ -219,13 +228,20 @@ func (s *Server) handleSessionSetPhaseOutput(
 }
 
 func (s *Server) handleSessionClose(
-	_ context.Context,
+	ctx context.Context,
 	_ *mcpsdk.CallToolRequest,
 	args sessionCloseInput,
 ) (*mcpsdk.CallToolResult, sessionCloseResult, error) {
 	status := args.Status
 	if status == "" {
 		status = "closed"
+	}
+	// Closing a room is an explicit, authorized caller action — one of the two
+	// things permitted to terminalize outstanding work. The canonical surface
+	// disposition is recorded first so the legacy room rows written below are
+	// a projection of that decision rather than a competing claim about it.
+	if err := s.closeRoomDurably(ctx, args.RoomID, status); err != nil {
+		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room interactions: %v", err)), sessionCloseResult{}, nil
 	}
 	if err := s.manager.Close(args.RoomID, status); err != nil {
 		if errors.Is(err, room.ErrRoomNotFound) {
@@ -254,18 +270,53 @@ func (s *Server) handleSessionList(
 	return toolRes, payload, nil
 }
 
+// advanceRoomEnvelope is the single entry point every named room workflow and
+// tangent.session_advance funnels through.
+//
+// When the durable substrate is installed it routes to the canonical
+// compatibility adapter; the legacy blocking path below remains only for
+// embedders that construct the MCP server without an interaction service, and
+// it is the behavior the durable path is measured against.
+// request is the caller's own envelope: it establishes durable identity and is
+// what an identical retry is compared against. presented is what the
+// participant actually sees — for several workflows that is the caller's
+// envelope merged with persisted room state, or (for synthesis notes) a
+// redacted view of it. They are deliberately separate: room state moves as the
+// participant works, so keying identity on the presented envelope would turn
+// every legitimate retry into a conflict. Pass nil when they are the same.
 func (s *Server) advanceRoomEnvelope(
+	ctx context.Context,
+	roomID string,
+	request *envelopes.Envelope,
+	presented *envelopes.Envelope,
+	completion completionInput,
+) (*mcpsdk.CallToolResult, any, error) {
+	if request == nil {
+		return toolErrorResult(envelopes.ErrorCodeValidationFailed, "envelope is required"), nil, nil
+	}
+	if presented == nil {
+		presented = request
+	}
+	if err := s.envSvc.Validate(presented); err != nil {
+		return triageErrorResult(err), nil, nil
+	}
+	if s.roomflow != nil {
+		return s.advanceRoomEnvelopeDurable(ctx, roomID, request, presented, completion, callerIdentity(nil))
+	}
+	return s.advanceRoomEnvelopeLegacy(ctx, roomID, presented)
+}
+
+// advanceRoomEnvelopeLegacy is the v0.12 blocking path: it pushes the envelope
+// onto the room and blocks the caller's request until the participant answers,
+// the room closes, or the request context expires. Its shortcoming is the
+// reason this task exists — an expiring context both loses the result and
+// terminalizes the request — so it is kept strictly as the compatibility
+// reference for embedders without the durable substrate.
+func (s *Server) advanceRoomEnvelopeLegacy(
 	ctx context.Context,
 	roomID string,
 	env *envelopes.Envelope,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if env == nil {
-		return toolErrorResult(envelopes.ErrorCodeValidationFailed, "envelope is required"), nil, nil
-	}
-	if err := s.envSvc.Validate(env); err != nil {
-		return triageErrorResult(err), nil, nil
-	}
-
 	rm, ok := s.manager.Get(roomID)
 	if !ok {
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
@@ -279,43 +330,7 @@ func (s *Server) advanceRoomEnvelope(
 	}
 
 	resp, err := rm.PushWithResponseTransform(ctx, env, func(resp *envelopes.Response) (*envelopes.Response, error) {
-		if resp == nil {
-			return nil, fmt.Errorf("room response is nil")
-		}
-		if resp.EnvelopeID != env.ID {
-			return nil, fmt.Errorf("%w: response envelopeId %q does not match pending envelope %q", envelopes.ErrSchemaValidation, resp.EnvelopeID, env.ID)
-		}
-		if err := s.envSvc.ValidateResponse(env.Type, resp); err != nil {
-			return nil, err
-		}
-		if env.Type == whiteboardEnvelopeType {
-			return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == dashboardEnvelopeType {
-			return s.normalizeDashboardSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == filePickerEnvelopeType {
-			return s.normalizeFilePickerSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == progressPanelEnvelopeType {
-			return s.normalizeProgressPanelSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == wizardEnvelopeType {
-			return s.normalizeWizardSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == diffReviewEnvelopeType {
-			return s.normalizeDiffReviewSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == spreadsheetReviewEnvelopeType {
-			return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == approvalQueueEnvelopeType {
-			return s.normalizeApprovalQueueSubmitResponse(roomID, env, resp)
-		}
-		if env.Type == formCollectEnvelopeType {
-			return s.normalizeFormCollectSubmitResponse(roomID, env, resp)
-		}
-		return resp, nil
+		return s.NormalizeResponse(roomID, env, resp)
 	})
 	if err != nil {
 		if errors.Is(err, room.ErrUserCancelled) {

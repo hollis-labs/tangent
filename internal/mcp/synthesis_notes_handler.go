@@ -12,7 +12,8 @@ import (
 )
 
 type synthesisNotesInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleSynthesisNotes(
@@ -71,7 +72,7 @@ func (s *Server) handleSynthesisNotes(
 	}
 
 	safeEnvelope := buildVisibleSynthesisEnvelope(&args.Envelope, room.ProjectSynthesisNotes(phaseState))
-	return s.advanceRoomEnvelope(ctx, roomID, safeEnvelope)
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, safeEnvelope, args.Completion)
 }
 
 func storeSynthesisOutputs(manager *room.Manager, roomID string, data map[string]any) error {

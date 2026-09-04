@@ -13,7 +13,8 @@ import (
 )
 
 type whiteboardInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type whiteboardSelectionSummary struct {
@@ -121,7 +122,7 @@ func (s *Server) handleWhiteboard(
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, buildVisibleWhiteboardEnvelope(&args.Envelope, room.ProjectWhiteboardState(phaseState)))
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleWhiteboardEnvelope(&args.Envelope, room.ProjectWhiteboardState(phaseState)), args.Completion)
 }
 
 func whiteboardSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.WhiteboardStateView) room.WhiteboardSnapshot {

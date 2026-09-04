@@ -13,7 +13,8 @@ import (
 )
 
 type progressPanelInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type progressPanelSubmitDraft struct {
@@ -106,7 +107,9 @@ func (s *Server) handleProgressPanel(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleProgressPanelEnvelope(&args.Envelope, room.ProjectProgressPanelState(phaseState)),
+		args.Completion,
 	)
 }
 

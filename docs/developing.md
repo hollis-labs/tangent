@@ -95,6 +95,10 @@ For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
 go-envelopes registry) and the Wails-deferral note, see
 [`architecture.md`](./architecture.md).
 
+For how a room workflow states what it still needs, and how it reports a
+submission the server refused, see
+[`room-validation-affordances.md`](./room-validation-affordances.md).
+
 ## Known limitations (v0.6)
 
 See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
@@ -142,8 +146,12 @@ shape fits every kind.
 **Go (registration + handler):**
 
 1. Define the envelope type in `internal/envelope/extensions/<kind>.go`,
-   following `triage.go`. Register it via the plugin extension API
-   alongside `triage` so `go-envelopes` validates it.
+   following `triage.go`. Register it via the plugin extension API so
+   `go-envelopes` validates it, then add one line to the
+   `registrations` table in `internal/envelope/extensions/register_all.go`.
+   That table is the only registration list: `extensions.RegisterAll`
+   backs both `cmd/tangent` and `cmd/tangent-dump-types`, so the kind
+   reaches the server and the TypeScript codegen from a single edit.
 2. If the kind drives an MCP tool, add the tool wiring under
    `internal/mcp/` — see `triage_handler.go` and `triage_schema.go`
    for the hand-rolled JSON Schema pattern. The handler either creates a
@@ -163,11 +171,8 @@ shape fits every kind.
    extension pattern.
 5. Codegen TS types: `make generate-envelopes`. Commit the regenerated
    `ui/src/generated/envelope-types.ts`. CI fails the build if it's
-   stale (`make check-envelopes`).
-6. At three extension kinds, hand-registration is still fine. Once a
-   fourth or fifth Tangent-specific kind lands, revisit
-   `followups.tangent.v01.dump_types_includes_extensions` and consider
-   codegen-driven auto-registration.
+   stale (`make check-envelopes`), and the gate now covers every
+   Tangent-owned kind, not just the upstream core catalog.
 
 ## Adding a new workflow
 
@@ -180,6 +185,14 @@ workflow kinds are the worked examples. If the workflow
 is multi-step,
 prefer reusing the `tangent.session_*` substrate and the room phase
 state rather than inventing a parallel room lifecycle.
+
+Before writing the SPA component, read
+[`room-validation-affordances.md`](./room-validation-affordances.md). It
+carries the conventions every room follows for required fields, blocked
+terminal CTAs, and the split between a *blocked* submission (the operator
+still owes something; amber, `role="status"`, owned by the workflow) and a
+*refused* one (the server declined; red, `role="alert"`, owned by
+`ConnectionStatus`). `ApprovalQueue.tsx` is the worked exemplar.
 
 ## Migration note
 

@@ -26,6 +26,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
@@ -109,82 +110,14 @@ func main() {
 	}
 	logger.Info("loaded envelope types", "count", envSvc.Len())
 
-	// Plugin-extension registration. Triage isn't in go-envelopes core
-	// in v0.1.0 (planned for v0.3); we register the in-tree manifest
-	// fragment here via the plugin extension API so envelope validation
-	// in Dispatcher.Dispatch succeeds for triage envelopes. When core
-	// learns about triage upstream, this call goes away — handler
-	// registration below is unaffected.
-	if regErr := extensions.RegisterTriage(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register triage extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register feedback extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterFormCollect(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register form-collect extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register design-iteration extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterInterviewQuestion(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register interview-question extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterBlockDraft(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register block-draft extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterProseRevision(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register prose-revision extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register output-render extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register whiteboard extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterDashboard(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register dashboard extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterFilePicker(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register file-picker extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterProgressPanel(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register progress-panel extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterWizard(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register wizard extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterDiffReview(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register diff-review extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterSpreadsheetReview(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register spreadsheet-review extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterApprovalQueue(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register approval-queue extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register synthesis-notes extension: %v\n", regErr)
-		os.Exit(1)
-	}
-	if regErr := extensions.RegisterHITLItem(envSvc); regErr != nil {
-		fmt.Fprintf(os.Stderr, "tangent: register hitl-item extension: %v\n", regErr)
+	// Plugin-extension registration. The Tangent-owned kinds are not in
+	// go-envelopes core in v0.1.0; extensions.RegisterAll installs the
+	// in-tree manifest fragments through the plugin extension API so
+	// envelope validation in Dispatcher.Dispatch succeeds for them. The
+	// same function backs cmd/tangent-dump-types, so the generated
+	// TypeScript always describes the registry this server serves.
+	if regErr := extensions.RegisterAll(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register envelope extensions: %v\n", regErr)
 		os.Exit(1)
 	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
@@ -196,6 +129,10 @@ func main() {
 		interaction.NewStore(sqlDB),
 		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion),
 		interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
+		// The in-process caller-pull adapter is the only actor allowed to
+		// assert that a terminal outcome was delivered. Direct MCP callers
+		// never hold that authority.
+		interaction.WithDeliveryWorkerPolicy(roomflow.DeliveryWorkerPolicy{}),
 	)
 	if interactionErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: build interaction service: %v\n", interactionErr)
@@ -323,6 +260,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register synthesis-notes handler: %v\n", regErr)
 		os.Exit(1)
 	}
+
+	// Rebuild every live room's UI from canonical records. The in-memory
+	// pending map is empty at this point, so anything a browser sees after a
+	// restart came from durable interactions, not from process-local state.
+	restored, restoreErr := mcpSrv.RestoreRoomPresentations(context.Background())
+	if restoreErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: restore room presentations: %v\n", restoreErr)
+		os.Exit(1)
+	}
+	logger.Info("restored room presentations",
+		"restored", restored.Restored,
+		"missing_rooms", restored.MissingRooms,
+		"undefinable", restored.Undefinable,
+	)
 
 	srv, err := server.New(server.Config{
 		Port:           *port,

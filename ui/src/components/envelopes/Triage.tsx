@@ -18,6 +18,9 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
+import { buildSubmitGate, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 
 /**
@@ -182,23 +185,56 @@ function pickLabel(rec: Record<string, unknown>): string | null {
   return null;
 }
 
+// Item labels are freeform envelope strings and can run to a paragraph. The
+// gate notice quotes one inline, so clamp it: an unbounded quote pushes the
+// "Go to" button off the footer row on a narrow viewport.
+function shortLabel(label: string): string {
+  const collapsed = label.replace(/\s+/g, " ").trim();
+  return collapsed.length > 60 ? `${collapsed.slice(0, 57)}\u2026` : collapsed;
+}
+
 export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
   const items = useMemo(() => normalizeItems(envelope.data?.items), [envelope.data?.items]);
   const [decisions, setDecisions] = useState<Record<string, TriageAction>>({});
 
-  const undecidedCount = items.length - Object.keys(decisions).length;
+  const revealRequirement = useRevealRequirement();
+
+  // Which rows are still in the operator's way, in list order. The old code
+  // only knew *how many* were undecided, and only said so in the header — far
+  // above the CTA and never naming a row. Keeping the rows themselves lets the
+  // gate name the first one and send the operator straight to its buttons.
+  const undecided = items.filter((item) => !decisions[item.itemId]);
+  const undecidedCount = undecided.length;
+
   // Submit is allowed when every item has a decision OR the envelope
   // carried no items at all (an empty triage submits decisions: []).
   // The earlier `items.length > 0` clause incorrectly disabled submit
   // for empty payloads while the UI copy implied they were submittable.
-  const allDecided = undecidedCount === 0;
+  // The gate encodes exactly that rule — no items means no requirement.
+  const gate = buildSubmitGate([
+    undecided.length > 0 && {
+      // Every row is mounted in one list, so there is nothing to reveal: the
+      // Accept button of the first undecided row already exists in the DOM.
+      controlID: `triage-action-${undecided[0].itemId}-accept`,
+      label: undecided.length === 1 ? "the undecided item" : "the next undecided item",
+      message:
+        undecided.length === 1
+          ? `"${shortLabel(undecided[0].label)}" still needs a decision.`
+          : `${undecided.length} items still need a decision, starting with "${shortLabel(
+              undecided[0].label,
+            )}".`,
+    },
+  ]);
 
   const setDecision = (itemId: string, action: TriageAction) => {
     setDecisions((prev) => ({ ...prev, [itemId]: action }));
   };
 
   const handleSubmit = () => {
-    if (!allDecided) return;
+    if (gate.blocked) {
+      revealRequirement(gate.first);
+      return;
+    }
     const payload: TriageResponse = {
       v: 1,
       envelopeId: envelope.id,
@@ -251,7 +287,12 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-zinc-100 break-words">{item.label}</p>
+                    <p
+                      id={`triage-item-${item.itemId}-label`}
+                      className="text-sm font-medium text-zinc-100 break-words"
+                    >
+                      {item.label}
+                    </p>
                     {item.details && item.isObject ? (
                       <pre className="mt-1 max-h-40 overflow-auto rounded border border-zinc-800 bg-zinc-900 p-2 text-[10px] text-zinc-400">
                         {item.details}
@@ -268,24 +309,50 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
                   ) : null}
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {ACTIONS.map((action) => {
-                    const selected = current === action.id;
-                    return (
-                      <Button
-                        key={action.id}
-                        type="button"
-                        size="sm"
-                        variant={selected ? "default" : "outline"}
-                        data-testid={`triage-action-${item.itemId}-${action.id}`}
-                        aria-pressed={selected}
-                        className={cn("min-w-[5rem]", selected ? action.cls : null)}
-                        onClick={() => setDecision(item.itemId, action.id)}
-                      >
-                        {action.label}
-                      </Button>
-                    );
-                  })}
+                {/*
+                  The three buttons are one choice, not three independent
+                  actions, so they are a named group: a screen reader reads
+                  "<item> Decision, group" rather than three loose buttons with
+                  no idea which row they belong to. The marker is the only
+                  thing on the row that says a decision is owed at all — the
+                  header count never named a row.
+                */}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <span
+                      id={`triage-item-${item.itemId}-decision-label`}
+                      className="text-[11px] font-medium uppercase tracking-wide text-zinc-500"
+                    >
+                      Decision
+                    </span>
+                    <RequiredMark
+                      active={!current}
+                      testID={`triage-item-${item.itemId}-required`}
+                    />
+                  </div>
+                  <fieldset
+                    aria-labelledby={`triage-item-${item.itemId}-label triage-item-${item.itemId}-decision-label`}
+                    className="flex flex-wrap gap-2"
+                  >
+                    {ACTIONS.map((action) => {
+                      const selected = current === action.id;
+                      return (
+                        <Button
+                          key={action.id}
+                          id={`triage-action-${item.itemId}-${action.id}`}
+                          type="button"
+                          size="sm"
+                          variant={selected ? "default" : "outline"}
+                          data-testid={`triage-action-${item.itemId}-${action.id}`}
+                          aria-pressed={selected}
+                          className={cn("min-w-[5rem]", selected ? action.cls : null)}
+                          onClick={() => setDecision(item.itemId, action.id)}
+                        >
+                          {action.label}
+                        </Button>
+                      );
+                    })}
+                  </fieldset>
                 </div>
               </div>
             );
@@ -293,14 +360,21 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
         )}
       </CardContent>
 
-      <CardFooter className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-800">
+      <CardFooter className="flex flex-wrap items-center justify-end gap-3 border-t border-zinc-800">
+        <SubmitGateNotice
+          gate={gate}
+          testID="triage-submit-gate"
+          action="Submit"
+          onReveal={revealRequirement}
+        />
         <Button type="button" variant="ghost" data-testid="triage-cancel" onClick={onCancel}>
           Cancel
         </Button>
         <Button
           type="button"
           data-testid="triage-submit"
-          disabled={!allDecided}
+          disabled={gate.blocked}
+          aria-describedby={gate.blocked ? "triage-submit-gate" : undefined}
           onClick={handleSubmit}
         >
           Submit

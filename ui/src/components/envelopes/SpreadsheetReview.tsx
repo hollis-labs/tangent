@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -12,7 +13,19 @@ import {
   SPREADSHEET_REVIEW_AUTOSAVE_DEBOUNCE_MS,
   saveSpreadsheetReviewDraft,
 } from "@/lib/spreadsheet-review-draft-storage";
+import { describedBy } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// Control ids. Every one of these is single-instance, so the id, the
+// `<label htmlFor>`, and the `aria-describedby` targets all derive from one
+// constant rather than from three hand-typed strings.
+const SEARCH_ID = "spreadsheet-review-search";
+const FILTER_COLUMN_ID = "spreadsheet-review-filter-column";
+const FILTER_OP_ID = "spreadsheet-review-filter-op";
+const FILTER_VALUE_ID = "spreadsheet-review-filter-value";
+const VIEW_NAME_ID = "spreadsheet-review-view-name";
+const ACTION_ID = "spreadsheet-review-action";
+const NOTES_ID = "spreadsheet-review-notes";
 
 type QueryFilter = {
   column_id: string;
@@ -183,6 +196,13 @@ export function SpreadsheetReview({
   const [message, setMessage] = useState<string | null>(
     recoveredDraft ? "Recovered unsent spreadsheet-review state from this browser." : null,
   );
+  // Add-filter and Save-view both used to return silently when their own input
+  // was empty: the operator clicked, nothing happened, and nothing said why.
+  // These record that the action was attempted, which is what turns each
+  // control's requirement on — the inputs are optional until you ask for the
+  // action that needs them.
+  const [filterAttempted, setFilterAttempted] = useState(false);
+  const [viewNameAttempted, setViewNameAttempted] = useState(false);
   const draftJsonRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -325,8 +345,10 @@ export function SpreadsheetReview({
 
   const handleAddFilter = () => {
     if (!filterDraft.column_id || !filterDraft.value.trim()) {
+      setFilterAttempted(true);
       return;
     }
+    setFilterAttempted(false);
     setQueryState((current) => {
       const nextFilter = { ...filterDraft, value: filterDraft.value.trim() };
       const nextFilters = [...(current.filters ?? [])];
@@ -360,8 +382,10 @@ export function SpreadsheetReview({
   const handleSaveView = () => {
     const name = saveViewName.trim();
     if (!name) {
+      setViewNameAttempted(true);
       return;
     }
+    setViewNameAttempted(false);
     setSavedViews((current) => {
       const next = current.filter((view) => view.name !== name);
       next.push({ name, query_state: queryState });
@@ -431,6 +455,13 @@ export function SpreadsheetReview({
     onCancel();
   };
 
+  // Each sub-action's own unmet requirement, evaluated once so the visible
+  // mark, the aria state, and the error message cannot disagree.
+  const filterColumnMissing = filterAttempted && !filterDraft.column_id;
+  const filterValueMissing =
+    filterAttempted && Boolean(filterDraft.column_id) && filterDraft.value.trim().length === 0;
+  const viewNameMissing = viewNameAttempted && saveViewName.trim().length === 0;
+
   return (
     <Card className="w-full max-w-[90rem]" data-testid="spreadsheet-review-root">
       <CardHeader className="space-y-3">
@@ -463,77 +494,152 @@ export function SpreadsheetReview({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/*
+          Export / restore / draft-recovery status, not validation. It stays
+          where it is, but it now announces itself — a saved view previously
+          landed here with no signal of any kind.
+        */}
         {message ? (
           <div
             className="rounded-lg border border-zinc-700 bg-zinc-950/70 px-3 py-2 text-sm text-zinc-200"
             data-testid="spreadsheet-review-message"
+            role="status"
+            aria-live="polite"
           >
             {message}
           </div>
         ) : null}
 
-        <section className="grid gap-3 lg:grid-cols-[2fr,1fr,1fr]">
-          <Input
-            value={queryState.search ?? ""}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              setQueryState((current) =>
-                normalizeQueryState({ ...current, search: value }, columns),
-              );
-            }}
-            placeholder="Search rows"
-            data-testid="spreadsheet-review-search"
-          />
-          <div className="flex gap-2">
-            <select
-              className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
-              value={filterDraft.column_id}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setFilterDraft((current) => ({ ...current, column_id: value }));
-              }}
-              data-testid="spreadsheet-review-filter-column"
-            >
-              {columns.map((column) => (
-                <option key={column.id} value={column.id}>
-                  {column.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
-              value={filterDraft.op}
-              onChange={(event) => {
-                const value = event.currentTarget.value as QueryFilter["op"];
-                setFilterDraft((current) => ({
-                  ...current,
-                  op: value,
-                }));
-              }}
-              data-testid="spreadsheet-review-filter-op"
-            >
-              <option value="contains">contains</option>
-              <option value="eq">equals</option>
-            </select>
-          </div>
-          <div className="flex gap-2">
+        <section className="grid items-start gap-3 lg:grid-cols-[2fr,1fr,1fr]">
+          <div className="space-y-1">
+            <label className="block text-xs text-zinc-400" htmlFor={SEARCH_ID}>
+              Search rows
+            </label>
             <Input
-              value={filterDraft.value}
+              id={SEARCH_ID}
+              value={queryState.search ?? ""}
               onChange={(event) => {
                 const value = event.currentTarget.value;
-                setFilterDraft((current) => ({ ...current, value }));
+                setQueryState((current) =>
+                  normalizeQueryState({ ...current, search: value }, columns),
+                );
               }}
-              placeholder="Filter value"
-              data-testid="spreadsheet-review-filter-value"
+              placeholder="Search rows"
+              aria-describedby={`${SEARCH_ID}-hint`}
+              data-testid="spreadsheet-review-search"
             />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleAddFilter}
-              data-testid="spreadsheet-review-add-filter"
-            >
-              Add
-            </Button>
+            <FieldMessage id={`${SEARCH_ID}-hint`}>
+              Narrows the table only. It does not change which rows are selected.
+            </FieldMessage>
+          </div>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1 space-y-1">
+                <label className="block text-xs text-zinc-400" htmlFor={FILTER_COLUMN_ID}>
+                  Filter column
+                  <RequiredMark
+                    active={filterColumnMissing}
+                    testID="spreadsheet-review-filter-column-required"
+                  />
+                </label>
+                <select
+                  id={FILTER_COLUMN_ID}
+                  className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
+                  value={filterDraft.column_id}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setFilterDraft((current) => ({ ...current, column_id: value }));
+                  }}
+                  aria-required={filterColumnMissing}
+                  aria-invalid={filterColumnMissing}
+                  aria-describedby={describedBy(filterColumnMissing && `${FILTER_COLUMN_ID}-error`)}
+                  data-testid="spreadsheet-review-filter-column"
+                >
+                  {columns.map((column) => (
+                    <option key={column.id} value={column.id}>
+                      {column.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs text-zinc-400" htmlFor={FILTER_OP_ID}>
+                  Match
+                </label>
+                <select
+                  id={FILTER_OP_ID}
+                  className="h-10 rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
+                  value={filterDraft.op}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value as QueryFilter["op"];
+                    setFilterDraft((current) => ({
+                      ...current,
+                      op: value,
+                    }));
+                  }}
+                  data-testid="spreadsheet-review-filter-op"
+                >
+                  <option value="contains">contains</option>
+                  <option value="eq">equals</option>
+                </select>
+              </div>
+            </div>
+            {filterColumnMissing ? (
+              <FieldMessage
+                id={`${FILTER_COLUMN_ID}-error`}
+                tone="error"
+                testID="spreadsheet-review-filter-column-error"
+              >
+                This table has no column to filter on.
+              </FieldMessage>
+            ) : null}
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs text-zinc-400" htmlFor={FILTER_VALUE_ID}>
+              Filter value
+              <RequiredMark
+                active={filterValueMissing}
+                testID="spreadsheet-review-filter-value-required"
+              />
+            </label>
+            <div className="flex gap-2">
+              <Input
+                id={FILTER_VALUE_ID}
+                value={filterDraft.value}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setFilterDraft((current) => ({ ...current, value }));
+                }}
+                placeholder="Filter value"
+                aria-required={filterValueMissing}
+                aria-invalid={filterValueMissing}
+                aria-describedby={describedBy(
+                  `${FILTER_VALUE_ID}-hint`,
+                  filterValueMissing && `${FILTER_VALUE_ID}-error`,
+                )}
+                data-testid="spreadsheet-review-filter-value"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddFilter}
+                data-testid="spreadsheet-review-add-filter"
+              >
+                Add
+              </Button>
+            </div>
+            <FieldMessage id={`${FILTER_VALUE_ID}-hint`}>
+              Optional. Add is what applies it to the table.
+            </FieldMessage>
+            {filterValueMissing ? (
+              <FieldMessage
+                id={`${FILTER_VALUE_ID}-error`}
+                tone="error"
+                testID="spreadsheet-review-filter-value-error"
+              >
+                Enter a value before adding this filter.
+              </FieldMessage>
+            ) : null}
           </div>
         </section>
 
@@ -575,20 +681,37 @@ export function SpreadsheetReview({
             <table className="min-w-full divide-y divide-zinc-800 text-sm">
               <thead className="bg-zinc-950/80">
                 <tr>
-                  <th className="px-3 py-2 text-left">Select</th>
+                  <th scope="col" className="px-3 py-2 text-left">
+                    Select
+                  </th>
                   {visibleColumns.map((column) => {
                     const activeSort = queryState.sort?.[0];
                     const sortDir =
                       activeSort?.column_id === column.id ? activeSort.direction : null;
                     if (column.sortable === false) {
                       return (
-                        <th key={column.id} className="px-3 py-2 text-left text-zinc-400">
+                        <th
+                          key={column.id}
+                          scope="col"
+                          className="px-3 py-2 text-left text-zinc-400"
+                        >
                           {column.label}
                         </th>
                       );
                     }
                     return (
-                      <th key={column.id} className="px-3 py-2 text-left">
+                      <th
+                        key={column.id}
+                        scope="col"
+                        aria-sort={
+                          sortDir === "asc"
+                            ? "ascending"
+                            : sortDir === "desc"
+                              ? "descending"
+                              : "none"
+                        }
+                        className="px-3 py-2 text-left"
+                      >
                         <button
                           type="button"
                           className={cn(
@@ -621,9 +744,18 @@ export function SpreadsheetReview({
                   filteredRows.map((row) => (
                     <tr key={row.id} className="bg-zinc-950/30">
                       <td className="px-3 py-2 align-top">
+                        {/*
+                          The "Select" header is not associated with these
+                          checkboxes, so every one of them announced as an
+                          unnamed checkbox. Naming each by the row it selects is
+                          the only thing that makes the column usable by ear.
+                        */}
                         <Checkbox
+                          id={`spreadsheet-review-select-${row.id}`}
+                          name="spreadsheet-review-selected-rows"
                           checked={selectedRowIDs.includes(row.id)}
                           onChange={(event) => handleToggleRow(row.id, event.currentTarget.checked)}
+                          aria-label={`Select row ${describeRow(row, visibleColumns)}`}
                           data-testid={`spreadsheet-review-select-${row.id}`}
                         />
                       </td>
@@ -647,11 +779,25 @@ export function SpreadsheetReview({
               <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 Saved views
               </p>
+              <label className="block text-xs text-zinc-400" htmlFor={VIEW_NAME_ID}>
+                View name
+                <RequiredMark
+                  active={viewNameMissing}
+                  testID="spreadsheet-review-view-name-required"
+                />
+              </label>
               <div className="flex gap-2">
                 <Input
+                  id={VIEW_NAME_ID}
                   value={saveViewName}
                   onChange={(event) => setSaveViewName(event.currentTarget.value)}
                   placeholder="View name"
+                  aria-required={viewNameMissing}
+                  aria-invalid={viewNameMissing}
+                  aria-describedby={describedBy(
+                    `${VIEW_NAME_ID}-hint`,
+                    viewNameMissing && `${VIEW_NAME_ID}-error`,
+                  )}
                   data-testid="spreadsheet-review-view-name"
                 />
                 <Button
@@ -663,6 +809,19 @@ export function SpreadsheetReview({
                   Save
                 </Button>
               </div>
+              <FieldMessage id={`${VIEW_NAME_ID}-hint`}>
+                Names the current search, sort, filters and visible columns. Saving a name that
+                already exists replaces it.
+              </FieldMessage>
+              {viewNameMissing ? (
+                <FieldMessage
+                  id={`${VIEW_NAME_ID}-error`}
+                  tone="error"
+                  testID="spreadsheet-review-view-name-error"
+                >
+                  Name this view before saving it.
+                </FieldMessage>
+              ) : null}
               <div className="space-y-2">
                 {savedViews.map((view) => (
                   <div
@@ -688,13 +847,18 @@ export function SpreadsheetReview({
 
             {rowActions.length > 0 ? (
               <section className="space-y-2 rounded-xl border border-zinc-800 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <label
+                  className="block text-xs font-medium uppercase tracking-wide text-zinc-500"
+                  htmlFor={ACTION_ID}
+                >
                   Bulk action
-                </p>
+                </label>
                 <select
+                  id={ACTION_ID}
                   className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm"
                   value={actionID}
                   onChange={(event) => setActionID(event.currentTarget.value)}
+                  aria-describedby={`${ACTION_ID}-hint`}
                   data-testid="spreadsheet-review-action"
                 >
                   <option value="">No action</option>
@@ -704,22 +868,44 @@ export function SpreadsheetReview({
                     </option>
                   ))}
                 </select>
+                <FieldMessage id={`${ACTION_ID}-hint`}>
+                  Optional. Submitted with the selected rows and applied to all of them.
+                </FieldMessage>
               </section>
             ) : null}
 
+            {/*
+              Notes sits directly under the bulk action, and its heading was a
+              bare `Notes` on a plain paragraph with no placeholder — next to a
+              control that can act on every selected row, that reads as though
+              it might be the justification for it. It is not, and the label and
+              hint now say so.
+            */}
             <section className="space-y-2 rounded-xl border border-zinc-800 p-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Notes</p>
+              <label
+                className="block text-xs font-medium uppercase tracking-wide text-zinc-500"
+                htmlFor={NOTES_ID}
+              >
+                Notes (optional)
+              </label>
               <Textarea
+                id={NOTES_ID}
                 rows={6}
                 value={notes}
                 onChange={(event) => setNotes(event.currentTarget.value)}
+                placeholder="Freeform note submitted with this review"
+                aria-describedby={`${NOTES_ID}-hint`}
                 data-testid="spreadsheet-review-notes"
               />
+              <FieldMessage id={`${NOTES_ID}-hint`}>
+                Optional freeform note kept with the submitted selection. It is not a reason for the
+                bulk action, and the bulk action does not require one.
+              </FieldMessage>
             </section>
           </div>
         </section>
       </CardContent>
-      <CardFooter className="justify-end gap-3">
+      <CardFooter className="flex-wrap justify-end gap-3">
         <p className="mr-auto text-xs text-zinc-500">
           Draft changes recover in this browser until you submit or cancel.
         </p>
@@ -745,6 +931,23 @@ export function SpreadsheetReview({
       </CardFooter>
     </Card>
   );
+}
+
+/**
+ * Human-readable name for one row, used as the row checkbox's accessible name.
+ *
+ * The first visible cell is what a sighted operator reads across from, so it is
+ * what the checkbox should announce; the row id is the fallback for a table
+ * whose leading column happens to be empty.
+ */
+function describeRow(row: Row, visibleColumns: Column[]): string {
+  for (const column of visibleColumns) {
+    const cell = displayCell(row[column.id]).trim();
+    if (cell) {
+      return cell;
+    }
+  }
+  return row.id;
 }
 
 function normalizeColumns(input: Array<Record<string, unknown>> | undefined): Column[] {

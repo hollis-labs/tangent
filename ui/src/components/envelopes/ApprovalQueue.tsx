@@ -2,7 +2,9 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
 import {
   APPROVAL_QUEUE_AUTOSAVE_DEBOUNCE_MS,
@@ -12,7 +14,16 @@ import {
   loadApprovalQueueDraft,
   saveApprovalQueueDraft,
 } from "@/lib/approval-queue-draft-storage";
+import { buildSubmitGate, describedBy, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// Control ids. The defer reason and the comment are single-instance controls:
+// only the current item's pane is mounted, so one id each is unambiguous, and
+// the submit gate can point straight at them.
+const ACTION_ID = "approval-queue-action";
+const DEFER_REASON_ID = "approval-queue-defer-reason";
+const COMMENT_ID = "approval-queue-comment";
+const BATCH_DEFER_REASON_ID = "approval-queue-batch-defer-reason";
 
 type ApprovalDecision = "accept" | "reject" | "defer";
 
@@ -271,12 +282,56 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [currentItem, items.length]);
 
-  const unresolvedCount = items.filter((item) => !decisions[item.id]?.decision).length;
-  const hasInvalidDefer = items.some((item) => {
+  const revealRequirement = useRevealRequirement();
+
+  // Which items are still in the operator's way, and which item each one is.
+  // These used to be two booleans folded straight into `disabled`, which is
+  // exactly what made the originating failure unreadable: a reviewer could see
+  // that Submit was dead but not that a *different* item, in a pane they were
+  // not looking at, owed a defer reason. Naming the item is the fix.
+  const unresolvedItems = items.filter((item) => !decisions[item.id]?.decision);
+  const deferReasonMissing = items.filter((item) => {
     const decision = decisions[item.id];
     return decision?.decision === "defer" && decision.defer_reason.trim().length === 0;
   });
-  const submitDisabled = items.length === 0 || unresolvedCount > 0 || hasInvalidDefer;
+  const unresolvedCount = unresolvedItems.length;
+
+  const gate = buildSubmitGate([
+    items.length === 0 && {
+      controlID: "",
+      label: "queue",
+      message: "this queue has no items to decide.",
+    },
+    unresolvedItems.length > 0 && {
+      controlID: "approval-queue-decision-accept",
+      label: unresolvedItems.length === 1 ? "the undecided item" : "the next undecided item",
+      message: `${unresolvedItems.length} item${unresolvedItems.length === 1 ? "" : "s"} still ${
+        unresolvedItems.length === 1 ? "needs" : "need"
+      } a decision.`,
+      reveal: () => selectItem(unresolvedItems[0].id),
+    },
+    deferReasonMissing.length > 0 && {
+      controlID: DEFER_REASON_ID,
+      label: "defer reason",
+      message: `"${deferReasonMissing[0].title}" is deferred and still needs a defer reason.`,
+      reveal: () => selectItem(deferReasonMissing[0].id),
+    },
+  ]);
+  const submitDisabled = gate.blocked;
+
+  const currentIsDeferred = currentDecision?.decision === "defer";
+  const currentDeferReasonMissing =
+    currentIsDeferred && (currentDecision?.defer_reason ?? "").trim().length === 0;
+  const batchDeferReasonMissing = batchDecision === "defer" && batchDeferReason.trim().length === 0;
+
+  function selectItem(itemID: string) {
+    const index = items.findIndex((item) => item.id === itemID);
+    if (index < 0) {
+      return;
+    }
+    setEvidenceIndex(0);
+    setCurrentIndex(index);
+  }
 
   function updateCurrentDecision(patch: Partial<DecisionState>) {
     if (!currentItem) {
@@ -348,7 +403,14 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
   }
 
   function handleSubmit() {
-    if (submitDisabled || !currentItem) {
+    // Defence in depth. The button is disabled while the gate is blocked, so
+    // this path is only reachable programmatically — but when it is, the
+    // operator gets taken to the blocking control rather than nothing at all.
+    if (gate.blocked) {
+      revealRequirement(gate.first);
+      return;
+    }
+    if (!currentItem) {
       return;
     }
     if (roomID && queueID) {
@@ -380,8 +442,11 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
         <p className="text-sm text-zinc-400">
           {envelope.data?.intent ?? "Review each queued item and submit a durable decision set."}
         </p>
-        <p className="text-xs text-zinc-500">
+        <p data-testid="approval-queue-counts" className="text-xs text-zinc-500">
           {items.length} item{items.length === 1 ? "" : "s"} · {unresolvedCount} unresolved
+          {deferReasonMissing.length > 0
+            ? ` · ${deferReasonMissing.length} awaiting a defer reason`
+            : ""}
         </p>
         {message ? (
           <p data-testid="approval-queue-message" className="text-xs text-emerald-300">
@@ -399,7 +464,13 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
           </div>
           <div className="space-y-2">
             {items.map((item, index) => {
-              const decision = decisions[item.id]?.decision;
+              const state = decisions[item.id];
+              const decision = state?.decision;
+              // The reason a queue-wide gate holds is almost never visible from
+              // the item pane the operator happens to be in. Flagging the item
+              // in the list is what closes that distance.
+              const needsReason =
+                decision === "defer" && (state?.defer_reason ?? "").trim().length === 0;
               return (
                 <button
                   key={item.id}
@@ -425,6 +496,14 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                       {decision ?? "pending"}
                     </span>
                   </div>
+                  {needsReason ? (
+                    <div
+                      data-testid={`approval-queue-item-needs-reason-${item.id}`}
+                      className="mt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-amber-300"
+                    >
+                      needs a defer reason
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
@@ -433,7 +512,11 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
             <div className="text-xs font-medium uppercase tracking-[0.2em] text-zinc-500">
               Batch
             </div>
+            <label className="block text-xs text-zinc-400" htmlFor="approval-queue-batch-decision">
+              Decision to apply
+            </label>
             <select
+              id="approval-queue-batch-decision"
               data-testid="approval-queue-batch-decision"
               className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
               value={batchDecision}
@@ -444,19 +527,44 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
               <option value="defer">Defer unresolved</option>
             </select>
             {batchDecision === "defer" ? (
-              <Input
-                data-testid="approval-queue-batch-defer-reason"
-                value={batchDeferReason}
-                onChange={(event) => setBatchDeferReason(event.target.value)}
-                placeholder="Batch defer reason"
-              />
+              <div className="space-y-1">
+                <label className="block text-xs text-zinc-400" htmlFor={BATCH_DEFER_REASON_ID}>
+                  Batch defer reason
+                  <RequiredMark testID="approval-queue-batch-defer-reason-required" />
+                </label>
+                <Input
+                  id={BATCH_DEFER_REASON_ID}
+                  data-testid="approval-queue-batch-defer-reason"
+                  value={batchDeferReason}
+                  onChange={(event) => setBatchDeferReason(event.target.value)}
+                  placeholder="Why these items are deferred"
+                  aria-required="true"
+                  aria-invalid={batchDeferReasonMissing}
+                  aria-describedby={describedBy(
+                    "approval-queue-batch-defer-reason-hint",
+                    batchDeferReasonMissing && "approval-queue-batch-defer-reason-error",
+                  )}
+                />
+                <FieldMessage id="approval-queue-batch-defer-reason-hint">
+                  Recorded as the defer reason on every item this batch touches.
+                </FieldMessage>
+                {batchDeferReasonMissing ? (
+                  <FieldMessage
+                    id="approval-queue-batch-defer-reason-error"
+                    tone="error"
+                    testID="approval-queue-batch-defer-reason-error"
+                  >
+                    Enter a batch defer reason before applying.
+                  </FieldMessage>
+                ) : null}
+              </div>
             ) : null}
             <Button
               type="button"
               variant="secondary"
               data-testid="approval-queue-batch-apply"
               onClick={applyBatchDecision}
-              disabled={batchDecision === "defer" && batchDeferReason.trim().length === 0}
+              disabled={batchDeferReasonMissing}
             >
               Apply to unresolved
             </Button>
@@ -484,9 +592,11 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                   {(["accept", "reject", "defer"] as ApprovalDecision[]).map((decision) => (
                     <Button
                       key={decision}
+                      id={`approval-queue-decision-${decision}`}
                       type="button"
                       data-testid={`approval-queue-decision-${decision}`}
                       variant={currentDecision?.decision === decision ? "default" : "secondary"}
+                      aria-pressed={currentDecision?.decision === decision}
                       onClick={() => applyDecisionEvent(currentItem.id, decision)}
                     >
                       {decision}
@@ -495,14 +605,15 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-xs text-zinc-400" htmlFor="approval-queue-action">
+                    <label className="text-xs text-zinc-400" htmlFor={ACTION_ID}>
                       Action ID
                     </label>
                     <select
-                      id="approval-queue-action"
+                      id={ACTION_ID}
                       data-testid="approval-queue-action"
                       className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
                       value={currentDecision?.action_id ?? ""}
+                      aria-describedby="approval-queue-action-hint"
                       onChange={(event) => updateCurrentDecision({ action_id: event.target.value })}
                     >
                       <option value="">None</option>
@@ -512,34 +623,76 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                         </option>
                       ))}
                     </select>
+                    <FieldMessage id="approval-queue-action-hint">
+                      Optional. Names a follow-up action for this item.
+                    </FieldMessage>
                   </div>
+                  {/*
+                    The defer reason is the field that produced this workflow's
+                    live failure: it sits beside Action ID, two panes away from
+                    the decision buttons that make it mandatory, and it used to
+                    announce its requirement only through a placeholder that
+                    vanished as soon as anyone typed. It is now marked required
+                    exactly while the current item is deferred, and the queue
+                    gate names the item that owes one.
+                  */}
                   <div className="space-y-2">
-                    <label className="text-xs text-zinc-400" htmlFor="approval-queue-defer-reason">
+                    <label className="text-xs text-zinc-400" htmlFor={DEFER_REASON_ID}>
                       Defer reason
+                      <RequiredMark
+                        active={currentIsDeferred}
+                        testID="approval-queue-defer-reason-required"
+                      />
                     </label>
                     <Input
-                      id="approval-queue-defer-reason"
+                      id={DEFER_REASON_ID}
                       data-testid="approval-queue-defer-reason"
                       value={currentDecision?.defer_reason ?? ""}
                       onChange={(event) =>
                         updateCurrentDecision({ defer_reason: event.target.value })
                       }
-                      placeholder="Required when deferred"
+                      placeholder={
+                        currentIsDeferred ? "Why this item is deferred" : "Used when deferred"
+                      }
+                      aria-required={currentIsDeferred}
+                      aria-invalid={currentDeferReasonMissing}
+                      aria-describedby={describedBy(
+                        "approval-queue-defer-reason-hint",
+                        currentDeferReasonMissing && "approval-queue-defer-reason-error",
+                      )}
                     />
+                    <FieldMessage id="approval-queue-defer-reason-hint">
+                      The formal reason recorded on a Defer decision. Required once you choose Defer
+                      — a reviewer comment does not stand in for it.
+                    </FieldMessage>
+                    {currentDeferReasonMissing ? (
+                      <FieldMessage
+                        id="approval-queue-defer-reason-error"
+                        tone="error"
+                        testID="approval-queue-defer-reason-error"
+                      >
+                        This item is deferred. Enter the defer reason.
+                      </FieldMessage>
+                    ) : null}
                   </div>
                 </div>
                 <div className="mt-3 space-y-2">
-                  <label className="text-xs text-zinc-400" htmlFor="approval-queue-comment">
-                    Comment
+                  <label className="text-xs text-zinc-400" htmlFor={COMMENT_ID}>
+                    Reviewer comment
                   </label>
                   <Textarea
-                    id="approval-queue-comment"
+                    id={COMMENT_ID}
                     data-testid="approval-queue-comment"
                     value={currentDecision?.comment ?? ""}
                     onChange={(event) => updateCurrentDecision({ comment: event.target.value })}
-                    placeholder="Optional reviewer comment"
+                    placeholder="Optional note for whoever reads this decision"
+                    aria-describedby="approval-queue-comment-hint"
                     rows={4}
                   />
+                  <FieldMessage id="approval-queue-comment-hint">
+                    Optional freeform note. Kept alongside the decision, and separate from the defer
+                    reason.
+                  </FieldMessage>
                 </div>
               </div>
 
@@ -650,7 +803,7 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
           )}
         </section>
       </CardContent>
-      <CardFooter className="justify-between">
+      <CardFooter className="flex-wrap justify-between gap-3">
         <div className="flex gap-2">
           <Button
             type="button"
@@ -681,7 +834,13 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
             Next
           </Button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <SubmitGateNotice
+            gate={gate}
+            testID="approval-queue-submit-gate"
+            action="Submit"
+            onReveal={revealRequirement}
+          />
           <Button
             type="button"
             variant="ghost"
@@ -695,6 +854,7 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
             data-testid="approval-queue-submit"
             onClick={handleSubmit}
             disabled={submitDisabled}
+            aria-describedby={gate.blocked ? "approval-queue-submit-gate" : undefined}
           >
             Submit
           </Button>

@@ -13,7 +13,8 @@ import (
 )
 
 type outputRenderInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleOutputRender(
@@ -78,7 +79,7 @@ func (s *Server) handleOutputRender(
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, buildVisibleOutputRenderEnvelope(&args.Envelope, room.ProjectFinalOutput(phaseState)))
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleOutputRenderEnvelope(&args.Envelope, room.ProjectFinalOutput(phaseState)), args.Completion)
 }
 
 func buildVisibleOutputRenderEnvelope(env *envelopes.Envelope, view *room.FinalOutputView) *envelopes.Envelope {

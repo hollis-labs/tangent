@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildDiffReviewCanonicalSeedKey,
@@ -12,7 +14,14 @@ import {
   loadDiffReviewDraft,
   saveDiffReviewDraft,
 } from "@/lib/diff-review-draft-storage";
+import { buildSubmitGate, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// Control ids for the two filter controls in the file pane. They are
+// single-instance, so one id each is unambiguous; the per-target controls
+// derive their ids from the target prefix instead.
+const SEARCH_ID = "diff-review-search";
+const FILTER_ID = "diff-review-filter";
 
 type DiffDecision = "accept" | "reject" | "comment";
 type FilterDecision = "all" | "pending" | DiffDecision;
@@ -262,7 +271,34 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
     canonicalComments,
   ]);
 
-  const submitDisabled = files.length === 0 || buildOrderedDecisions(files, decisions).length === 0;
+  const revealRequirement = useRevealRequirement();
+
+  // The review submits as soon as *any* target carries a decision — that is the
+  // workflow's existing gate, and it is unchanged here. What changes is that the
+  // gate now names the file that owes the first decision. The decision buttons
+  // only ever render for the active file, in the right-hand pane, while the left
+  // pane is the only place that shows which files are still untouched; a
+  // reviewer looking at the dead Submit button had nothing on screen connecting
+  // the two. Revealing switches the active file first so the focused button is
+  // the one that actually clears the gate.
+  const firstUndecidedFile =
+    files.find((file) => summarizeFile(file, decisions).decided === 0) ?? null;
+  const gate = buildSubmitGate([
+    files.length === 0 && {
+      controlID: "",
+      label: "the diff",
+      message: "this review has no files to decide.",
+    },
+    files.length > 0 &&
+      buildOrderedDecisions(files, decisions).length === 0 &&
+      firstUndecidedFile && {
+        controlID: firstDecisionControlID(firstUndecidedFile),
+        label: "the decision buttons",
+        message: `no decisions are recorded yet — "${firstUndecidedFile.path}" still needs one.`,
+        reveal: () => setCurrentFile(firstUndecidedFile.id),
+      },
+  ]);
+  const submitDisabled = gate.blocked;
 
   const setDecision = (key: string, decision: DiffDecision) => {
     setDecisions((current) => ({
@@ -311,6 +347,13 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
   };
 
   const handleSubmit = () => {
+    // Defence in depth: the button is disabled while the gate is blocked, so a
+    // click here only arrives programmatically — but when it does, the reviewer
+    // is taken to the file that owes a decision rather than nowhere at all.
+    if (gate.blocked) {
+      revealRequirement(gate.first);
+      return;
+    }
     const summary = buildSummary(files, decisions, comments);
     summary.export_text = buildSummaryText(files, decisions, comments);
     summary.export_name = exportRefs[exportRefs.length - 1]?.name;
@@ -345,7 +388,11 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
             {envelope.title ?? envelope.data?.title ?? "Diff review"}
           </CardTitle>
           <div className="space-y-2">
+            <label className="block text-xs text-zinc-400" htmlFor={SEARCH_ID}>
+              Filter files by path
+            </label>
             <Input
+              id={SEARCH_ID}
               data-testid="diff-review-search"
               placeholder="Filter files"
               value={filterState.search ?? ""}
@@ -353,7 +400,11 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
                 setFilterState((current) => ({ ...current, search: event.target.value }))
               }
             />
+            <label className="block text-xs text-zinc-400" htmlFor={FILTER_ID}>
+              Show files by decision
+            </label>
             <select
+              id={FILTER_ID}
               className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
               data-testid="diff-review-filter"
               value={filterState.decision ?? "all"}
@@ -371,8 +422,18 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
               <option value="comment">Commented</option>
             </select>
           </div>
+          {/*
+            Export and draft-recovery notices, not validation. They stay in the
+            file pane where the actions that raise them live; the reason Submit
+            is blocked is a separate surface, rendered beside the button.
+          */}
           {message ? (
-            <p className="text-xs text-emerald-300" data-testid="diff-review-message">
+            <p
+              className="text-xs text-emerald-300"
+              data-testid="diff-review-message"
+              role="status"
+              aria-live="polite"
+            >
               {message}
             </p>
           ) : null}
@@ -394,6 +455,10 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
                   key={file.id}
                   type="button"
                   data-testid={`diff-review-file-${file.id}`}
+                  // Selection was conveyed by border colour alone. `aria-current`
+                  // is what tells a screen-reader user which file the decision
+                  // pane on the right is actually showing.
+                  aria-current={file.id === activeFile?.id ? "true" : undefined}
                   onClick={() => setCurrentFile(file.id)}
                   className={cn(
                     "w-full rounded-lg border p-3 text-left transition",
@@ -509,7 +574,13 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
               );
             })
           )}
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <SubmitGateNotice
+              gate={gate}
+              testID="diff-review-submit-gate"
+              action="Submit Review"
+              onReveal={revealRequirement}
+            />
             <Button type="button" variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
@@ -518,6 +589,7 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
               data-testid="diff-review-submit"
               onClick={handleSubmit}
               disabled={submitDisabled}
+              aria-describedby={gate.blocked ? "diff-review-submit-gate" : undefined}
             >
               Submit Review
             </Button>
@@ -562,39 +634,82 @@ function DiffReviewTargetCard({
           <DiffPane title="After" content={after} />
         </div>
         <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
+          {/*
+            The three buttons are one choice, not three independent actions, and
+            the selected one used to be distinguishable only by button variant.
+            The fieldset names the choice — the target's own title, since a file
+            with hunks renders several of these — and `aria-pressed` reports the
+            current answer without relying on colour.
+          */}
+          <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
+            <legend className="sr-only">Decision for {title}</legend>
             {(["accept", "reject", "comment"] as const).map((value) => (
               <Button
                 key={value}
+                id={`${prefix}-${value}`}
                 type="button"
                 variant={decision?.decision === value ? "default" : "outline"}
                 data-testid={`${prefix}-${value}`}
+                aria-pressed={decision?.decision === value}
                 onClick={() => onDecision(value)}
               >
                 {value === "accept" ? "Accept" : value === "reject" ? "Request Changes" : "Comment"}
               </Button>
             ))}
-          </div>
+          </fieldset>
           {actionOptions?.length ? (
-            <select
-              className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-              value={decision?.action_id ?? ""}
-              onChange={(event) => onActionID(event.target.value)}
-            >
-              <option value="">No action ID</option>
-              {actionOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="space-y-2">
+              <label className="block text-xs text-zinc-400" htmlFor={`${prefix}-action`}>
+                Action ID
+              </label>
+              <select
+                id={`${prefix}-action`}
+                data-testid={`${prefix}-action`}
+                className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                value={decision?.action_id ?? ""}
+                aria-describedby={`${prefix}-action-hint`}
+                onChange={(event) => onActionID(event.target.value)}
+              >
+                <option value="">No action ID</option>
+                {actionOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <FieldMessage id={`${prefix}-action-hint`}>
+                Optional. Names a follow-up action recorded with this decision.
+              </FieldMessage>
+            </div>
           ) : null}
-          <Textarea
-            data-testid={`${prefix}-notes`}
-            value={comment}
-            placeholder="Leave a review note"
-            onChange={(event) => onComment(event.target.value)}
-          />
+          {/*
+            One textarea, three jobs: a plain note on Accept, the de-facto
+            rejection reason on Request Changes, and the entire substance of a
+            Comment decision. It previously carried no label at all — only a
+            placeholder, which vanishes on the first keystroke and is not a
+            requirement a screen reader can report. It is still optional
+            everywhere (making it mandatory on Request Changes would change what
+            this workflow accepts), so the hint names where it carries weight
+            instead of a RequiredMark that the gate would not enforce.
+          */}
+          <div className="space-y-2">
+            <label className="block text-xs text-zinc-400" htmlFor={`${prefix}-notes`}>
+              Review comment
+            </label>
+            <Textarea
+              id={`${prefix}-notes`}
+              data-testid={`${prefix}-notes`}
+              value={comment}
+              placeholder="Note recorded with this decision"
+              aria-describedby={`${prefix}-notes-hint`}
+              onChange={(event) => onComment(event.target.value)}
+            />
+            <FieldMessage id={`${prefix}-notes-hint`}>
+              Optional freeform note, submitted as this target's comment. It is the recorded reason
+              when the decision is Request Changes, and the whole substance of a Comment decision;
+              on Accept it is just a note.
+            </FieldMessage>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -870,6 +985,20 @@ function buildSummaryText(
     lines.push("");
   }
   return lines.join("\n");
+}
+
+/**
+ * DOM id of the first decision button for a file.
+ *
+ * A file with hunks is decided hunk-by-hunk, so the control that clears the
+ * gate is the first hunk's Accept button; a file without hunks is decided as a
+ * whole. Keeping this in one place is what stops the gate's `controlID` from
+ * drifting away from the ids the target cards actually render.
+ */
+function firstDecisionControlID(file: FileItem): string {
+  return file.hunks.length > 0
+    ? `diff-review-hunk-decision-${file.hunks[0].id}-accept`
+    : `diff-review-file-decision-${file.id}-accept`;
 }
 
 function summarizeFile(file: FileItem, decisions: Record<string, DecisionState>) {

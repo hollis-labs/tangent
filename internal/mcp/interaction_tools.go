@@ -120,6 +120,9 @@ func (s *Server) registerInteractionTools() error {
 	if err := addInteractionTool(s, "tangent.interaction_supersede", "Supersede a caller-owned interaction with another durable interaction on the same surface.", s.handleInteractionSupersede); err != nil {
 		return err
 	}
+	if err := addInteractionTool(s, "tangent.interaction_acknowledge", "Acknowledge an immutable terminal outcome exactly once. Idempotent, and deliberately separate from retrieval and delivery: reading a result or receiving it over HTTP does not acknowledge it.", s.handleInteractionAcknowledge); err != nil {
+		return err
+	}
 	return nil
 }
 

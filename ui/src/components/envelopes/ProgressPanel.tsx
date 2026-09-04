@@ -2,12 +2,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import {
   clearProgressPanelDraft,
   loadProgressPanelDraft,
   PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS,
   saveProgressPanelDraft,
 } from "@/lib/progress-panel-storage";
+import { buildSubmitGate, describedBy, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 
 type ProgressItem = {
@@ -95,6 +98,16 @@ const STATUS_OPTIONS = [
   "cancelled",
 ] as const;
 
+// Control ids. The item select is the one the submit gate points at: it carries
+// `item_id`, and the item cards in the left column only reach it indirectly —
+// clicking a card two columns away is what sets this field.
+const ITEM_SELECT_ID = "progress-panel-item-select";
+const STATUS_SELECT_ID = "progress-panel-status-select";
+const NOTE_ID = "progress-panel-note";
+const CHECKPOINT_ID = "progress-panel-checkpoint";
+const FILTER_ITEM_ID = "progress-panel-filter-item";
+const FILTER_KIND_ID = "progress-panel-filter-kind";
+
 export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: ProgressPanelProps) {
   const panelID = envelope.data?.panel_id ?? "";
   const items = envelope.data?.items ?? [];
@@ -118,7 +131,9 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
   const [filterKind, setFilterKind] = useState(draft?.filterKind ?? "all");
   const [selectedUpdateID, setSelectedUpdateID] = useState(draft?.selectedUpdateID ?? "");
   const [message, setMessage] = useState<string | null>(
-    draft ? "Recovered progress-panel view state from this browser." : null,
+    draft
+      ? "Recovered your unsent progress update — item, status, note, and checkpoint label — along with the timeline filters, from this browser."
+      : null,
   );
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const lastSavedDraftRef = useRef<string | null>(draft ? JSON.stringify(draft) : null);
@@ -216,6 +231,63 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
     status,
   ]);
 
+  const revealRequirement = useRevealRequirement();
+
+  // The Send update button stays live and validates on click — that click is
+  // how this workflow reports "nothing selected", and disabling it would leave
+  // an operator with an empty panel and no explanation at all. The gate names
+  // the two requirements separately: the old single message claimed an item was
+  // unselected even when the real problem was a panel with no id, and even when
+  // the panel had no items to select in the first place.
+  const gate = buildSubmitGate([
+    !panelID && {
+      controlID: "",
+      label: "panel",
+      message: "this envelope carries no panel id, so an update has nowhere to land.",
+    },
+    !selectedItemID && {
+      controlID: items.length === 0 ? "" : ITEM_SELECT_ID,
+      label: "the item picker",
+      message:
+        items.length === 0
+          ? "this panel has no progress items to update yet."
+          : "no progress item is selected yet.",
+    },
+  ]);
+
+  // The attempted-submit error is only true while the gate is still blocked;
+  // selecting an item clears it without needing a second click.
+  const showSubmitError = submitError !== null && gate.blocked;
+
+  function handleSubmit() {
+    if (gate.blocked) {
+      // Mirrors the old inline guard, but each requirement now states its own
+      // truth rather than sharing one wrong sentence.
+      setSubmitError(gate.first ? asSentence(gate.first.message) : null);
+      revealRequirement(gate.first);
+      return;
+    }
+    setMessage(null);
+    setSubmitError(null);
+    if (roomID && panelID) {
+      clearProgressPanelDraft(roomID, panelID);
+      lastSavedDraftRef.current = null;
+    }
+    onSubmit({
+      v: 1,
+      envelopeId: envelope.id,
+      kind: "data",
+      status: "submitted",
+      payload: {
+        panel_id: panelID,
+        item_id: selectedItemID,
+        status,
+        summary: note.trim() || undefined,
+        checkpoint_label: checkpointLabel.trim() || undefined,
+      },
+    });
+  }
+
   return (
     <Card data-testid="progress-panel-root">
       <CardHeader className="space-y-2">
@@ -225,39 +297,58 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
           Tangent session contract.
         </p>
         {message ? (
-          <p data-testid="progress-panel-message" className="text-sm text-emerald-300">
+          <p
+            data-testid="progress-panel-message"
+            role="status"
+            aria-live="polite"
+            className="text-sm text-emerald-300"
+          >
             {message}
           </p>
         ) : null}
       </CardHeader>
       <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_360px]">
         <div className="space-y-4">
-          <section className="grid gap-3 md:grid-cols-2" data-testid="progress-panel-items">
-            {items.map((item) => (
-              <button
-                key={item.item_id}
-                type="button"
-                data-testid={`progress-panel-item-${item.item_id}`}
-                onClick={() => {
-                  setSelectedItemID(item.item_id);
-                  setStatus(item.status);
-                }}
-                className={cn(
-                  "rounded-2xl border p-4 text-left transition",
-                  item.item_id === activeItem?.item_id
-                    ? "border-emerald-500 bg-emerald-500/10"
-                    : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-700",
-                )}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-medium text-zinc-50">{item.label}</p>
-                  <span className="rounded-full border border-zinc-700 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-zinc-300">
-                    {item.status}
-                  </span>
-                </div>
-                {item.detail ? <p className="mt-2 text-sm text-zinc-400">{item.detail}</p> : null}
-              </button>
-            ))}
+          <section className="space-y-2" data-testid="progress-panel-items">
+            {/*
+              These cards are the workflow's most-used control and they mutate
+              two fields in the Send update pane on the far right of an
+              xl:grid-cols-[…_360px] layout. Nothing on screen said so, which
+              made a card click look inert on a wide viewport. The hint names
+              the destination and the cards point at it with aria-controls.
+            */}
+            <p className="text-xs text-zinc-500" data-testid="progress-panel-items-hint">
+              Choosing an item here sets Item and Status in the Send update panel.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {items.map((item) => (
+                <button
+                  key={item.item_id}
+                  type="button"
+                  data-testid={`progress-panel-item-${item.item_id}`}
+                  aria-pressed={item.item_id === activeItem?.item_id}
+                  aria-controls={ITEM_SELECT_ID}
+                  onClick={() => {
+                    setSelectedItemID(item.item_id);
+                    setStatus(item.status);
+                  }}
+                  className={cn(
+                    "rounded-2xl border p-4 text-left transition",
+                    item.item_id === activeItem?.item_id
+                      ? "border-emerald-500 bg-emerald-500/10"
+                      : "border-zinc-800 bg-zinc-950/60 hover:border-zinc-700",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium text-zinc-50">{item.label}</p>
+                    <span className="rounded-full border border-zinc-700 px-2 py-1 text-[11px] uppercase tracking-[0.18em] text-zinc-300">
+                      {item.status}
+                    </span>
+                  </div>
+                  {item.detail ? <p className="mt-2 text-sm text-zinc-400">{item.detail}</p> : null}
+                </button>
+              ))}
+            </div>
           </section>
 
           <section className="grid gap-3 md:grid-cols-2">
@@ -328,6 +419,8 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
             {exportMessage ? (
               <p
                 data-testid="progress-panel-export-message"
+                role="status"
+                aria-live="polite"
                 className="mt-3 text-sm text-emerald-300"
               >
                 {exportMessage}
@@ -351,7 +444,12 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                   Switch between timeline, checkpoint summaries, and structured log metadata.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2" data-testid="progress-panel-tabs">
+              <div
+                className="flex flex-wrap gap-2"
+                data-testid="progress-panel-tabs"
+                role="tablist"
+                aria-label="Inspect history"
+              >
                 {[
                   ["timeline", "Timeline"],
                   ["checkpoints", "Checkpoints"],
@@ -360,7 +458,11 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                   <button
                     key={value}
                     type="button"
+                    id={`progress-panel-tab-${value}`}
                     data-testid={`progress-panel-tab-${value}`}
+                    role="tab"
+                    aria-selected={activeTab === value}
+                    aria-controls={`progress-panel-tabpanel-${value}`}
                     onClick={() => setActiveTab(value as "timeline" | "checkpoints" | "logs")}
                     className={cn(
                       "rounded-full border px-3 py-1 text-xs transition",
@@ -376,9 +478,10 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-              <label className="space-y-2 text-sm text-zinc-200">
-                <span>Item filter</span>
+              <label className="space-y-2 text-sm text-zinc-200" htmlFor={FILTER_ITEM_ID}>
+                <span className="block">Item filter</span>
                 <select
+                  id={FILTER_ITEM_ID}
                   value={filterItemID}
                   onChange={(event) => setFilterItemID(event.target.value)}
                   data-testid="progress-panel-filter-item"
@@ -392,9 +495,10 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                   ))}
                 </select>
               </label>
-              <label className="space-y-2 text-sm text-zinc-200">
-                <span>Update kind</span>
+              <label className="space-y-2 text-sm text-zinc-200" htmlFor={FILTER_KIND_ID}>
+                <span className="block">Update kind</span>
                 <select
+                  id={FILTER_KIND_ID}
                   value={filterKind}
                   onChange={(event) => setFilterKind(event.target.value)}
                   data-testid="progress-panel-filter-kind"
@@ -412,7 +516,13 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
             </div>
 
             {activeTab === "timeline" ? (
-              <div className="mt-4 space-y-3" data-testid="progress-panel-timeline">
+              <div
+                className="mt-4 space-y-3"
+                data-testid="progress-panel-timeline"
+                id="progress-panel-tabpanel-timeline"
+                role="tabpanel"
+                aria-labelledby="progress-panel-tab-timeline"
+              >
                 {filteredUpdates.length > 0 ? (
                   filteredUpdates.map((update) => (
                     <button
@@ -454,7 +564,13 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
             ) : null}
 
             {activeTab === "checkpoints" ? (
-              <div className="mt-4 space-y-3" data-testid="progress-panel-checkpoints">
+              <div
+                className="mt-4 space-y-3"
+                data-testid="progress-panel-checkpoints"
+                id="progress-panel-tabpanel-checkpoints"
+                role="tabpanel"
+                aria-labelledby="progress-panel-tab-checkpoints"
+              >
                 {visibleCheckpoints.length > 0 ? (
                   visibleCheckpoints.map((checkpoint) => (
                     <div
@@ -483,6 +599,9 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
               <div
                 className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
                 data-testid="progress-panel-logs"
+                id="progress-panel-tabpanel-logs"
+                role="tabpanel"
+                aria-labelledby="progress-panel-tab-logs"
               >
                 <div className="space-y-2">
                   {filteredUpdates.length > 0 ? (
@@ -581,10 +700,23 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
               Cancel
             </Button>
           </div>
+          {/*
+            These three write item, status *and* note in one click, with no
+            confirmation and no undo, and they sit directly above the note they
+            overwrite. Saying so is the minimum; making them non-destructive is
+            a separate change to the workflow's behaviour.
+          */}
+          <p className="text-xs text-zinc-500" data-testid="progress-panel-controls-hint">
+            Each quick action sets the item and status and replaces anything typed in Update note.
+          </p>
 
-          <label className="space-y-2 text-sm text-zinc-200">
-            <span>Item</span>
+          <div className="space-y-2">
+            <label className="block text-sm text-zinc-200" htmlFor={ITEM_SELECT_ID}>
+              Item
+              <RequiredMark active={!selectedItemID} testID="progress-panel-item-required" />
+            </label>
             <select
+              id={ITEM_SELECT_ID}
               value={selectedItemID}
               onChange={(event) => {
                 setSelectedItemID(event.target.value);
@@ -594,6 +726,12 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 }
               }}
               data-testid="progress-panel-item-select"
+              aria-required={!selectedItemID}
+              aria-invalid={!selectedItemID}
+              aria-describedby={describedBy(
+                `${ITEM_SELECT_ID}-hint`,
+                showSubmitError && `${ITEM_SELECT_ID}-error`,
+              )}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2"
             >
               {items.map((item) => (
@@ -602,14 +740,30 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 </option>
               ))}
             </select>
-          </label>
+            <FieldMessage id={`${ITEM_SELECT_ID}-hint`}>
+              The item this update is recorded against. Also set by the item cards on the left.
+            </FieldMessage>
+            {showSubmitError ? (
+              <FieldMessage
+                id={`${ITEM_SELECT_ID}-error`}
+                tone="error"
+                testID="progress-panel-submit-error"
+              >
+                {submitError}
+              </FieldMessage>
+            ) : null}
+          </div>
 
-          <label className="space-y-2 text-sm text-zinc-200">
-            <span>Status</span>
+          <div className="space-y-2">
+            <label className="block text-sm text-zinc-200" htmlFor={STATUS_SELECT_ID}>
+              Status
+            </label>
             <select
+              id={STATUS_SELECT_ID}
               value={status}
               onChange={(event) => setStatus(event.target.value)}
               data-testid="progress-panel-status-select"
+              aria-describedby={`${STATUS_SELECT_ID}-hint`}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2"
             >
               {STATUS_OPTIONS.map((option) => (
@@ -618,69 +772,73 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 </option>
               ))}
             </select>
-          </label>
+            <FieldMessage id={`${STATUS_SELECT_ID}-hint`}>
+              The status the selected item moves to. Defaults to the item's current status.
+            </FieldMessage>
+          </div>
 
-          <label className="space-y-2 text-sm text-zinc-200">
-            <span>Update note</span>
+          {/*
+            "Update note" is optional in the payload (`summary: note.trim() ||
+            undefined`) but it is also the only place a blocked, cancelled or
+            failed status can carry its reason — the placeholder used to read as
+            a mandate and said neither of those things. The label keeps the
+            workflow's wording; the hint reconciles it with the `summary` key
+            the payload actually uses.
+          */}
+          <div className="space-y-2">
+            <label className="block text-sm text-zinc-200" htmlFor={NOTE_ID}>
+              Update note
+            </label>
             <textarea
+              id={NOTE_ID}
               value={note}
               onChange={(event) => setNote(event.target.value)}
               data-testid="progress-panel-summary-input"
               className="min-h-28 w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2"
-              placeholder="Summarize what changed or what the operator should know."
+              placeholder="Optional — what changed, or why"
+              aria-describedby={`${NOTE_ID}-hint`}
             />
-          </label>
+            <FieldMessage id={`${NOTE_ID}-hint`}>
+              Optional. Sent as the update's summary, and the only place a paused, blocked,
+              cancelled or failed status records why. The quick actions above overwrite it.
+            </FieldMessage>
+          </div>
 
-          <label className="space-y-2 text-sm text-zinc-200">
-            <span>Checkpoint label</span>
+          <div className="space-y-2">
+            <label className="block text-sm text-zinc-200" htmlFor={CHECKPOINT_ID}>
+              Checkpoint label
+            </label>
             <input
+              id={CHECKPOINT_ID}
               type="text"
               value={checkpointLabel}
               onChange={(event) => setCheckpointLabel(event.target.value)}
               data-testid="progress-panel-checkpoint-input"
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950/80 px-3 py-2"
               placeholder="Optional milestone name"
+              aria-describedby={`${CHECKPOINT_ID}-hint`}
             />
-          </label>
+            <FieldMessage id={`${CHECKPOINT_ID}-hint`}>
+              Optional. Names a milestone alongside this update.
+            </FieldMessage>
+          </div>
 
-          {submitError ? (
-            <p data-testid="progress-panel-submit-error" className="text-sm text-red-400">
-              {submitError}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <SubmitGateNotice
+              gate={gate}
+              testID="progress-panel-submit-gate"
+              action="Send update"
+              mode="attempt"
+              onReveal={revealRequirement}
+            />
             <Button type="button" variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
             <Button
               type="button"
               data-testid="progress-panel-submit"
-              onClick={() => {
-                if (!panelID || !selectedItemID) {
-                  setSubmitError("Select a progress item before submitting an update.");
-                  return;
-                }
-                setMessage(null);
-                setSubmitError(null);
-                if (roomID && panelID) {
-                  clearProgressPanelDraft(roomID, panelID);
-                  lastSavedDraftRef.current = null;
-                }
-                onSubmit({
-                  v: 1,
-                  envelopeId: envelope.id,
-                  kind: "data",
-                  status: "submitted",
-                  payload: {
-                    panel_id: panelID,
-                    item_id: selectedItemID,
-                    status,
-                    summary: note.trim() || undefined,
-                    checkpoint_label: checkpointLabel.trim() || undefined,
-                  },
-                });
-              }}
+              onClick={handleSubmit}
+              aria-describedby={gate.blocked ? "progress-panel-submit-gate" : undefined}
             >
               Send update
             </Button>
@@ -689,6 +847,16 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
       </CardContent>
     </Card>
   );
+}
+
+/**
+ * Render a gate requirement as a standalone sentence.
+ *
+ * Gate messages are lowercase because the notice prefixes them ("Cannot send
+ * update yet: …"); the field-level error has no prefix and needs the capital.
+ */
+function asSentence(message: string): string {
+  return message.charAt(0).toUpperCase() + message.slice(1);
 }
 
 function readItemLabel(items: ProgressItem[], itemID: string): string {

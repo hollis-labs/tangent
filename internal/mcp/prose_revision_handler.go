@@ -12,7 +12,8 @@ import (
 )
 
 type proseRevisionInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleProseRevision(
@@ -58,7 +59,7 @@ func (s *Server) handleProseRevision(
 		s.logWorkflowRoomReused("prose-revision", roomID, args.Envelope.ID)
 	}
 
-	toolRes, payload, err := s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
+	toolRes, payload, err := s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
 	if err != nil || toolRes == nil || toolRes.IsError {
 		return toolRes, payload, err
 	}

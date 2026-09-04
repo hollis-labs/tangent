@@ -254,8 +254,15 @@ type LegacyRoomHistoryEntry struct {
 	ErrorMessage    string          `json:"error_message,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	ResolvedAt      *time.Time      `json:"resolved_at,omitempty"`
-	SurfaceID       string          `json:"surface_id"`
-	InteractionID   string          `json:"interaction_id"`
+	SurfaceID       string          `json:"surface_id,omitempty"`
+	InteractionID   string          `json:"interaction_id,omitempty"`
+
+	// InteractionState and CallerAcknowledgedAt make the projection honest
+	// about its own status. A legacy row can read "pending" long after the
+	// canonical interaction resolved — the row is a projection, and these
+	// fields say which record actually holds the outcome.
+	InteractionState     InteractionState `json:"interaction_state,omitempty"`
+	CallerAcknowledgedAt *time.Time       `json:"caller_acknowledged_at,omitempty"`
 }
 
 // SurfaceSnapshot is a restart-safe hydration of canonical state for a surface.

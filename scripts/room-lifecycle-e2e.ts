@@ -5,7 +5,13 @@ import {
   type ActiveRoomEnvelope,
   type RoomLifecycle,
 } from "../ui/src/lib/room-lifecycle";
-import { connect, type WSClient } from "../ui/src/lib/ws-client";
+import {
+  connect,
+  type ConnectionState,
+  type ServerError,
+  type SurfaceSync,
+  type WSClient,
+} from "../ui/src/lib/ws-client";
 
 type BrowserSession = {
   name: string;
@@ -14,6 +20,7 @@ type BrowserSession = {
   pending: ActiveRoomEnvelope | null;
   client: WSClient;
   lifecycle: RoomLifecycle;
+  sync: SurfaceSync | null;
 };
 
 type DriverCommand = {
@@ -23,6 +30,14 @@ type DriverCommand = {
   wsURL?: string;
   marker?: string;
   revision?: number;
+  /**
+   * clientID models tab identity. Two opens sharing one clientID are the same
+   * tab refreshing (the server replaces the predecessor); distinct clientIDs
+   * are separate tabs that attach alongside each other.
+   */
+  clientID?: string;
+  observer?: boolean;
+  takeover?: boolean;
 };
 
 const sessions = new Map<string, BrowserSession>();
@@ -32,12 +47,20 @@ function emit(event: Record<string, unknown>) {
 }
 
 function state(session: BrowserSession) {
+  const connection = session.lifecycle.connectionState();
   return {
     browser: session.name,
     roomID: session.lifecycle.currentRoomID(),
     status: session.status,
     envelopeID: session.lifecycle.activeEnvelope()?.envelopeId ?? null,
     revision: session.lifecycle.activeEnvelope()?.revision ?? null,
+    // Connection state is reported alongside, never instead of, interaction
+    // state: the Go regressions assert on both independently.
+    connectionID: connection?.connectionId ?? null,
+    role: connection?.role ?? null,
+    connections: connection?.connections.length ?? 0,
+    leaseHolder: connection?.lease?.connection_id ?? null,
+    surfaceRevision: session.sync?.surface_revision ?? null,
   };
 }
 
@@ -56,6 +79,9 @@ function openBrowser(command: DriverCommand) {
   if (!command.browser || !command.roomID || !command.wsURL) {
     throw new Error("open requires browser, roomID, and wsURL");
   }
+  // Default to one client id per named browser so an unqualified open models a
+  // distinct tab. Tests that mean "the same tab refreshing" pass clientID.
+  const clientID = command.clientID ?? `client-${command.browser}`;
   if (sessions.has(command.browser)) {
     throw new Error(`browser ${command.browser} already exists`);
   }
@@ -63,6 +89,32 @@ function openBrowser(command: DriverCommand) {
   let session: BrowserSession;
   const client = connect(command.roomID, {
     wsURL: command.wsURL,
+    clientID,
+    observer: command.observer === true,
+    // The driver drives time explicitly; a background heartbeat would make
+    // event ordering nondeterministic.
+    heartbeatMs: 0,
+    onConnectionState: (connectionState: ConnectionState) => {
+      session.lifecycle.receiveConnectionState(connectionState);
+      emit({ event: "connection", ...state(session) });
+    },
+    onSync: (surfaceSync: SurfaceSync) => {
+      session.lifecycle.receiveSync(surfaceSync);
+      session.sync = surfaceSync;
+      emit({ event: "sync", ...state(session) });
+    },
+    onServerError: (refused: ServerError) => {
+      session.lifecycle.receiveServerError(refused);
+      session.pending = session.lifecycle.activeEnvelope();
+      session.status = "submission refused";
+      emit({
+        event: "server-error",
+        ...state(session),
+        code: refused.code,
+        message: refused.message,
+        leaseHolder: refused.lease?.connection_id ?? null,
+      });
+    },
     onOpen: () => {
       session.status = "connected";
       emit({ event: "opened", ...state(session) });
@@ -91,6 +143,7 @@ function openBrowser(command: DriverCommand) {
     pending: null,
     client,
     lifecycle,
+    sync: null,
   };
   sessions.set(command.browser, session);
   emit({ event: "open-started", ...state(session) });
@@ -164,6 +217,24 @@ function handle(command: DriverCommand) {
       }
       session.status = cancelled ? "cancelled" : session.status;
       emit({ event: "cancelled", ...state(session), cancelled });
+      return;
+    }
+    case "claim": {
+      const session = requireSession(command.browser);
+      const sent = session.client.claimResolver(command.takeover === true);
+      emit({ event: "claimed", ...state(session), sent });
+      return;
+    }
+    case "release": {
+      const session = requireSession(command.browser);
+      const sent = session.client.releaseResolver();
+      emit({ event: "released", ...state(session), sent });
+      return;
+    }
+    case "resync": {
+      const session = requireSession(command.browser);
+      const sent = session.client.resync();
+      emit({ event: "resynced", ...state(session), sent });
       return;
     }
     case "unload": {

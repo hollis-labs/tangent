@@ -13,7 +13,8 @@ import (
 )
 
 type dashboardInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type dashboardSubmitDraft struct {
@@ -107,7 +108,9 @@ func (s *Server) handleDashboard(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleDashboardEnvelope(&args.Envelope, room.ProjectDashboardState(phaseState)),
+		args.Completion,
 	)
 }
 

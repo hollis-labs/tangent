@@ -70,8 +70,10 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(listed.Tools) != 39 {
-		t.Fatalf("production MCP topology = %d tools, want 39", len(listed.Tools))
+	// 25 legacy + session tools, 11 generic durable interaction tools, and 4
+	// HITL tools. Changing this number is a public-API change.
+	if len(listed.Tools) != 40 {
+		t.Fatalf("production MCP topology = %d tools, want 40", len(listed.Tools))
 	}
 	want := map[string]bool{
 		"tangent.hitl_enqueue":   false,

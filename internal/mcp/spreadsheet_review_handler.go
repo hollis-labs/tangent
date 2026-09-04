@@ -16,7 +16,8 @@ import (
 const maxSpreadsheetSelectedRowSummaries = 20
 
 type spreadsheetReviewInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type spreadsheetReviewSubmitDraft struct {
@@ -106,7 +107,9 @@ func (s *Server) handleSpreadsheetReview(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleSpreadsheetReviewEnvelope(&args.Envelope, room.ProjectSpreadsheetReviewState(phaseState)),
+		args.Completion,
 	)
 }
 

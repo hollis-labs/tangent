@@ -10,7 +10,8 @@ import (
 )
 
 type designIterationInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleDesignIteration(
@@ -56,5 +57,5 @@ func (s *Server) handleDesignIteration(
 		s.logWorkflowRoomReused("design-iteration", roomID, args.Envelope.ID)
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
 }

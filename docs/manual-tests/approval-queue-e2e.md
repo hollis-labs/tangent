@@ -3,6 +3,8 @@
 Manual smoke for the approval-queue workflow. This validates:
 
 - explicit accept/reject/defer decisions with one submit boundary
+- the defer-reason affordance: visibly required while an item is deferred,
+  and named next to the disabled Submit when it is outstanding
 - same-room reopen from the latest submitted approval-queue state
 - evidence-pane rendering and keyboard navigation
 - local refresh recovery for unsent comments
@@ -24,7 +26,28 @@ In the browser:
 
 - accept item 1
 - set action ID `merge`
-- defer item 2 with reason `window`
+- defer item 2, and **leave the defer reason empty**
+- navigate back to item 1
+
+Expected at this point — this is the regression the workflow shipped with,
+so check it every time:
+
+- the `Defer reason` label on item 2 carries a `required` badge while the
+  decision is Defer, and drops it if the decision changes
+- item 2's row in the queue list is flagged `needs a defer reason`, even
+  though item 1's pane is the one on screen
+- the header count reads `2 items · 0 unresolved · 1 awaiting a defer reason`
+- Submit is disabled, and the text beside it reads
+  `Submit is disabled: "…" is deferred and still needs a defer reason.`
+- clicking `Go to defer reason` switches to item 2, scrolls the field into
+  view, and focuses it
+- the reviewer comment is labelled `Reviewer comment`, and its help text says
+  it does not stand in for the defer reason
+
+Then finish the turn:
+
+- fill the defer reason with `window`
+- confirm Submit becomes enabled and the explanation disappears
 - click `Export audit`
 - click `Submit`
 

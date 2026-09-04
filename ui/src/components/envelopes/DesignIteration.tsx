@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
+import { buildSubmitGate, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 
 export type DesignPromptKind = "click-region" | "button" | "text-input";
@@ -191,6 +194,8 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
   const buttonPrompts = prompts.filter((prompt) => prompt.kind === "button");
   const textPrompts = prompts.filter((prompt) => prompt.kind === "text-input");
 
+  const revealRequirement = useRevealRequirement();
+
   const submitAction = (actionID: string, actionKind: DesignPromptKind, value: string) => {
     onSubmit({
       v: 1,
@@ -225,12 +230,21 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2" data-testid="design-iteration-tabs">
+        <div
+          className="flex flex-wrap gap-2"
+          data-testid="design-iteration-tabs"
+          role="tablist"
+          aria-label="Design variants"
+        >
           {variants.map((variant, index) => (
             <button
               key={`${variant.envelopeID}-${variant.variantID}`}
               type="button"
+              id={`design-iteration-tab-${variant.variantID}`}
               data-testid={`design-iteration-tab-${variant.variantID}`}
+              role="tab"
+              aria-selected={activeVariantID === variant.variantID}
+              aria-controls="design-iteration-variant-panel"
               onClick={() => setActiveVariantID(variant.variantID)}
               className={cn(
                 "rounded-full border px-3 py-1 text-xs transition-colors",
@@ -247,7 +261,12 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
+        <div
+          className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950"
+          id="design-iteration-variant-panel"
+          role="tabpanel"
+          aria-labelledby={`design-iteration-tab-${activeVariant.variantID}`}
+        >
           <div className="border-b border-zinc-800 bg-zinc-900/80 px-4 py-2 text-xs text-zinc-400">
             {activeVariant.title}
             {activeVariant.caption ? ` • ${activeVariant.caption}` : ""}
@@ -280,40 +299,79 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
 
         {textPrompts.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2" data-testid="design-iteration-text-inputs">
-            {textPrompts.map((prompt) => (
-              <div
-                key={prompt.id}
-                className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
-              >
-                <label
-                  htmlFor={`design-input-${prompt.id}`}
-                  className="text-sm font-medium text-zinc-100"
+            {textPrompts.map((prompt) => {
+              // This workflow has no single terminal CTA: each prompt's Send is
+              // its own submit path and fires on its own. So each one carries
+              // its own gate, adjacent to its own button, rather than a shared
+              // footer notice that could not say which prompt it meant.
+              const controlID = `design-input-${prompt.id}`;
+              const promptLabel = prompt.label ?? prompt.id;
+              const value = textValues[prompt.id] ?? "";
+              const missing = value.trim().length === 0;
+              const gate = buildSubmitGate([
+                missing && {
+                  controlID,
+                  label: promptLabel,
+                  message: `"${promptLabel}" still needs an answer.`,
+                },
+              ]);
+              return (
+                <div
+                  key={prompt.id}
+                  className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
                 >
-                  {prompt.label ?? prompt.id}
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    id={`design-input-${prompt.id}`}
-                    value={textValues[prompt.id] ?? ""}
-                    placeholder={prompt.placeholder}
-                    onChange={(event) =>
-                      setTextValues((prev) => ({ ...prev, [prompt.id]: event.currentTarget.value }))
-                    }
-                    data-testid={`design-iteration-input-${prompt.id}`}
+                  {/*
+                    The label is envelope-supplied and falls back to the raw
+                    machine id, so nothing in it can be relied on to say the
+                    field is required. The marker does.
+                  */}
+                  <label htmlFor={controlID} className="text-sm font-medium text-zinc-100">
+                    {promptLabel}
+                    <RequiredMark testID={`design-iteration-required-${prompt.id}`} />
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      id={controlID}
+                      value={value}
+                      placeholder={prompt.placeholder}
+                      onChange={(event) =>
+                        setTextValues((prev) => ({
+                          ...prev,
+                          [prompt.id]: event.currentTarget.value,
+                        }))
+                      }
+                      aria-required="true"
+                      aria-invalid={missing}
+                      aria-describedby={`${controlID}-hint`}
+                      data-testid={`design-iteration-input-${prompt.id}`}
+                    />
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        submitAction(prompt.id, "text-input", textValues[prompt.id] ?? "")
+                      }
+                      disabled={missing}
+                      aria-describedby={
+                        gate.blocked ? `design-iteration-submit-gate-${prompt.id}` : undefined
+                      }
+                      data-testid={`design-iteration-submit-${prompt.id}`}
+                    >
+                      Send
+                    </Button>
+                  </div>
+                  <SubmitGateNotice
+                    gate={gate}
+                    testID={`design-iteration-submit-gate-${prompt.id}`}
+                    action="Send"
+                    onReveal={revealRequirement}
                   />
-                  <Button
-                    type="button"
-                    onClick={() =>
-                      submitAction(prompt.id, "text-input", textValues[prompt.id] ?? "")
-                    }
-                    disabled={(textValues[prompt.id] ?? "").trim().length === 0}
-                    data-testid={`design-iteration-submit-${prompt.id}`}
-                  >
-                    Send
-                  </Button>
+                  <FieldMessage id={`${controlID}-hint`}>
+                    Required before Send. Sending answers this prompt on its own and completes the
+                    iteration.
+                  </FieldMessage>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : null}
       </CardContent>

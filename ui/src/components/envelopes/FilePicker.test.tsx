@@ -166,8 +166,11 @@ describe("<FilePicker>", () => {
     fireEvent.click(screen.getByTestId("file-picker-submit"));
 
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByTestId("file-picker-submit-error")).toHaveTextContent(
-      "Select at least one file before submit.",
+    // The refusal moved out of the file-browser card and into the Submit row,
+    // where it is owned by the submit gate. See FilePicker.validation.test.tsx
+    // for the focus/scroll behaviour that came with the move.
+    expect(screen.getByTestId("file-picker-submit-gate-reason")).toHaveTextContent(
+      "Cannot submit yet: no files are selected — tick at least one file in the list.",
     );
   });
 

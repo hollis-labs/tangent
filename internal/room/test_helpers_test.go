@@ -9,12 +9,29 @@ import (
 	"github.com/coder/websocket"
 )
 
-// readClientFrame reads a single text frame from conn, parses it as
-// JSON object, and returns the map. Fails the test on timeout / non-text.
+// readClientFrame reads the next presentation frame from conn.
+//
+// Connection-lifecycle frames ("connection", "sync") interleave with
+// presentations by design — a client is told who else is attached and which
+// durable revisions it holds independently of any envelope — so they are
+// skipped here.
 func readClientFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	for {
+		frame := readClientFrameCtx(ctx, t, conn)
+		switch frame["type"] {
+		case "connection", "sync":
+			continue
+		default:
+			return frame
+		}
+	}
+}
+
+func readClientFrameCtx(ctx context.Context, t *testing.T, conn *websocket.Conn) map[string]any {
+	t.Helper()
 	mt, payload, err := conn.Read(ctx)
 	if err != nil {
 		t.Fatalf("client read: %v", err)

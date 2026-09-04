@@ -13,7 +13,8 @@ import (
 )
 
 type diffReviewInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type diffReviewSubmitDraft struct {
@@ -100,7 +101,9 @@ func (s *Server) handleDiffReview(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleDiffReviewEnvelope(&args.Envelope, room.ProjectDiffReviewState(phaseState)),
+		args.Completion,
 	)
 }
 

@@ -426,7 +426,13 @@ func TestLegacyRoomHistoryCompatibilityProjection(t *testing.T) {
 	if err := tangentdb.RunMigrations(database); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-	for range 3 {
+	// Unwind to the pre-durable v0.12 schema. Counting migrations here would
+	// break every time one is added, so roll back until the durable tables are
+	// gone and the seeded room is genuinely a pre-upgrade room.
+	for {
+		if _, probeErr := database.ExecContext(ctx, `SELECT 1 FROM surfaces LIMIT 1`); probeErr != nil {
+			break
+		}
 		if err := tangentdb.RollbackOne(database); err != nil {
 			t.Fatalf("RollbackOne: %v", err)
 		}

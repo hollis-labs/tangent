@@ -65,6 +65,58 @@ When an agent invokes a workflow tool, Tangent prints a room URL like
 the envelope. (Tangent binds 127.0.0.1 IPv4-only; pasting `localhost`
 also works on most systems but the canonical form matches the bind.)
 
+## Managed runtime (single launch authority)
+
+Tangent binds a fixed port and holds room state in `~/.tangent`, so it
+must have exactly **one** launch authority on a given machine. Two
+supervisors racing for `:7842` produce a bind failure and a split room
+store, and the loser looks to agents like an MCP server that connects
+and then dies.
+
+Pick one of these and record it:
+
+- **Unmanaged** — you start `tangent` yourself. Nothing else may start it.
+- **Supervised** — a process manager (Cerberus, launchd, systemd,
+  Docker, a shell supervisor) owns start/stop/restart. Then never run
+  `tangent` by hand: ask the supervisor to restart it instead.
+
+Whichever you pick, the *client* side is separate and may be plural:
+several agents can connect to the one process at once. Adding a Claude
+Code / Cursor / Codex entry does not create a second runtime — those
+only dial an already-running server. Only add a *launch* entry once.
+
+For this workspace the authority is recorded in
+[`.agent-ops/project.yaml`](../.agent-ops/project.yaml) under `build.authority`
+and `build.resource`; `deployment.type` says how the process is supervised.
+Treat that file as the answer to "who starts Tangent here?" — and if a
+skill, runbook, or agent prompt tells you to `cd` into the repo and run
+`./tangent` while a supervisor owns it, that instruction is stale.
+
+### Cold-start check
+
+After a reboot, a logout, or an MCP catalog refresh, confirm the
+runtime is singular before debugging anything else:
+
+```bash
+curl -fsS http://127.0.0.1:7842/healthz          # -> {"status":"ok"}
+lsof -nP -iTCP:7842 -sTCP:LISTEN                 # -> exactly one PID
+```
+
+If `lsof` shows more than one listener, or `healthz` answers but your
+supervisor reports the resource stopped, you have two launch
+authorities. Stop the unmanaged copy, not the supervised one.
+
+> **Known issue — legacy `/sse` sessions go stale.** The server sets a
+> 30s `ReadTimeout`, and the long-lived MCP wrapper clears only the
+> *write* deadline, so a `GET /sse` stream is torn down after ~30s of
+> quiet and its MCP session is dropped. A client that connected
+> successfully will then get `404 session not found` on every later
+> call, and a gateway that pools the connection will keep serving a
+> dead session id until it is restarted. Prefer `/mcp` (Streamable
+> HTTP) for anything long-lived. If you must use `/sse` through a
+> pooling gateway, restart the gateway after any Tangent restart, and
+> treat a `404 session not found` as "reconnect", not "server down".
+
 ## Claude Code
 
 Verified against the `claude` CLI as of **2026-05-08**:
@@ -190,18 +242,24 @@ Restart Cursor after editing the file.
 
 ## Codex
 
-Codex's MCP CLI shape was not verified for v0.1.0. Once the CLI is
-known, the registration shape will look approximately like:
+Verified working shape. Codex reads `~/.codex/config.toml`; declare the
+server as a URL upstream (Streamable HTTP), with no `command` — Codex
+dials the already-running process, it does not launch one:
 
-```bash
-# placeholder — verify against Codex's current MCP docs
-codex mcp add tangent http://localhost:7842/mcp
+```toml
+[mcp_servers.Tangent]
+url = "http://localhost:7842/mcp"
 ```
 
-Until verified, follow Codex's upstream MCP setup guide and point it at
-`http://localhost:7842/mcp` (Streamable HTTP) or
-`http://localhost:7842/sse` (legacy SSE). If you confirm a working
-shape, please contribute it back.
+Per-tool approval is optional; without it Codex prompts on each call:
+
+```toml
+[mcp_servers.Tangent.tools."tangent.triage"]
+approval_mode = "auto"
+```
+
+Repeat the block per tool you want pre-approved. `/sse` works as a
+legacy fallback if your Codex build rejects Streamable HTTP.
 
 ## Verification (no agent required)
 
@@ -290,7 +348,15 @@ curl -fsS -X POST http://localhost:7842/mcp \
 workflow-neutral phase substrate:
 
 - `status` / legacy `phase`: `active` while a room is live in memory,
-  `closed` once only the persisted row remains.
+  `closed` once only the persisted row remains. It says nothing about whether
+  anyone is looking — see `connections`.
+- `connections`: the room's Connection lifecycle, present while the room is
+  live. `connections[]` lists each attached client (`connection_id`, `label`,
+  `client_kind`, `role`, `attached_at`), and `resolver_lease` names the single
+  connection whose submission may become terminal. Reported separately from
+  interaction state on purpose: a room can be busy with nobody attached, and
+  attached with nothing to answer. `tangent.session_list` carries the same fact
+  compactly as `connection_count` and `resolver_lease`.
 - `current_phase`: the room's current workflow phase ID.
 - `phases_visited`: append-only ordered phase history. Jumping back to a
   prior phase appends that phase again rather than rewriting history.

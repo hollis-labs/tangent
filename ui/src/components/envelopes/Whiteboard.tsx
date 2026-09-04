@@ -4,7 +4,11 @@ import "tldraw/tldraw.css";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
+import { buildSubmitGate, type SubmitRequirement, useRevealRequirement } from "@/lib/submit-gate";
+import { cn } from "@/lib/utils";
 import {
   buildWhiteboardSubmitAssets,
   mergeWhiteboardAssetRefs,
@@ -96,6 +100,9 @@ export type WhiteboardProps = {
   roomID?: string;
 };
 
+const NOTES_ID = "whiteboard-notes";
+const CANVAS_ID = "whiteboard-canvas";
+
 export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardProps) {
   const data = envelope.data;
   const editorRef = useRef<Editor | null>(null);
@@ -133,6 +140,23 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       ? buildStaleReferenceImageMessage(initialState.staleReferenceImages.length)
       : null,
   );
+  // Two of this workflow's submit guards cannot be derived from render state:
+  // whether the tldraw editor has mounted, and whether the current scene still
+  // carries browser-only image assets — the latter is only known once the
+  // snapshot is taken. They are recorded here so the gate notice beside the CTA
+  // can explain a click that did nothing, instead of leaving the operator with
+  // a banner 640 pixels above the button or with no feedback at all.
+  const [attemptBlock, setAttemptBlockState] = useState<SubmitRequirement | null>(null);
+  // Mirrored in a ref so the store listener can skip the state update entirely
+  // when there is nothing recorded — a no-op setState still schedules a render.
+  const attemptBlockRef = useRef<SubmitRequirement | null>(null);
+  const setAttemptBlock = (next: SubmitRequirement | null) => {
+    if (attemptBlockRef.current === null && next === null) {
+      return;
+    }
+    attemptBlockRef.current = next;
+    setAttemptBlockState(next);
+  };
   const notesRef = useRef(initialState.notes);
   const autosaveTimerRef = useRef<number | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -223,6 +247,10 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     };
   }, []);
 
+  const clearAttemptBlock = useEffectEvent(() => {
+    setAttemptBlock(null);
+  });
+
   const invalidateExport = useEffectEvent(() => {
     if (latestExportRefRef.current === null) {
       return;
@@ -232,24 +260,57 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     setExportStatus("idle");
   });
 
+  const revealRequirement = useRevealRequirement();
+
+  // Preview mode is what actually disables Submit board, and the control that
+  // clears it — "Continue from here" — sits at the bottom of a card whose
+  // canvas alone is 640px tall, while the explanation used to render at the very
+  // top. The gate puts the reason next to the button and the button next to the
+  // control.
+  const gate = buildSubmitGate([
+    !boardID && {
+      controlID: "",
+      label: "board",
+      message: "this envelope carries no board id, so there is nothing to submit.",
+    },
+    revisionMode === "preview" && {
+      controlID: activeRevisionId ? `whiteboard-continue-${activeRevisionId}` : "",
+      label: "Continue from here",
+      message: `revision ${activeRevisionId ?? "preview"} is open for inspection only — continue from it to make edits submittable.`,
+    },
+    attemptBlock,
+  ]);
+
   const handleSubmit = () => {
-    const editor = editorRef.current;
-    if (!editor || !data?.board_id) {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
       return;
     }
-    if (revisionMode === "preview") {
-      setMessage(
-        `Revision ${activeRevisionId ?? "preview"} is open for inspection. Choose Continue from here before submitting.`,
-      );
+    const editor = editorRef.current;
+    if (!editor || !data?.board_id) {
+      // Previously a silent return: the button was live, the click did nothing,
+      // and nothing on screen changed.
+      setAttemptBlock({
+        controlID: CANVAS_ID,
+        label: "board",
+        message: "the board editor has not finished loading yet.",
+      });
       return;
     }
     const submitScene = buildWhiteboardSubmitAssets(getSnapshot(editor.store), activeAssetRefs);
     if (submitScene.unsupportedLocalAssetIds.length > 0) {
+      const count = submitScene.unsupportedLocalAssetIds.length;
       setMessage(
-        `Remove ${submitScene.unsupportedLocalAssetIds.length} browser-only image asset(s) before submit. Tangent only persists artifact-backed image refs.`,
+        `Remove ${count} browser-only image asset(s) before submit. Tangent only persists artifact-backed image refs.`,
       );
+      setAttemptBlock({
+        controlID: CANVAS_ID,
+        label: "board",
+        message: `${count} browser-only image asset${count === 1 ? "" : "s"} must be removed from the board first.`,
+      });
       return;
     }
+    setAttemptBlock(null);
     const selectionSummary = summarizeSelection(editor);
     shouldFlushDraftRef.current = false;
     clearDraft();
@@ -361,6 +422,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     latestExportRefRef.current = null;
     setLatestExportRef(null);
     setExportStatus("idle");
+    setAttemptBlock(null);
     setMessage(
       `Previewing revision ${revision.revision_id}. Continue from here to branch a new revision.`,
     );
@@ -394,6 +456,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     latestExportRefRef.current = null;
     setLatestExportRef(null);
     setExportStatus("idle");
+    setAttemptBlock(null);
     setMessage(
       isLatest
         ? null
@@ -426,6 +489,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
     latestExportRefRef.current = null;
     setLatestExportRef(null);
     setExportStatus("idle");
+    setAttemptBlock(null);
     setMessage(null);
   };
 
@@ -474,15 +538,36 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/*
+          Every other draft-bearing workflow tells the operator when it restored
+          one; this board silently resumed a recovered scene, which is the worst
+          case for a canvas whose content is not obviously "unsent".
+        */}
+        {initialState.recoveredDraft ? (
+          <p
+            className="text-sm text-emerald-300"
+            role="status"
+            aria-live="polite"
+            data-testid="whiteboard-draft-recovered"
+          >
+            Recovered unsent whiteboard edits — scene and notes — from this browser.
+          </p>
+        ) : null}
         {message ? (
           <div
             className="rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-200"
+            role="status"
+            aria-live="polite"
             data-testid="whiteboard-message"
           >
             {message}
           </div>
         ) : null}
-        <div className="h-[640px] overflow-hidden rounded-xl border border-zinc-800 bg-white">
+        <div
+          id={CANVAS_ID}
+          tabIndex={-1}
+          className="h-[640px] overflow-hidden rounded-xl border border-zinc-800 bg-white"
+        >
           <Tldraw
             key={editorSeedKey}
             snapshot={editorSeed}
@@ -495,6 +580,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
               unsubscribeRef.current = editor.store.listen(
                 () => {
                   invalidateExport();
+                  clearAttemptBlock();
                   scheduleAutosave();
                 },
                 { source: "user", scope: "document" },
@@ -504,14 +590,25 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         </div>
 
         <section className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Notes</p>
+          <label
+            htmlFor={NOTES_ID}
+            className="block text-xs font-medium uppercase tracking-wide text-zinc-500"
+          >
+            Notes
+          </label>
           <Textarea
+            id={NOTES_ID}
             value={notes}
             onChange={handleNotesChange}
-            placeholder="Add context for the next whiteboard revision."
+            placeholder="Optional context for the next whiteboard revision"
             rows={4}
+            aria-describedby={`${NOTES_ID}-hint`}
             data-testid="whiteboard-notes"
           />
+          <FieldMessage id={`${NOTES_ID}-hint`}>
+            Optional. Reopening a snapshot, continuing from a revision, or returning to latest
+            replaces these notes with that revision's own.
+          </FieldMessage>
         </section>
 
         {revisions.length > 0 ? (
@@ -565,6 +662,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
                             setSelectedRevisionId(revision.revision_id);
                             handlePreviewRevision(revision);
                           }}
+                          id={`whiteboard-preview-${revision.revision_id}`}
                           data-testid={`whiteboard-preview-${revision.revision_id}`}
                         >
                           Reopen snapshot
@@ -573,6 +671,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
                           type="button"
                           variant="outline"
                           onClick={() => handleContinueFromRevision(revision)}
+                          id={`whiteboard-continue-${revision.revision_id}`}
                           data-testid={`whiteboard-continue-${revision.revision_id}`}
                         >
                           Continue from here
@@ -586,11 +685,21 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         ) : null}
       </CardContent>
 
-      <CardFooter className="justify-end gap-3">
-        <p className="mr-auto text-xs text-zinc-500">
+      <CardFooter className="flex-wrap justify-end gap-3">
+        {/*
+          A standing autosave notice, not an explanation of a disabled CTA — the
+          gate notice below owns that, and the two must not be confused.
+        */}
+        <p className="mr-auto text-xs text-zinc-500" data-testid="whiteboard-autosave-notice">
           Draft autosaves stay in this browser until you submit or cancel.
           {latestExportRef ? ` Latest PNG export: ${latestExportRef.name}.` : ""}
         </p>
+        <SubmitGateNotice
+          gate={gate}
+          testID="whiteboard-submit-gate"
+          action="Submit board"
+          onReveal={revealRequirement}
+        />
         <Button
           type="button"
           variant="outline"
@@ -612,18 +721,29 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
           onClick={handleSubmit}
           data-testid="whiteboard-submit"
           disabled={revisionMode === "preview"}
+          aria-describedby={gate.blocked ? "whiteboard-submit-gate" : undefined}
         >
           Submit board
         </Button>
       </CardFooter>
-      {exportStatus === "done" ? (
-        <div className="px-6 pb-4 text-xs text-emerald-400" data-testid="whiteboard-export-status">
-          PNG exported
-        </div>
-      ) : null}
-      {exportStatus === "failed" ? (
-        <div className="px-6 pb-4 text-xs text-red-400" data-testid="whiteboard-export-status">
-          Export failed
+      {/*
+        One export outcome, announced once. The two branches used to be separate
+        unannounced blocks whose wording did not match the footer's own
+        "Latest PNG export" line.
+      */}
+      {exportStatus !== "idle" ? (
+        <div
+          className={cn(
+            "px-6 pb-4 text-xs",
+            exportStatus === "done" ? "text-emerald-400" : "text-red-400",
+          )}
+          role="status"
+          aria-live="polite"
+          data-testid="whiteboard-export-status"
+        >
+          {exportStatus === "done"
+            ? `PNG exported${latestExportRef ? `: ${latestExportRef.name}` : ""}`
+            : "Export failed"}
         </div>
       ) : null}
     </Card>

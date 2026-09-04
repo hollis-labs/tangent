@@ -13,7 +13,8 @@ import (
 )
 
 type filePickerInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type filePickerSubmitDraft struct {
@@ -101,7 +102,9 @@ func (s *Server) handleFilePicker(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleFilePickerEnvelope(&args.Envelope, room.ProjectFilePickerState(phaseState)),
+		args.Completion,
 	)
 }
 

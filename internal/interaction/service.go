@@ -205,6 +205,12 @@ type SubmitInteractionInput struct {
 	ExternalRefs   json.RawMessage `json:"external_refs,omitempty"`
 	Policy         json.RawMessage `json:"policy,omitempty"`
 	Capability     string          `json:"-"`
+
+	// LegacyRoomID / LegacyEnvelopeID correlate the canonical interaction with
+	// the v0.12 room projection that presents it. They never participate in
+	// idempotency identity or authorization.
+	LegacyRoomID     string `json:"-"`
+	LegacyEnvelopeID string `json:"-"`
 }
 
 func (s *Service) SubmitInteraction(
@@ -248,6 +254,7 @@ func (s *Service) SubmitInteraction(
 		CallerAssurance: input.Caller.Assurance, IdempotencyKey: input.IdempotencyKey,
 		Definition: binding, RequestSnapshot: input.Request, ExternalRefs: input.ExternalRefs,
 		Policy: input.Policy, ActorRef: input.Caller.PrincipalRef, Authority: input.Caller.Authority,
+		LegacyRoomID: input.LegacyRoomID, LegacyEnvelopeID: input.LegacyEnvelopeID,
 	})
 	if err != nil {
 		return InteractionHandle{}, err

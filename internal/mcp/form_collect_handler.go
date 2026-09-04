@@ -13,7 +13,8 @@ import (
 )
 
 type formCollectInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type formCollectSubmitDraft struct {
@@ -83,7 +84,7 @@ func (s *Server) handleFormCollect(
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, buildVisibleFormCollectEnvelope(&args.Envelope, room.ProjectFormState(phaseState)))
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleFormCollectEnvelope(&args.Envelope, room.ProjectFormState(phaseState)), args.Completion)
 }
 
 func formSnapshotFromEnvelope(env envelopes.Envelope, persisted *room.FormStateView) room.FormSnapshot {

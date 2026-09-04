@@ -47,7 +47,8 @@ type listWorkflowsResult struct {
 // the JSON Schema declared in triage_schema.go. The envelope field is
 // decoded into the canonical envelopes.Envelope on the way to validation.
 type triageInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 // handleListWorkflows enumerates the envelope types for which a handler
@@ -148,7 +149,7 @@ func (s *Server) handleTriage(
 		s.logWorkflowRoomReused("triage", roomID, args.Envelope.ID)
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
 }
 
 // triageErrorResult maps a dispatcher error into a structured tool

@@ -10,6 +10,13 @@ export interface SessionListRoom {
   current_envelope_type?: string;
   created_at: string;
   updated_at: string;
+  /**
+   * Connection lifecycle, reported next to the interaction summary rather
+   * than folded into it: a room can be busy with nobody looking, and watched
+   * with nothing to answer.
+   */
+  connection_count?: number;
+  resolver_lease?: { connection_id: string; label?: string } | null;
 }
 
 const REFRESH_MS = 5000;
@@ -100,6 +107,7 @@ export function TabStrip() {
               const active = room.id === activeRoomID;
               const label = room.title || shortRoomID(room.id);
               const suffix = room.current_envelope_type ? ` (${room.current_envelope_type})` : "";
+              const attached = room.connection_count ?? 0;
               return (
                 <div
                   key={room.id}
@@ -119,6 +127,18 @@ export function TabStrip() {
                     {label}
                     {suffix}
                   </button>
+                  {attached > 1 ? (
+                    <span
+                      data-testid={`tab-strip-connections-${room.id}`}
+                      title={`${attached} clients attached`}
+                      className={cn(
+                        "rounded-full px-1.5 text-[10px] leading-4",
+                        active ? "bg-zinc-300 text-zinc-800" : "bg-zinc-800 text-zinc-400",
+                      )}
+                    >
+                      {attached}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void closeRoom(room.id)}

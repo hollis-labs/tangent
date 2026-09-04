@@ -63,7 +63,7 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-The production build advertises 39 tools. Its compatibility surface contains
+The production build advertises 40 tools. Its compatibility surface contains
 these 25 room/workflow and session tools:
 
 - `tangent.list_workflows` — discovery.
@@ -92,7 +92,7 @@ these 25 room/workflow and session tools:
 - `tangent.session_close`
 - `tangent.session_list`
 
-The generic durable substrate adds 10 handle-based tools:
+The generic durable substrate adds 11 handle-based tools:
 
 - `tangent.interaction_list_kinds`
 - `tangent.interaction_resolve_definition`
@@ -104,6 +104,35 @@ The generic durable substrate adds 10 handle-based tools:
 - `tangent.interaction_await`
 - `tangent.interaction_cancel`
 - `tangent.interaction_supersede`
+- `tangent.interaction_acknowledge`
+
+Every tool in the first list except `tangent.list_workflows` and the phase,
+close, create, get, and list session operations is room-backed, and each of
+those accepts the shared optional `completion` selector described next.
+
+### Room workflow completion
+
+`internal/roomflow/` — every named room workflow and `tangent.session_advance`
+routes through one shared compatibility adapter onto the canonical durable
+substrate. The adapter separates three facts the v0.12 blocking path conflated:
+that the request exists, that the human answered, and that the caller is still
+listening.
+
+A durable interaction is created before any wait can lose it, keyed by caller
+scope + workflow kind + envelope id. Wait mode preserves the exact v0.12
+response for interactions answered within 45 seconds; past that it returns a
+successful pending receipt carrying the durable handle and room URL, never an
+error and never a cancellation. `completion.mode: "async"` returns that receipt
+immediately. Callers recover through `tangent.interaction_get`,
+`tangent.interaction_await`, or by retrying the identical original invocation.
+
+Transport loss, caller timeout, browser disconnect, and process restart stop
+only the active waiter. Only a participant submission, a participant
+cancellation, an authorized caller cancellation, or an authorized room close
+produces a terminal outcome. Room presentation and history are rebuilt from
+canonical records at startup; the in-memory pending map and the v0.12 `rooms` /
+`envelopes` tables are compatibility projections, never a terminal-state
+authority. See `docs/room-workflow-completion.md`.
 
 The reserved operator inbox adds four stricter adapters:
 
@@ -114,13 +143,60 @@ The reserved operator inbox adds four stricter adapters:
 
 ### WebSocket bridge with per-room state
 
-`internal/server/ws_*.go` — the SPA opens a WS connection scoped to the
-room ID; the bridge presents active envelopes with a monotonically increasing
-presentation revision, receives the user's revision-pinned response, and
-resolves the waiting MCP call. A socket is a replaceable attachment: pending
-work is replayed at a fresh revision after refresh or reconnect, while replaced
-or stale presentations cannot resolve it. Rooms are independent, so multiple
-agent sessions can have active Tangent windows concurrently without cross-talk.
+`internal/ws` — the SPA opens a WS connection scoped to the room ID; the bridge
+presents active envelopes with a monotonically increasing presentation
+revision, receives the user's revision-pinned response, and resolves the
+waiting MCP call. A socket is a replaceable attachment: pending work is
+replayed at a fresh revision after refresh or reconnect, while replaced or
+stale presentations cannot resolve it. Rooms are independent, so multiple agent
+sessions can have active Tangent windows concurrently without cross-talk.
+
+### Connection lifecycle: multiple clients per surface
+
+`internal/room/connection.go` implements the Connection lifecycle of
+[ADR 0001](adr/0001-lifecycle-boundaries.md). A room tracks a *set* of live
+connections rather than one socket, each with a server-issued `connection_id`:
+
+- **Roles.** Exactly one connection at a time holds the surface's **resolver
+  lease** and may turn a submission into a terminal outcome. Every other
+  connection is an **observer**: it receives every presentation and changes
+  nothing. Two tabs can therefore watch one surface without either closing it
+  or stealing the other's work.
+- **Refresh versus a second tab.** A client supplies a `clientID` — the
+  identity of the tab, held in `sessionStorage`, which is per-tab and survives
+  a reload. Reattaching under a `clientID` that is already present replaces
+  that predecessor and inherits its lease (a refresh); a different `clientID`
+  joins alongside (a second tab). This is the one-active-connection
+  compatibility policy ADR 0001 permits, narrowed to the one case where a
+  second live socket would be a duplicate rather than a peer.
+- **Arbitration.** The lease carries an owner and an expiry renewed by the
+  holder's own inbound traffic (`ResolverLeaseTTL`, 30s; the SPA heartbeats
+  every 10s). A closed socket releases it immediately; the expiry only covers
+  a tab that is frozen while its TCP connection still looks alive. A submission
+  from a non-holder is refused with an explicit
+  `{"type":"error","code":"resolver_lease_held"}` frame naming the holder, and
+  an explicit `claim_resolver` takeover is the documented way out.
+- **Two independent checks.** The lease answers "may this client act at all";
+  the presentation revision still answers "is this client acting on the frame
+  it was shown". Revisions are per connection, so a stale view is refused with
+  `code:"stale_presentation"` and immediately re-presented.
+- **Durable synchronization.** On attach — and on a client-requested `resync` —
+  the server sends a `sync` frame built by reading the canonical interaction and
+  surface revisions behind each live presentation, not the room's in-memory
+  state. A client therefore knows which durable revisions its view corresponds
+  to.
+- **Visible independently.** Connection state is its own wire frame
+  (`{"type":"connection",...}`), its own SPA component
+  (`ui/src/components/ConnectionStatus.tsx`), a `connections` block on
+  `tangent.session_get`, and `connection_count` / `resolver_lease` on
+  `tangent.session_list`. None of it is folded into interaction status.
+
+Every connection carries a `ParticipantBinding`, established by the ws
+handler's `ParticipantResolver` before the upgrade is accepted. Today that is
+an explicitly unverified loopback operator; it is the seam
+[ADR 0004](adr/0004-caller-participant-and-room-access-authority.md) replaces
+with a participant session, including the ability to refuse the upgrade. A
+connection holds no capability and grants none.
 
 ### Durable HITL operator surface
 
@@ -327,10 +403,14 @@ extensions—including the non-renderer `tangent.hitl-item` interaction
 definition—for 44 definitions in the shipped process. Extensions use the
 plugin API rather than forking the registry.
 
-`ui/src/generated/envelope-types.ts` is generated from the 26 upstream core
+`ui/src/generated/envelope-types.ts` is generated from all 44 shipped
 definitions (`make generate-envelopes`) and CI gates it with
-`make check-envelopes`. Tangent-owned workflow schemas remain alongside their
-extension registrations. The strict HITL request/result bundle is
+`make check-envelopes`. The dump tool builds its registry through the same
+`extensions.RegisterAll` the server calls, so the staleness gate watches the
+kinds Tangent actually renders (ADR 0003 §9 S1). Tangent-owned workflow
+schemas remain alongside their extension registrations; the generated types
+are a typed mirror of them, not a replacement for the hand-written component
+props. The strict HITL request/result bundle is
 `internal/envelope/extensions/hitl_item_schema.json`; the dedicated `/hitl`
 client types live with `ui/src/lib/hitl-api.ts` and the evidence component.
 
@@ -394,10 +474,11 @@ single ephemeral handoff. The key pieces are:
 - a browser tab strip that polls the room list and lets the user switch
   between `/r/<roomID>` routes without losing the shared SPA shell
 
-Each room still owns exactly one active WebSocket attachment at a time.
-Switching rooms in the SPA closes the current socket and reattaches to
-the next room. Switching routes, refreshing, closing the browser, or losing
-transport changes connection state only; it does not cancel or close pending
-work. Reopening a room replays its active envelope at a fresh presentation
-revision. Explicit workflow cancellation and explicit surface/room close remain
-terminal operations.
+A room accepts several simultaneous attachments, in the roles described under
+"Connection lifecycle" above. Switching rooms in the SPA closes only that tab's
+own socket and reattaches to the next room; any other tab attached to the room
+being left keeps its connection and its ability to answer. Switching routes,
+refreshing, closing the browser, or losing transport changes connection state
+only; it does not cancel or close pending work. Reopening a room replays its
+active envelope at a fresh presentation revision. Explicit workflow
+cancellation and explicit surface/room close remain terminal operations.

@@ -2,8 +2,16 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
+import { buildSubmitGate, describedBy, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// Control ids, shared by each control's `<label htmlFor>` and by the submit
+// gate that focuses it.
+const FEEDBACK_ID = "block-draft-feedback";
+const EDITED_TEXT_ID = "block-draft-edited-text";
 
 export interface CurrentDraftBlock {
   block_id: string;
@@ -71,8 +79,15 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
   const [feedback, setFeedback] = useState("");
   const [editedText, setEditedText] = useState(envelope.data?.content ?? "");
 
+  const revealRequirement = useRevealRequirement();
+
   const mode = envelope.data?.mode ?? "section";
   const currentDraft = envelope.data?.current_draft;
+  // Four labels for one box, two of which are hard requirements. The wording
+  // is the workflow's own and stays — but "Edit notes" reads exactly as
+  // mandatory as "Revision notes" while only one of them is, and only the
+  // Accept wording ever said "Optional". The badge below is what actually
+  // tracks the requirement.
   const feedbackLabel =
     decision === "revise"
       ? "Revision notes"
@@ -83,12 +98,29 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
           : "Optional note";
   const feedbackRequired = decision === "revise" || decision === "redirect";
   const editedRequired = decision === "inline_edit";
-  const submitDisabled =
-    (feedbackRequired && feedback.trim().length === 0) ||
-    (editedRequired && editedText.trim().length === 0);
+  const feedbackMissing = feedbackRequired && feedback.trim().length === 0;
+  const editedMissing = editedRequired && editedText.trim().length === 0;
+
+  const gate = buildSubmitGate([
+    feedbackMissing && {
+      controlID: FEEDBACK_ID,
+      label: feedbackLabel.toLowerCase(),
+      message:
+        decision === "revise"
+          ? "a revision request still needs its revision notes."
+          : "a new direction still needs to be described.",
+    },
+    editedMissing && {
+      controlID: EDITED_TEXT_ID,
+      label: "final block text",
+      message: "an inline edit still needs the final block text.",
+    },
+  ]);
+  const submitDisabled = gate.blocked;
 
   const handleSubmit = () => {
-    if (submitDisabled) {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
       return;
     }
     onSubmit({
@@ -169,14 +201,26 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
         </section>
 
         <section className="space-y-3" data-testid="block-draft-actions">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Response</p>
-          <div className="flex flex-wrap gap-2">
+          <p
+            id="block-draft-response-label"
+            className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+          >
+            Response
+          </p>
+          {/*
+            One choice, four buttons, and the choice decides which of the two
+            fields below becomes mandatory — so selection has to be readable
+            without seeing the fill colour.
+          */}
+          <fieldset aria-labelledby="block-draft-response-label" className="flex flex-wrap gap-2">
             {DECISIONS.map((option) => (
               <button
                 type="button"
                 key={option.id}
+                id={`block-draft-decision-${option.id}`}
                 onClick={() => setDecision(option.id)}
                 data-testid={`block-draft-decision-${option.id}`}
+                aria-pressed={decision === option.id}
                 className={cn(
                   "rounded-full border px-3 py-2 text-sm transition-colors",
                   decision === option.id
@@ -187,30 +231,52 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
                 {option.label}
               </button>
             ))}
-          </div>
+          </fieldset>
         </section>
 
         {decision === "inline_edit" ? (
           <section className="space-y-2" data-testid="block-draft-inline-edit">
-            <label htmlFor="block-draft-edited-text" className="text-sm font-medium text-zinc-100">
+            <label htmlFor={EDITED_TEXT_ID} className="block text-sm font-medium text-zinc-100">
               Final block text
+              <RequiredMark active={editedRequired} testID="block-draft-edited-text-required" />
             </label>
             <Textarea
-              id="block-draft-edited-text"
+              id={EDITED_TEXT_ID}
               value={editedText}
               onChange={(event) => setEditedText(event.currentTarget.value)}
               className="min-h-40"
+              placeholder="The exact text this block should end up with."
+              aria-required={editedRequired}
+              aria-invalid={editedMissing}
+              aria-describedby={describedBy(
+                "block-draft-edited-text-hint",
+                editedMissing && "block-draft-edited-text-error",
+              )}
               data-testid="block-draft-edited-text"
             />
+            <FieldMessage id="block-draft-edited-text-hint">
+              Required. This text is submitted as the block itself — the notes below only describe
+              it.
+            </FieldMessage>
+            {editedMissing ? (
+              <FieldMessage
+                id="block-draft-edited-text-error"
+                tone="error"
+                testID="block-draft-edited-text-error"
+              >
+                An inline edit cannot be empty. Write the final block text.
+              </FieldMessage>
+            ) : null}
           </section>
         ) : null}
 
         <section className="space-y-2">
-          <label htmlFor="block-draft-feedback" className="text-sm font-medium text-zinc-100">
+          <label htmlFor={FEEDBACK_ID} className="block text-sm font-medium text-zinc-100">
             {feedbackLabel}
+            <RequiredMark active={feedbackRequired} testID="block-draft-feedback-required" />
           </label>
           <Textarea
-            id="block-draft-feedback"
+            id={FEEDBACK_ID}
             value={feedback}
             onChange={(event) => setFeedback(event.currentTarget.value)}
             placeholder={
@@ -219,12 +285,40 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
                 : "Optional note for the next pass."
             }
             className="min-h-24"
+            aria-required={feedbackRequired}
+            aria-invalid={feedbackMissing}
+            aria-describedby={describedBy(
+              "block-draft-feedback-hint",
+              feedbackMissing && "block-draft-feedback-error",
+            )}
             data-testid="block-draft-feedback"
           />
+          <FieldMessage id="block-draft-feedback-hint">
+            Required under Request revision and Different direction, where it is the instruction the
+            agent works from. Under Accept and Inline edit it is an optional note and Submit never
+            waits on it.
+          </FieldMessage>
+          {feedbackMissing ? (
+            <FieldMessage
+              id="block-draft-feedback-error"
+              tone="error"
+              testID="block-draft-feedback-error"
+            >
+              {decision === "revise"
+                ? "Say what should change before requesting a revision."
+                : "Describe the new direction before sending the block back."}
+            </FieldMessage>
+          ) : null}
         </section>
       </CardContent>
 
-      <CardFooter className="justify-end gap-3">
+      <CardFooter className="flex-wrap justify-end gap-3">
+        <SubmitGateNotice
+          gate={gate}
+          testID="block-draft-submit-gate"
+          action="Submit"
+          onReveal={revealRequirement}
+        />
         <Button type="button" variant="ghost" onClick={onCancel} data-testid="block-draft-cancel">
           Cancel
         </Button>
@@ -232,6 +326,7 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
           type="button"
           onClick={handleSubmit}
           disabled={submitDisabled}
+          aria-describedby={gate.blocked ? "block-draft-submit-gate" : undefined}
           data-testid="block-draft-submit"
         >
           Submit

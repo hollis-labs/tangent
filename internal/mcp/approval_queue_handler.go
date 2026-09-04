@@ -13,7 +13,8 @@ import (
 )
 
 type approvalQueueInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 type approvalQueueSubmitDraft struct {
@@ -92,7 +93,9 @@ func (s *Server) handleApprovalQueue(
 	return s.advanceRoomEnvelope(
 		ctx,
 		roomID,
+		&args.Envelope,
 		buildVisibleApprovalQueueEnvelope(&args.Envelope, room.ProjectApprovalQueueState(phaseState)),
+		args.Completion,
 	)
 }
 

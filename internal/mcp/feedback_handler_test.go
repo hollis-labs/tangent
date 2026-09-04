@@ -187,22 +187,33 @@ func wsURL(baseURL, roomID string) string {
 	return "ws" + strings.TrimPrefix(baseURL, "http") + "?roomID=" + roomID
 }
 
+// Connection-lifecycle frames ("connection", "sync") interleave with
+// presentations by design — a client is told who else is attached and which
+// durable revisions it holds independently of any envelope — so they are
+// skipped here.
 func readFrame(t *testing.T, c *websocket.Conn, timeout time.Duration) map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	mt, payload, err := c.Read(ctx)
-	if err != nil {
-		t.Fatalf("read: %v", err)
+	for {
+		mt, payload, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if mt != websocket.MessageText {
+			t.Fatalf("expected text frame, got %v", mt)
+		}
+		var frame map[string]any
+		if err := json.Unmarshal(payload, &frame); err != nil {
+			t.Fatalf("unmarshal frame: %v", err)
+		}
+		switch frame["type"] {
+		case "connection", "sync":
+			continue
+		default:
+			return frame
+		}
 	}
-	if mt != websocket.MessageText {
-		t.Fatalf("expected text frame, got %v", mt)
-	}
-	var frame map[string]any
-	if err := json.Unmarshal(payload, &frame); err != nil {
-		t.Fatalf("unmarshal frame: %v", err)
-	}
-	return frame
 }
 
 func writeFrame(t *testing.T, c *websocket.Conn, msg map[string]any) {

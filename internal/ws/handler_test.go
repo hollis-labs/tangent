@@ -29,6 +29,15 @@ func newTestRig(t *testing.T) (*room.Manager, string, func()) {
 	return mgr, srv.URL, srv.Close
 }
 
+// newHandlerServer fronts a caller-configured handler. Used by tests that
+// install their own participant resolver.
+func newHandlerServer(t *testing.T, h http.Handler) string {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
 func wsURL(httpURL, roomID string) string {
 	u := "ws" + strings.TrimPrefix(httpURL, "http")
 	if roomID == "" {
@@ -247,10 +256,43 @@ func waitForConn(t *testing.T, rm *room.Room, timeout time.Duration) {
 	t.Fatalf("room never received WS conn within %v", timeout)
 }
 
+// readFrame reads the next presentation frame, skipping the connection
+// lifecycle frames the handler sends on attach. Tests that assert on those use
+// readFrameOfType.
 func readFrame(t *testing.T, c *websocket.Conn, timeout time.Duration) map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	for {
+		frame := readFrameCtx(ctx, t, c)
+		switch frame["type"] {
+		case "connection", "sync":
+			continue
+		default:
+			return frame
+		}
+	}
+}
+
+// readFrameOfType reads frames until one of the requested type arrives.
+func readFrameOfType(
+	t *testing.T,
+	c *websocket.Conn,
+	frameType string,
+	timeout time.Duration,
+) map[string]any {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	for {
+		if frame := readFrameCtx(ctx, t, c); frame["type"] == frameType {
+			return frame
+		}
+	}
+}
+
+func readFrameCtx(ctx context.Context, t *testing.T, c *websocket.Conn) map[string]any {
+	t.Helper()
 	mt, payload, err := c.Read(ctx)
 	if err != nil {
 		t.Fatalf("read: %v", err)

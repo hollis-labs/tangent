@@ -13,37 +13,40 @@ project:
     superseded the earlier Fast-Triage project.
 catalog:
   torque_project_id: PRJ-20260825-0002
-  cerberus_project_id: tangent     # ~/.cerberus/projects/tangent.cerberus.yaml
-  tether_catalog_project: null     # no launch-project entry; MCP upstream is mcp-servers/tangent.yaml
+  cerberus_project_id: tangent     # SoT: ~/.cerberus/projects/tangent.cerberus.yaml (indexed by ~/.cerberus/registry.yaml)
+  tether_catalog_project: null     # no launch-project entry by design; the MCP upstream is ~/.tether/catalog/mcp-servers/tangent.yaml
 locations:
   repo: ~/dev/hollis-labs/apps/tangent
   agent_os_tracking: ~/dev/agent-os/workspaces/execution/tangent
   state_dir: ~/.tangent
   catalog: null                    # no per-project catalog dir; tangent uses no ~/.tangent/catalog
-  artifacts: null                  # dev_session resource runs from the workspace; no installed artifact
+  artifacts: null                  # dev_session runs from the workspace; no ~/.cerberus/apps artifact is installed
 build:
-  authority: cerberus
-  resource: tangent-dev
-  command: 'make build'
+  authority: cerberus              # single launch authority — see docs/mcp-integration.md "Managed runtime"
+  resource: tangent-dev            # cerberus resource id; mode dev_session, run_from workspace, port 7842
+  command: 'make build'            # cerberus drives this via build_strategy: make_standard
 deployment:
-  type: dev_session                # Cerberus-managed localhost process on port 7842
+  type: dev_session                # Cerberus-supervised localhost process; no launchd job exists for Tangent
   service_name: null
-  binary: ~/dev/hollis-labs/apps/tangent/tangent   # local build output; installed copy lands on $GOBIN via `go install`
+  binary: ~/dev/hollis-labs/apps/tangent/tangent   # workspace build output; `go install` also puts a copy on $GOBIN
 docs:
   readme: README.md
   architecture: docs/architecture.md
-  adrs: null                       # no docs/adrs/ directory exists
+  adrs: docs/adr/
   roadmap: null                    # no docs/roadmap.md; roadmap lives inline in README.md
 roadmap:
-  current_phase: 'v0.12 — Wizard (latest tag v0.12.0); v0.8+ distribution & trust pending'
+  current_phase: 'v0.12 — Wizard (CHANGELOG/README declare v0.12.0; latest git tag is v0.11.0 — v0.12.0 is untagged); v0.8+ distribution & trust pending'
   pointer: null                    # no sprint/clockwork pointer recorded
 usage_examples:
-  - intent: Run Tangent locally for an agent to summon workflow windows
+  - intent: Check or restart the managed Tangent process
+    command: 'cerberus resource status tangent-dev'
+    note: Cerberus owns the lifecycle. Use `cerberus resource deploy tangent-dev` to rebuild and restart; do not launch ./tangent by hand while the resource is running.
+  - intent: Run Tangent standalone (no Cerberus on this machine)
     command: 'make build && ./tangent'
-    note: Serves http://localhost:7842/; override port with TANGENT_HTTP_PORT.
-  - intent: Expose Tangent through the Tether MCP gateway
-    command: 'mux mcp --proxy'
-    note: Uses ~/.tether/catalog/mcp-servers/tangent.yaml and Tangent's legacy SSE endpoint at /sse.
+    note: Serves http://localhost:7842/; override port with TANGENT_HTTP_PORT. Only valid when nothing else supervises the process.
+  - intent: Reach Tangent from a mux-speaking agent
+    command: 'mux_discover intent="triage" then mux_call tangent.triage'
+    note: Upstream declared in ~/.tether/catalog/mcp-servers/tangent.yaml (SSE at /sse); mux exposes tangent as proxy_only.
   - intent: Develop the frontend with hot reload
     command: 'make dev'
     note: Go server on :7842 reverse-proxies non-API routes to Vite on :5173.
@@ -53,4 +56,4 @@ usage_examples:
 scopes:
   - tangent.backend.main
   - tangent.frontend.main
-related_projects: [go-envelopes, nanite, fast-triage, sigil, go-plugin]
+related_projects: [go-envelopes, nanite, sigil, go-plugin]   # fast-triage retired; repo archived and its catalog entry removed

@@ -21,11 +21,7 @@ func TestDurableInteractionMigrationUpDownPreservesV012History(t *testing.T) {
 	if err := RunMigrations(database); err != nil {
 		t.Fatalf("initial RunMigrations: %v", err)
 	}
-	for range 3 {
-		if err := RollbackOne(database); err != nil {
-			t.Fatalf("rollback to v0.12 schema: %v", err)
-		}
-	}
+	rollbackToV012Schema(t, database)
 	seedV012History(t, database)
 
 	if err := RunMigrations(database); err != nil {
@@ -110,11 +106,7 @@ WHERE room_id = 'room-existing' AND envelope_id = 'env-resolved'`).Scan(
 		t.Fatalf("resolution count = %d, want 1", resolutionCount)
 	}
 
-	for range 3 {
-		if err := RollbackOne(database); err != nil {
-			t.Fatalf("rollback durable migrations: %v", err)
-		}
-	}
+	rollbackToV012Schema(t, database)
 	assertCount(t, database, `SELECT COUNT(*) FROM rooms WHERE id = 'room-existing'`, 1)
 	assertCount(t, database, `SELECT COUNT(*) FROM envelopes WHERE room_id = 'room-existing'`, 2)
 	if _, err := database.Exec(`SELECT 1 FROM surfaces LIMIT 1`); err == nil || !strings.Contains(err.Error(), "no such table") {
@@ -144,9 +136,7 @@ func TestAsyncInteractionOperationsMigrationRollsBackIndependently(t *testing.T)
 			t.Fatalf("%s after up: %v", name, err)
 		}
 	}
-	if err := RollbackOne(database); err != nil {
-		t.Fatalf("RollbackOne delivery attempt lifecycle: %v", err)
-	}
+	rollbackTo(t, database, durableMigrationsAboveV012(t)-2)
 	if _, err := database.Exec(`SELECT 1 FROM delivery_events LIMIT 1`); err == nil ||
 		!strings.Contains(err.Error(), "no such table") {
 		t.Fatalf("delivery_events query after rollback error = %v, want no such table", err)
@@ -180,9 +170,7 @@ func TestDeliveryAttemptLifecycleMigrationBackfillsAndSealsOnce(t *testing.T) {
 	if err := RunMigrations(database); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-	if err := RollbackOne(database); err != nil {
-		t.Fatalf("rollback to pre-delivery-lifecycle schema: %v", err)
-	}
+	rollbackTo(t, database, durableMigrationsAboveV012(t)-2)
 
 	const instant = "2026-08-25T10:00:00Z"
 	statements := []string{
@@ -256,9 +244,7 @@ WHERE id = ?`, attemptID); err != nil {
 		t.Fatalf("second attempt update error = %v, want immutable seal error", err)
 	}
 
-	if err := RollbackOne(database); err != nil {
-		t.Fatalf("rollback delivery lifecycle migration: %v", err)
-	}
+	rollbackTo(t, database, durableMigrationsAboveV012(t)-2)
 	if _, err := database.Exec(`SELECT 1 FROM delivery_events LIMIT 1`); err == nil ||
 		!strings.Contains(err.Error(), "no such table") {
 		t.Fatalf("delivery_events after rollback error = %v, want no such table", err)
@@ -279,11 +265,7 @@ func TestLegacyRestartTimeoutMigrationRemainsPredictable(t *testing.T) {
 	if err := RunMigrations(database); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-	for range 3 {
-		if err := RollbackOne(database); err != nil {
-			t.Fatalf("rollback to v0.12: %v", err)
-		}
-	}
+	rollbackToV012Schema(t, database)
 	if _, err := database.Exec(`
 INSERT INTO rooms (id, meta, created_at, updated_at)
 VALUES ('room-timeout', '{}', '2026-08-20T10:00:00Z', '2026-08-20T10:01:00Z')`); err != nil {
@@ -376,5 +358,164 @@ func assertCount(t *testing.T, database *sql.DB, query string, want int) {
 	}
 	if got != want {
 		t.Fatalf("count = %d, want %d", got, want)
+	}
+}
+
+// durableMigrationsAboveV012 counts the migrations layered on top of the v0.12
+// schema (0001_init + 0002_room_phase_state). Tests roll back exactly this
+// many to reach the pre-durable schema, so adding a migration does not require
+// hand-editing every rollback loop.
+func durableMigrationsAboveV012(t *testing.T) int {
+	t.Helper()
+	entries, err := migrationsFS.ReadDir(migrationsDir)
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	count := 0
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".up.sql") {
+			count++
+		}
+	}
+	return count - 2
+}
+
+func rollbackToV012Schema(t *testing.T, database *sql.DB) {
+	t.Helper()
+	for range durableMigrationsAboveV012(t) {
+		if err := RollbackOne(database); err != nil {
+			t.Fatalf("rollback to v0.12 schema: %v", err)
+		}
+	}
+}
+
+// rollbackTo rolls back every migration applied after the named one, leaving
+// that migration as the newest applied version.
+func rollbackTo(t *testing.T, database *sql.DB, migrationsAfter int) {
+	t.Helper()
+	for range migrationsAfter {
+		if err := RollbackOne(database); err != nil {
+			t.Fatalf("rollback %d migrations: %v", migrationsAfter, err)
+		}
+	}
+}
+
+// TestRoomWorkflowCompletionMigrationAddsAcknowledgementAndProjectionState
+// covers migration 0006: the caller-acknowledgement fact is immutable, the
+// legacy compatibility projection reports the canonical interaction state
+// beside the legacy row, and the whole thing rolls back cleanly to the
+// previous schema.
+func TestRoomWorkflowCompletionMigrationAddsAcknowledgementAndProjectionState(t *testing.T) {
+	t.Parallel()
+	database, err := Open(filepath.Join(t.TempDir(), "room-workflow-completion.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	const instant = "2026-09-04T12:57:17Z"
+	statements := []string{
+		`INSERT INTO rooms (id, meta, created_at, updated_at)
+VALUES ('room-completion', '{}', '` + instant + `', '` + instant + `')`,
+		`INSERT INTO envelopes (
+  room_id, envelope_id, type, request_payload, status, created_at
+) VALUES ('room-completion', 'env-completion', 'tangent.approval-queue', '{}', 'pending', '` + instant + `')`,
+		`INSERT INTO surfaces (
+  id, owner_scope, lifecycle_state, metadata, policy,
+  next_interaction_sequence, revision, created_at, updated_at, legacy_room_id
+) VALUES ('room-completion', 'standalone-local', 'active', '{}', '{}', 2, 2, '` + instant + `', '` + instant + `', 'room-completion')`,
+		`INSERT INTO interactions (
+  id, surface_id, caller_scope, caller_authority, caller_assurance,
+  idempotency_key, surface_sequence, request_snapshot, external_refs, policy,
+  lifecycle_state, revision, created_at, updated_at, terminal_at,
+  legacy_room_id, legacy_envelope_id
+) VALUES (
+  'interaction-completion', 'room-completion', 'standalone-local', 'direct-mcp', 'unverified',
+  'workflow:tangent.approval-queue:env-completion', 1, '{}', '{}', '{}',
+  'resolved', 4, '` + instant + `', '` + instant + `', '` + instant + `',
+  'room-completion', 'env-completion'
+)`,
+		`INSERT INTO definition_bindings (
+  interaction_id, publisher, kind, version, revision, source, assurance, bound_at
+) VALUES (
+  'interaction-completion', 'hollis-labs/tangent', 'tangent.approval-queue', '0.4', '0.4',
+  'plugin', 'content-addressed-registry', '` + instant + `'
+)`,
+		`INSERT INTO resolutions (
+  id, interaction_id, expected_interaction_revision, presented_projection_revision,
+  participant_ref, participant_authority, participant_assurance,
+  response_kind, response_payload, integrity_digest, submitted_at, validated_at, recorded_at
+) VALUES (
+  'resolution-completion', 'interaction-completion', 3, 1,
+  'local-operator', 'tangent-loopback', 'loopback-unverified',
+  'data', '{}', 'digest', '` + instant + `', '` + instant + `', '` + instant + `'
+)`,
+	}
+	for index, statement := range statements {
+		if _, err := database.Exec(statement); err != nil {
+			t.Fatalf("seed statement %d: %v", index, err)
+		}
+	}
+
+	// The legacy row still reads "pending" while the canonical record is
+	// resolved. The projection now says both, which is exactly the point: the
+	// legacy row is a view, not an authority.
+	var legacyStatus, interactionState string
+	if err := database.QueryRow(`
+SELECT status, interaction_state FROM legacy_room_history_v12
+WHERE room_id = 'room-completion' AND envelope_id = 'env-completion'`).Scan(
+		&legacyStatus, &interactionState,
+	); err != nil {
+		t.Fatalf("read compatibility projection: %v", err)
+	}
+	if legacyStatus != "pending" || interactionState != "resolved" {
+		t.Fatalf("projection = legacy %q canonical %q", legacyStatus, interactionState)
+	}
+
+	if _, err := database.Exec(`
+INSERT INTO terminal_outcome_acknowledgements (
+  interaction_id, acknowledgement_id, resolution_id, requester_scope,
+  transport_correlation, acknowledged_at
+) VALUES (
+  'interaction-completion', 'ack-1', 'resolution-completion', 'standalone-local',
+  '{"transport":"mcp"}', '` + instant + `'
+)`); err != nil {
+		t.Fatalf("insert acknowledgement: %v", err)
+	}
+	if _, err := database.Exec(`
+UPDATE terminal_outcome_acknowledgements SET requester_scope = 'rewritten'
+WHERE interaction_id = 'interaction-completion'`); err == nil ||
+		!strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("acknowledgement update error = %v, want immutable", err)
+	}
+	if _, err := database.Exec(`
+DELETE FROM terminal_outcome_acknowledgements WHERE interaction_id = 'interaction-completion'`); err == nil ||
+		!strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("acknowledgement delete error = %v, want immutable", err)
+	}
+	var acknowledgedAt sql.NullString
+	if err := database.QueryRow(`
+SELECT caller_acknowledged_at FROM legacy_room_history_v12
+WHERE room_id = 'room-completion' AND envelope_id = 'env-completion'`).Scan(&acknowledgedAt); err != nil {
+		t.Fatalf("read projected acknowledgement: %v", err)
+	}
+	if !acknowledgedAt.Valid {
+		t.Fatal("projection did not surface the caller acknowledgement")
+	}
+
+	rollbackTo(t, database, 1)
+	if _, err := database.Exec(`SELECT 1 FROM terminal_outcome_acknowledgements LIMIT 1`); err == nil ||
+		!strings.Contains(err.Error(), "no such table") {
+		t.Fatalf("acknowledgements after rollback = %v, want no such table", err)
+	}
+	if _, err := database.Exec(`SELECT interaction_state FROM legacy_room_history_v12 LIMIT 1`); err == nil ||
+		!strings.Contains(err.Error(), "no such column") {
+		t.Fatalf("projection column after rollback = %v, want no such column", err)
+	}
+	if _, err := database.Exec(`SELECT surface_id FROM legacy_room_history_v12 LIMIT 1`); err != nil {
+		t.Fatalf("previous projection did not come back: %v", err)
 	}
 }

@@ -55,7 +55,9 @@ func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, *sql.DB, func()) 
 	}
 
 	serverConn := <-connCh
-	rm.AttachConn(context.Background(), serverConn)
+	if _, err := rm.AttachConn(context.Background(), serverConn, room.AttachOptions{ClientID: "test-tab"}); err != nil {
+		t.Fatalf("attach test connection: %v", err)
+	}
 
 	readDone := make(chan struct{})
 	readCtx, readCancel := context.WithCancel(context.Background())

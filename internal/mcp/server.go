@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,6 +13,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/roomflow"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
@@ -38,6 +40,9 @@ type Server struct {
 	roomURLBase  string
 	interactions *interaction.Service
 	hitl         *hitl.Service
+	roomflow     *roomflow.Service
+
+	roomflowOptions []roomflow.Option
 
 	mcp *mcpsdk.Server
 }
@@ -54,6 +59,17 @@ func WithInteractionService(service *interaction.Service) Option {
 			return fmt.Errorf("mcp: interaction service is nil")
 		}
 		server.interactions = service
+		return nil
+	}
+}
+
+// WithCompatibilityWindow overrides how long a wait-mode room workflow blocks
+// before returning a durable pending receipt. Production uses the package
+// default; tests compress it so the pending path is exercised without a
+// wall-clock wait.
+func WithCompatibilityWindow(window time.Duration) Option {
+	return func(server *Server) error {
+		server.roomflowOptions = append(server.roomflowOptions, roomflow.WithCompatibilityWindow(window))
 		return nil
 	}
 }
@@ -113,6 +129,17 @@ func New(
 		if err := option(s); err != nil {
 			return nil, err
 		}
+	}
+	if s.interactions != nil && s.roomflow == nil {
+		// Every named room workflow routes through the durable compatibility
+		// adapter whenever the substrate is present, so installing the
+		// interaction service is the only switch: there is no per-workflow
+		// opt-in that a new workflow could forget to set.
+		flow, flowErr := roomflow.New(s.interactions, manager, s, roomURLBase, s.roomflowOptions...)
+		if flowErr != nil {
+			return nil, flowErr
+		}
+		s.roomflow = flow
 	}
 
 	if err := s.registerTools(); err != nil {
@@ -206,7 +233,7 @@ func (s *Server) registerTools() error {
 		InputSchema: feedbackSchema,
 	}, s.handleFeedback)
 
-	formCollectSchema, err := buildSchema(formCollectInputSchemaJSON, "form_collect")
+	formCollectSchema, err := buildRoomWorkflowSchema(formCollectInputSchemaJSON, "form_collect")
 	if err != nil {
 		return fmt.Errorf("build form-collect input schema: %w", err)
 	}
@@ -276,7 +303,7 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
-	dashboardSchema, err := buildSchema(dashboardInputSchemaJSON, "dashboard")
+	dashboardSchema, err := buildRoomWorkflowSchema(dashboardInputSchemaJSON, "dashboard")
 	if err != nil {
 		return fmt.Errorf("build dashboard input schema: %w", err)
 	}
@@ -286,7 +313,7 @@ func (s *Server) registerTools() error {
 		InputSchema: dashboardSchema,
 	}, s.handleDashboard)
 
-	filePickerSchema, err := buildSchema(filePickerInputSchemaJSON, "file_picker")
+	filePickerSchema, err := buildRoomWorkflowSchema(filePickerInputSchemaJSON, "file_picker")
 	if err != nil {
 		return fmt.Errorf("build file-picker input schema: %w", err)
 	}
@@ -296,7 +323,7 @@ func (s *Server) registerTools() error {
 		InputSchema: filePickerSchema,
 	}, s.handleFilePicker)
 
-	progressPanelSchema, err := buildSchema(progressPanelInputSchemaJSON, "progress_panel")
+	progressPanelSchema, err := buildRoomWorkflowSchema(progressPanelInputSchemaJSON, "progress_panel")
 	if err != nil {
 		return fmt.Errorf("build progress-panel input schema: %w", err)
 	}
@@ -306,7 +333,7 @@ func (s *Server) registerTools() error {
 		InputSchema: progressPanelSchema,
 	}, s.handleProgressPanel)
 
-	wizardSchema, err := buildSchema(wizardInputSchemaJSON, "wizard")
+	wizardSchema, err := buildRoomWorkflowSchema(wizardInputSchemaJSON, "wizard")
 	if err != nil {
 		return fmt.Errorf("build wizard input schema: %w", err)
 	}
@@ -316,7 +343,7 @@ func (s *Server) registerTools() error {
 		InputSchema: wizardSchema,
 	}, s.handleWizard)
 
-	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
+	diffReviewSchema, err := buildRoomWorkflowSchema(diffReviewInputSchemaJSON, "diff_review")
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)
 	}
@@ -336,7 +363,7 @@ func (s *Server) registerTools() error {
 		InputSchema: spreadsheetReviewSchema,
 	}, s.handleSpreadsheetReview)
 
-	approvalQueueSchema, err := buildSchema(approvalQueueInputSchemaJSON, "approval_queue")
+	approvalQueueSchema, err := buildRoomWorkflowSchema(approvalQueueInputSchemaJSON, "approval_queue")
 	if err != nil {
 		return fmt.Errorf("build approval-queue input schema: %w", err)
 	}
@@ -366,7 +393,7 @@ func (s *Server) registerTools() error {
 		InputSchema: sessionCreateSchema,
 	}, s.handleSessionCreate)
 
-	sessionAdvanceSchema, err := buildSchema(sessionAdvanceInputSchemaJSON, "session_advance")
+	sessionAdvanceSchema, err := buildRoomWorkflowSchema(sessionAdvanceInputSchemaJSON, "session_advance")
 	if err != nil {
 		return fmt.Errorf("build session_advance input schema: %w", err)
 	}
@@ -455,43 +482,55 @@ func buildEmptyObjectSchema() (*jsonschema.Schema, error) {
 // buildTriageInputSchema parses the hand-rolled triage input schema (see
 // triage_schema.go for the rationale).
 func buildTriageInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(triageInputSchemaJSON, "triage")
+	return buildRoomWorkflowSchema(triageInputSchemaJSON, "triage")
 }
 
 func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(feedbackInputSchemaJSON, "feedback")
+	return buildRoomWorkflowSchema(feedbackInputSchemaJSON, "feedback")
 }
 
 func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(designIterationInputSchemaJSON, "design-iteration")
+	return buildRoomWorkflowSchema(designIterationInputSchemaJSON, "design-iteration")
 }
 
 func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
+	return buildRoomWorkflowSchema(interviewQuestionInputSchemaJSON, "interview_question")
 }
 
 func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(blockDraftInputSchemaJSON, "block_draft")
+	return buildRoomWorkflowSchema(blockDraftInputSchemaJSON, "block_draft")
 }
 
 func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(proseRevisionInputSchemaJSON, "prose_revision")
+	return buildRoomWorkflowSchema(proseRevisionInputSchemaJSON, "prose_revision")
 }
 
 func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(outputRenderInputSchemaJSON, "output_render")
+	return buildRoomWorkflowSchema(outputRenderInputSchemaJSON, "output_render")
 }
 
 func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(whiteboardInputSchemaJSON, "whiteboard")
+	return buildRoomWorkflowSchema(whiteboardInputSchemaJSON, "whiteboard")
 }
 
 func buildSpreadsheetReviewInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(spreadsheetReviewInputSchemaJSON, "spreadsheet_review")
+	return buildRoomWorkflowSchema(spreadsheetReviewInputSchemaJSON, "spreadsheet_review")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
+	return buildRoomWorkflowSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
+}
+
+// buildRoomWorkflowSchema parses a room-backed tool's input schema and adds
+// the shared completion selector. Every named room workflow and
+// tangent.session_advance goes through it, so a workflow cannot ship without
+// advertising the async mode its callers need.
+func buildRoomWorkflowSchema(raw []byte, name string) (*jsonschema.Schema, error) {
+	schema, err := buildSchema(raw, name)
+	if err != nil {
+		return nil, err
+	}
+	return withCompletionMode(schema, name)
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

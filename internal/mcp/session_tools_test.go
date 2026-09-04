@@ -17,24 +17,61 @@ import (
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/roomflow"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
 type sessionRig struct {
 	db        *sql.DB
+	dbPath    string
 	mgr       *room.Manager
+	mcpSrv    *tangentmcp.Server
+	envSvc    *envelope.Service
+	inter     *interaction.Service
 	mcpClient *mcpsdk.ClientSession
 	httpURL   string
 	cleanup   func()
+	// shutdown tears the process-local topology down without closing any room.
+	// It is how a crash or restart is simulated: durable records survive, every
+	// in-memory structure does not.
+	shutdown func()
+}
+
+// sessionRigOptions selects the topology under test.
+//
+// The zero value is the v0.12 legacy topology: no durable interaction service,
+// so every named workflow takes the blocking path. It is deliberately retained
+// as the compatibility reference the durable path is measured against.
+type sessionRigOptions struct {
+	// durable installs the interaction service, which is the only switch that
+	// routes room workflows through the canonical completion adapter.
+	durable bool
+	// window compresses the wait-mode compatibility window so the pending
+	// receipt path is exercised without a wall-clock wait.
+	window time.Duration
+	// dbPath reuses an existing database file, which is how a process restart
+	// is simulated: same durable records, entirely new in-memory state.
+	dbPath string
 }
 
 func newSessionRig(t *testing.T) *sessionRig {
 	t.Helper()
+	return newSessionRigWith(t, sessionRigOptions{})
+}
+
+func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
+	t.Helper()
 	ctx := context.Background()
 
-	db, err := tangentdb.Open(t.TempDir() + "/tangent.db")
+	dbPath := options.dbPath
+	if dbPath == "" {
+		dbPath = t.TempDir() + "/tangent.db"
+	}
+	db, err := tangentdb.Open(dbPath)
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
@@ -52,6 +89,9 @@ func newSessionRig(t *testing.T) *sessionRig {
 	}
 	if regErr := extensions.RegisterFeedback(envSvc); regErr != nil {
 		t.Fatalf("RegisterFeedback: %v", regErr)
+	}
+	if regErr := extensions.RegisterFormCollect(envSvc); regErr != nil {
+		t.Fatalf("RegisterFormCollect: %v", regErr)
 	}
 	if regErr := extensions.RegisterDesignIteration(envSvc); regErr != nil {
 		t.Fatalf("RegisterDesignIteration: %v", regErr)
@@ -103,11 +143,44 @@ func newSessionRig(t *testing.T) *sessionRig {
 	wsHandler.SetOriginPatterns([]string{"*"})
 	wsSrv := httptest.NewServer(wsHandler)
 
-	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "")
+	var interactions *interaction.Service
+	serverOptions := []tangentmcp.Option{}
+	if options.durable {
+		interactions, err = interaction.NewService(
+			interaction.NewStore(db),
+			interaction.NewEnvelopeDefinitionCatalog(envSvc, tangentmcp.HostVersion),
+			interaction.WithAwaitPollInterval(5*time.Millisecond),
+			interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
+			interaction.WithDeliveryWorkerPolicy(roomflow.DeliveryWorkerPolicy{}),
+		)
+		if err != nil {
+			wsSrv.Close()
+			_ = tangentdb.Close(db)
+			t.Fatalf("interaction.NewService: %v", err)
+		}
+		serverOptions = append(serverOptions, tangentmcp.WithInteractionService(interactions))
+		if options.window > 0 {
+			serverOptions = append(serverOptions, tangentmcp.WithCompatibilityWindow(options.window))
+		}
+	}
+
+	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "", serverOptions...)
 	if err != nil {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("mcp.New: %v", err)
+	}
+	if options.durable {
+		if hydrateErr := mgr.Hydrate(ctx); hydrateErr != nil {
+			wsSrv.Close()
+			_ = tangentdb.Close(db)
+			t.Fatalf("manager.Hydrate: %v", hydrateErr)
+		}
+		if _, restoreErr := mcpSrv.RestoreRoomPresentations(ctx); restoreErr != nil {
+			wsSrv.Close()
+			_ = tangentdb.Close(db)
+			t.Fatalf("RestoreRoomPresentations: %v", restoreErr)
+		}
 	}
 
 	triageHandler := tangentmcp.NewTriageHandler(mgr, logger, "")
@@ -115,6 +188,11 @@ func newSessionRig(t *testing.T) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterTriageOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterFormCollectOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterFormCollectOnDispatcher: %v", regErr)
 	}
 	if regErr := tangentmcp.RegisterFeedbackOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
@@ -210,13 +288,23 @@ func newSessionRig(t *testing.T) *sessionRig {
 
 	return &sessionRig{
 		db:        db,
+		dbPath:    dbPath,
 		mgr:       mgr,
+		mcpSrv:    mcpSrv,
+		envSvc:    envSvc,
+		inter:     interactions,
 		mcpClient: clientSession,
 		httpURL:   wsSrv.URL,
 		cleanup: func() {
 			_ = clientSession.Close()
 			_ = serverSession.Close()
 			mgr.CloseAll("test cleanup")
+			wsSrv.Close()
+			_ = tangentdb.Close(db)
+		},
+		shutdown: func() {
+			_ = clientSession.Close()
+			_ = serverSession.Close()
 			wsSrv.Close()
 			_ = tangentdb.Close(db)
 		},
@@ -1269,22 +1357,33 @@ func awaitSingleRoom(t *testing.T, mgr *room.Manager, timeout time.Duration) *ro
 	return nil
 }
 
+// Connection-lifecycle frames ("connection", "sync") interleave with
+// presentations by design — a client is told who else is attached and which
+// durable revisions it holds independently of any envelope — so they are
+// skipped here.
 func readWSFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	mt, payload, err := conn.Read(ctx)
-	if err != nil {
-		t.Fatalf("ws read: %v", err)
+	for {
+		mt, payload, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("ws read: %v", err)
+		}
+		if mt != websocket.MessageText {
+			t.Fatalf("expected text frame, got %v", mt)
+		}
+		var frame map[string]any
+		if err := json.Unmarshal(payload, &frame); err != nil {
+			t.Fatalf("unmarshal ws frame: %v", err)
+		}
+		switch frame["type"] {
+		case "connection", "sync":
+			continue
+		default:
+			return frame
+		}
 	}
-	if mt != websocket.MessageText {
-		t.Fatalf("expected text frame, got %v", mt)
-	}
-	var frame map[string]any
-	if err := json.Unmarshal(payload, &frame); err != nil {
-		t.Fatalf("unmarshal ws frame: %v", err)
-	}
-	return frame
 }
 
 func writeWSFrame(t *testing.T, conn *websocket.Conn, msg map[string]any) {

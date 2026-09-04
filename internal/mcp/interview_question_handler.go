@@ -10,7 +10,8 @@ import (
 )
 
 type interviewQuestionInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleInterviewQuestion(
@@ -56,5 +57,5 @@ func (s *Server) handleInterviewQuestion(
 		s.logWorkflowRoomReused("interview-question", roomID, args.Envelope.ID)
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
 }

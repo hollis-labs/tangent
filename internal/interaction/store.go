@@ -191,6 +191,13 @@ type CreateInteractionParams struct {
 	Policy             json.RawMessage
 	ActorRef           string
 	Authority          string
+
+	// LegacyRoomID / LegacyEnvelopeID bind a canonical interaction to the
+	// v0.12 room projection it is presented through. They are correlation
+	// only: the interaction record remains the sole lifecycle authority and
+	// the legacy rows are derived from it.
+	LegacyRoomID     string
+	LegacyEnvelopeID string
 }
 
 type CreateInteractionResult struct {
@@ -287,12 +294,13 @@ INSERT INTO interactions (
   id, surface_id, caller_scope, caller_principal_ref, caller_authority,
   caller_assurance, idempotency_key, surface_sequence,
   request_snapshot, external_refs, policy, lifecycle_state, revision,
-  created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  created_at, updated_at, legacy_room_id, legacy_envelope_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, params.SurfaceID, params.CallerScope, nullString(params.CallerPrincipalRef),
 		params.CallerAuthority, params.CallerAssurance, params.IdempotencyKey, sequence,
 		string(request), string(externalRefs), string(policy), InteractionStateStaged,
 		stagedRevision, now, now,
+		nullString(params.LegacyRoomID), nullString(params.LegacyEnvelopeID),
 	); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("insert interaction: %w", err)
 	}
@@ -1144,7 +1152,8 @@ func (s *Store) ListLegacyRoomHistory(ctx context.Context, roomID string) ([]Leg
 	rows, err := s.db.QueryContext(ctx, `
 SELECT room_id, envelope_id, type, request_payload, response_kind,
        response_payload, status, error_code, error_message,
-       created_at, resolved_at, surface_id, interaction_id
+       created_at, resolved_at, surface_id, interaction_id,
+       interaction_state, caller_acknowledged_at
 FROM legacy_room_history_v12
 WHERE room_id = ?
 ORDER BY created_at, envelope_id`, roomID)
@@ -1157,14 +1166,25 @@ ORDER BY created_at, envelope_id`, roomID)
 		var record LegacyRoomHistoryEntry
 		var request string
 		var responseKind, responsePayload, errorCode, errorMessage sql.NullString
-		var resolvedAt sql.NullTime
+		// A legacy room that predates the durable substrate and was never
+		// touched since has no surface or interaction. That is a legitimate
+		// projection, not a scan failure.
+		var surfaceID, interactionID, interactionState sql.NullString
+		var resolvedAt, acknowledgedAt sql.NullTime
 		if err := rows.Scan(
 			&record.RoomID, &record.EnvelopeID, &record.Type, &request,
 			&responseKind, &responsePayload, &record.Status, &errorCode,
 			&errorMessage, &record.CreatedAt, &resolvedAt,
-			&record.SurfaceID, &record.InteractionID,
+			&surfaceID, &interactionID, &interactionState, &acknowledgedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan legacy room history: %w", err)
+		}
+		record.SurfaceID = surfaceID.String
+		record.InteractionID = interactionID.String
+		record.InteractionState = InteractionState(interactionState.String)
+		if acknowledgedAt.Valid {
+			acknowledged := acknowledgedAt.Time
+			record.CallerAcknowledgedAt = &acknowledged
 		}
 		record.RequestPayload = json.RawMessage(request)
 		record.ResponseKind = responseKind.String

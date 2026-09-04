@@ -10,7 +10,8 @@ import (
 )
 
 type feedbackInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleFeedback(
@@ -49,5 +50,5 @@ func (s *Server) handleFeedback(
 		s.logWorkflowRoomReused("feedback", roomID, args.Envelope.ID)
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope)
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
 }
