@@ -102,6 +102,15 @@ func (d *roomDisposition) Resolve(
 	if err != nil {
 		return fmt.Errorf("roomflow: marshal participant response for %q: %w", env.ID, err)
 	}
+	// The durable record keeps the whole response frame, unchanged; the
+	// definition's response_schema validates the payload inside it. They are
+	// different values and are passed as different fields, because a schema
+	// authored to describe "what may come back" describes the payload, not the
+	// envelope carrying it.
+	body, err := json.Marshal(resp.Payload)
+	if err != nil {
+		return fmt.Errorf("roomflow: marshal participant response payload for %q: %w", env.ID, err)
+	}
 	responseKind, err := d.service.normalizer.PinnedResponseKind(env.Type)
 	if err != nil {
 		return err
@@ -123,6 +132,7 @@ func (d *roomDisposition) Resolve(
 		Participant:                 Participant,
 		ResponseKind:                responseKind,
 		ResponsePayload:             payload,
+		ResponseBody:                body,
 		SubmittedAt:                 time.Now().UTC(),
 		Capability:                  surfaceCapability,
 	})

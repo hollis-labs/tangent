@@ -13,6 +13,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -80,7 +81,6 @@ type sessionGetResult struct {
 	FilePicker            *room.FilePickerStateView        `json:"file_picker,omitempty"`
 	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
 	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
-	FormCollect           *room.FormStateView              `json:"form_collect,omitempty"`
 	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
 	Whiteboard            *room.WhiteboardStateView        `json:"whiteboard,omitempty"`
 	SynthesisNotes        *room.SynthesisNotesView         `json:"synthesis_notes,omitempty"`
@@ -96,6 +96,55 @@ type sessionGetResult struct {
 	// room can be active with nobody looking and connected with nothing to
 	// answer.
 	Connections *room.ConnectionState `json:"connections,omitempty"`
+
+	// packageProjections carries one entry per installed interaction package
+	// that has state for this room, keyed on the package's own projection key.
+	// MarshalJSON splices them in at the top level, which is what lets a
+	// package own its projection type without core declaring a field for it.
+	//
+	// It is unexported and has no tag on purpose: it must not be reflected
+	// into tangent.session_get's advertised output schema, because that schema
+	// is composed at registration from the same packages' own contributions
+	// (see sessionGetOutputSchema).
+	packageProjections map[string]any
+}
+
+// MarshalJSON emits the core projection with every package's projection
+// spliced in as a sibling field.
+//
+// ADR 0003 §8 C6 freezes tangent.session_get's shape, and the SPA and every
+// v0.12 client read `form_collect` at the top level of this object. Nesting
+// package state under a container would have been the cleaner design and is a
+// wire break; splicing preserves the exact bytes while letting the field's
+// meaning and type live in the package that owns them.
+//
+// A package key that collides with a core field name loses: core's own value
+// is written last. Nothing shipped collides, and a package cannot quietly
+// shadow `status` or `phase_outputs` by declaring a projection key.
+func (r sessionGetResult) MarshalJSON() ([]byte, error) {
+	type plain sessionGetResult
+	core, err := json.Marshal(plain(r))
+	if err != nil {
+		return nil, err
+	}
+	if len(r.packageProjections) == 0 {
+		return core, nil
+	}
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal(core, &merged); err != nil {
+		return nil, err
+	}
+	for key, projection := range r.packageProjections {
+		if _, taken := merged[key]; taken {
+			continue
+		}
+		raw, marshalErr := json.Marshal(projection)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		merged[key] = raw
+	}
+	return json.Marshal(merged)
 }
 
 type sessionPhaseStateResult struct {
@@ -212,7 +261,6 @@ func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetR
 		FilePicker:            room.ProjectFilePickerState(phaseState),
 		DiffReview:            room.ProjectDiffReviewState(phaseState),
 		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
-		FormCollect:           room.ProjectFormState(phaseState),
 		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
 		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
@@ -222,6 +270,13 @@ func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetR
 		FinalOutput:           room.ProjectFinalOutput(phaseState),
 		EnvelopesHistory:      history,
 	}
+	// Every installed package renders its own projection from the phase blob
+	// it owns. Core passes the reader and keys the result on what the package
+	// declares; it never names a package, a phase, or a projection field.
+	result.packageProjections = s.packages.Projections(func(phaseID string) (map[string]any, bool) {
+		blob, present := phaseState.PhaseOutputs[phaseID]
+		return blob.Data, present
+	})
 	if ok {
 		result.Status = "active"
 		result.Phase = "active"
@@ -482,6 +537,13 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 	switch {
 	case errors.Is(err, room.ErrRoomNotFound):
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
+	// One arm for every interaction package. A package wraps its own
+	// validation refusals in interactionpkg.ErrInvalidState, so core maps them
+	// onto `validation-failed` without naming a single publisher sentinel —
+	// which is what the seven room.ErrInvalidForm* arms this replaced used to
+	// require of every new kind.
+	case errors.Is(err, interactionpkg.ErrInvalidState):
+		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	case errors.Is(err, room.ErrInvalidPhaseID),
 		errors.Is(err, room.ErrInvalidPhaseKey),
 		errors.Is(err, room.ErrInvalidDashboardID),
@@ -516,13 +578,6 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
 		errors.Is(err, room.ErrInvalidDraftBlockContent),
-		errors.Is(err, room.ErrInvalidFormID),
-		errors.Is(err, room.ErrInvalidFormSchema),
-		errors.Is(err, room.ErrInvalidFormAnswers),
-		errors.Is(err, room.ErrInvalidFormSavedDraft),
-		errors.Is(err, room.ErrInvalidFormTemplate),
-		errors.Is(err, room.ErrInvalidFormAction),
-		errors.Is(err, room.ErrInvalidFormAttachmentRef),
 		errors.Is(err, room.ErrInvalidProseRevisionID),
 		errors.Is(err, room.ErrInvalidProseRevisionLens),
 		errors.Is(err, room.ErrInvalidProseRevisionSourceText),

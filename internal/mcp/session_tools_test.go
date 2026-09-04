@@ -19,7 +19,9 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
@@ -56,6 +58,14 @@ type sessionRigOptions struct {
 	// dbPath reuses an existing database file, which is how a process restart
 	// is simulated: same durable records, entirely new in-memory state.
 	dbPath string
+	// withoutPackages boots the rig with no interaction packages installed,
+	// which is how a build that shipped without a package — or an operator who
+	// removed one — is exercised. The definitions still register; only the
+	// behavior is gone.
+	withoutPackages bool
+	// disabledPackages turns named packages off after registration, the
+	// runtime toggle rather than the removal.
+	disabledPackages []string
 }
 
 func newSessionRig(t *testing.T) *sessionRig {
@@ -163,6 +173,23 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 			serverOptions = append(serverOptions, tangentmcp.WithCompatibilityWindow(options.window))
 		}
 	}
+
+	// The shipped interaction packages, installed exactly as production
+	// installs them. A packaged kind fails closed without them, which is the
+	// intended behavior and is asserted directly by
+	// TestPackagedKindFailsClosedWithoutItsPackage.
+	interactionPackages := interactionpkg.NewRegistry()
+	if !options.withoutPackages {
+		if regErr := packages.RegisterAll(interactionPackages); regErr != nil {
+			wsSrv.Close()
+			_ = tangentdb.Close(db)
+			t.Fatalf("packages.RegisterAll: %v", regErr)
+		}
+	}
+	for _, kind := range options.disabledPackages {
+		interactionPackages.SetEnabled(kind, false)
+	}
+	serverOptions = append(serverOptions, tangentmcp.WithInteractionPackages(interactionPackages))
 
 	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "", serverOptions...)
 	if err != nil {

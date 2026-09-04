@@ -25,6 +25,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
@@ -232,6 +233,16 @@ func main() {
 	// hint we log when triage creates a room resolves correctly even
 	// on IPv6-preferring systems where "localhost" lands on ::1.
 	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
+	// The publisher-owned interaction packages this build hosts. Registration
+	// is separate from the definition registration above because the two
+	// answer different questions: extensions.RegisterAll says which
+	// definitions exist, packages.RegisterAll says which of them bring their
+	// own behavior (ADR 0003 §5).
+	interactionPackages, err := packages.NewRegistry()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register interaction packages: %v\n", err)
+		os.Exit(1)
+	}
 	mcpSrv, err := mcp.New(
 		envSvc,
 		dispatcher,
@@ -239,6 +250,7 @@ func main() {
 		roomURLBase,
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
+		mcp.WithInteractionPackages(interactionPackages),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP

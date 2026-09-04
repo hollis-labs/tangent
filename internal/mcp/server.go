@@ -12,6 +12,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 )
@@ -45,6 +46,14 @@ type Server struct {
 	interactions *interaction.Service
 	hitl         *hitl.Service
 	roomflow     *roomflow.Service
+
+	// packages resolves a wire name to the publisher-owned interaction
+	// package that serves it. It is how ADR 0003 §5's ownership split reaches
+	// the request path: core looks a kind up here and never learns what the
+	// kind means. Nil is a valid state — a build with no packages installed
+	// runs every kind on the generic path, which is what the sixteen kinds
+	// this task did not migrate still do.
+	packages *interactionpkg.Registry
 
 	roomflowOptions []roomflow.Option
 
@@ -87,6 +96,21 @@ func WithHITLService(service *hitl.Service) Option {
 			return fmt.Errorf("mcp: hitl service is nil")
 		}
 		server.hitl = service
+		return nil
+	}
+}
+
+// WithInteractionPackages installs the publisher-owned interaction packages
+// this build hosts. Omitting it is not an error: an unpackaged kind takes the
+// generic path, and a packaged kind whose package is absent fails closed with
+// `unsupported-type` rather than silently falling back to a core default that
+// knows the kind (ADR 0003 §8 C7).
+func WithInteractionPackages(registry *interactionpkg.Registry) Option {
+	return func(server *Server) error {
+		if registry == nil {
+			return fmt.Errorf("mcp: interaction package registry is nil")
+		}
+		server.packages = registry
 		return nil
 	}
 }
@@ -245,7 +269,7 @@ func (s *Server) registerTools() error {
 		Name:        "tangent.form-collect",
 		Description: "Dispatch a generalized schema-driven form through Tangent. Persists canonical form state on the room and waits for explicit submit/cancel.",
 		InputSchema: formCollectSchema,
-	}, s.handleFormCollect)
+	}, s.packagedWorkflowHandler(formCollectEnvelopeType))
 
 	designIterationSchema, err := buildDesignIterationInputSchema()
 	if err != nil {
@@ -411,10 +435,15 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_get input schema: %w", err)
 	}
+	sessionGetOutput, err := s.sessionGetOutputSchema()
+	if err != nil {
+		return fmt.Errorf("build session_get output schema: %w", err)
+	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
-		Name:        "tangent.session_get",
-		Description: "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
-		InputSchema: sessionGetSchema,
+		Name:         "tangent.session_get",
+		Description:  "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
+		InputSchema:  sessionGetSchema,
+		OutputSchema: sessionGetOutput,
 	}, s.handleSessionGet)
 
 	sessionAdvancePhaseSchema, err := buildSchema(sessionAdvancePhaseInputSchemaJSON, "session_advance_phase")

@@ -145,7 +145,7 @@ func projectDiffReviewStateFromBlob(blob PhaseOutput) *DiffReviewStateView {
 		ReviewID:    reviewID,
 		Files:       readObjectSlice(blob.Data[diffReviewFilesKey]),
 		CurrentFile: readString(blob.Data, diffReviewCurrentFileKey),
-		FilterState: readObjectValueMap(blob.Data[diffReviewFilterStateKey]),
+		FilterState: readObjectMapValue(blob.Data[diffReviewFilterStateKey]),
 		Decisions:   readDiffReviewDecisions(blob.Data[diffReviewDecisionsKey]),
 		Comments:    readStringMap(blob.Data[diffReviewCommentsKey]),
 		UpdatedAt:   readString(blob.Data, diffReviewUpdatedAtKey),
@@ -203,7 +203,7 @@ func normalizeDiffReviewSnapshot(snapshot DiffReviewSnapshot) (DiffReviewSnapsho
 			return DiffReviewSnapshot{}, fmt.Errorf("%w: unknown current_file %q", ErrInvalidDiffReviewFile, currentFile)
 		}
 	}
-	filterState, err := normalizeFormMap(snapshot.FilterState, ErrInvalidDiffReviewFilterState)
+	filterState, err := normalizeObjectMap(snapshot.FilterState, ErrInvalidDiffReviewFilterState)
 	if err != nil {
 		return DiffReviewSnapshot{}, err
 	}
@@ -493,7 +493,7 @@ func readDiffReviewSummary(raw any) *DiffReviewSummary {
 		ExportName:        strings.TrimSpace(readString(record, diffReviewSummaryExportNameKey)),
 		DecisionSummary:   map[string]int{},
 	}
-	decisionSummary := readObjectValueMap(record[diffReviewSummaryDecisionSummaryKey])
+	decisionSummary := readObjectMapValue(record[diffReviewSummaryDecisionSummaryKey])
 	for key, value := range decisionSummary {
 		normalized := normalizeDiffReviewDecisionValue(key)
 		if normalized == "" {

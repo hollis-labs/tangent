@@ -99,6 +99,13 @@ func (s *Server) NormalizeResponse(
 	if err := s.envSvc.ValidateResponse(env.Type, resp); err != nil {
 		return nil, err
 	}
+	// A packaged kind's response interpretation belongs to its package. The
+	// lookup comes before the switch so a kind cannot be served by both, and
+	// so removing a package removes its normalization rather than silently
+	// reverting to a core arm that still knows the kind.
+	if pkg, ok := s.packages.Lookup(env.Type); ok {
+		return pkg.NormalizeResponse(context.Background(), s.packageStore(), roomID, env, resp)
+	}
 	switch env.Type {
 	case whiteboardEnvelopeType:
 		return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
@@ -116,8 +123,6 @@ func (s *Server) NormalizeResponse(
 		return s.normalizeSpreadsheetReviewSubmitResponse(roomID, env, resp)
 	case approvalQueueEnvelopeType:
 		return s.normalizeApprovalQueueSubmitResponse(roomID, env, resp)
-	case formCollectEnvelopeType:
-		return s.normalizeFormCollectSubmitResponse(roomID, env, resp)
 	default:
 		return resp, nil
 	}

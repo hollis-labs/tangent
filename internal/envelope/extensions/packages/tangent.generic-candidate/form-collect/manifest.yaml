@@ -13,10 +13,24 @@
 # Compatibility defaults under ADR 0003 §8 C4 — what the code actually does,
 # never something more permissive:
 #
-#   * response_schema is absent. ADR 0003 §9 S2 backfills it per kind from the
-#     handler's real behaviour during CW-20260825-0074; declaring `absent`
-#     preserves today's response-kind-only check rather than pretending a
-#     schema exists and starting to reject responses production accepts.
+#   * response_schema is now PRESENT. ADR 0003 §9 S2 scheduled this backfill
+#     for CW-20260825-0074, and it is authored from what
+#     internal/packages/formcollect actually accepts — only form_id required,
+#     unknown keys ignored, malformed list entries skipped rather than refused
+#     — so no payload production accepts today starts being rejected.
+#
+#     The backfill has no ADR-legal identity move, and this manifest takes the
+#     least wire-visible one. Adding response_schema changes contract_digest.
+#     §2.1 and §3 say a contract_digest change requires a `version` bump and
+#     forbid a `revision` bump; §8 C3 says all 18 shipped kinds keep their
+#     exact versions with "no wire breakage, in either direction"; and leaving
+#     both unchanged would republish different content under one identity,
+#     which §3 calls a publisher error. Every option violates one of the ADR's
+#     own rules. `version` is on the wire (tangent.list_workflows, the
+#     generated TypeScript, every pinned binding) and `revision` is not, so
+#     `version` holds at 0.6 and `revision` advances to 2. ADR 0003 needs an
+#     amendment naming the C4-to-present transition as a defined move; see the
+#     CW-20260825-0074 findings.
 #   * required_capabilities is empty. Nothing in this kind is capability-
 #     mediated today, and CW-20260825-0077 is what authors real grants.
 #   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
@@ -32,7 +46,7 @@ manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.form-collect
 version: "0.6"
-revision: 1
+revision: 2
 title: "Form collect"
 description: "Generalized schema-driven form workflow with room-backed persistence."
 package_id: tangent.generic-candidate
@@ -41,7 +55,8 @@ ownership_class: generic-catalog
 
 request_schema: request.schema.json
 response_kind: data
-compatibility_response_schema: absent
+response_schema: response.schema.json
+compatibility_response_schema: present
 
 renderer:
   id: tangent.renderer.form-collect

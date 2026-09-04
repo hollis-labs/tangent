@@ -781,6 +781,151 @@ following material choices as locked:
 The review disposition was: accept this decision with the defaults above folded
 in, and with the dump-tool fix sequenced as an isolated prerequisite commit.
 
+## Amendments required by CW-20260825-0074
+
+**Status: proposed, pending review.** `CW-20260825-0074` expressed
+`tangent.form-collect@0.6` as a registered interaction package over the generic
+service and backfilled its `response_schema`. The boundary held; seven things
+this ADR says, or does not say, did not. They are recorded here because
+`CW-20260825-0074`'s acceptance requires findings to feed back into this
+decision, and because each one is a rule a later task will otherwise rediscover.
+
+Nothing below is adopted. The implementation took the least wire-visible
+reading in each case and said so at the point of the choice.
+
+### A1 — The C4-to-`present` backfill has no legal identity move
+
+§9 S2 schedules the seventeen shipped kinds' `response_schema` backfill for this
+task. Adding a `response_schema` necessarily changes `contract_digest` (§2.2).
+§2.1 and §3 then say a `contract_digest` change requires a `version` bump and
+forbid a `revision` bump; §8 C3 says all eighteen shipped kinds keep "their
+exact wire names, versions, … **No wire breakage, in either direction**"; and
+leaving both unchanged republishes different content under one `(publisher,
+kind, version)`, which §3 calls a publisher error detected by digest. All three
+options violate one of this ADR's own rules.
+
+**Amend §3** with a named exception: the one-time transition from
+`compatibility_response_schema: absent` to `present`, for a schema authored from
+the shipped handler's actual behaviour, advances `revision` and holds `version`.
+It is the only `contract_digest` change permitted without a `version` bump, it
+is available once per kind, and the manifest must say so at the field. The
+reasoning is that `version` is on the wire — `tangent.list_workflows`, the
+generated TypeScript, every pinned binding — and `revision` is not.
+
+`tangent.form-collect` is at `version: "0.6"`, `revision: 2` on that reading.
+
+### A2 — `response_schema` does not say which value it validates
+
+§2.2 says `response_schema` "validates the terminal response payload" and maps
+it to the upstream `TypeSpec.PayloadSchema` slot, which upstream applies to
+`Response.Payload`. `EnvelopeDefinitionCatalog.ValidateInteractionResponse`
+applied it instead to whatever its caller passed as `ResponsePayload` — and the
+two callers passed different things. `internal/hitl` passed the typed response
+body; `internal/roomflow` passed `json.Marshal(resp)`, the entire
+`envelopes.Response` frame. The room path was therefore validating an envelope
+against a schema describing a payload.
+
+The defect was invisible while `tangent.hitl-item` was the only kind carrying a
+`response_schema`, because the only path that ever reached the validator with a
+real schema was the one whose shape happened to be right. The first backfill
+surfaced it immediately: form-collect's own response failed its own schema with
+"missing property 'form_id'".
+
+**Amend §2.2** to state that `response_schema` validates the response
+*payload*, and that the value a durable resolution record *stores* is a separate
+concern whose shape is the caller's. The implementation splits them:
+`ResolveInteractionInput.ResponsePayload` remains the durable record and
+`ResponseBody` is the validated contract.
+
+This also means §9 S2's remaining sixteen backfills are not independent of each
+other — each one turns on validation for a path that has never been exercised.
+They should land with a round-trip test per kind, not as manifest edits.
+
+### A3 — The ADR assigns a home for a definition, not for its behavior
+
+§5 and §6 assign ownership of manifests, schemas, renderers, and semantics. They
+do not name where a bundled kind's *runtime* lives: the request projection, the
+response normalization, and the codec between its business state and the phase
+blob. Before this task all three sat in `internal/mcp` and `internal/room`,
+which is precisely the "bundled therefore core" error §6 warns about — and the
+ADR as written did not forbid it, because it never mentions them.
+
+**Amend §5's Tangent row** to say that a definition's runtime behavior is
+publisher-owned on the same terms as its schema, and **add a §6 column** naming
+each shipped kind's package runtime or recording that it has none.
+`internal/interactionpkg` is the proposed contract: `Describe`,
+`PresentRequest`, `NormalizeResponse`, `ProjectState`, `ProjectionSchema`, over
+an opaque `map[string]any` state store.
+
+### A4 — §8 C6's freeze silently extends to core Go struct layout
+
+`tangent.session_get` advertises an output schema the MCP SDK derives by
+reflection from `sessionGetResult`, a struct in `internal/mcp` that names
+fourteen workflows as typed fields. Under C6 that tool's shape is frozen, so
+C6 transitively freezes a core struct's field list — moving any projection type
+into its package deletes a property from a frozen contract, and no reading of
+this ADR warns of it.
+
+**Amend §8 C6** to distinguish the advertised contract from how it is produced:
+a package contributes its own projection schema, the host composes them, and
+the composed schema must match the frozen one property-for-property. **Add**
+that JSON object member *order* is not part of the contract — a composed
+property is appended rather than slotted where a deleted struct field sat, and
+no conforming client can observe the difference.
+
+### A5 — "Renderer binding becomes one mechanism instead of three" is not yet true
+
+The Consequences section claims it as a positive. It is not delivered, and this
+task could not deliver it. `renderer.entry` remains metadata no runtime
+consumes; `ui/src/main.tsx` still registers seventeen adapters by wire-name
+string literal, held to the manifests only by a drift test. Packaging
+form-collect changed nothing on the browser side — its 1,408-line renderer and
+its `browser-local` draft module still live in the core SPA bundle, and there is
+no mechanism by which a package could carry them.
+
+**Amend the Consequences section** to state the claim as a destination, the way
+§6 already does for the generic-catalog column, and **record** that a package's
+renderer has no home until a task authorizes one. `CW-20260825-0073` is the
+natural place, since it already binds to `renderer.trust_class`.
+
+### A6 — `generic-catalog` and "owns durable state" is an unresolved combination
+
+§6 assigns `tangent.form-collect` to the go-envelopes generic catalog under T1.
+It also owns a durable per-room state document — schema, answers, saved drafts,
+templates, actions, attachment refs, and a derived submission summary — that
+survives between turns. §5 forbids `go-envelopes` from owning "any product's
+workflow phases", and T5 says state surviving *between interactions* means it is
+not an interaction definition at all.
+
+Form-collect's state survives between *turns of one interaction*, which neither
+rule addresses. The kind is genuinely domain-free — the schema is
+caller-supplied — so T1 is right; but a host adopting it from the generic
+catalog would have to implement its state model to render it at all, and the
+catalog has nowhere to put that.
+
+**Amend §7** with the missing test: **T1a — does the kind require durable state
+between turns?** If yes, the generic catalog can carry its schemas but not its
+behavior, and the destination in §6 is a shared *package*, not the catalog.
+Four of the six generic-catalog candidates are stateless today
+(`triage`, `feedback`, `interview-question`, `output-render`); `form-collect`
+and `progress-panel` are not.
+
+### A7 — The boundary is proven, not applied
+
+One kind of eighteen is packaged. `internal/room` still holds thirteen per-kind
+state files totalling 6,388 lines; `internal/mcp` still holds fifteen per-kind
+tool handlers, eight `NormalizeResponse` switch arms, and thirteen
+`room.Project*` calls in one struct literal. The mechanism costs core roughly
+450 workflow-neutral lines once, and each further migration removes its kind's
+lines outright.
+
+**Add to §9** a sequencing note: the remaining migrations are independent of one
+another and each is paired with its `response_schema` backfill under A2, so they
+can be taken one at a time in any order. `tangent.triage` and `tangent.feedback`
+are the cheapest (no state file, no normalizer) and prove the least;
+`tangent.dashboard` and `tangent.whiteboard` are the most expensive and would
+prove the most.
+
 ## References
 
 - [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md) — §3
@@ -819,6 +964,10 @@ in, and with the dump-tool fix sequenced as an isolated prerequisite commit.
   hand-written per-kind response validation
 - [`../../internal/hitl/surface_policy.go`](../../internal/hitl/surface_policy.go)
   — the reserved-surface prototype of a Tangent package
+- [`../../internal/interactionpkg/interactionpkg.go`](../../internal/interactionpkg/interactionpkg.go)
+  — the package runtime contract and registry proposed by A3
+- [`../../internal/packages/formcollect/`](../../internal/packages/formcollect/)
+  — `tangent.form-collect`'s runtime, the CW-20260825-0074 proof
 - `ui/src/lib/*-draft-storage.ts` — the nine browser-local draft modules
 - `github.com/hollis-labs/go-envelopes` v0.1.0 — `Registry`, `TypeSpec`,
   `LoadCore`, `RegisterTypeFromManifest`, `ValidateResponse`,

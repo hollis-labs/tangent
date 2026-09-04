@@ -545,16 +545,38 @@ func (s *Service) SaveDraft(ctx context.Context, input SaveDraftInput) (DraftRev
 }
 
 type ResolveInteractionInput struct {
-	InteractionID               string                     `json:"interaction_id"`
-	ExpectedInteractionRevision int64                      `json:"expected_interaction_revision"`
-	PresentedProjectionRevision int64                      `json:"presented_projection_revision"`
-	Participant                 ActorBinding               `json:"participant"`
-	ResponseKind                string                     `json:"response_kind"`
-	ResponsePayload             json.RawMessage            `json:"response_payload"`
-	SourceDraftRevision         *int64                     `json:"source_draft_revision,omitempty"`
-	SubmittedAt                 time.Time                  `json:"submitted_at,omitempty"`
-	Deliveries                  []ResolutionDeliveryParams `json:"deliveries,omitempty"`
-	Capability                  string                     `json:"-"`
+	InteractionID               string       `json:"interaction_id"`
+	ExpectedInteractionRevision int64        `json:"expected_interaction_revision"`
+	PresentedProjectionRevision int64        `json:"presented_projection_revision"`
+	Participant                 ActorBinding `json:"participant"`
+	ResponseKind                string       `json:"response_kind"`
+	// ResponsePayload is what the durable resolution record stores and what
+	// tangent.interaction_get and tangent.interaction_await hand back. Its
+	// shape is the caller's: the room path stores the whole envelopes.Response
+	// so a resolution replays as the frame the participant sent, while the
+	// HITL path stores the bare typed response body.
+	ResponsePayload json.RawMessage `json:"response_payload"`
+	// ResponseBody is the contract-bearing value the definition's
+	// `response_schema` validates — the response *payload*, matching what
+	// upstream TypeSpec.PayloadSchema validates and what ADR 0003 §2.2 means
+	// by "the terminal response payload".
+	//
+	// It is a separate field because ResponsePayload's shape is not the same
+	// across callers, and one field cannot be both the durable record and the
+	// validated contract without those two callers agreeing. They do not, and
+	// the disagreement was invisible while tangent.hitl-item was the only kind
+	// carrying a response schema: the room path validated a whole
+	// envelopes.Response object against a schema describing a payload, which
+	// no shipped schema was ever applied to. CW-20260825-0074's form-collect
+	// backfill is what surfaced it.
+	//
+	// Empty falls back to ResponsePayload, which preserves the behavior of
+	// every caller that does not distinguish the two.
+	ResponseBody        json.RawMessage            `json:"response_body,omitempty"`
+	SourceDraftRevision *int64                     `json:"source_draft_revision,omitempty"`
+	SubmittedAt         time.Time                  `json:"submitted_at,omitempty"`
+	Deliveries          []ResolutionDeliveryParams `json:"deliveries,omitempty"`
+	Capability          string                     `json:"-"`
 }
 
 func (s *Service) ResolveInteraction(
@@ -574,7 +596,11 @@ func (s *Service) ResolveInteraction(
 	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {
 		return ResolveInteractionResult{}, ErrUnauthorized
 	}
-	if err := s.catalog.ValidateInteractionResponse(ctx, current.Definition, input.ResponseKind, input.ResponsePayload); err != nil {
+	body := input.ResponseBody
+	if len(body) == 0 {
+		body = input.ResponsePayload
+	}
+	if err := s.catalog.ValidateInteractionResponse(ctx, current.Definition, input.ResponseKind, body); err != nil {
 		return ResolveInteractionResult{}, err
 	}
 	deliveries := input.Deliveries

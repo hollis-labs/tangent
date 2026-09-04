@@ -262,11 +262,11 @@ func normalizeWizardSteps(items []WizardStep) ([]WizardStep, map[string]struct{}
 		if _, exists := stepIDs[stepID]; exists {
 			return nil, nil, nil, fmt.Errorf("%w: duplicate step_id %q", ErrInvalidWizardStep, stepID)
 		}
-		fields, err := normalizeFormMap(item.Fields, ErrInvalidWizardStep)
+		fields, err := normalizeObjectMap(item.Fields, ErrInvalidWizardStep)
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		metadata, err := normalizeFormMap(item.Metadata, ErrInvalidWizardStep)
+		metadata, err := normalizeObjectMap(item.Metadata, ErrInvalidWizardStep)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -315,7 +315,7 @@ func normalizeWizardBranches(items []WizardStepBranch) ([]WizardStepBranch, erro
 		if _, exists := branchIDs[branchID]; exists {
 			return nil, fmt.Errorf("%w: duplicate branch_id %q", ErrInvalidWizardStep, branchID)
 		}
-		metadata, err := normalizeFormMap(item.Metadata, ErrInvalidWizardStep)
+		metadata, err := normalizeObjectMap(item.Metadata, ErrInvalidWizardStep)
 		if err != nil {
 			return nil, err
 		}
@@ -349,7 +349,7 @@ func normalizeWizardProgress(items []WizardStepProgress, stepIDs map[string]stru
 		if _, exists := seen[stepID]; exists {
 			return nil, fmt.Errorf("%w: duplicate step_id %q", ErrInvalidWizardProgress, stepID)
 		}
-		response, err := normalizeFormMap(item.Response, ErrInvalidWizardProgress)
+		response, err := normalizeObjectMap(item.Response, ErrInvalidWizardProgress)
 		if err != nil {
 			return nil, err
 		}
@@ -603,9 +603,9 @@ func readWizardSteps(raw any) []WizardStep {
 			Description: readString(record, wizardStepDescriptionKey),
 			Kind:        readString(record, wizardStepKindKey),
 			Optional:    readBool(record, wizardStepOptionalKey),
-			Fields:      readObjectValueMap(record[wizardStepFieldsKey]),
+			Fields:      readObjectMapValue(record[wizardStepFieldsKey]),
 			Branches:    readWizardBranches(record[wizardStepBranchesKey]),
-			Metadata:    readObjectValueMap(record[wizardStepMetadataKey]),
+			Metadata:    readObjectMapValue(record[wizardStepMetadataKey]),
 		})
 	}
 	return out
@@ -626,7 +626,7 @@ func readWizardBranches(raw any) []WizardStepBranch {
 			Label:        label,
 			Description:  readString(record, wizardBranchDescriptionKey),
 			TargetStepID: targetStepID,
-			Metadata:     readObjectValueMap(record[wizardBranchMetadataKey]),
+			Metadata:     readObjectMapValue(record[wizardBranchMetadataKey]),
 		})
 	}
 	return out
@@ -645,7 +645,7 @@ func readWizardProgress(raw any) []WizardStepProgress {
 			StepID:      stepID,
 			Status:      status,
 			RevisionID:  readString(record, wizardProgressRevisionIDKey),
-			Response:    readObjectValueMap(record[wizardProgressResponseKey]),
+			Response:    readObjectMapValue(record[wizardProgressResponseKey]),
 			Summary:     readString(record, wizardProgressSummaryKey),
 			CompletedAt: readString(record, wizardProgressCompletedAtKey),
 			UpdatedAt:   readString(record, wizardProgressUpdatedAtKey),

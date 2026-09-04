@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:641c3e43c015b73bc85c08ca74306ae41a8e4fefcc66c550d05dbcd27f93b98c
+// @definition-source sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 18 manifests under
@@ -136,7 +136,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     component: "FormCollectView",
     packageId: "tangent.generic-candidate",
     state: "available",
-    contractDigest: "sha256:a175bb4e256d9c5a224776b8d2910727f7ba0fee03d0f1c24249abe56a81b491",
+    contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe",
   },
   {
     kind: "tangent.hitl-item",

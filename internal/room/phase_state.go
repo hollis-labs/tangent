@@ -96,6 +96,69 @@ func (r *Room) SetPhaseOutput(phase, key string, value any) error {
 	return nil
 }
 
+// ReplacePhaseOutput replaces one phase's whole output blob.
+//
+// It is the workflow-neutral write an interaction package persists through
+// (internal/interactionpkg.StateStore). SetPhaseOutput sets one key at a time,
+// which is the right primitive for tangent.session_set_phase_output but not
+// for a package that owns the whole blob and has already normalized it: a
+// package's state is one document, and writing it key-by-key would let a
+// half-applied snapshot exist.
+//
+// The value is stored as given. Core does not inspect, validate, or interpret
+// it — ADR 0003 §5 assigns publisher-owned business state to the publisher,
+// and this method is where that assignment becomes mechanical rather than
+// aspirational.
+func (r *Room) ReplacePhaseOutput(phase string, data map[string]any) error {
+	phaseID, err := normalizePhaseID(phase)
+	if err != nil {
+		return err
+	}
+	normalized, err := normalizeJSONValue(cloneAnyMap(data))
+	if err != nil {
+		return fmt.Errorf("room: normalize phase output: %w", err)
+	}
+	record, ok := normalized.(map[string]any)
+	if !ok {
+		record = map[string]any{}
+	}
+
+	r.phaseMu.Lock()
+	defer r.phaseMu.Unlock()
+
+	nextOutputs := clonePhaseOutputs(r.phaseOutputs)
+	nextOutputs[phaseID] = PhaseOutput{Version: phaseOutputVersion, Data: record}
+	nextVisited := cloneStringSlice(r.phasesVisited)
+	if err := r.persistPhaseState(r.currentPhase, nextVisited, nextOutputs); err != nil {
+		return err
+	}
+
+	r.phasesVisited = nextVisited
+	r.phaseOutputs = nextOutputs
+	return nil
+}
+
+// ReplacePhaseOutput is the Manager-scoped form, resolving the room first.
+func (m *Manager) ReplacePhaseOutput(roomID, phase string, data map[string]any) error {
+	rm, ok := m.Get(roomID)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrRoomNotFound, roomID)
+	}
+	return rm.ReplacePhaseOutput(phase, data)
+}
+
+// PhaseOutputData returns one phase's stored blob, reading through to the
+// database for a room that is no longer resident. The bool distinguishes "the
+// room is unknown" from "the room holds nothing for that phase", which a
+// package needs in order to tell a first turn from a cleared one.
+func (m *Manager) PhaseOutputData(ctx context.Context, roomID, phase string) (map[string]any, bool, error) {
+	state, found, err := m.GetPhaseState(ctx, roomID)
+	if err != nil || !found {
+		return nil, false, err
+	}
+	return cloneAnyMap(state.PhaseOutputs[phase].Data), true, nil
+}
+
 func (m *Manager) AdvancePhase(roomID, toPhase, reason string) (PhaseState, error) {
 	rm, ok := m.Get(roomID)
 	if !ok {

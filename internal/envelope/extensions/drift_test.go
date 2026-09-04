@@ -92,6 +92,15 @@ func TestEveryShippedManifestMaterializesAsAvailable(t *testing.T) {
 // these kinds. Authoring `surface` here would re-loosen, through the min() in
 // ADR 0002 §3, exactly the default ADR 0002 tightened, and it would do so
 // silently: nothing else in the system would report the change.
+// responseSchemaBackfilled is the set of shipped kinds that carry a real
+// response schema. It starts as tangent.hitl-item, the ADR 0003 §6 reference
+// package, plus tangent.form-collect, backfilled by CW-20260825-0074 alongside
+// its interaction package.
+var responseSchemaBackfilled = []string{
+	HITLItemEnvelopeType,
+	FormCollectEnvelopeType,
+}
+
 func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 	t.Parallel()
 	// The kinds that ship a browser-local draft-storage module today. ADR 0003
@@ -140,11 +149,14 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 			t.Errorf("%s renderer.class = %q, want %q", kind, manifest.Renderer.Class, wantClass)
 		}
 
-		// Only tangent.hitl-item carries a real response schema in this
-		// release; the other seventeen are backfilled per kind during
-		// CW-20260825-0074 (ADR 0003 §9 S2).
+		// The kinds backfilled so far. ADR 0003 §9 S2 backfills the seventeen
+		// shipped kinds one at a time; tangent.form-collect is the one
+		// CW-20260825-0074 packaged and therefore the one whose response
+		// schema could be authored from a single owner's real behavior.
+		// Adding a kind here without authoring its schema from its handler is
+		// the mistake this list exists to make visible.
 		wantResponseSchema := definition.ResponseSchemaAbsent
-		if kind == HITLItemEnvelopeType {
+		if slices.Contains(responseSchemaBackfilled, kind) {
 			wantResponseSchema = definition.ResponseSchemaPresent
 		}
 		if manifest.CompatibilityResponseSchema != wantResponseSchema {
@@ -276,11 +288,11 @@ func TestWireShapesAreUnchangedByTheManifestPath(t *testing.T) {
 	}
 }
 
-// TestOnlyHITLItemCarriesAResponseSchema keeps the §9 S2 sequencing visible: a
-// kind that starts carrying a response schema begins validating responses
-// against it, which is a behavior change that must be a deliberate
+// TestOnlyBackfilledKindsCarryAResponseSchema keeps the §9 S2 sequencing
+// visible: a kind that starts carrying a response schema begins validating
+// responses against it, which is a behavior change that must be a deliberate
 // CW-20260825-0074 backfill and not a side effect of editing a manifest.
-func TestOnlyHITLItemCarriesAResponseSchema(t *testing.T) {
+func TestOnlyBackfilledKindsCarryAResponseSchema(t *testing.T) {
 	t.Parallel()
 	svc := registeredService(t)
 	for _, kind := range RegisteredTypes() {
@@ -289,9 +301,9 @@ func TestOnlyHITLItemCarriesAResponseSchema(t *testing.T) {
 			t.Fatalf("%s retained no material", kind)
 		}
 		hasResponse := len(material.ResponseSchema) > 0
-		if kind == HITLItemEnvelopeType {
+		if slices.Contains(responseSchemaBackfilled, kind) {
 			if !hasResponse {
-				t.Errorf("%s is the reference package and must carry a response schema", kind)
+				t.Errorf("%s is declared backfilled and must carry a response schema", kind)
 			}
 			continue
 		}

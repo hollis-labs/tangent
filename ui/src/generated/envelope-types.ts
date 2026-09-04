@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:641c3e43c015b73bc85c08ca74306ae41a8e4fefcc66c550d05dbcd27f93b98c
+// @definition-source sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e
 // Generated from go-envelopes v0.1.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -1152,7 +1152,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:641c3e43c015b73bc85c08ca74306ae41a8e4fefcc66c550d05dbcd27f93b98c";
+export const DEFINITION_SOURCE_DIGEST = "sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.12.0";
@@ -1175,7 +1175,7 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
   { kind: "tangent.diff-review", version: "0.8", revision: 1, manifestDigest: "sha256:865c9205fb40232aafddaea19c9ecbcea4068599a29e14d55e7e3c87416ecc60", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
   { kind: "tangent.feedback", version: "0.2", revision: 1, manifestDigest: "sha256:8234446c309f043da6e22a2c5ccdbc330fc3dc02e6816915ac6c7cecc075ca66", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
   { kind: "tangent.file-picker", version: "0.9", revision: 1, manifestDigest: "sha256:b5a87fd5030dfe3e8a99b4f6a9699975e6da4e3a4d932eacb7eaebcbd02ca52d", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
-  { kind: "tangent.form-collect", version: "0.6", revision: 1, manifestDigest: "sha256:c5781ef4cc773f93d81bf383349e955a66dafa083fc517c2f471a41e1b5c4267", contractDigest: "sha256:a175bb4e256d9c5a224776b8d2910727f7ba0fee03d0f1c24249abe56a81b491" },
+  { kind: "tangent.form-collect", version: "0.6", revision: 2, manifestDigest: "sha256:35729fdd024d1e394be6ba255bb2d7fb8683d9d5e9950e4033d890331edd15c8", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
   { kind: "tangent.hitl-item", version: "1.0", revision: 1, manifestDigest: "sha256:ec83fea418e7cd34789ff33c9e259a1eefc04b30b5dd5e771760de0d7949f8e8", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
   { kind: "tangent.interview-question", version: "0.3", revision: 1, manifestDigest: "sha256:931b76a8835c34167d9e67bb4cc1dec6006f93dbb6bb5129095bc8ff904a2d7d", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
   { kind: "tangent.output-render", version: "0.3", revision: 1, manifestDigest: "sha256:e7e10151125ffe1a7610f3856699de5da2d668acc54572e0eb038bd4ea5b6345", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },

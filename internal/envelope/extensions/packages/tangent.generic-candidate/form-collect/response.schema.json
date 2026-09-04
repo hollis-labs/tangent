@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "tangent.form-collect response payload",
+  "description": "The submitted form payload. Authored from what internal/packages/formcollect actually accepts and emits (ADR 0003 §9 S2), not from what it ought to: only form_id is required, unknown keys are ignored rather than refused, and every list element is described without required fields because the package skips malformed entries instead of rejecting the submission. Tightening any of these would start refusing payloads production accepts today, which ADR 0003 §8 C4 forbids.",
+  "type": "object",
+  "required": ["form_id"],
+  "properties": {
+    "form_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Must equal the form_id the room is holding; the package refuses a mismatch."
+    },
+    "answers": {
+      "type": ["object", "null"],
+      "description": "Answer values keyed by field id. Null and absent are both read as no answers."
+    },
+    "notes": { "type": "string" },
+    "action_id": {
+      "type": "string",
+      "description": "The submit affordance chosen, echoed into submission_summary.action_id."
+    },
+    "saved_drafts": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "answers": { "type": ["object", "null"] },
+          "notes": { "type": "string" },
+          "saved_at": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "description": "Absent or empty carries the room's saved drafts forward unchanged."
+    },
+    "templates": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "answers": { "type": ["object", "null"] },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": true
+      },
+      "description": "Absent or empty carries the room's templates forward unchanged."
+    },
+    "attachment_refs": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "artifact_id": { "type": "string" },
+          "uri": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "kind": { "type": "string" },
+          "size_bytes": { "type": "number" }
+        },
+        "additionalProperties": true
+      },
+      "description": "References to content held outside the payload. Absent or empty carries the room's refs forward unchanged."
+    },
+    "submission_summary": {
+      "type": ["object", "null"],
+      "properties": {
+        "submitted_at": { "type": "string" },
+        "action_id": { "type": "string" },
+        "answer_count": { "type": "number" },
+        "attachment_count": { "type": "number" },
+        "export_text": { "type": "string" },
+        "export_name": { "type": "string" }
+      },
+      "additionalProperties": true,
+      "description": "Any values sent here are overwritten by the package's own derivation at submit time; the field is accepted because the shipped renderer sends it."
+    }
+  },
+  "additionalProperties": true
+}
