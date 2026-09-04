@@ -123,15 +123,40 @@ describe("<TabStrip>", () => {
     );
 
     expect(await screen.findByTestId("tab-strip-error")).toHaveTextContent(
-      "tool tangent.session_list HTTP 503",
+      "Room request failed (HTTP 503).",
     );
 
     fireEvent.click(screen.getByText("Refresh"));
     await waitFor(() => {
       expect(screen.getByTestId("tab-strip-error")).toHaveTextContent(
-        "tool tangent.session_list HTTP 503",
+        "Room request failed (HTTP 503).",
       );
     });
+  });
+
+  it("explains a refused close without inventing a second error surface", async () => {
+    // A refused room operation is a fact about authority, not about the
+    // operator's unfinished work: it lands in the existing tab-strip error
+    // slot, in the same voice the room's own refusals use.
+    const responses: Response[] = [
+      { ok: true, json: async () => ({ rooms: [room("room-a", "Room A")] }) } as Response,
+      { ok: false, status: 403, json: async () => ({ code: "forbidden" }) } as Response,
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => responses.shift() as Response);
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="*" element={<TabStrip />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByTestId("tab-strip-close-room-a"));
+    expect(await screen.findByTestId("tab-strip-error")).toHaveTextContent(
+      "Not authorized for that room.",
+    );
+    expect(screen.getByTestId("tab-strip-room-room-a")).toBeInTheDocument();
   });
 });
 
@@ -148,11 +173,7 @@ function room(id: string, title: string, currentType?: string) {
 function mockFetchSequence(payloads: Array<Record<string, unknown>>) {
   const responses = payloads.map((payload) => ({
     ok: true,
-    json: async () => ({
-      result: {
-        content: [{ text: JSON.stringify(payload) }],
-      },
-    }),
+    json: async () => payload,
   }));
   vi.spyOn(globalThis, "fetch").mockImplementation(async () => responses.shift() as Response);
 }

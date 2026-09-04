@@ -110,9 +110,7 @@ describe("<Room>", () => {
     await act(async () => {
       finishRoomA?.({
         ok: true,
-        json: async () => ({
-          result: { content: [{ text: JSON.stringify({ dashboard: {} }) }] },
-        }),
+        json: async () => ({ dashboard: {} }),
       } as Response);
     });
 
@@ -337,19 +335,11 @@ describe("<Room>", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
-        result: {
-          content: [
-            {
-              text: JSON.stringify({
-                envelopes_history: [],
-                synthesis_notes: {
-                  visibility: "hidden",
-                  outline_state: "present",
-                  has_private_notes: true,
-                },
-              }),
-            },
-          ],
+        envelopes_history: [],
+        synthesis_notes: {
+          visibility: "hidden",
+          outline_state: "present",
+          has_private_notes: true,
         },
       }),
     } as Response);
@@ -383,18 +373,10 @@ describe("<Room>", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
-        result: {
-          content: [
-            {
-              text: JSON.stringify({
-                current_draft: {
-                  block_count: 1,
-                  markdown: "Accepted block so far.",
-                  blocks: [{ block_id: "intro", content: "Accepted block so far." }],
-                },
-              }),
-            },
-          ],
+        current_draft: {
+          block_count: 1,
+          markdown: "Accepted block so far.",
+          blocks: [{ block_id: "intro", content: "Accepted block so far." }],
         },
       }),
     } as Response);
@@ -433,18 +415,10 @@ describe("<Room>", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
-        result: {
-          content: [
-            {
-              text: JSON.stringify({
-                current_draft: {
-                  block_count: 1,
-                  markdown: "Accepted block so far.",
-                  blocks: [{ block_id: "intro", content: "Accepted block so far." }],
-                },
-              }),
-            },
-          ],
+        current_draft: {
+          block_count: 1,
+          markdown: "Accepted block so far.",
+          blocks: [{ block_id: "intro", content: "Accepted block so far." }],
         },
       }),
     } as Response);
@@ -487,18 +461,10 @@ describe("<Room>", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
-        result: {
-          content: [
-            {
-              text: JSON.stringify({
-                final_output: {
-                  markdown: "# Final output\n\nAccepted final copy.",
-                  filename: "final.md",
-                  format: "markdown",
-                },
-              }),
-            },
-          ],
+        final_output: {
+          markdown: "# Final output\n\nAccepted final copy.",
+          filename: "final.md",
+          format: "markdown",
         },
       }),
     } as Response);
@@ -537,29 +503,21 @@ describe("<Room>", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
-        result: {
-          content: [
+        whiteboard: {
+          board_id: "board-1",
+          scene_snapshot: { document: { pages: [{ id: "page:persisted" }] } },
+          assets: [
             {
-              text: JSON.stringify({
-                whiteboard: {
-                  board_id: "board-1",
-                  scene_snapshot: { document: { pages: [{ id: "page:persisted" }] } },
-                  assets: [
-                    {
-                      artifact_id: "artifact-1",
-                      uri: "artifact://artifact-1",
-                      source: "https://assets.example.test/reference.png",
-                      kind: "reference_image",
-                    },
-                  ],
-                  export_refs: [{ kind: "png", name: "board-1-r2.png" }],
-                  notes: "Persisted board notes",
-                  updated_at: "2026-05-09T20:15:00Z",
-                  revision_history: [{ revision_id: "board-1-r1" }, { revision_id: "board-1-r2" }],
-                },
-              }),
+              artifact_id: "artifact-1",
+              uri: "artifact://artifact-1",
+              source: "https://assets.example.test/reference.png",
+              kind: "reference_image",
             },
           ],
+          export_refs: [{ kind: "png", name: "board-1-r2.png" }],
+          notes: "Persisted board notes",
+          updated_at: "2026-05-09T20:15:00Z",
+          revision_history: [{ revision_id: "board-1-r1" }, { revision_id: "board-1-r2" }],
         },
       }),
     } as Response);
@@ -654,11 +612,7 @@ function router(path: string, includeNavigator = false) {
 function mockFetchForRoom() {
   vi.spyOn(globalThis, "fetch").mockResolvedValue({
     ok: true,
-    json: async () => ({
-      result: {
-        content: [{ text: JSON.stringify({ envelopes_history: [] }) }],
-      },
-    }),
+    json: async () => ({ envelopes_history: [] }),
   } as Response);
 }
 

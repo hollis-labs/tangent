@@ -176,6 +176,12 @@ func (s *Service) OpenSurface(ctx context.Context, input OpenSurfaceInput) (Surf
 	if !s.surfaces.Authorize(input.ID, input.Capability) {
 		return SurfaceHandle{}, ErrUnauthorized
 	}
+	// The owner scope reaching here is host-derived. ADR 0004 §8 puts that
+	// derivation in the adapter rather than in this service, because an
+	// in-process host legitimately opens a surface owned by a scope other than
+	// its own — `surface_hitl_default` is operator-owned and caller-opened —
+	// while no wire request may. internal/mcp never forwards a caller-supplied
+	// `owner_scope` into this field; it keeps it as an attribution label.
 	request, err := json.Marshal(struct {
 		OwnerScope string          `json:"owner_scope"`
 		Metadata   json.RawMessage `json:"metadata"`
@@ -225,6 +231,22 @@ func (s *Service) SubmitInteraction(
 	}
 	if !s.surfaces.Authorize(input.SurfaceID, input.Capability) {
 		return InteractionHandle{}, ErrUnauthorized
+	}
+	// Creating work on an *existing* surface is a distinct power from reading
+	// it, and until now it was the unguarded one: SubmitInteraction checked
+	// only the surface access policy, so any caller could submit onto another
+	// caller's surface.
+	//
+	// The check applies to wire-driven submits. An in-process adapter presents
+	// a host-internal capability that no request can spell — the same seam
+	// SurfaceAccessPolicy already relies on — and carries the host's own
+	// authority over surfaces it opened itself; the operator inbox is
+	// reachable exactly that way, which is what ADR 0004 §7 means by a caller
+	// holding `submit` on the operator inbox surface.
+	if input.Capability == "" {
+		if err := s.authorizeSurfaceSubmit(ctx, input.SurfaceID, input.Caller.Scope); err != nil {
+			return InteractionHandle{}, err
+		}
 	}
 	request, err := canonicalJSON(input.Request, "")
 	if err != nil {
@@ -290,13 +312,13 @@ func (s *Service) GetSurface(ctx context.Context, input GetSurfaceInput) (Surfac
 	if err != nil {
 		return SurfaceSnapshot{}, err
 	}
-	if input.RequesterScope == "" || input.RequesterScope != snapshot.Surface.OwnerScope {
+	if !scopeMatches(input.RequesterScope, snapshot.Surface.OwnerScope) {
 		openedByRequester, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, input.SurfaceID, input.RequesterScope)
 		if lookupErr != nil {
 			return SurfaceSnapshot{}, lookupErr
 		}
 		if !openedByRequester {
-			return SurfaceSnapshot{}, ErrUnauthorized
+			return SurfaceSnapshot{}, denial(input.RequesterScope, snapshot.Surface.OwnerScope)
 		}
 	}
 	return snapshot, nil
@@ -315,13 +337,13 @@ func (s *Service) GetSurfaceInteractions(
 	if err != nil {
 		return SurfaceInteractionSnapshot{}, err
 	}
-	if input.RequesterScope == "" || input.RequesterScope != snapshot.Surface.OwnerScope {
+	if !scopeMatches(input.RequesterScope, snapshot.Surface.OwnerScope) {
 		openedByRequester, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, input.SurfaceID, input.RequesterScope)
 		if lookupErr != nil {
 			return SurfaceInteractionSnapshot{}, lookupErr
 		}
 		if !openedByRequester {
-			return SurfaceInteractionSnapshot{}, ErrUnauthorized
+			return SurfaceInteractionSnapshot{}, denial(input.RequesterScope, snapshot.Surface.OwnerScope)
 		}
 	}
 	return snapshot, nil
@@ -723,8 +745,12 @@ func (s *Service) CloseSurface(ctx context.Context, input CloseSurfaceInput) (Cl
 	if err != nil {
 		return CloseSurfaceResult{}, err
 	}
-	if input.Requester.Scope != surface.OwnerScope {
-		return CloseSurfaceResult{}, ErrUnauthorized
+	// Close is partition-scoped even inside `standalone-local`, where reads are
+	// authority-wide. Closing dispositions other partitions' outstanding human
+	// work, so the advisory boundary is enforced for the destructive operation
+	// and only for it (ADR 0004 §9).
+	if !scopeMatches(input.Requester.Scope, surface.OwnerScope) {
+		return CloseSurfaceResult{}, denial(input.Requester.Scope, surface.OwnerScope)
 	}
 	return s.store.CloseSurface(ctx, CloseSurfaceParams{
 		SurfaceID: input.SurfaceID, ExpectedRevision: input.ExpectedRevision,
@@ -800,6 +826,28 @@ func (s *Service) AwaitResolution(ctx context.Context, input AwaitResolutionInpu
 	}
 }
 
+// authorizeSurfaceSubmit answers whether a caller may create an interaction on
+// a surface it does not necessarily own. The rule is the read rule: the
+// surface's owner, or a caller that opened it — the existing
+// SurfaceWasOpenedByScope relation, reused rather than replaced.
+func (s *Service) authorizeSurfaceSubmit(ctx context.Context, surfaceID, callerScope string) error {
+	surface, err := s.store.GetSurface(ctx, surfaceID)
+	if err != nil {
+		return err
+	}
+	if scopeMatches(callerScope, surface.OwnerScope) {
+		return nil
+	}
+	openedByCaller, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, surfaceID, callerScope)
+	if lookupErr != nil {
+		return lookupErr
+	}
+	if openedByCaller {
+		return nil
+	}
+	return denial(callerScope, surface.OwnerScope)
+}
+
 func (s *Service) authorizeInteraction(
 	ctx context.Context,
 	interaction InteractionRecord,
@@ -808,15 +856,15 @@ func (s *Service) authorizeInteraction(
 	if requesterScope == "" {
 		return ErrUnauthorized
 	}
-	if requesterScope == interaction.CallerScope {
+	if scopeMatches(requesterScope, interaction.CallerScope) {
 		return nil
 	}
 	surface, err := s.store.GetSurface(ctx, interaction.SurfaceID)
 	if err != nil {
 		return err
 	}
-	if requesterScope != surface.OwnerScope {
-		return ErrUnauthorized
+	if !scopeMatches(requesterScope, surface.OwnerScope) {
+		return denial(requesterScope, surface.OwnerScope)
 	}
 	return nil
 }

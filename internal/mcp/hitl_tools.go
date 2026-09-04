@@ -238,16 +238,20 @@ func (s *Server) hitlError(err error) (*mcpsdk.CallToolResult, any, error) {
 	}, nil, nil
 }
 
+// directHITLActor derives the caller identity behind one hitl_* call.
+//
+// The request shape is unchanged: `source.application_id` and
+// `caller.application_id` are still what a caller sends. Only the scope the
+// host derives from them changes spelling — `direct-loopback:<app>` becomes
+// the canonical `standalone-local:<app>`, and the old spelling still reads as
+// the same caller through the fixed alias, with no data rewrite.
 func directHITLActor(applicationID, principalRef string) interaction.ActorBinding {
 	applicationID = strings.TrimSpace(applicationID)
 	principalRef = strings.TrimSpace(principalRef)
 	if principalRef == "" {
 		principalRef = applicationID
 	}
-	return interaction.ActorBinding{
-		Scope: "direct-loopback:" + applicationID, PrincipalRef: principalRef,
-		Authority: "direct-loopback", Assurance: "asserted",
-	}
+	return declaredCaller(applicationID, principalRef)
 }
 
 func directHITLCallerAssertion(caller map[string]any) interaction.ActorBinding {

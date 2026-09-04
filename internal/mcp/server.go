@@ -393,7 +393,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_create",
-		Description: "Create a Tangent room and return its room ID plus SPA URL.",
+		Description: "Create a Tangent room and return its room ID plus SPA URL. The room is owned by your caller scope. The URL is a locator, not a credential: opening it in a browser is what grants access, so sharing or logging it transfers nothing.",
 		InputSchema: sessionCreateSchema,
 	}, s.handleSessionCreate)
 
@@ -403,7 +403,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_advance",
-		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it.",
+		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it. Only rooms in your own caller partition accept an advance.",
 		InputSchema: sessionAdvanceSchema,
 	}, s.handleSessionAdvance)
 
@@ -413,7 +413,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_get",
-		Description: "Read the current room state and persisted envelope history for a Tangent room.",
+		Description: "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema: sessionGetSchema,
 	}, s.handleSessionGet)
 
@@ -443,7 +443,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_close",
-		Description: "Close a Tangent room explicitly and remove its live UI tab.",
+		Description: "Close a Tangent room explicitly and remove its live UI tab. Only rooms in your own caller partition can be closed, because closing dispositions another caller's outstanding human work.",
 		InputSchema: sessionCloseSchema,
 	}, s.handleSessionClose)
 
@@ -453,7 +453,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_list",
-		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present.",
+		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present. The listing spans every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema: sessionListSchema,
 	}, s.handleSessionList)
 

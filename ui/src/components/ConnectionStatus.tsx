@@ -147,6 +147,11 @@ function describeServerError(error: ServerError): string {
       return "Not submitted: this view was out of date. It has been refreshed — please answer again.";
     case "room_closed":
       return "Not submitted: this room is closed.";
+    case "not_authorized":
+      // A room URL is a locator, not a credential: this tab reached the room
+      // but its browser session may not answer here. Reloading mints a fresh
+      // session, which is the whole recovery.
+      return "Not submitted: this browser session is not authorized to answer here. Reload Tangent, then try again.";
     default:
       return error.message || `Not submitted: ${error.code}`;
   }

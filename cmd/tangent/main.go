@@ -25,6 +25,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -56,12 +57,19 @@ func main() {
 	port := flagSet.Int("port", resolvePort(), "HTTP listen port (overrides "+envPort+")")
 	migrateOnly := flagSet.Bool("migrate-only", false, "apply DB migrations and exit")
 	rollbackOne := flagSet.Bool("rollback-one", false, "roll back the most recent DB migration and exit")
+	// Participant sessions have no idle expiry — a local single-user tool must
+	// not log its user out mid-decision — so revocation is an explicit
+	// operator act rather than a timer or a UI control. Every browser simply
+	// mints a fresh session on its next page load.
+	revokeSessions := flagSet.Bool("revoke-participant-sessions", false,
+		"revoke every browser participant session and exit")
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
 		os.Exit(2)
 	}
-	if *migrateOnly && *rollbackOne {
-		fmt.Fprintln(os.Stderr, "tangent: --migrate-only and --rollback-one are mutually exclusive")
+	if exclusiveModes(*migrateOnly, *rollbackOne, *revokeSessions) > 1 {
+		fmt.Fprintln(os.Stderr,
+			"tangent: --migrate-only, --rollback-one, and --revoke-participant-sessions are mutually exclusive")
 		os.Exit(2)
 	}
 
@@ -84,6 +92,27 @@ func main() {
 			os.Exit(1)
 		}
 		logger.Info("rolled back latest tangent migration")
+		return
+	}
+	if *revokeSessions {
+		// Migrations run first: the table has to exist before it can be
+		// emptied, and an operator reaching for this flag after an upgrade
+		// should not have to run --migrate-only first.
+		if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
+			os.Exit(1)
+		}
+		store, storeErr := participant.NewStore(sqlDB)
+		if storeErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: build participant session store: %v\n", storeErr)
+			os.Exit(1)
+		}
+		revoked, revokeErr := store.RevokeAll(context.Background(), "operator-revoked")
+		if revokeErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: revoke participant sessions: %v\n", revokeErr)
+			os.Exit(1)
+		}
+		logger.Info("revoked browser participant sessions", "count", revoked)
 		return
 	}
 	if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
@@ -178,6 +207,26 @@ func main() {
 		os.Exit(1)
 	}
 	wsHandler := tangentws.New(roomMgr, logger)
+
+	// The authenticated browser participant session (ADR 0004 §4). It is what
+	// moves room authority off a URL that the product deliberately publishes —
+	// returned by session_create, logged when a workflow opens a room, pasted
+	// into agent transcripts — and onto a cookie that a link cannot carry.
+	participantStore, participantErr := participant.NewStore(sqlDB)
+	if participantErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build participant session store: %v\n", participantErr)
+		os.Exit(1)
+	}
+	participantGate, gateErr := participant.NewGate(participantStore)
+	if gateErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build participant session gate: %v\n", gateErr)
+		os.Exit(1)
+	}
+	// The /ws upgrade requires a session immediately, with no grace period:
+	// this is the single change that stops a room UUID from being an answer
+	// credential. The resolver runs before the upgrade, so a refusal is an
+	// ordinary 403 rather than a socket that closes without explanation.
+	wsHandler.SetParticipantResolver(participantGate.ResolveBinding)
 
 	// Use 127.0.0.1 to match the listener's actual bind so the URL
 	// hint we log when triage creates a room resolves correctly even
@@ -291,6 +340,8 @@ func main() {
 		WSHandler:      wsHandler,
 		RoomManager:    roomMgr,
 		HITL:           hitlService,
+		Rooms:          mcpSrv,
+		Participants:   participantGate,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)
@@ -342,6 +393,19 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("tangent stopped")
+}
+
+// exclusiveModes counts how many one-shot maintenance modes were requested.
+// Each of them exits before the server starts, so asking for two is a mistake
+// rather than a sequence.
+func exclusiveModes(modes ...bool) int {
+	count := 0
+	for _, requested := range modes {
+		if requested {
+			count++
+		}
+	}
+	return count
 }
 
 // resolvePort returns the listen port, honoring TANGENT_HTTP_PORT when

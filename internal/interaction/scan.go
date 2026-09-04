@@ -105,8 +105,10 @@ func getInteractionByIdempotencyTx(
 	callerScope string,
 	idempotencyKey string,
 ) (InteractionRecord, bool, error) {
+	placeholders, arguments := scopePlaceholders(callerScope)
 	record, err := scanInteractionWithDefinition(tx.QueryRowContext(ctx, interactionSelect+`
-WHERE i.caller_scope = ? AND i.idempotency_key = ?`, callerScope, idempotencyKey))
+WHERE i.caller_scope IN (`+placeholders+`) AND i.idempotency_key = ?`,
+		append(arguments, idempotencyKey)...))
 	if errors.Is(err, ErrNotFound) {
 		return InteractionRecord{}, false, nil
 	}

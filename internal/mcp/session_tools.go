@@ -11,12 +11,19 @@ import (
 	envelopes "github.com/hollis-labs/go-envelopes"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
 const (
 	errorCodeSessionBusy  = "SESSION_BUSY"
 	errorCodeRoomNotFound = "ROOM_NOT_FOUND"
+	// errorCodeRoomForbidden reports a refusal inside the caller's own
+	// authority. Its message never names the required capability, the owning
+	// scope, or the participant: an authorization failure that explains itself
+	// is a probe (ADR 0004 §6.5).
+	errorCodeRoomForbidden = "ROOM_FORBIDDEN"
 )
 
 type sessionCreateInput struct {
@@ -109,8 +116,8 @@ type sessionListResult struct {
 }
 
 func (s *Server) handleSessionCreate(
-	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
+	ctx context.Context,
+	request *mcpsdk.CallToolRequest,
 	args sessionCreateInput,
 ) (*mcpsdk.CallToolResult, sessionCreateResult, error) {
 	meta := stringifyMeta(args.Meta)
@@ -122,6 +129,16 @@ func (s *Server) handleSessionCreate(
 	rm, err := s.manager.CreateWithError(meta)
 	if err != nil {
 		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("create room: %v", err)), sessionCreateResult{}, nil
+	}
+	// Ownership is recorded with the room rather than at its first advance, so
+	// a room is never briefly an object no authorization check has an answer
+	// for. The new surface's owner scope is the host-derived caller scope; the
+	// caller cannot nominate it.
+	if s.roomflow != nil {
+		if ownErr := s.roomflow.EnsureRoomOwnership(ctx, rm.ID, callerIdentity(request)); ownErr != nil {
+			return toolErrorResult(envelopes.ErrorCodeHostError,
+				fmt.Sprintf("record room ownership: %v", ownErr)), sessionCreateResult{}, nil
+		}
 	}
 	result := sessionCreateResult{
 		RoomID: rm.ID,
@@ -141,21 +158,46 @@ func (s *Server) handleSessionAdvance(
 
 func (s *Server) handleSessionGet(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
+	request *mcpsdk.CallToolRequest,
 	args sessionGetInput,
 ) (*mcpsdk.CallToolResult, sessionGetResult, error) {
-	phaseState, found, err := s.manager.GetPhaseState(ctx, args.RoomID)
-	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), emptySessionGetResult(), nil
+	// Reads stay authority-wide. `session_*` is ADR 0001 §10 compatibility
+	// vocabulary, and narrowing a read would break "show me all my rooms"
+	// without buying isolation that `standalone-local` partitions can back.
+	// Cross-authority is still refused, and as not-found.
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+		authz.View, authz.AuthorityWide); err != nil {
+		return roomAuthorizationError(args.RoomID, err), emptySessionGetResult(), nil
 	}
-	history, err := s.manager.History(ctx, args.RoomID)
+	result, found, err := s.roomProjection(ctx, args.RoomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room history: %v", err)), emptySessionGetResult(), nil
+		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error()), emptySessionGetResult(), nil
+	}
+	if !found {
+		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), emptySessionGetResult(), nil
+	}
+	toolRes, payload := toolJSONResult(result)
+	return toolRes, payload, nil
+}
+
+// roomProjection assembles one room's full projection.
+//
+// It is shared by tangent.session_get and the browser room API so the two
+// cannot drift: migrating the SPA off /mcp must not change what the SPA sees,
+// or the migration becomes a contract change instead of a transport one.
+func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetResult, bool, error) {
+	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
+	if err != nil {
+		return emptySessionGetResult(), false, fmt.Errorf("load room phase state: %w", err)
+	}
+	history, err := s.manager.History(ctx, roomID)
+	if err != nil {
+		return emptySessionGetResult(), false, fmt.Errorf("load room history: %w", err)
 	}
 
-	rm, ok := s.manager.Get(args.RoomID)
+	rm, ok := s.manager.Get(roomID)
 	if !found && !ok && len(history) == 0 {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), emptySessionGetResult(), nil
+		return emptySessionGetResult(), false, nil
 	}
 
 	result := sessionGetResult{
@@ -187,15 +229,18 @@ func (s *Server) handleSessionGet(
 		state := rm.ConnectionState()
 		result.Connections = &state
 	}
-	toolRes, payload := toolJSONResult(result)
-	return toolRes, payload, nil
+	return result, true, nil
 }
 
 func (s *Server) handleSessionAdvancePhase(
-	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
+	ctx context.Context,
+	request *mcpsdk.CallToolRequest,
 	args sessionAdvancePhaseInput,
 ) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+		authz.Submit, authz.PartitionScoped); err != nil {
+		return roomAuthorizationError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+	}
 	phaseState, err := s.manager.AdvancePhase(args.RoomID, args.ToPhase, args.Reason)
 	if err != nil {
 		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
@@ -210,10 +255,14 @@ func (s *Server) handleSessionAdvancePhase(
 }
 
 func (s *Server) handleSessionSetPhaseOutput(
-	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
+	ctx context.Context,
+	request *mcpsdk.CallToolRequest,
 	args sessionSetPhaseOutputInput,
 ) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+		authz.Submit, authz.PartitionScoped); err != nil {
+		return roomAuthorizationError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+	}
 	phaseState, err := s.manager.SetPhaseOutput(args.RoomID, args.Phase, args.Key, args.Value)
 	if err != nil {
 		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
@@ -229,18 +278,26 @@ func (s *Server) handleSessionSetPhaseOutput(
 
 func (s *Server) handleSessionClose(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
+	request *mcpsdk.CallToolRequest,
 	args sessionCloseInput,
 ) (*mcpsdk.CallToolResult, sessionCloseResult, error) {
 	status := args.Status
 	if status == "" {
 		status = "closed"
 	}
+	// This is the one place ADR 0004 narrows a shipped behavior, and it is a
+	// deliberate exception to treating `session_*` as compatibility
+	// vocabulary: closing dispositions another partition's pending human work.
+	// Reads stay authority-wide; only the destructive operation is narrowed.
+	caller := callerIdentity(request)
+	if err := s.authorizeRoom(ctx, args.RoomID, caller, authz.Close, authz.PartitionScoped); err != nil {
+		return roomAuthorizationError(args.RoomID, err), sessionCloseResult{}, nil
+	}
 	// Closing a room is an explicit, authorized caller action — one of the two
 	// things permitted to terminalize outstanding work. The canonical surface
 	// disposition is recorded first so the legacy room rows written below are
 	// a projection of that decision rather than a competing claim about it.
-	if err := s.closeRoomDurably(ctx, args.RoomID, status); err != nil {
+	if err := s.closeRoomDurably(ctx, args.RoomID, status, caller); err != nil {
 		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room interactions: %v", err)), sessionCloseResult{}, nil
 	}
 	if err := s.manager.Close(args.RoomID, status); err != nil {
@@ -259,15 +316,45 @@ func (s *Server) handleSessionClose(
 
 func (s *Server) handleSessionList(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
+	request *mcpsdk.CallToolRequest,
 	args sessionListInput,
 ) (*mcpsdk.CallToolResult, sessionListResult, error) {
 	rooms, err := s.manager.List(ctx, args.ActiveOnly)
 	if err != nil {
 		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("list rooms: %v", err)), sessionListResult{}, nil
 	}
-	toolRes, payload := toolJSONResult(sessionListResult{Rooms: rooms})
+	toolRes, payload := toolJSONResult(sessionListResult{
+		Rooms: s.visibleRooms(ctx, rooms, callerIdentity(request)),
+	})
 	return toolRes, payload, nil
+}
+
+// visibleRooms drops rooms belonging to another authority.
+//
+// They are omitted rather than errored on: an error is itself an existence
+// signal, and `active_only` keeps filtering surface lifecycle only. Within
+// `standalone-local` nothing is filtered, which preserves today's behavior
+// exactly — and is honest, because those partitions are advisory.
+//
+// One ownership lookup per room. That is a point read against a primary key on
+// a local SQLite file for a list a single user's tab strip polls, so the cost
+// is not worth a join that would have to duplicate the room-to-surface mapping
+// this package deliberately owns in one place.
+func (s *Server) visibleRooms(
+	ctx context.Context,
+	rooms []room.RoomSummary,
+	caller interaction.ActorBinding,
+) []room.RoomSummary {
+	if s.roomflow == nil {
+		return rooms
+	}
+	visible := make([]room.RoomSummary, 0, len(rooms))
+	for _, summary := range rooms {
+		if s.roomflow.VisibleToCaller(ctx, summary.ID, caller) {
+			visible = append(visible, summary)
+		}
+	}
+	return visible
 }
 
 // advanceRoomEnvelope is the single entry point every named room workflow and
@@ -300,8 +387,17 @@ func (s *Server) advanceRoomEnvelope(
 	if err := s.envSvc.Validate(presented); err != nil {
 		return triageErrorResult(err), nil, nil
 	}
+	// Every named workflow and tangent.session_advance passes through here, so
+	// this is where the seventeen workflow tools stop being able to reuse an
+	// arbitrary caller-supplied room and receive that room's human response.
+	// A room the caller just created has no owner yet, which AuthorizeRoom
+	// permits; one another authority owns is refused as not-found.
+	caller := callerIdentity(nil)
+	if err := s.authorizeRoom(ctx, roomID, caller, authz.Submit, authz.PartitionScoped); err != nil {
+		return roomAuthorizationError(roomID, err), nil, nil
+	}
 	if s.roomflow != nil {
-		return s.advanceRoomEnvelopeDurable(ctx, roomID, request, presented, completion, callerIdentity(nil))
+		return s.advanceRoomEnvelopeDurable(ctx, roomID, request, presented, completion, caller)
 	}
 	return s.advanceRoomEnvelopeLegacy(ctx, roomID, presented)
 }

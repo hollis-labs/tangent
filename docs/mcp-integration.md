@@ -169,12 +169,17 @@ tools:
   `canceled/caller_withdrawn`; repeating the same withdrawal returns the
   original immutable outcome.
 
-The stable direct-loopback caller scope comes from `source.application_id` on
-enqueue and `caller.application_id` thereafter. Agent labels, MCP sessions,
-browser connections, and item URLs are not authority. Human resolution,
-terminal retrieval, and downstream delivery are separate durable facts;
-Tangent records the operator outcome but does not perform the caller's business
-transition. The complete v1 request, evidence, response, and error shapes are
+The caller scope is derived from `source.application_id` on enqueue and
+`caller.application_id` thereafter, and the request shapes are unchanged; only
+the scope Tangent derives from them changes spelling, from
+`direct-loopback:<app>` to the canonical `standalone-local:<app>`. The old
+spelling still reads as the same caller, with no data rewrite. **Those
+partitions are advisory, not a security boundary** — see
+[Room access and caller scope](#room-access-and-caller-scope). Agent labels,
+MCP sessions, browser connections, and item URLs are not authority. Human
+resolution, terminal retrieval, and downstream delivery are separate durable
+facts; Tangent records the operator outcome but does not perform the caller's
+business transition. The complete v1 request, evidence, response, and error shapes are
 in [`contracts/hitl-inbox-v1.md`](./contracts/hitl-inbox-v1.md).
 The repo-local
 [`tangent-hitl-inbox` launcher](../.agents/skills/tangent-hitl-inbox/SKILL.md)
@@ -272,14 +277,17 @@ curl -fsS -X POST http://localhost:7842/mcp \
   | jq '.result.tools[].name'
 ```
 
-The production binary currently advertises **39 tools**: 25 room/workflow and
-session compatibility tools, 10 generic durable surface/interaction tools, and
+The production binary currently advertises **43 tools**: room/workflow and
+session compatibility tools, generic durable surface/interaction tools, and the
 4 HITL inbox operations. Expected names from the shipped build:
 
 ```
 "tangent.approval-queue"
 "tangent.block_draft"
 "tangent.dashboard"
+"tangent.definition_get"
+"tangent.definition_registry_diagnostics"
+"tangent.definition_registry_list"
 "tangent.design-iteration"
 "tangent.diff-review"
 "tangent.feedback"
@@ -289,6 +297,7 @@ session compatibility tools, 10 generic durable surface/interaction tools, and
 "tangent.hitl_enqueue"
 "tangent.hitl_get"
 "tangent.hitl_withdraw"
+"tangent.interaction_acknowledge"
 "tangent.interaction_await"
 "tangent.interaction_cancel"
 "tangent.interaction_get"
@@ -432,8 +441,88 @@ For deeper probes (calling a workflow, expected error frames) see
 [`mcp-smoketest.md`](./mcp-smoketest.md) and
 [`manual-tests/multi-envelope-session-e2e.md`](./manual-tests/multi-envelope-session-e2e.md).
 
+## Room access and caller scope
+
+Implements [ADR 0004](adr/0004-caller-participant-and-room-access-authority.md).
+Two things changed for integrators.
+
+**A room URL is a locator, not a credential.** Tangent prints room URLs, returns
+them as tool output, and expects them in agent transcripts. Knowing one grants
+nothing. Authority lives in a browser participant session — an `HttpOnly`
+cookie minted when a same-origin loopback browser opens any Tangent page —
+which a pasted link does not carry.
+
+**`/ws` requires that session, immediately and with no grace period.** A raw
+WebSocket client (`websocat`, a hand-rolled script, a smoke-test harness) that
+dials `ws://127.0.0.1:7842/ws?roomID=...` with no cookie now receives an
+ordinary **403** instead of an upgrade. There is no flag to opt out, and the
+upgrade is refused *before* the socket exists so the failure is a readable HTTP
+status rather than a connection that closes silently.
+
+To attach by hand, obtain a session first and present it:
+
+```bash
+# 1. Mint a session the way a browser does, and keep the cookie.
+curl -fsS -c /tmp/tangent-cookies.txt \
+  -H 'Accept: text/html' -H 'Sec-Fetch-Dest: document' -H 'Sec-Fetch-Site: none' \
+  http://127.0.0.1:7842/ > /dev/null
+
+# 2. Read the cookie value back out of the jar.
+COOKIE="tangent_participant=$(awk '/tangent_participant/ {print $7}' /tmp/tangent-cookies.txt)"
+
+# 3. Attach, presenting the cookie on the upgrade request.
+websocat -H="Cookie: $COOKIE" \
+  "ws://127.0.0.1:7842/ws?roomID=<roomID>&clientID=cli-1"
+```
+
+Opening the room URL in a browser does all of this for you, and remains the
+supported path. The recipe above exists so a scripted smoke test can still
+attach.
+
+**Caller scope is `<authority>:<partition>`.** The authority is host-assigned
+from admission facts and cannot be spelled by a caller; the partition is the
+caller's declared application id. Every direct loopback caller is
+`standalone-local:<app>`, or `standalone-local:anonymous` when it declares
+nothing. Wire arguments named `caller.scope`, `requester_scope`, and
+`owner_scope` are still accepted so shipped schemas do not break, but only
+their partition half survives — the authority is reassigned by the host, and a
+value naming a foreign authority becomes a partition of the local one.
+
+> **`standalone-local` partitions are advisory, not a security boundary.**
+> Any local caller can assert any partition, because the partition is the
+> caller's own declared application id and nothing verifies it. Partitions are
+> enforced **only across authorities**, where the prefix is host-assigned. They
+> exist so a second agent's retry does not cancel the first agent's item, not
+> so two agents can keep secrets from each other on the same machine. Do not
+> build a trust assumption on one.
+
+**What that changes for tools.** `tangent.session_list` and
+`tangent.session_get` stay authority-wide — "show me all my rooms" is
+unchanged. `tangent.session_close` and `tangent.surface_close` are now
+partition-scoped, because closing dispositions another caller's pending human
+work. The seventeen workflow tools and `tangent.session_advance` can no longer
+push into a room another partition owns. Refusals are **403-shaped
+(`ROOM_FORBIDDEN`) within an authority** and **404-shaped (`ROOM_NOT_FOUND`)
+across authorities**; adapters must not collapse the two.
+
+**Origin guard.** `/mcp`, `/sse`, and `/ws` now carry the same-origin guard
+`/api/hitl/*` has always had. It permits header-less non-browser clients,
+so MCP clients and the `curl` recipes in this document are unaffected; what it
+refuses is a browser request that declares itself cross-site.
+
+**Revoking sessions.** `tangent --revoke-participant-sessions` ends every
+browser session and exits. Sessions have no idle expiry and an absolute 30-day
+lifetime; every browser mints a fresh one on its next page load.
+
 ## Troubleshooting
 
+- **`/ws` returns 403 / "the upgrade was refused".** The client presented no
+  participant session. Open the room URL in a browser, or follow the cookie
+  recipe in [Room access and caller scope](#room-access-and-caller-scope).
+- **A tool returns `ROOM_FORBIDDEN` or `ROOM_NOT_FOUND` for a room you can
+  see.** The room belongs to another caller partition (403-shaped) or another
+  authority (404-shaped). `session_list` and `session_get` stay authority-wide;
+  closing and advancing do not.
 - **Port `7842` is in use.** Run `TANGENT_HTTP_PORT=7900 tangent` (or
   any free port) and update your agent's MCP URL to match.
 - **Transport mismatch.** If the modern Streamable HTTP endpoint

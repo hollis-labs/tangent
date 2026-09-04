@@ -26,10 +26,12 @@
 // decides whether a new attachment replaces its own predecessor (a refresh) or
 // joins alongside it (a second tab). It is a routing label and confers nothing.
 //
-// Origin policy: localhost-only in v0.1. We rely on
-// AcceptOptions.OriginPatterns="localhost*"+InsecureSkipVerify=false.
-// Production deployments will tighten this; the brief explicitly
-// permits "no auth in v0.1, localhost only."
+// Access policy: an upgrade requires a valid participant session, immediately
+// and with no grace period (ADR 0004 §5). Knowing a room UUID is no longer
+// sufficient to attach — the URL is a locator, and the cookie is the
+// authority. internal/server additionally applies the same-origin guard to the
+// route, and AcceptOptions.OriginPatterns keeps the WebSocket handshake itself
+// localhost-only.
 package ws
 
 import (
@@ -42,6 +44,7 @@ import (
 	"github.com/coder/websocket"
 	envelopes "github.com/hollis-labs/go-envelopes"
 
+	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -51,27 +54,43 @@ const (
 	errorCodeResolverLeaseHeld = "resolver_lease_held"
 	errorCodeStalePresentation = "stale_presentation"
 	errorCodeRoomClosed        = "room_closed"
+	// errorCodeNotAuthorized reports a frame the attached session may not
+	// send. It is a Refused outcome in the sense of
+	// docs/room-validation-affordances.md — the server declined a submission —
+	// and the SPA renders it through describeServerError like every other
+	// server refusal, never as a second error surface.
+	errorCodeNotAuthorized = "not_authorized"
 )
 
 // ParticipantResolver establishes the principal behind an upgrade request.
 //
-// This is the seam ADR 0004 lands on. It returns the binding a connection acts
-// as, and may reject the upgrade outright — which is exactly what
-// CW-20260825-0075 needs when `/ws` starts requiring a participant session
-// with no grace period. Until then the handler installs
-// defaultParticipant, which records an explicitly unverified loopback operator
-// rather than pretending the socket proves anything.
+// It runs *before* the upgrade so a refusal is an ordinary 403 rather than a
+// socket that closes without saying why. Production installs a resolver backed
+// by the participant session store, which is the change that stops
+// `/ws?roomID=` plus a known room UUID from being an answer credential: the
+// upgrade now requires a valid participant session immediately, with no grace
+// period. A grace period would be that same bug with a deadline.
 type ParticipantResolver func(*http.Request) (room.ParticipantBinding, error)
 
 // defaultParticipant is the honest description of a loopback attachment with
 // no authenticated session: a local operator whose identity nothing has
 // checked.
+//
+// It remains the fallback for embedders and transport tests that construct a
+// handler without a session store; cmd/tangent always installs the real
+// resolver. A handler left on this default is not enforcing anything, which is
+// exactly the pre-ADR-0004 behavior and is why it is named for what it is.
 func defaultParticipant(*http.Request) (room.ParticipantBinding, error) {
 	return room.ParticipantBinding{
 		Scope:        "operator:local",
 		PrincipalRef: "local-operator",
 		Authority:    "tangent-loopback",
 		Assurance:    "loopback-unverified",
+		// An unauthenticated attachment still gets the default participant
+		// capability set: this fallback describes the pre-session behavior
+		// exactly, so installing the real resolver is the only thing that
+		// changes what a socket may do.
+		Capabilities: authz.FormatCapabilities(authz.DefaultParticipantCapabilities()),
 	}, nil
 }
 
@@ -173,6 +192,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	participant, err := h.participant(r)
 	if err != nil {
 		h.logger.Info("ws: participant rejected", "room", roomID, "err", err)
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	// `view` is what attaching takes. Refusing here, before the upgrade, is
+	// what makes an unauthorized attachment an ordinary 403 that a client and
+	// a human can both read.
+	if !participant.Holds(string(authz.View)) {
+		h.logger.Info("ws: participant lacks view", "room", roomID)
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -300,6 +327,12 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 			h.logger.Warn("ws: response missing envelopeId or response", "room", rm.ID)
 			return
 		}
+		// `view` got this socket attached; `resolve` is what a terminal answer
+		// takes. A connection holds no capability of its own — the session that
+		// opened it does — so the check reads the binding, never the socket.
+		if !h.authorize(ctx, rm, c, msg, authz.Resolve) {
+			return
+		}
 		if err := rm.HandleResponseFrom(c, msg.EnvelopeID, msg.Revision, msg.Response); err != nil {
 			h.handleDispositionConflict(ctx, rm, c, msg, err)
 			return
@@ -308,6 +341,12 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 	case "cancel":
 		if msg.EnvelopeID == "" {
 			h.logger.Warn("ws: cancel missing envelopeId", "room", rm.ID)
+			return
+		}
+		// A participant may cancel only under the participant cause, which the
+		// room applies; the capability is what decides whether it may cancel at
+		// all.
+		if !h.authorize(ctx, rm, c, msg, authz.Cancel) {
 			return
 		}
 		if err := rm.HandleCancelFrom(c, msg.EnvelopeID, msg.Revision); err != nil {
@@ -333,6 +372,34 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 	default:
 		h.logger.Debug("ws: ignoring unknown frame type", "room", rm.ID, "ws_type", msg.Type)
 	}
+}
+
+// authorize checks one frame against the capability set of the session that
+// opened the connection, and reports the refusal to the client when it fails.
+//
+// The refusal names nothing beyond "not authorized". An authorization failure
+// that reports the required capability, the owning scope, or the participant
+// is a probe, so the message stays fixed (ADR 0004 §6.5).
+func (h *Handler) authorize(
+	ctx context.Context,
+	rm *room.Room,
+	c *room.Connection,
+	msg inboundMessage,
+	capability authz.Capability,
+) bool {
+	if c.Participant().Holds(string(capability)) {
+		return true
+	}
+	h.sendError(ctx, c, outboundError{
+		Code:         errorCodeNotAuthorized,
+		Message:      "this browser session is not authorized to answer here",
+		EnvelopeID:   msg.EnvelopeID,
+		Revision:     msg.Revision,
+		ConnectionID: c.ID(),
+	})
+	h.logger.Info("ws: frame refused",
+		"room", rm.ID, "connection", c.ID(), "ws_type", msg.Type)
+	return false
 }
 
 // handleDispositionConflict turns a refused response/cancel into something the

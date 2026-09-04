@@ -34,12 +34,17 @@ curl -fsS -X POST http://localhost:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
-# Expected: 39
+# Expected: 43
 ```
 
-The build-derived grouping is 25 room/workflow compatibility tools, 10 generic
+The build-derived grouping is room/workflow compatibility tools, generic
 durable interaction tools, and 4 strict HITL inbox operations. See the exact
 name list in [`mcp-integration.md`](./mcp-integration.md#verification-no-agent-required).
+
+These probes send no browser headers, so the same-origin guard on `/mcp` and
+`/sse` passes them through unchanged. A probe that attaches to `/ws` needs a
+participant session; see
+[`mcp-integration.md`](./mcp-integration.md#room-access-and-caller-scope).
 
 ## Probe 2 — list_workflows
 

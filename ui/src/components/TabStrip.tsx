@@ -2,22 +2,17 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { closeRoom as closeRoomRequest, fetchRooms, type RoomSummary } from "@/lib/rooms-api";
 import { cn } from "@/lib/utils";
 
-export interface SessionListRoom {
-  id: string;
-  title?: string;
-  current_envelope_type?: string;
-  created_at: string;
-  updated_at: string;
-  /**
-   * Connection lifecycle, reported next to the interaction summary rather
-   * than folded into it: a room can be busy with nobody looking, and watched
-   * with nothing to answer.
-   */
-  connection_count?: number;
-  resolver_lease?: { connection_id: string; label?: string } | null;
-}
+/**
+ * SessionListRoom is the room shape the tab strip renders.
+ *
+ * It is re-exported from the room API client rather than redeclared, so the
+ * strip and the transport cannot drift. The name is kept for the modules that
+ * already import it.
+ */
+export type SessionListRoom = RoomSummary;
 
 const REFRESH_MS = 5000;
 
@@ -62,7 +57,7 @@ export function TabStrip() {
 
   const closeRoom = async (roomID: string) => {
     try {
-      await callTool("tangent.session_close", { roomID });
+      await closeRoomRequest(roomID);
       const next = await fetchRooms();
       setRooms(next);
       setError("");
@@ -186,39 +181,6 @@ async function refreshRooms(
   } catch (err) {
     setError((err as Error).message);
   }
-}
-
-export async function fetchRooms(): Promise<SessionListRoom[]> {
-  const result = await callTool("tangent.session_list", { active_only: true });
-  const text = result?.result?.content?.[0]?.text;
-  if (typeof text !== "string") {
-    return [];
-  }
-  const parsed = JSON.parse(text) as { rooms?: SessionListRoom[] };
-  return parsed.rooms ?? [];
-}
-
-async function callTool(name: string, args: Record<string, unknown>) {
-  const response = await fetch("/mcp", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name,
-        arguments: args,
-      },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`tool ${name} HTTP ${response.status}`);
-  }
-  return response.json();
 }
 
 function shortRoomID(roomID: string): string {

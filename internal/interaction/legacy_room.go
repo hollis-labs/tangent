@@ -155,11 +155,12 @@ func ensureSurfaceOpenRequest(
 	createdAt time.Time,
 ) error {
 	var existingSurfaceID, existingRequest string
+	placeholders, arguments := scopePlaceholders(callerScope)
 	err := tx.QueryRowContext(ctx, `
 SELECT surface_id, request_snapshot
 FROM surface_open_requests
-WHERE caller_scope = ? AND idempotency_key = ?`,
-		callerScope, LegacyRoomSurfaceIdempotencyKey(surfaceID),
+WHERE caller_scope IN (`+placeholders+`) AND idempotency_key = ?`,
+		append(arguments, LegacyRoomSurfaceIdempotencyKey(surfaceID))...,
 	).Scan(&existingSurfaceID, &existingRequest)
 	switch {
 	case err == nil:

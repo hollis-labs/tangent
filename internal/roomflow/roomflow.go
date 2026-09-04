@@ -33,6 +33,7 @@ import (
 
 	envelopes "github.com/hollis-labs/go-envelopes"
 
+	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -70,23 +71,33 @@ const workflowIdempotencyPrefix = "workflow:"
 var ErrRoomNotFound = errors.New("roomflow: room not found")
 
 // DefaultCaller is the caller identity Tangent records for a direct loopback
-// MCP call that arrives without an authenticated adapter identity.
+// MCP call that declares no application id.
 //
-// The scope matches the one migration 0003 assigned to imported v0.12 rooms,
-// so live and imported records share one caller namespace. The assurance is
-// explicitly unverified: nothing about a loopback call proves who made it.
-// CW-20260825-0075 supplies scoped authorization; until then this value is
-// recorded honestly rather than being dressed up as an authenticated identity.
+// `standalone-local` is no longer a legacy fallback string: ADR 0004 §3 makes
+// it the real, host-assigned authority for every unauthenticated loopback
+// caller, and `anonymous` is a real partition rather than a missing one. The
+// authority is assigned from admission facts and can never be spelled by a
+// caller; the assurance stays explicitly unverified, because nothing about a
+// loopback call proves who made it.
+//
+// Records written before this grammar — migration 0003 backfilled every
+// imported v0.12 room at bare `standalone-local` — read through the fixed
+// alias in internal/authz. Nothing rewrites them.
 var DefaultCaller = interaction.ActorBinding{
-	Scope:        "standalone-local",
+	Scope:        authz.AuthorityStandaloneLocal + ":" + authz.PartitionAnonymous,
 	PrincipalRef: "loopback-mcp-caller",
-	Authority:    "direct-mcp",
-	Assurance:    "unverified",
+	Authority:    authz.AuthorityStandaloneLocal,
+	Assurance:    "loopback-unverified",
 }
 
 // Participant is the local operator acting through a room's browser tab.
+//
+// It is the template a minted participant session instantiates, not the
+// identity itself: the session is the identity (ADR 0004 §4.3). The scope is
+// unchanged so that a resolution recorded before participant sessions existed
+// and one recorded after name the same principal.
 var Participant = interaction.ActorBinding{
-	Scope:        "operator:local",
+	Scope:        authz.ParticipantScope,
 	PrincipalRef: "local-operator",
 	Authority:    "tangent-loopback",
 	Assurance:    "loopback-unverified",

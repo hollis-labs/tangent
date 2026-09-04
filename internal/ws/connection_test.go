@@ -293,22 +293,41 @@ func TestHandler_ResyncRebuildsFromDurableState(t *testing.T) {
 }
 
 // TestHandler_ParticipantResolverGatesTheUpgrade proves the seam ADR 0004
-// lands on: a resolver that refuses turns the upgrade into an ordinary 403,
-// and one that succeeds binds its principal to the connection.
+// lands on: a resolver that refuses turns the upgrade into an ordinary 403, a
+// session without `view` is refused the same way, and one that succeeds binds
+// its principal to the connection.
+//
+// The two refusals are separate cases on purpose. "No session at all" and "a
+// session that may not look at this" are different facts, and collapsing them
+// would let a later change grant an unauthorized session an attachment by
+// accident.
 func TestHandler_ParticipantResolverGatesTheUpgrade(t *testing.T) {
 	mgr := room.NewManager(nil)
 	handler := tangentws.New(mgr, nil)
 	handler.SetOriginPatterns([]string{"*"})
-	allow := false
+	const (
+		refuse = iota
+		withoutView
+		allow
+	)
+	mode := refuse
 	handler.SetParticipantResolver(func(*http.Request) (room.ParticipantBinding, error) {
-		if !allow {
+		switch mode {
+		case refuse:
 			return room.ParticipantBinding{}, context.Canceled
+		case withoutView:
+			return room.ParticipantBinding{
+				Scope: "operator:local", PrincipalRef: "participant-1",
+				Authority: "participant-session", Assurance: "session-cookie",
+				Capabilities: []string{"draft"},
+			}, nil
+		default:
+			return room.ParticipantBinding{
+				Scope: "operator:local", PrincipalRef: "participant-1",
+				Authority: "participant-session", Assurance: "session-cookie",
+				Capabilities: []string{"view", "draft", "resolve", "cancel"},
+			}, nil
 		}
-		return room.ParticipantBinding{
-			SessionID: "session-1", Scope: "operator:local",
-			PrincipalRef: "participant-1", Authority: "participant-session",
-			Assurance: "session-cookie",
-		}, nil
 	})
 	srv := newHandlerServer(t, handler)
 	rm := mgr.Create(nil)
@@ -322,7 +341,15 @@ func TestHandler_ParticipantResolverGatesTheUpgrade(t *testing.T) {
 		t.Fatal("a refused upgrade attached a connection")
 	}
 
-	allow = true
+	mode = withoutView
+	if _, _, err := websocket.Dial(ctx, tabURL(srv, rm.ID, "tab-a"), nil); err == nil {
+		t.Fatal("upgrade succeeded for a session without the view capability")
+	}
+	if rm.ConnectionCount() != 0 {
+		t.Fatal("a session without view attached a connection")
+	}
+
+	mode = allow
 	dialTab(t, srv, rm.ID, "tab-a")
 	waitForConnections(t, rm, 1, 2*time.Second)
 	state := rm.ConnectionState()

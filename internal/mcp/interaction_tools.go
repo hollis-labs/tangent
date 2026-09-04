@@ -182,9 +182,16 @@ func (s *Server) handleSurfaceOpen(
 	_ *mcpsdk.CallToolRequest,
 	input surfaceOpenInput,
 ) (*mcpsdk.CallToolResult, any, error) {
+	caller := directMCPActor(input.Caller)
+	// The owner scope is the caller's own, derived here. A wire-supplied
+	// `owner_scope` used to be accepted unchecked, which let a caller open a
+	// surface owned by any scope it could spell; it is now retained only as an
+	// attribution label beside the surface's metadata.
 	return s.interactionResult(s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
-		ID: input.SurfaceID, Caller: directMCPActor(input.Caller), IdempotencyKey: input.IdempotencyKey,
-		OwnerScope: input.OwnerScope, Metadata: rawJSON(input.Metadata), Policy: rawJSON(input.Policy),
+		ID: input.SurfaceID, Caller: caller, IdempotencyKey: input.IdempotencyKey,
+		OwnerScope: caller.Scope,
+		Metadata:   surfaceMetadataWithAttribution(input.Metadata, input.OwnerScope, input.Caller.Scope),
+		Policy:     rawJSON(input.Policy),
 	}))
 }
 
@@ -194,7 +201,7 @@ func (s *Server) handleSurfaceGet(
 	input surfaceGetInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.GetSurface(ctx, interaction.GetSurfaceInput{
-		SurfaceID: input.SurfaceID, RequesterScope: input.RequesterScope,
+		SurfaceID: input.SurfaceID, RequesterScope: requesterScope(input.RequesterScope),
 	}))
 }
 
@@ -228,7 +235,7 @@ func (s *Server) handleInteractionGet(
 	input interactionGetInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
-		InteractionID: input.InteractionID, RequesterScope: input.RequesterScope,
+		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
 }
@@ -239,7 +246,7 @@ func (s *Server) handleInteractionAwait(
 	input interactionAwaitInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
-		InteractionID: input.InteractionID, RequesterScope: input.RequesterScope,
+		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		MaximumWaitMillis:    input.MaximumWaitMillis,
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
@@ -333,9 +340,13 @@ func rawJSON(value any) json.RawMessage {
 	return raw
 }
 
+// directMCPActor derives the caller identity for one generic tool call.
+//
+// The `caller.scope` / `requester.scope` argument is still accepted — shipped
+// schemas do not break — but it is no longer the authorization value. Only its
+// partition half survives; the authority is host-assigned from admission
+// facts. A caller that spells another authority into that field lands in a
+// partition of its own authority, never in the authority it named.
 func directMCPActor(assertion assertedActorInput) interaction.ActorBinding {
-	return interaction.ActorBinding{
-		Scope: assertion.Scope, PrincipalRef: assertion.PrincipalRef,
-		Authority: "direct-mcp", Assurance: "asserted",
-	}
+	return declaredCaller(assertion.Scope, assertion.PrincipalRef)
 }

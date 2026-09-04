@@ -72,11 +72,41 @@ const connectionWriteTimeout = 5 * time.Second
 // holds no capability and grants none — but every connection carries one, and
 // it reaches the durable record through Disposition.Presented.
 type ParticipantBinding struct {
+	// SessionID names the participant session behind this attachment.
+	//
+	// It is deliberately left empty by the shipped resolver. The session is
+	// the only capability material in the system, and ADR 0004 §6.1 keeps it
+	// in exactly two places — the cookie header and a hash column — never in a
+	// ConnectionRecord, a room's metadata, or an slog attribute. The field
+	// stays so a composed identity authority that has a *non-capability*
+	// reference to bind has somewhere to put it.
 	SessionID    string `json:"session_id,omitempty"`
 	Scope        string `json:"scope,omitempty"`
 	PrincipalRef string `json:"principal_ref,omitempty"`
 	Authority    string `json:"authority,omitempty"`
 	Assurance    string `json:"assurance,omitempty"`
+
+	// Capabilities is the object-access capability set this session was
+	// granted (ADR 0004 §2).
+	//
+	// `json:"-"` is load-bearing, and for the same reason
+	// interaction.Reference.Capability carries it: a capability set is
+	// established by the host from a session, never accepted from a wire
+	// frame and never projected into a durable record or a peer's connection
+	// state. It rides in memory with the connection so a `response` or
+	// `cancel` frame can be checked against the session that opened the
+	// socket rather than against the socket itself.
+	Capabilities []string `json:"-"`
+}
+
+// Holds reports whether this binding was granted a capability.
+func (p ParticipantBinding) Holds(capability string) bool {
+	for _, granted := range p.Capabilities {
+		if granted == capability {
+			return true
+		}
+	}
+	return false
 }
 
 // AttachOptions describes one client's attempt to attach to a surface.

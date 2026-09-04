@@ -147,11 +147,12 @@ func (s *Store) SurfaceWasOpenedByScope(ctx context.Context, surfaceID, callerSc
 		return false, fmt.Errorf("%w: surface and caller scope are required", ErrInvalidRecord)
 	}
 	var exists bool
+	placeholders, arguments := scopePlaceholders(callerScope)
 	if err := s.db.QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1 FROM surface_open_requests
-  WHERE surface_id = ? AND caller_scope = ?
-)`, surfaceID, callerScope).Scan(&exists); err != nil {
+  WHERE surface_id = ? AND caller_scope IN (`+placeholders+`)
+)`, append([]any{surfaceID}, arguments...)...).Scan(&exists); err != nil {
 		return false, fmt.Errorf("lookup surface opening scope: %w", err)
 	}
 	return exists, nil
@@ -165,8 +166,13 @@ func (s *Store) GetInteractionByIdempotency(
 	if callerScope == "" || idempotencyKey == "" {
 		return InteractionRecord{}, false, fmt.Errorf("%w: caller scope and idempotency key are required", ErrInvalidRecord)
 	}
+	// The read widens across every persisted spelling of this caller scope so
+	// a retry issued after the ADR 0004 grammar landed still finds the row a
+	// pre-grammar release wrote. Nothing rewrites those rows.
+	placeholders, arguments := scopePlaceholders(callerScope)
 	record, err := scanInteractionWithDefinition(s.db.QueryRowContext(ctx, interactionSelect+`
-WHERE i.caller_scope = ? AND i.idempotency_key = ?`, callerScope, idempotencyKey))
+WHERE i.caller_scope IN (`+placeholders+`) AND i.idempotency_key = ?`,
+		append(arguments, idempotencyKey)...))
 	if errors.Is(err, ErrNotFound) {
 		return InteractionRecord{}, false, nil
 	}

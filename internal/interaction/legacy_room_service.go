@@ -130,3 +130,18 @@ func (s *Service) RecordTerminalOutcomeDelivery(
 		Receipt:       input.Receipt,
 	})
 }
+
+// SurfaceOwnerScope returns just the owner scope of a surface, with no
+// authorization check and no payload.
+//
+// Reading the owner is how an authorization decision is made, so it cannot
+// itself require authorization without circularity. It deliberately returns
+// one string and nothing else: no metadata, no policy, no interactions, and no
+// evidence that the caller has not been cleared to see.
+func (s *Service) SurfaceOwnerScope(ctx context.Context, surfaceID string) (string, error) {
+	surface, err := s.store.GetSurface(ctx, surfaceID)
+	if err != nil {
+		return "", err
+	}
+	return surface.OwnerScope, nil
+}

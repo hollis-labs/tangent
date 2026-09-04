@@ -87,7 +87,19 @@ Tangent log prints the room URL (see step 1).
 ## 4. Open the browser and triage
 
 Paste the `http://localhost:7842/r/<roomID>` URL from the Tangent log
-into a browser tab. The page renders:
+into a browser tab.
+
+> **The browser step is load-bearing, not a convenience.** Since
+> [ADR 0004](../adr/0004-caller-participant-and-room-access-authority.md) the
+> `/ws` upgrade requires a participant session, immediately and with no grace
+> period: knowing the room UUID grants nothing. Loading the page is what mints
+> that session — an `HttpOnly` cookie the tab then presents on the upgrade — so
+> a raw WebSocket client dialing `ws://127.0.0.1:7842/ws?roomID=...` with no
+> cookie receives a 403 rather than an envelope. If you are scripting this
+> step, use the cookie recipe in
+> [`../mcp-integration.md`](../mcp-integration.md#room-access-and-caller-scope).
+
+The page renders:
 
 - A `<Triage>` card with the prompt and three items.
 - Three buttons per item — Accept, Backlog, Delete — and a
@@ -137,6 +149,16 @@ no errors in either log.
 - **"WS connects but never receives an envelope"** — confirm the room
   ID in the URL matches what Tangent printed. Each MCP call gets a
   fresh room; stale URLs hang at "waiting for envelope...".
+- **"The WebSocket upgrade returns 403"** — the client presented no
+  participant session. A browser gets one automatically by loading the
+  room page; a scripted client has to mint and present the cookie, per
+  [`../mcp-integration.md`](../mcp-integration.md#room-access-and-caller-scope).
+  This is deliberate: the room UUID is a locator, and it is printed in
+  logs and pasted into transcripts precisely because it is not a
+  credential.
+- **"The tab strip's close button says it is not authorized"** — the
+  room belongs to a different caller partition. `session_close` is
+  partition-enforcing; listing and reading rooms are not.
 - **"Submit is disabled"** — by design until every item has a decision.
   Pick one of Accept / Backlog / Delete for each row.
 - **"My LLM hallucinated a custom envelope shape"** — `tangent.triage`'s

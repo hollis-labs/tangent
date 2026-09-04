@@ -103,12 +103,17 @@ submission the server refused, see
 
 See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
-- Localhost only, single-user, no auth.
+- Localhost only, single-user. Object access is scoped (ADR 0004), but loopback
+  admission is not authentication: a hostile local process running as the same
+  user can still mint a browser participant session.
+- `standalone-local` caller partitions are advisory, not a security boundary.
+  Any local caller can assert any partition; isolation is enforced only across
+  authorities. See
+  [`architecture.md`](./architecture.md#room-access-and-caller-scope).
 - One active pending envelope per room.
-- The production server advertises 39 tools: 25 room/workflow compatibility
-  tools, 10 generic durable interaction tools, and 4 strict HITL inbox
-  operations. See [`mcp-integration.md`](./mcp-integration.md) for the
-  build-derived list.
+- The production server advertises 43 tools: room/workflow compatibility tools,
+  generic durable interaction tools, and 4 strict HITL inbox operations. See
+  [`mcp-integration.md`](./mcp-integration.md) for the build-derived list.
 
 ## Persistence layer
 

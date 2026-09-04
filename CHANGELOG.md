@@ -33,6 +33,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   carries a `@definition-source` stamp, `make check-envelopes` reports which
   kind drifted rather than which byte, and `ui/src/generated/renderer-bindings.ts`
   makes the manifest's renderer binding checkable against `main.tsx`.
+- **Authenticated browser participant sessions.** A same-origin loopback
+  document navigation with no session cookie mints one: an `HttpOnly`,
+  `SameSite=Lax` cookie naming a durable row (migration `0008`) that stores
+  only the SHA-256 of the cookie value. No idle expiry, absolute 30-day
+  lifetime, rotation on assurance change, and revocation via
+  `tangent --revoke-participant-sessions`. See
+  [ADR 0004](docs/adr/0004-caller-participant-and-room-access-authority.md).
+- **Object-access authorization.** Seven capabilities (`view`, `submit`,
+  `draft`, `resolve`, `cancel`, `close`, `administer`) evaluated against a
+  named surface or interaction through one decision function in
+  `internal/authz`. Caller scope is `<authority>:<partition>`, with the
+  authority host-assigned from admission facts and the partition
+  caller-declared.
+- **`/api/rooms`.** A participant-authenticated, origin-guarded browser room
+  API mirroring `/api/hitl`, replacing the SPA's direct `/mcp` JSON-RPC POSTs
+  for `session_list`, `session_get`, and `session_close`.
+- **Process-wide `Referrer-Policy: no-referrer` and
+  `X-Content-Type-Options: nosniff`,** applied in the middleware that wraps the
+  mux so no route can forget them.
 
 ### Changed
 
@@ -43,9 +62,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `quarantined`, and `unavailable` surface as `definition_incompatible`,
   `definition_quarantined`, and `definition_unavailable`, each carrying a reused
   go-envelopes error code. No shipped kind is in any of those states.
+- **A room UUID is no longer an answer credential.** The `/ws` upgrade requires
+  a valid participant session immediately, with no grace period. A raw
+  WebSocket client that dials `/ws?roomID=…` with no cookie now receives a 403.
+  Opening the room URL in a browser mints the session and is unchanged for a
+  human; scripted attachments need the cookie recipe in
+  [`docs/mcp-integration.md`](docs/mcp-integration.md#room-access-and-caller-scope).
+- **`tangent.session_close` and `tangent.surface_close` are
+  partition-enforcing.** Closing dispositions another caller's pending human
+  work. `session_list` and `session_get` stay authority-wide, so "show me all
+  my rooms" is unchanged. The seventeen workflow tools and
+  `tangent.session_advance` can no longer push into a room another partition
+  owns. Refusals are 403-shaped within an authority and 404-shaped across one.
+- **`caller.scope`, `requester_scope`, and `owner_scope` are no longer the
+  authorization value.** The arguments are still accepted so shipped schemas do
+  not break, but only their partition half survives; the authority is
+  host-assigned. `tangent.surface_open` derives `owner_scope` from the caller
+  and keeps the supplied value as an attribution label.
+- **`tangent.interaction_submit` checks the target surface.** A caller can no
+  longer create an interaction on a surface it neither owns nor opened.
+- **Caller scope spelling.** `direct-loopback:<app>` becomes
+  `standalone-local:<app>`. `hitl_*` request shapes are unchanged, existing rows
+  are not rewritten, and the old spelling reads as the same caller through a
+  fixed alias.
+- **`/mcp`, `/sse`, and `/ws` carry the same-origin guard** `/api/hitl/*`
+  already had. It permits header-less non-browser clients, so MCP clients and
+  the documented `curl` recipes are unaffected.
+
+**`standalone-local` partitions are advisory, not a security boundary.** Any
+local caller can assert any partition; isolation is enforced only across
+authorities, where the prefix is host-assigned. Loopback admission is not
+authentication: a hostile local process running as the same user can still mint
+a participant session.
 
 No wire name, version, request schema, response payload, MCP tool name, room
-id, route, persisted history, or phase projection changed.
+id, or phase projection changed. Two routes were added (`/api/rooms`,
+`/api/rooms/{roomID}`); none was removed.
 
 ## [v0.12.0] - 2026-05-10
 

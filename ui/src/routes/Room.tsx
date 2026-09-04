@@ -26,6 +26,7 @@ import { useParams } from "react-router-dom";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
+import { fetchRoomState } from "../lib/rooms-api";
 import {
   type ConnectionState,
   connect,
@@ -38,23 +39,6 @@ type Pending = {
   envelope: unknown;
   revision: number;
   roomID: string;
-};
-
-type SessionStatePayload = {
-  envelopes_history?: unknown[];
-  wizard?: unknown;
-  dashboard?: unknown;
-  progress_panel?: unknown;
-  file_picker?: unknown;
-  diff_review?: unknown;
-  approval_queue?: unknown;
-  form_collect?: unknown;
-  spreadsheet_review?: unknown;
-  whiteboard?: unknown;
-  synthesis_notes?: unknown;
-  current_draft?: unknown;
-  prose_revision_outcomes?: unknown[];
-  final_output?: unknown;
 };
 
 export default function Room() {
@@ -295,34 +279,6 @@ function readEnvelopeType(envelope: unknown): string | null {
   }
   const type = (envelope as { type?: unknown }).type;
   return typeof type === "string" ? type : null;
-}
-
-async function fetchRoomState(roomID: string): Promise<SessionStatePayload> {
-  const response = await fetch("/mcp", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "tangent.session_get",
-        arguments: { roomID },
-      },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`session_get HTTP ${response.status}`);
-  }
-  const payload = await response.json();
-  const text = payload?.result?.content?.[0]?.text;
-  if (typeof text !== "string") {
-    return {};
-  }
-  return JSON.parse(text) as SessionStatePayload;
 }
 
 function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {

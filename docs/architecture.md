@@ -480,9 +480,76 @@ shape is deliberately chosen so the eventual Wails wrap is mechanical
 build is what the shell loads. v0.1 ships as the localhost binary so
 the shape can be proven before a desktop wrapper is added.
 
+## Room access and caller scope
+
+Implements [ADR 0004](adr/0004-caller-participant-and-room-access-authority.md).
+
+**A room URL is a locator, not a credential.** `/r/{roomID}`, the `/hitl`
+inbox, and item deep links may appear in tool responses, agent transcripts, the
+address bar, and browser history without transferring any authority. Opening
+one without a session mints a session — which is what a single-user local tool
+should do — but the *session*, not the URL, is thereafter the authority. A
+second browser on the same machine gets its own session and its own audit
+trail.
+
+**Browser participant sessions.** A same-origin loopback document navigation
+with no session cookie mints one: an `HttpOnly`, `SameSite=Lax`, `Path=/`
+cookie naming a durable row that stores only the SHA-256 of the cookie value.
+Sessions survive a restart, have no idle expiry (a local tool must not log its
+user out mid-decision), expire absolutely after 30 days, rotate when an
+assurance change binds a verified principal, and are revoked with
+`tangent --revoke-participant-sessions`. A minted session receives `view`,
+`draft`, `resolve`, and participant-cause `cancel` — not `close`, not
+`administer`.
+
+The `/ws` upgrade requires a valid session immediately, with no grace period.
+That is the change that stops a room UUID from being an answer credential. A
+raw WebSocket client with no cookie receives an ordinary 403.
+
+**Caller scope is `<authority>:<partition>`.** The authority is assigned by the
+receiving adapter from admission facts and comes from a closed set; the
+partition is the caller's declared application id. Two authorities exist:
+`standalone-local` for every direct loopback caller, and `gateway:<binding_id>`
+when a trusted in-process adapter has established a verified binding. A caller
+that declares no application id is `standalone-local:anonymous`. Pre-grammar
+spellings (`direct-loopback:<app>`, bare `standalone-local`) are read through a
+fixed alias with no data rewrite.
+
+> **`standalone-local` partitions are advisory, not a security boundary.**
+> Any local caller can assert any partition, because the partition is the
+> caller's own declared application id and nothing verifies it. Partitions are
+> enforced **only across authorities**, where the authority prefix is
+> host-assigned. A `standalone-local:a` caller is prevented from colliding with
+> `standalone-local:b` by accident; it is not prevented from claiming to be
+> `standalone-local:b`. Nothing downstream may present a `standalone-local`
+> partition as isolation. ADR 0002 §6 carries the same limitation into
+> retention: a per-partition deletion filter is a convenience for the local
+> user, never a guarantee that one application's content has been isolated
+> from another's.
+
+**What is enforced.** Reads (`session_list`, `session_get`) stay
+authority-wide, so "show me all my rooms" is unchanged. `session_close` and
+`surface_close` are partition-scoped, because closing dispositions another
+caller's pending human work. Cross-authority access is denied everywhere.
+Unauthorized access returns **403 within an authority** and **404 across
+authorities**, so a foreign authority cannot probe for existence while a local
+user still gets something debuggable.
+
+**Browser APIs.** `/api/hitl/*` and `/api/rooms` are the only routes the SPA
+calls. Both are participant-session authenticated, origin guarded, and
+`Cache-Control: no-store`. The same-origin guard also covers `/mcp`, `/sse`,
+and `/ws`; it permits header-less non-browser clients, so MCP clients are
+unaffected. Every response carries `Referrer-Policy: no-referrer` and
+`X-Content-Type-Options: nosniff`.
+
 ## Limits (v0.5)
 
-- **Localhost only.** No remote access, no auth, no capability gating.
+- **Localhost only.** No remote access. Authorization is object-scoped (ADR
+  0004) but loopback admission is not authentication: a hostile local process
+  running as the same user can still mint a participant session. Tangent moves
+  authority off the URL; it does not defend against that.
+- **`standalone-local` partitions are advisory.** See "Room access and caller
+  scope" above. They prevent accident, not intent.
 - **Single-user.** Multiple concurrent agent sessions are supported
   (multi-room), but they share one machine, one process, one user.
 - **One active pending envelope per room.** History persists, but only one

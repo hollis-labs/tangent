@@ -94,10 +94,21 @@ for byte, however many times you ask.
    pending receipt itself was lost: you do not need to have kept the handle,
    only the request you made.
 
-`requester_scope` is `standalone-local` for direct loopback MCP callers. That
-scope is recorded explicitly and honestly: a loopback call carries no
-authenticated identity, and Tangent does not pretend otherwise. Scoped
-authorization arrives with `CW-20260825-0075`.
+`requester_scope` resolves to `standalone-local:anonymous` for a direct
+loopback MCP caller that declares no application id — `"standalone-local"`
+still reads as exactly that, through a fixed alias with no data rewrite. The
+argument is still accepted, but it is no longer the authorization value: the
+authority half is assigned by the host from admission facts, and only the
+partition half is caller-supplied
+([ADR 0004](adr/0004-caller-participant-and-room-access-authority.md) §3).
+
+The scope is recorded honestly: a loopback call carries no authenticated
+identity, and Tangent does not pretend otherwise. **Partitions inside
+`standalone-local` are advisory, not a security boundary** — any local caller
+can assert any partition, and isolation is enforced only across authorities.
+A retrieval is authorized against the interaction's own caller scope or its
+surface's owner scope; cross-authority reads return `not_found` rather than
+`unauthorized`, so a foreign authority cannot probe for existence.
 
 ## Identity, retries, and conflicts
 

@@ -133,16 +133,6 @@ func (s *Server) RestoreRoomPresentations(ctx context.Context) (roomflow.Restore
 	return s.roomflow.RestorePresentations(ctx)
 }
 
-// callerIdentity derives the durable caller scope for one tool call.
-//
-// Direct loopback MCP carries no authenticated adapter identity today, so the
-// unverified standalone-local scope is persisted explicitly rather than
-// inferred or dressed up. CW-20260825-0075 supplies scoped authorization; when
-// it lands, this is the single place an adapter-provided identity is read.
-func callerIdentity(_ *mcpsdk.CallToolRequest) interaction.ActorBinding {
-	return roomflow.DefaultCaller
-}
-
 // advanceRoomEnvelopeDurable runs one named workflow through the canonical
 // substrate.
 func (s *Server) advanceRoomEnvelopeDurable(
@@ -223,18 +213,22 @@ func (s *Server) handleInteractionAcknowledge(
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.AcknowledgeTerminalOutcome(ctx, interaction.AcknowledgeTerminalOutcomeInput{
 		InteractionID:        input.InteractionID,
-		RequesterScope:       input.RequesterScope,
+		RequesterScope:       requesterScope(input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
 }
 
 // closeRoomDurably terminalizes a room's outstanding interactions under the
 // named surface policy before the room's own projection is torn down.
-func (s *Server) closeRoomDurably(ctx context.Context, roomID, status string) error {
+func (s *Server) closeRoomDurably(
+	ctx context.Context,
+	roomID, status string,
+	caller interaction.ActorBinding,
+) error {
 	if s.roomflow == nil {
 		return nil
 	}
-	err := s.roomflow.CloseRoom(ctx, roomID, status, roomflow.DefaultCaller)
+	err := s.roomflow.CloseRoom(ctx, roomID, status, caller)
 	if err == nil || errors.Is(err, interaction.ErrNotFound) {
 		return nil
 	}
