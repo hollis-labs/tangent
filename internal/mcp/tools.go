@@ -21,10 +21,9 @@ import (
 // installed).
 const errorCodeNotWired = "NOT_WIRED"
 
-// errorCodeRoomDisconnected is surfaced when the WS-bridged Room loses
-// its peer mid-envelope (tab closed, network drop). Distinct from
-// host-error so MCP clients can tell "your UI went away" from
-// generic server failures.
+// errorCodeRoomDisconnected remains the compatibility code for an explicit
+// Room/Manager close while work is pending. WebSocket loss alone no longer
+// closes a Room or terminalizes its interaction.
 const errorCodeRoomDisconnected = "ROOM_DISCONNECTED"
 
 // workflowEntry is the per-workflow record returned from

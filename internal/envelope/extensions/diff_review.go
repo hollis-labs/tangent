@@ -24,8 +24,7 @@ func RegisterDiffReview(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(diffReviewManifest, diffReviewSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(DiffReviewEnvelopeType, diffReviewManifest, diffReviewSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register diff-review: %w", err)
 	}
 	return nil

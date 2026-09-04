@@ -81,6 +81,7 @@ describe("ws-client", () => {
         JSON.stringify({
           type: "envelope",
           envelopeId: "old-env",
+          revision: 1,
           envelope: { stale: true },
         }),
       );
@@ -95,15 +96,45 @@ describe("ws-client", () => {
         JSON.stringify({
           type: "envelope",
           envelopeId: "new-env",
+          revision: 2,
           envelope: { fresh: true },
         }),
       );
       second.emitClose(1000, "done");
 
       expect(onOpen).toHaveBeenCalledTimes(1);
-      expect(onEnvelope).toHaveBeenCalledWith("new-env", { fresh: true });
+      expect(onEnvelope).toHaveBeenCalledWith("new-env", { fresh: true }, 2);
       expect(onClose).toHaveBeenCalledWith("done");
       expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+
+  it("echoes the presentation revision on response and cancel frames", () => {
+    const originalWS = globalThis.WebSocket;
+    Object.assign(MockWebSocket, { instances: [] });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    try {
+      const client = connect("room-a", {
+        wsURL: "ws://example.test/ws",
+        onEnvelope: vi.fn(),
+      });
+      const socket = MockWebSocket.instances[0];
+      socket.emitOpen();
+
+      expect(client.submitResponse("env-1", { ok: true }, 7)).toBe(true);
+      expect(client.cancel("env-2", 8)).toBe(true);
+
+      expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
+        { type: "response", envelopeId: "env-1", revision: 7, response: { ok: true } },
+        { type: "cancel", envelopeId: "env-2", revision: 8 },
+      ]);
+
+      socket.readyState = MockWebSocket.CLOSING;
+      expect(client.cancel("env-3", 9)).toBe(false);
     } finally {
       vi.unstubAllGlobals();
       globalThis.WebSocket = originalWS;

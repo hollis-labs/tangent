@@ -3,7 +3,6 @@ package ws_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -114,6 +113,7 @@ func TestHandler_UpgradeAndPush(t *testing.T) {
 	writeFrame(t, clientConn, map[string]any{
 		"type":       "response",
 		"envelopeId": "h-1",
+		"revision":   frame["revision"],
 		"response": map[string]any{
 			"v":          1,
 			"envelopeId": "h-1",
@@ -132,9 +132,10 @@ func TestHandler_UpgradeAndPush(t *testing.T) {
 	}
 }
 
-// TestHandler_DisconnectFailsPending — client closes the conn mid-Push
-// → the WS handler closes the Room, Push returns ErrRoomDisconnected.
-func TestHandler_DisconnectFailsPending(t *testing.T) {
+// TestHandler_DisconnectPreservesPending — client transport loss changes only
+// connection state. A replacement connection receives the pending envelope at
+// a newer revision and can resolve the original Push.
+func TestHandler_DisconnectPreservesPending(t *testing.T) {
 	mgr, base, cleanup := newTestRig(t)
 	defer cleanup()
 
@@ -154,24 +155,41 @@ func TestHandler_DisconnectFailsPending(t *testing.T) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		_, err := rm.Push(ctx, env)
-		pushDone <- err
+		_, pushErr := rm.Push(ctx, env)
+		pushDone <- pushErr
 	}()
 
-	_ = readFrame(t, clientConn, 2*time.Second)
+	first := readFrame(t, clientConn, 2*time.Second)
 	// Client slams the door.
 	_ = clientConn.Close(websocket.StatusGoingAway, "tab closed")
 
-	select {
-	case err := <-pushDone:
-		if err == nil {
-			t.Fatal("expected disconnect error, got nil")
-		}
-		if !errors.Is(err, room.ErrRoomDisconnected) {
-			t.Errorf("expected ErrRoomDisconnected, got %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Push hung after disconnect — Room did not propagate close")
+	replacement, _, err := websocket.Dial(dialCtx, wsURL(base, rm.ID), nil)
+	if err != nil {
+		t.Fatalf("replacement dial: %v", err)
+	}
+	defer replacement.Close(websocket.StatusNormalClosure, "test done")
+	replayed := readFrame(t, replacement, 2*time.Second)
+	if replayed["envelopeId"] != "h-drop" || replayed["revision"].(float64) <= first["revision"].(float64) {
+		t.Fatalf("replayed frame = %+v, first = %+v", replayed, first)
+	}
+	writeFrame(t, replacement, map[string]any{
+		"type":       "response",
+		"envelopeId": "h-drop",
+		"revision":   replayed["revision"],
+		"response": map[string]any{
+			"v":          1,
+			"envelopeId": "h-drop",
+			"kind":       "data",
+			"status":     "submitted",
+			"payload":    map[string]any{"reconnected": true},
+		},
+	})
+
+	if err := <-pushDone; err != nil {
+		t.Fatalf("Push after reconnect: %v", err)
+	}
+	if rm.IsClosed() || !rm.HasConn() {
+		t.Fatalf("reconnect state: closed=%v connected=%v", rm.IsClosed(), rm.HasConn())
 	}
 }
 
@@ -198,10 +216,11 @@ func TestHandler_Cancel(t *testing.T) {
 		pushDone <- err
 	}()
 
-	_ = readFrame(t, clientConn, 2*time.Second)
+	frame := readFrame(t, clientConn, 2*time.Second)
 	writeFrame(t, clientConn, map[string]any{
 		"type":       "cancel",
 		"envelopeId": "h-c",
+		"revision":   frame["revision"],
 	})
 
 	select {

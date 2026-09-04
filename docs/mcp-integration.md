@@ -53,7 +53,7 @@ collides. Expected startup logs:
 
 ```
 level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=38
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=44
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
@@ -99,6 +99,71 @@ sequence via `tangent.session_*`, `tangent.interview_question`,
 room URL, the browser resolves the workflow, and Claude receives the
 structured response back. Full walkthroughs live in the manual recipes
 under [`docs/manual-tests/`](./manual-tests/).
+
+## Durable HITL inbox
+
+The HITL inbox is a persistent asynchronous operation surface, separate from
+the room-backed `tangent.approval-queue` batch workflow. It exposes four MCP
+tools:
+
+- `tangent.hitl_enqueue` stores one approval or persistent-attention item and
+  immediately returns its durable `item_id`, global FIFO `queue_sequence`,
+  current `queue_position`, `/hitl`, and an item deep link.
+- `tangent.hitl_get` retrieves the current item projection or its immutable
+  terminal outcome.
+- `tangent.hitl_await` waits 0–50,000 ms (30,000 ms by default). A timeout is a
+  successful `await/timeout` projection and never changes item lifecycle.
+- `tangent.hitl_withdraw` compare-and-sets one caller-owned item to
+  `canceled/caller_withdrawn`; repeating the same withdrawal returns the
+  original immutable outcome.
+
+The stable direct-loopback caller scope comes from `source.application_id` on
+enqueue and `caller.application_id` thereafter. Agent labels, MCP sessions,
+browser connections, and item URLs are not authority. Human resolution,
+terminal retrieval, and downstream delivery are separate durable facts;
+Tangent records the operator outcome but does not perform the caller's business
+transition. The complete v1 request, evidence, response, and error shapes are
+in [`contracts/hitl-inbox-v1.md`](./contracts/hitl-inbox-v1.md).
+The repo-local
+[`tangent-hitl-inbox` launcher](../.agents/skills/tangent-hitl-inbox/SKILL.md)
+defaults to asynchronous enqueue and keeps its complete request template plus
+direct Tangent and Tether native-flat copy/paste examples in one
+[`request-shapes` reference](../.agents/skills/tangent-hitl-inbox/references/request-shapes.md).
+
+The operator opens `http://127.0.0.1:7842/hitl` (or the returned item deep
+link). Pending approvals and attention items remain in one durable FIFO order
+while the operator inspects them; kind filters are projections of that ledger.
+Each approval is committed immediately with Approve, Deny, or the corresponding
+non-empty-note variant. Attention items remain pending until withdrawn or
+committed as Acknowledged, optionally with a non-empty note or reply. An
+acknowledgement records receipt only and never performs the caller's business
+transition. There is no batch submit boundary, in-app toast, new-window
+behavior, OS notification, or other notification side channel.
+The page resynchronizes from SQLite after live revision hints, refresh, or a
+reconnected browser, and reports a stale-tab conflict without replaying the
+outcome.
+The full operator exercise is in
+[`manual-tests/hitl-inbox-e2e.md`](./manual-tests/hitl-inbox-e2e.md).
+
+Tether discovers these names dynamically. For native-flat gateway use, run its
+proxy with `mux mcp --proxy --only tangent`. The currently tested adapter's
+`mux_call` fallback injects a top-level tracing field that strict v1 HITL
+schemas reject, so the native-flat route is the supported gateway path until
+trace propagation moves into MCP `_meta`. The adapter retains the schema object
+root, properties, required fields, and `$defs`, but omits top-level `allOf` and
+`oneOf` while adapting schemas through its MCP SDK. Tangent's upstream schema
+validation remains authoritative; callers must not treat the gateway's reduced
+discovery schema as permission to send a shape the v1 contract rejects.
+Native-flat forwarding does not itself authenticate request `source`; only a
+separately verified gateway binding can establish authenticated caller
+identity.
+
+The shipped evidence discriminators are `markdown`, `text`, `diff`,
+`tangent_reference`, and `artifact_ref`. Inline content is bounded and
+sanitized. Tangent references are read-only durable projections. Artifact
+metadata becomes previewable only through an explicitly registered
+authority/capability adapter; a path, `file:` URI, or agent's ambient access is
+never retrieval authority.
 
 ## Cursor
 
@@ -149,22 +214,35 @@ curl -fsS -X POST http://localhost:7842/mcp \
   | jq '.result.tools[].name'
 ```
 
-Expected:
+The production binary currently advertises **39 tools**: 25 room/workflow and
+session compatibility tools, 10 generic durable surface/interaction tools, and
+4 HITL inbox operations. Expected names from the shipped build:
 
 ```
-"tangent.design-iteration"
+"tangent.approval-queue"
+"tangent.block_draft"
 "tangent.dashboard"
+"tangent.design-iteration"
 "tangent.diff-review"
 "tangent.feedback"
 "tangent.file-picker"
-"tangent.progress-panel"
 "tangent.form-collect"
+"tangent.hitl_await"
+"tangent.hitl_enqueue"
+"tangent.hitl_get"
+"tangent.hitl_withdraw"
+"tangent.interaction_await"
+"tangent.interaction_cancel"
+"tangent.interaction_get"
+"tangent.interaction_list_kinds"
+"tangent.interaction_resolve_definition"
+"tangent.interaction_submit"
+"tangent.interaction_supersede"
 "tangent.interview_question"
 "tangent.list_workflows"
-"tangent.block_draft"
-"tangent.prose_revision"
 "tangent.output_render"
-"tangent.approval-queue"
+"tangent.progress-panel"
+"tangent.prose_revision"
 "tangent.session_advance"
 "tangent.session_advance_phase"
 "tangent.session_close"
@@ -173,11 +251,20 @@ Expected:
 "tangent.session_list"
 "tangent.session_set_phase_output"
 "tangent.spreadsheet-review"
+"tangent.surface_close"
+"tangent.surface_get"
+"tangent.surface_open"
 "tangent.synthesis_notes"
 "tangent.triage"
-"tangent.wizard"
 "tangent.whiteboard"
+"tangent.wizard"
 ```
+
+`tangent.list_workflows` currently returns 17 dispatcher-backed room workflow
+definitions. It intentionally excludes the non-renderer `tangent.hitl-item`
+interaction definition; clients discover the four HITL operations in the MCP
+tool catalog and their 40 named request/result/evidence definitions in the
+strict schema bundle.
 
 One-shot probes for the new surfaces:
 

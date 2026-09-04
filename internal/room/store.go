@@ -85,7 +85,11 @@ func (m *Manager) persistRoomCreate(room *Room) error {
 	return nil
 }
 
-func (m *Manager) timeoutStalePendingEnvelopes(ctx context.Context) error {
+// reconcilePendingEnvelopesAfterRestart applies the compatibility policy only
+// to legacy rows that have no canonical durable interaction owner. Canonical
+// staged, presented, draft-bearing, or terminal records recover through the
+// interaction service and must not be rewritten into transport timeouts.
+func (m *Manager) reconcilePendingEnvelopesAfterRestart(ctx context.Context) error {
 	now := nowUTC()
 	errorPayload, err := marshalJSONText(map[string]any{
 		"code":    errorCodeServerRestart,
@@ -96,14 +100,20 @@ func (m *Manager) timeoutStalePendingEnvelopes(ctx context.Context) error {
 	}
 
 	_, err = m.db.ExecContext(ctx, `
-UPDATE envelopes
+UPDATE envelopes AS e
 SET response_kind = ?,
     response_payload = ?,
     status = ?,
     error_code = ?,
     error_message = ?,
     resolved_at = ?
-WHERE status = ?`,
+WHERE status = ?
+  AND NOT EXISTS (
+    SELECT 1
+    FROM interactions i
+    WHERE i.legacy_room_id = e.room_id
+      AND i.legacy_envelope_id = e.envelope_id
+  )`,
 		string(envelopes.ResponseKindError),
 		errorPayload,
 		envelopeStatusTimeout,
@@ -113,7 +123,7 @@ WHERE status = ?`,
 		envelopeStatusPending,
 	)
 	if err != nil {
-		return fmt.Errorf("timeout stale pending envelopes: %w", err)
+		return fmt.Errorf("reconcile legacy pending envelopes after restart: %w", err)
 	}
 	return nil
 }
@@ -571,7 +581,7 @@ func (r *Room) persistEnvelopeFinalState(
 	}
 	defer rollbackTx(tx)
 
-	if _, err := tx.ExecContext(
+	result, err := tx.ExecContext(
 		context.Background(),
 		`UPDATE envelopes
 SET response_kind = ?,
@@ -580,7 +590,7 @@ SET response_kind = ?,
     error_code = ?,
     error_message = ?,
     resolved_at = ?
-WHERE room_id = ? AND envelope_id = ?`,
+WHERE room_id = ? AND envelope_id = ? AND status = 'pending'`,
 		nullIfEmpty(responseKind),
 		nullStringPtr(responsePayload),
 		status,
@@ -589,8 +599,16 @@ WHERE room_id = ? AND envelope_id = ?`,
 		now,
 		r.ID,
 		envelopeID,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("update envelope final state: %w", err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read envelope final-state rows affected: %w", err)
+	}
+	if updated != 1 {
+		return fmt.Errorf("update envelope final state: expected one pending row, updated %d", updated)
 	}
 	if _, err := tx.ExecContext(
 		context.Background(),

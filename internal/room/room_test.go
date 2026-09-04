@@ -1540,7 +1540,7 @@ WHERE id = ?`,
 	}
 }
 
-func TestRoom_PushDisconnect(t *testing.T) {
+func TestRoom_ExplicitCloseTerminatesAndAuditsPending(t *testing.T) {
 	rm, clientConn, db, cleanup := newTestServer(t)
 	defer cleanup()
 
@@ -1555,8 +1555,7 @@ func TestRoom_PushDisconnect(t *testing.T) {
 	}()
 
 	_ = readClientFrame(t, clientConn, 2*time.Second)
-	_ = clientConn.Close(websocket.StatusGoingAway, "closing")
-	rm.Close("client disconnected")
+	rm.Close("operator closed surface")
 
 	select {
 	case res := <-pushDone:
@@ -1567,7 +1566,7 @@ func TestRoom_PushDisconnect(t *testing.T) {
 			t.Errorf("expected ErrRoomDisconnected, got %v", res.err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Push hung after disconnect")
+		t.Fatal("Push hung after explicit surface close")
 	}
 
 	assertEnvelopeStatus(t, db, rm.ID, env.ID, "error", "ROOM_DISCONNECTED", true)
@@ -1640,6 +1639,74 @@ VALUES (?, ?, ?, ?, ?, ?)`,
 		t.Fatal("expected hydrated room to be present")
 	}
 	assertEnvelopeStatus(t, db, "room-stale", "env-stale", "timeout", "SERVER_RESTART", true)
+}
+
+func TestManager_Hydrate_DoesNotTimeoutCanonicalPendingInteraction(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	now := time.Now().UTC()
+	if _, err := db.Exec(`
+INSERT INTO rooms (id, meta, created_at, updated_at)
+VALUES ('room-canonical-recovery', '{"test":"canonical-recovery"}', ?, ?)`, now, now); err != nil {
+		t.Fatalf("insert room: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO envelopes (room_id, envelope_id, type, request_payload, status, created_at)
+VALUES ('room-canonical-recovery', 'env-canonical-recovery', 'tangent.triage',
+        '{"prompt":"recover durably"}', 'pending', ?)`, now); err != nil {
+		t.Fatalf("insert pending envelope: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO surfaces (
+  id, owner_scope, lifecycle_state, metadata, policy,
+  next_interaction_sequence, revision, created_at, updated_at, legacy_room_id
+) VALUES (
+  'surface-canonical-recovery', 'operator:local', 'active', '{}', '{}',
+  2, 1, ?, ?, 'room-canonical-recovery'
+)`, now, now); err != nil {
+		t.Fatalf("insert canonical surface: %v", err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO interactions (
+  id, surface_id, caller_scope, caller_authority, caller_assurance,
+  idempotency_key, surface_sequence, request_snapshot, external_refs, policy,
+  lifecycle_state, revision, created_at, updated_at,
+  legacy_room_id, legacy_envelope_id
+) VALUES (
+  'interaction-canonical-recovery', 'surface-canonical-recovery',
+  'application:test', 'direct-mcp', 'asserted',
+  'canonical-recovery', 1, '{"prompt":"recover durably"}', '{}', '{}',
+  'staged', 3, ?, ?, 'room-canonical-recovery', 'env-canonical-recovery'
+)`, now, now); err != nil {
+		t.Fatalf("insert canonical interaction: %v", err)
+	}
+
+	mgr := room.NewManager(db)
+	if err := mgr.Hydrate(context.Background()); err != nil {
+		t.Fatalf("Hydrate: %v", err)
+	}
+	var status string
+	var resolvedAt sql.NullTime
+	if err := db.QueryRow(`
+SELECT status, resolved_at FROM envelopes
+WHERE room_id = 'room-canonical-recovery' AND envelope_id = 'env-canonical-recovery'`).Scan(
+		&status,
+		&resolvedAt,
+	); err != nil {
+		t.Fatalf("read compatibility envelope: %v", err)
+	}
+	if status != "pending" || resolvedAt.Valid {
+		t.Fatalf("canonical pending compatibility row = status %q resolved=%v", status, resolvedAt.Valid)
+	}
+	var canonicalState string
+	if err := db.QueryRow(`
+SELECT lifecycle_state FROM interactions WHERE id = 'interaction-canonical-recovery'`).Scan(&canonicalState); err != nil {
+		t.Fatalf("read canonical interaction: %v", err)
+	}
+	if canonicalState != "staged" {
+		t.Fatalf("canonical interaction state = %q, want staged", canonicalState)
+	}
 }
 
 func TestRoom_PhaseStatePersistsAndHydrates(t *testing.T) {

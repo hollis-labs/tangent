@@ -22,6 +22,8 @@ import (
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -181,11 +183,47 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tangent: register synthesis-notes extension: %v\n", regErr)
 		os.Exit(1)
 	}
+	if regErr := extensions.RegisterHITLItem(envSvc); regErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: register hitl-item extension: %v\n", regErr)
+		os.Exit(1)
+	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
 
 	// Dispatcher is shared across transports. PR 4 registers the
 	// triage handler that bridges to a WebSocket-connected room.
 	dispatcher := envelope.NewDispatcher(envSvc)
+	interactionService, interactionErr := interaction.NewService(
+		interaction.NewStore(sqlDB),
+		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion),
+		interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
+	)
+	if interactionErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build interaction service: %v\n", interactionErr)
+		os.Exit(1)
+	}
+	hitlService, hitlErr := hitl.NewService(interactionService)
+	if hitlErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: build hitl service: %v\n", hitlErr)
+		os.Exit(1)
+	}
+	recovery, recoveryErr := interactionService.RecoverAfterRestart(context.Background())
+	if recoveryErr != nil {
+		fmt.Fprintf(os.Stderr, "tangent: recover durable interactions: %v\n", recoveryErr)
+		os.Exit(1)
+	}
+	logger.Info(
+		"recovered durable interactions",
+		"staged", recovery.Staged,
+		"presented", recovery.Presented,
+		"draft_bearing", recovery.DraftBearing,
+		"resolved_undelivered", recovery.ResolvedUndelivered,
+		"delivered_unacknowledged", recovery.DeliveredUnacknowledged,
+		"preserved_terminal_interactions", recovery.PreservedTerminalInteractions,
+		"terminal_failed_deliveries", recovery.TerminalFailedDeliveries,
+		"interrupted_deliveries", recovery.InterruptedDeliveries,
+		"immediately_retryable", recovery.ImmediatelyRetryable,
+		"manual_reconciliation_required", recovery.ManualReconciliationRequired,
+	)
 
 	// Room manager + WS handler — the bridge between MCP envelopes and
 	// browser tabs. Created before the MCP server so the triage
@@ -201,7 +239,14 @@ func main() {
 	// hint we log when triage creates a room resolves correctly even
 	// on IPv6-preferring systems where "localhost" lands on ::1.
 	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", *port)
-	mcpSrv, err := mcp.New(envSvc, dispatcher, roomMgr, roomURLBase)
+	mcpSrv, err := mcp.New(
+		envSvc,
+		dispatcher,
+		roomMgr,
+		roomURLBase,
+		mcp.WithInteractionService(interactionService),
+		mcp.WithHITLService(hitlService),
+	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
 		// surface as part of its v0.1 contract, so booting without it
@@ -287,6 +332,7 @@ func main() {
 		MCP:            mcpSrv,
 		WSHandler:      wsHandler,
 		RoomManager:    roomMgr,
+		HITL:           hitlService,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", err)

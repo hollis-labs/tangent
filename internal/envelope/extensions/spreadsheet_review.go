@@ -24,8 +24,7 @@ func RegisterSpreadsheetReview(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(spreadsheetReviewManifest, spreadsheetReviewSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(SpreadsheetReviewEnvelopeType, spreadsheetReviewManifest, spreadsheetReviewSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register spreadsheet-review: %w", err)
 	}
 	return nil

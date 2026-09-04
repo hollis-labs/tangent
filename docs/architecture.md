@@ -63,7 +63,8 @@ the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
 workflow needs it.
 
-The current build advertises 25 tools:
+The production build advertises 39 tools. Its compatibility surface contains
+these 25 room/workflow and session tools:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -91,13 +92,61 @@ The current build advertises 25 tools:
 - `tangent.session_close`
 - `tangent.session_list`
 
+The generic durable substrate adds 10 handle-based tools:
+
+- `tangent.interaction_list_kinds`
+- `tangent.interaction_resolve_definition`
+- `tangent.surface_open`
+- `tangent.surface_get`
+- `tangent.surface_close`
+- `tangent.interaction_submit`
+- `tangent.interaction_get`
+- `tangent.interaction_await`
+- `tangent.interaction_cancel`
+- `tangent.interaction_supersede`
+
+The reserved operator inbox adds four stricter adapters:
+
+- `tangent.hitl_enqueue`
+- `tangent.hitl_get`
+- `tangent.hitl_await`
+- `tangent.hitl_withdraw`
+
 ### WebSocket bridge with per-room state
 
 `internal/server/ws_*.go` — the SPA opens a WS connection scoped to the
-room ID; the bridge sends the active envelope, receives the user's
-response, and resolves the waiting MCP call. Rooms are independent, so
-multiple agent sessions can have active Tangent windows concurrently
-without cross-talk.
+room ID; the bridge presents active envelopes with a monotonically increasing
+presentation revision, receives the user's revision-pinned response, and
+resolves the waiting MCP call. A socket is a replaceable attachment: pending
+work is replayed at a fresh revision after refresh or reconnect, while replaced
+or stale presentations cannot resolve it. Rooms are independent, so multiple
+agent sessions can have active Tangent windows concurrently without cross-talk.
+
+### Durable HITL operator surface
+
+`internal/hitl/` owns the persistent operator inbox at `/hitl`, independently
+of room and browser lifecycles. The SPA reads a dedicated localhost API under
+`/api/hitl`: one snapshot supplies the global pending FIFO and a separate
+terminal history, item deep links inspect without recording caller retrievals,
+and revision-pinned present/resolve commands commit exactly one item. The
+browser adapter exposes the durable presented-projection token outside the
+strict caller contract so refresh and restart can safely resume a decision.
+The API rejects non-loopback hosts and cross-origin browser requests, including
+same-origin DNS-rebinding attempts; command bodies must be JSON.
+
+Inbox refreshes use one SQLite read transaction containing only the surface,
+interactions, and terminal resolutions. Queue positions are derived from that
+same immutable snapshot, avoiding mixed-revision projections without loading
+delivery and audit journals that the operator view does not render.
+
+`GET /api/hitl/events` carries revision hints only. Each hint causes the SPA to
+reload durable state; an event is never treated as the state itself. Lost or
+replaced connections therefore cannot resolve, reorder, or discard work, and a
+stale tab receives an explicit conflict instead of overwriting the winning
+terminal outcome. A failed durable refresh closes the stream so the browser
+reports a degraded connection and retries. This channel is intentionally
+separate from both per-room `/ws` and the four caller-facing
+`tangent.hitl_*` MCP tools.
 
 ### Persistence layer
 
@@ -108,6 +157,20 @@ resolved envelope history in SQLite at `~/.tangent/tangent.db`
 migrations, hydrates prior room state into the manager, and keeps active
 in-memory `Pending` state only for envelopes that are currently awaiting
 a browser response.
+
+Canonical interactions recover independently from those compatibility room
+waiters. Startup preserves staged, presented, draft-bearing, resolved, and
+delivered-but-unacknowledged records. An abandoned delivery lease is sealed as
+an outcome-unknown attempt: caller-pull and explicitly idempotent destinations
+can be claimed again with the same durable idempotency key, while destinations
+without a safe replay policy remain paused for reconciliation. Legacy pending
+envelopes with no canonical interaction retain the predictable
+`SERVER_RESTART` timeout projection.
+
+A delivery claim commits its lease, open attempt record, and `delivery.started`
+event before an adapter can perform destination I/O. Completion or restart
+seals that attempt exactly once and appends the corresponding outcome event in
+the same transaction as the delivery revision transition.
 
 Rooms also carry first-class workflow phase state:
 
@@ -258,13 +321,18 @@ precedent).
 
 ### go-envelopes registry
 
-`github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the
-shared envelope catalog. Tangent loads it at startup and prints a
-`loaded envelope types count=26` line on boot. Tangent extends the
-catalog with `tangent.triage` via the plugin extension API rather than
-forking the registry. The `ui/src/generated/envelope-types.ts` file is
-codegen'd from this catalog (`make generate-envelopes`); CI gates on
-staleness via `make check-envelopes`.
+`github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared
+envelope catalog. Tangent loads 26 core definitions, then registers its own
+extensions—including the non-renderer `tangent.hitl-item` interaction
+definition—for 44 definitions in the shipped process. Extensions use the
+plugin API rather than forking the registry.
+
+`ui/src/generated/envelope-types.ts` is generated from the 26 upstream core
+definitions (`make generate-envelopes`) and CI gates it with
+`make check-envelopes`. Tangent-owned workflow schemas remain alongside their
+extension registrations. The strict HITL request/result bundle is
+`internal/envelope/extensions/hitl_item_schema.json`; the dedicated `/hitl`
+client types live with `ui/src/lib/hitl-api.ts` and the evidence component.
 
 ## Wails note
 
@@ -328,8 +396,8 @@ single ephemeral handoff. The key pieces are:
 
 Each room still owns exactly one active WebSocket attachment at a time.
 Switching rooms in the SPA closes the current socket and reattaches to
-the next room. If the browser tab is closed mid-envelope, the SPA makes
-a best-effort cancel during `beforeunload`; browsers do not guarantee
-that async work completes there, so the hook is a UX improvement rather
-than a hard delivery guarantee. The server-side room timeout/cancel path
-remains the correctness backstop for abandoned envelopes.
+the next room. Switching routes, refreshing, closing the browser, or losing
+transport changes connection state only; it does not cancel or close pending
+work. Reopening a room replays its active envelope at a fresh presentation
+revision. Explicit workflow cancellation and explicit surface/room close remain
+terminal operations.

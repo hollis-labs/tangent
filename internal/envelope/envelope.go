@@ -13,8 +13,10 @@
 package envelope
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sync"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
 )
@@ -29,7 +31,18 @@ import (
 // it. The registry is moderately expensive to load (it parses YAML and
 // compiles ~25 JSON Schemas) so creation is reserved for startup.
 type Service struct {
-	registry *envelopes.Registry
+	registry   *envelopes.Registry
+	materialMu sync.RWMutex
+	materials  map[string]DefinitionMaterial
+}
+
+// DefinitionMaterial is the exact source material used to register a plugin
+// definition. Compiled registry schemas do not retain source bytes, so the
+// interaction service uses this copy to create content-addressed bindings.
+type DefinitionMaterial struct {
+	Manifest      []byte
+	RequestSchema []byte
+	ResponseKind  string
 }
 
 // New constructs a Service backed by go-envelopes' core catalog. ctx is
@@ -45,7 +58,7 @@ func New(ctx context.Context) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("envelope: load core registry: %w", err)
 	}
-	return &Service{registry: reg}, nil
+	return &Service{registry: reg, materials: make(map[string]DefinitionMaterial)}, nil
 }
 
 // Registry returns the underlying *envelopes.Registry. Exposed primarily
@@ -53,6 +66,45 @@ func New(ctx context.Context) (*Service, error) {
 // future plugin-extension wiring (PR 5). Day-to-day callers should prefer
 // the typed Validate/Dispatch methods on Service.
 func (s *Service) Registry() *envelopes.Registry { return s.registry }
+
+// RegisterTypeFromManifest registers one plugin type and retains the exact
+// manifest/schema bytes required for immutable definition binding.
+func (s *Service) RegisterTypeFromManifest(
+	name string,
+	manifest []byte,
+	requestSchema []byte,
+	pluginID string,
+) error {
+	if err := s.registry.RegisterTypeFromManifest(manifest, requestSchema, pluginID); err != nil {
+		return err
+	}
+	spec, ok := s.registry.Lookup(name)
+	if !ok {
+		return fmt.Errorf("envelope: registered definition %q was not found", name)
+	}
+	s.materialMu.Lock()
+	s.materials[name] = DefinitionMaterial{
+		Manifest: bytes.Clone(manifest), RequestSchema: bytes.Clone(requestSchema),
+		ResponseKind: string(spec.ResponseKind),
+	}
+	s.materialMu.Unlock()
+	return nil
+}
+
+// LookupDefinitionMaterial returns a defensive copy of exact registration
+// material. Core definitions currently lack source bytes in go-envelopes and
+// deliberately return false rather than fabricating a content digest.
+func (s *Service) LookupDefinitionMaterial(name string) (DefinitionMaterial, bool) {
+	s.materialMu.RLock()
+	material, ok := s.materials[name]
+	s.materialMu.RUnlock()
+	if !ok {
+		return DefinitionMaterial{}, false
+	}
+	material.Manifest = bytes.Clone(material.Manifest)
+	material.RequestSchema = bytes.Clone(material.RequestSchema)
+	return material, true
+}
 
 // Validate checks env against its registered type's schema. Returns nil
 // on success, errors.Is(err, envelopes.ErrUnknownType) for unknown types,

@@ -534,6 +534,12 @@ Workflow-named MCP tools can remain useful ergonomic adapters. They should be
 generated or registered projections of the same interaction contract, not
 independent implementations with separate persistence and lifecycle meaning.
 
+The first concrete contract on this model is the versioned
+[HITL Inbox item contract](./contracts/hitl-inbox-v1.md). It defines approval
+and persistent-attention requests, evidence references, immutable resolutions,
+and handle-based retrieval without giving Tangent authority over downstream
+business transitions.
+
 ### Synchronous and asynchronous callers
 
 Human interaction can outlive an MCP HTTP request, agent turn, transport
@@ -1300,12 +1306,14 @@ advance avoids ambiguous responses. Encoding those choices into the Room
 object prevents observer connections, robust multi-tab synchronization,
 background live updates, and explicit resolver leases.
 
-### Pending interactions are process-local
+### Legacy response waiters are process-local
 
-Pending response channels and claims live in memory. On restart, persisted
-pending envelopes are converted to timeouts. Durable staged interactions and
-resolution delivery obligations should survive restart according to their own
-expiry policy.
+Legacy room response channels live in memory, and legacy-only pending envelopes
+retain the `SERVER_RESTART` timeout projection. Canonical staged, presented,
+draft-bearing, resolved-undelivered, and delivered-unacknowledged interactions
+survive restart. Abandoned delivery claims are recorded as outcome-unknown;
+only caller-pull or explicitly idempotent policies become eligible again
+automatically, while unknown external effects pause for reconciliation.
 
 ### A room is described as an agent session
 

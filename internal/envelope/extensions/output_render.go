@@ -24,8 +24,7 @@ func RegisterOutputRender(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(outputRenderManifest, outputRenderSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(OutputRenderEnvelopeType, outputRenderManifest, outputRenderSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register output-render: %w", err)
 	}
 	return nil

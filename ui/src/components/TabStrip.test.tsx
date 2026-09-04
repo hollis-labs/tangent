@@ -51,6 +51,32 @@ describe("<TabStrip>", () => {
     expect(await screen.findByTestId("path-probe")).toHaveTextContent("/r/room-b");
   });
 
+  it("keeps the operator inbox addressable independently of rooms", async () => {
+    mockFetchSequence([{ rooms: [] }]);
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route
+            path="*"
+            element={
+              <>
+                <TabStrip />
+                <PathProbe />
+              </>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Human input" }));
+    expect(await screen.findByTestId("path-probe")).toHaveTextContent("/hitl");
+    expect(screen.getByRole("button", { name: "Human input" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
   it("closing a room calls session_close and refreshes the list", async () => {
     mockFetchSequence([
       { rooms: [room("room-a", "Room A"), room("room-b", "Room B")] },

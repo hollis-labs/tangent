@@ -1,4 +1,4 @@
-# MCP smoke test (v0.1)
+# MCP smoke test
 
 A handful of curl probes against the Tangent MCP server. Used to verify a
 fresh build can answer `tools/list` and `tools/call` without spinning up
@@ -22,10 +22,10 @@ The MCP surface is mounted on the same port as the SPA:
 - SSE legacy: `http://localhost:7842/sse` (older Claude Code; long-lived
   event stream).
 
-In v0.1 the streamable handler runs in **stateless + JSONResponse** mode,
-which lets these one-shot curl probes succeed without first sending an
-`initialize` request. Stateful behaviour returns once a session-bound
-workflow needs it (post-PR 4).
+The streamable handler supports **stateless + JSONResponse** calls, which lets
+these one-shot curl probes succeed without first sending an `initialize`
+request. Room and interaction state is durable application state, not an MCP
+transport-session requirement.
 
 ## Probe 1 — tool catalog
 
@@ -34,10 +34,12 @@ curl -fsS -X POST http://localhost:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
-# Expected: 2
+# Expected: 39
 ```
 
-Two tools today: `tangent.list_workflows` and `tangent.triage`.
+The build-derived grouping is 25 room/workflow compatibility tools, 10 generic
+durable interaction tools, and 4 strict HITL inbox operations. See the exact
+name list in [`mcp-integration.md`](./mcp-integration.md#verification-no-agent-required).
 
 ## Probe 2 — list_workflows
 
@@ -48,10 +50,11 @@ curl -fsS -X POST http://localhost:7842/mcp \
   | jq '.result'
 ```
 
-PR 3 has no dispatcher handlers wired yet, so `workflows` is `[]`. PR 4
-adds `triage`, after which the array is non-empty.
+The result contains the registered envelope workflow definitions. The durable
+HITL operations are discovered through `tools/list`; `tangent.hitl-item` is an
+interaction definition rather than a room workflow launcher.
 
-## Probe 3 — triage NOT_WIRED
+## Probe 3 — strict schema rejection
 
 ```bash
 curl -fsS -X POST http://localhost:7842/mcp \
@@ -63,17 +66,11 @@ curl -fsS -X POST http://localhost:7842/mcp \
 Expected response:
 
 - `isError: true`
-- `content[0].text` is a JSON envelope-error frame with
-  `error.code == "NOT_WIRED"`.
+- the error identifies the invalid `type`/payload before any room is created.
 
-This is the v0.1 contract. In PR 3 the wire-shape gate is the MCP
-tool's hand-rolled JSON Schema (see `internal/mcp/triage_schema.go`):
-`triage` is not in go-envelopes v0.1.0's core registry, so
-`Service.Validate` returns `ErrUnknownType` and the tool collapses that
-(and the later `ErrNoHandler` case) into a single `NOT_WIRED` response
-so MCP clients see a stable contract regardless of which layer reports
-it. PR 4 registers `triage` via the plugin extension API and turns this
-path into a real triage flow.
+The valid tool pins `type: "tangent.triage"` and requires the complete triage
+shape. This deliberately invalid probe confirms schema enforcement without
+opening a browser workflow.
 
 ## Optional — MCP Inspector
 

@@ -1,0 +1,986 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.hollis-labs.dev/tangent/hitl-item/1.0/schema.json",
+  "title": "Tangent HITL Inbox contract v1.0",
+  "description": "The root validates a tangent.hitl-item request. Reusable definitions specify commands and results for durable HITL adapters.",
+  "$ref": "#/$defs/HITLItemRequestV1",
+  "$defs": {
+    "SourceAssertionV1": {
+      "type": "object",
+      "description": "Caller-supplied source labels. In the loopback v1 slice every value is asserted, not authenticated; verified transport bindings are stored separately.",
+      "required": ["application_id", "agent_id"],
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "application_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "agent_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      },
+      "additionalProperties": false
+    },
+    "CallerAssertionV1": {
+      "type": "object",
+      "description": "Stable application-level caller assertion used to resolve the durable caller scope. Direct loopback treats it as asserted; a verified gateway binding is authoritative and the assertion becomes correlation only.",
+      "required": ["application_id"],
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "principal_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExternalRefV1": {
+      "type": "object",
+      "required": ["authority", "id"],
+      "properties": {
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "System that owns and interprets the reference."
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "AdditionalCorrelationV1": {
+      "type": "object",
+      "required": ["kind", "authority", "id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["agent", "turn", "workflow_run", "step", "conversation", "business_object", "other"]
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "CorrelationsV1": {
+      "type": "object",
+      "properties": {
+        "project": { "$ref": "#/$defs/ExternalRefV1" },
+        "task": { "$ref": "#/$defs/ExternalRefV1" },
+        "session": { "$ref": "#/$defs/ExternalRefV1" },
+        "additional": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/AdditionalCorrelationV1" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApprovalImpactV1": {
+      "type": "object",
+      "required": ["approve", "deny"],
+      "properties": {
+        "approve": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "deny": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApprovalActionLabelsV1": {
+      "type": "object",
+      "properties": {
+        "approve": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "approve_with_note": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "deny": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "deny_with_note": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "additionalProperties": false
+    },
+    "AttentionActionLabelsV1": {
+      "type": "object",
+      "properties": {
+        "acknowledge": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "acknowledge_with_note": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "reply": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "additionalProperties": false
+    },
+    "InlineMarkdownEvidenceV1": {
+      "type": "object",
+      "required": ["type", "label", "content"],
+      "properties": {
+        "type": { "type": "string", "enum": ["markdown"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 65536 }
+      },
+      "additionalProperties": false
+    },
+    "InlineTextEvidenceV1": {
+      "type": "object",
+      "required": ["type", "label", "content"],
+      "properties": {
+        "type": { "type": "string", "enum": ["text"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "language": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "additionalProperties": false
+    },
+    "InlineDiffEvidenceV1": {
+      "type": "object",
+      "required": ["type", "label", "content"],
+      "properties": {
+        "type": { "type": "string", "enum": ["diff"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 131072 },
+        "format": { "type": "string", "enum": ["unified"] },
+        "base_label": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "head_label": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "TangentReferenceEvidenceV1": {
+      "type": "object",
+      "required": ["type", "label", "surface_id"],
+      "properties": {
+        "type": { "type": "string", "enum": ["tangent_reference"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "surface_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      },
+      "additionalProperties": false
+    },
+    "ArtifactRefEvidenceV1": {
+      "type": "object",
+      "description": "Metadata for an authority-owned artifact. No filesystem path field exists; authority plus artifact_id is the identity.",
+      "required": ["type", "label", "authority", "artifact_id"],
+      "properties": {
+        "type": { "type": "string", "enum": ["artifact_ref"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "authority": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{0,511}$",
+          "description": "Opaque authority-local identifier, not a path or URI."
+        },
+        "revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "digest": { "type": "string", "minLength": 3, "maxLength": 256 },
+        "media_type": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "logical_kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sensitivity": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "restricted"]
+        },
+        "retrieval_capability_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "retention_policy": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "safe_preview_artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._@-]{0,511}$",
+          "description": "Opaque identifier owned by the same authority, not a path or URI."
+        }
+      },
+      "anyOf": [
+        { "required": ["revision"] },
+        { "required": ["digest"] }
+      ],
+      "additionalProperties": false
+    },
+    "EvidenceV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/InlineMarkdownEvidenceV1" },
+        { "$ref": "#/$defs/InlineTextEvidenceV1" },
+        { "$ref": "#/$defs/InlineDiffEvidenceV1" },
+        { "$ref": "#/$defs/TangentReferenceEvidenceV1" },
+        { "$ref": "#/$defs/ArtifactRefEvidenceV1" }
+      ]
+    },
+    "HITLItemRequestV1": {
+      "type": "object",
+      "required": ["contract_version", "kind", "idempotency_key", "title", "summary", "request", "source"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "kind": { "type": "string", "enum": ["approval", "attention"] },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$"
+        },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "request": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "source": { "$ref": "#/$defs/SourceAssertionV1" },
+        "recommendation": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "impact": true,
+        "action_labels": true,
+        "correlations": { "$ref": "#/$defs/CorrelationsV1" },
+        "details_markdown": { "type": "string", "minLength": 1, "maxLength": 65536 },
+        "evidence": {
+          "type": "array",
+          "maxItems": 24,
+          "items": { "$ref": "#/$defs/EvidenceV1" }
+        },
+        "expires_at": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "enum": ["approval"] } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "impact": { "$ref": "#/$defs/ApprovalImpactV1" },
+              "action_labels": { "$ref": "#/$defs/ApprovalActionLabelsV1" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "enum": ["attention"] } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "impact": false,
+              "action_labels": { "$ref": "#/$defs/AttentionActionLabelsV1" }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "kind": "approval",
+          "idempotency_key": "torque:CW-20260904-0012:r17",
+          "title": "Approve durable HITL service merge",
+          "summary": "The service now persists each operator decision independently.",
+          "request": "Approve or deny merging the durable HITL service change.",
+          "source": {
+            "application_id": "codex",
+            "agent_id": "msg://agent/codex/worker-7",
+            "agent_label": "Codex worker 7"
+          },
+          "recommendation": "Approve after the restart and concurrency tests pass.",
+          "impact": {
+            "approve": "The caller may choose to merge after receiving this resolution.",
+            "deny": "The caller keeps the change unmerged and decides its next task state."
+          },
+          "action_labels": {
+            "approve": "Approve",
+            "approve_with_note": "Approve with note",
+            "deny": "Deny",
+            "deny_with_note": "Deny with note"
+          },
+          "correlations": {
+            "project": { "authority": "torque", "id": "PRJ-20260825-0002", "label": "Tangent" },
+            "task": { "authority": "torque", "id": "CW-20260904-0012", "revision": "17" },
+            "session": { "authority": "nanite", "id": "session-01K4" }
+          },
+          "details_markdown": "### Checks\n\n- restart recovery\n- duplicate enqueue collapse",
+          "evidence": [
+            {
+              "type": "markdown",
+              "label": "Release notes",
+              "content": "**Scope:** durable inbox service only."
+            },
+            {
+              "type": "diff",
+              "label": "Service diff",
+              "format": "unified",
+              "content": "--- a/service.go\n+++ b/service.go\n@@ -1 +1 @@\n-old\n+new"
+            },
+            {
+              "type": "tangent_reference",
+              "label": "Earlier design review",
+              "surface_id": "surface_01K4",
+              "interaction_id": "interaction_01K4",
+              "revision": 4
+            },
+            {
+              "type": "artifact_ref",
+              "label": "Test report",
+              "authority": "torque",
+              "artifact_id": "artifact-544",
+              "digest": "sha256:1df0a9",
+              "media_type": "text/markdown",
+              "logical_kind": "test-report",
+              "size_bytes": 18342,
+              "sensitivity": "internal"
+            }
+          ],
+          "expires_at": "2026-09-11T18:00:00Z"
+        },
+        {
+          "contract_version": "1.0",
+          "kind": "attention",
+          "idempotency_key": "nanite:session-01K4:turn-28:attention-1",
+          "title": "Migration completed with one warning",
+          "summary": "All records migrated; one legacy row retained uncertain provenance.",
+          "request": "Acknowledge the warning, optionally leaving a note or reply.",
+          "source": {
+            "application_id": "nanite",
+            "agent_id": "release-agent",
+            "agent_label": "Release agent"
+          },
+          "action_labels": {
+            "acknowledge": "Seen",
+            "acknowledge_with_note": "Seen with note",
+            "reply": "Reply"
+          },
+          "evidence": [
+            {
+              "type": "text",
+              "label": "Warning",
+              "content": "Legacy row 42 has no authenticated source binding."
+            }
+          ]
+        }
+      ]
+    },
+    "ApprovalResponseV1": {
+      "type": "object",
+      "required": ["kind", "decision"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["approval"] },
+        "decision": { "type": "string", "enum": ["approved", "denied"] },
+        "note": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "additionalProperties": false,
+      "examples": [
+        { "kind": "approval", "decision": "approved" },
+        { "kind": "approval", "decision": "denied", "note": "Add a rollback test before resubmitting." }
+      ]
+    },
+    "AttentionResponseV1": {
+      "type": "object",
+      "required": ["kind", "decision"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["attention"] },
+        "decision": { "type": "string", "enum": ["acknowledged"] },
+        "note": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "reply": { "type": "string", "minLength": 1, "maxLength": 12000 }
+      },
+      "additionalProperties": false,
+      "examples": [
+        { "kind": "attention", "decision": "acknowledged" },
+        {
+          "kind": "attention",
+          "decision": "acknowledged",
+          "note": "Keep this warning in the audit record.",
+          "reply": "Please attach the migration report."
+        }
+      ]
+    },
+    "HITLResponseV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/ApprovalResponseV1" },
+        { "$ref": "#/$defs/AttentionResponseV1" }
+      ]
+    },
+    "HITLResolutionCommandV1": {
+      "type": "object",
+      "required": ["contract_version", "item_id", "expected_revision", "presented_projection_revision", "response"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "expected_revision": { "type": "integer", "minimum": 1 },
+        "presented_projection_revision": { "type": "integer", "minimum": 1 },
+        "response": { "$ref": "#/$defs/HITLResponseV1" }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "item_id": "interaction_01K4APPROVAL",
+          "expected_revision": 4,
+          "presented_projection_revision": 3,
+          "response": {
+            "kind": "approval",
+            "decision": "approved",
+            "note": "Concurrency evidence reviewed."
+          }
+        },
+        {
+          "contract_version": "1.0",
+          "item_id": "interaction_01K4ATTENTION",
+          "expected_revision": 2,
+          "presented_projection_revision": 2,
+          "response": {
+            "kind": "attention",
+            "decision": "acknowledged",
+            "reply": "Please retain the legacy audit row."
+          }
+        }
+      ]
+    },
+    "ParticipantCaptureV1": {
+      "type": "object",
+      "required": ["principal_ref", "authority", "assurance"],
+      "properties": {
+        "principal_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "authority": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "assurance": {
+          "type": "string",
+          "enum": ["loopback-unverified", "asserted", "authenticated"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolutionRecordV1": {
+      "type": "object",
+      "required": ["resolution_id", "response", "participant", "resolved_at", "interaction_revision", "presented_projection_revision"],
+      "properties": {
+        "resolution_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "response": { "$ref": "#/$defs/HITLResponseV1" },
+        "participant": { "$ref": "#/$defs/ParticipantCaptureV1" },
+        "resolved_at": { "type": "string", "format": "date-time" },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "presented_projection_revision": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "ResolvedTerminalOutcomeV1": {
+      "type": "object",
+      "required": ["contract_version", "state", "item_id", "interaction_revision", "resolution"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "state": { "type": "string", "enum": ["resolved"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "resolution": { "$ref": "#/$defs/ResolutionRecordV1" }
+      },
+      "additionalProperties": false
+    },
+    "CanceledTerminalOutcomeV1": {
+      "type": "object",
+      "required": ["contract_version", "state", "item_id", "interaction_revision", "cause", "terminated_at"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "state": { "type": "string", "enum": ["canceled"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "cause": {
+          "type": "string",
+          "enum": ["caller_withdrawn", "caller_canceled", "participant_canceled", "administrator_canceled", "surface_policy"]
+        },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "terminated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "ExpiredTerminalOutcomeV1": {
+      "type": "object",
+      "required": ["contract_version", "state", "item_id", "interaction_revision", "terminated_at"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "state": { "type": "string", "enum": ["expired"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "policy_ref": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "terminated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "FailedTerminalOutcomeV1": {
+      "type": "object",
+      "required": ["contract_version", "state", "item_id", "interaction_revision", "error_code", "message", "terminated_at"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "state": { "type": "string", "enum": ["failed"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "error_code": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "terminated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "SupersededTerminalOutcomeV1": {
+      "type": "object",
+      "required": ["contract_version", "state", "item_id", "interaction_revision", "replacement_item_id", "terminated_at"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "state": { "type": "string", "enum": ["superseded"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "interaction_revision": { "type": "integer", "minimum": 1 },
+        "replacement_item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "terminated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "HITLTerminalOutcomeV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/ResolvedTerminalOutcomeV1" },
+        { "$ref": "#/$defs/CanceledTerminalOutcomeV1" },
+        { "$ref": "#/$defs/ExpiredTerminalOutcomeV1" },
+        { "$ref": "#/$defs/FailedTerminalOutcomeV1" },
+        { "$ref": "#/$defs/SupersededTerminalOutcomeV1" }
+      ],
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "state": "resolved",
+          "item_id": "interaction_01K4APPROVAL",
+          "interaction_revision": 5,
+          "resolution": {
+            "resolution_id": "resolution_01K4",
+            "response": {
+              "kind": "approval",
+              "decision": "approved",
+              "note": "Concurrency evidence reviewed."
+            },
+            "participant": {
+              "principal_ref": "local-operator",
+              "authority": "tangent-loopback",
+              "assurance": "loopback-unverified"
+            },
+            "resolved_at": "2026-09-04T03:30:00Z",
+            "interaction_revision": 5,
+            "presented_projection_revision": 3
+          }
+        },
+        {
+          "contract_version": "1.0",
+          "state": "canceled",
+          "item_id": "interaction_01K4WITHDRAWN",
+          "interaction_revision": 3,
+          "cause": "caller_withdrawn",
+          "reason": "The caller superseded the proposed deploy.",
+          "terminated_at": "2026-09-04T03:31:00Z"
+        },
+        {
+          "contract_version": "1.0",
+          "state": "expired",
+          "item_id": "interaction_01K4EXPIRED",
+          "interaction_revision": 4,
+          "policy_ref": "request.expires_at",
+          "terminated_at": "2026-09-11T18:00:00Z"
+        }
+      ]
+    },
+    "HITLGetCommandV1": {
+      "type": "object",
+      "required": ["contract_version", "item_id", "caller"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "caller": { "$ref": "#/$defs/CallerAssertionV1" }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "item_id": "interaction_01K4APPROVAL",
+          "caller": { "application_id": "codex" }
+        }
+      ]
+    },
+    "HITLAwaitCommandV1": {
+      "type": "object",
+      "required": ["contract_version", "item_id", "caller"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "caller": { "$ref": "#/$defs/CallerAssertionV1" },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 50000,
+          "default": 30000,
+          "description": "Bounded below Tangent's 60-second HTTP write timeout; values outside the range are rejected."
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "item_id": "interaction_01K4APPROVAL",
+          "caller": { "application_id": "codex", "principal_ref": "worker-9" },
+          "wait_ms": 30000
+        }
+      ]
+    },
+    "HITLWithdrawCommandV1": {
+      "type": "object",
+      "required": ["contract_version", "item_id", "caller"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "caller": { "$ref": "#/$defs/CallerAssertionV1" },
+        "expected_revision": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "item_id": "interaction_01K4WITHDRAWN",
+          "caller": { "application_id": "codex" },
+          "expected_revision": 2,
+          "reason": "The proposed deploy was superseded."
+        }
+      ]
+    },
+    "HITLItemHandleV1": {
+      "type": "object",
+      "required": ["contract_version", "surface_id", "item_id", "state", "revision", "queue_sequence", "queue_position", "inbox_url", "item_url"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "surface_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "state": {
+          "type": "string",
+          "enum": ["staged", "presented", "in_progress", "resolved", "canceled", "expired", "failed", "superseded"]
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "queue_sequence": { "type": "integer", "minimum": 1 },
+        "queue_position": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "inbox_url": { "type": "string", "pattern": "^/hitl(?:$|[?#])" },
+        "item_url": { "type": "string", "pattern": "^/hitl/items/[^/?#]+$" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": { "enum": ["resolved", "canceled", "expired", "failed", "superseded"] }
+            },
+            "required": ["state"]
+          },
+          "then": { "properties": { "queue_position": { "type": "null" } } },
+          "else": { "properties": { "queue_position": { "type": "integer", "minimum": 1 } } }
+        }
+      ],
+      "additionalProperties": false,
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "surface_id": "surface_hitl_default",
+          "item_id": "interaction_01K4APPROVAL",
+          "state": "staged",
+          "revision": 3,
+          "queue_sequence": 42,
+          "queue_position": 2,
+          "inbox_url": "/hitl",
+          "item_url": "/hitl/items/interaction_01K4APPROVAL"
+        },
+        {
+          "contract_version": "1.0",
+          "surface_id": "surface_hitl_default",
+          "item_id": "interaction_01K4APPROVAL",
+          "state": "resolved",
+          "revision": 5,
+          "queue_sequence": 42,
+          "queue_position": null,
+          "inbox_url": "/hitl",
+          "item_url": "/hitl/items/interaction_01K4APPROVAL"
+        }
+      ]
+    },
+    "HITLItemViewV1": {
+      "type": "object",
+      "required": ["contract_version", "surface_id", "item_id", "state", "revision", "queue_sequence", "queue_position", "request_snapshot", "enqueued_at", "updated_at"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "surface_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "state": {
+          "type": "string",
+          "enum": ["submitted", "validated", "staged", "presented", "in_progress", "resolved", "canceled", "expired", "failed", "superseded"]
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "queue_sequence": { "type": "integer", "minimum": 1 },
+        "queue_position": {
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "request_snapshot": { "$ref": "#/$defs/HITLItemRequestV1" },
+        "enqueued_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "terminal_outcome": { "$ref": "#/$defs/HITLTerminalOutcomeV1" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": { "enum": ["resolved", "canceled", "expired", "failed", "superseded"] }
+            },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["terminal_outcome"],
+            "properties": { "queue_position": { "type": "null" } }
+          },
+          "else": {
+            "properties": {
+              "queue_position": { "type": "integer", "minimum": 1 },
+              "terminal_outcome": false
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["resolved"] } }, "required": ["state"] },
+          "then": { "properties": { "terminal_outcome": { "$ref": "#/$defs/ResolvedTerminalOutcomeV1" } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["canceled"] } }, "required": ["state"] },
+          "then": { "properties": { "terminal_outcome": { "$ref": "#/$defs/CanceledTerminalOutcomeV1" } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["expired"] } }, "required": ["state"] },
+          "then": { "properties": { "terminal_outcome": { "$ref": "#/$defs/ExpiredTerminalOutcomeV1" } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["failed"] } }, "required": ["state"] },
+          "then": { "properties": { "terminal_outcome": { "$ref": "#/$defs/FailedTerminalOutcomeV1" } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["superseded"] } }, "required": ["state"] },
+          "then": { "properties": { "terminal_outcome": { "$ref": "#/$defs/SupersededTerminalOutcomeV1" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "HITLGetRetrievalResultV1": {
+      "type": "object",
+      "required": ["contract_version", "mode", "wait_status", "retrieved_at", "item"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "mode": { "type": "string", "enum": ["get"] },
+        "wait_status": { "type": "string", "enum": ["not_waited"] },
+        "retrieved_at": { "type": "string", "format": "date-time" },
+        "item": { "$ref": "#/$defs/HITLItemViewV1" }
+      },
+      "additionalProperties": false
+    },
+    "HITLAwaitTerminalResultV1": {
+      "type": "object",
+      "required": ["contract_version", "mode", "wait_status", "retrieved_at", "item"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "mode": { "type": "string", "enum": ["await"] },
+        "wait_status": { "type": "string", "enum": ["terminal"] },
+        "retrieved_at": { "type": "string", "format": "date-time" },
+        "item": {
+          "allOf": [
+            { "$ref": "#/$defs/HITLItemViewV1" },
+            { "properties": { "state": { "enum": ["resolved", "canceled", "expired", "failed", "superseded"] } } }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "HITLAwaitTimeoutResultV1": {
+      "type": "object",
+      "required": ["contract_version", "mode", "wait_status", "retrieved_at", "item"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "mode": { "type": "string", "enum": ["await"] },
+        "wait_status": { "type": "string", "enum": ["timeout"] },
+        "retrieved_at": { "type": "string", "format": "date-time" },
+        "item": {
+          "allOf": [
+            { "$ref": "#/$defs/HITLItemViewV1" },
+            { "properties": { "state": { "enum": ["submitted", "validated", "staged", "presented", "in_progress"] } } }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "HITLRetrievalResultV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/HITLGetRetrievalResultV1" },
+        { "$ref": "#/$defs/HITLAwaitTerminalResultV1" },
+        { "$ref": "#/$defs/HITLAwaitTimeoutResultV1" }
+      ],
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "mode": "get",
+          "wait_status": "not_waited",
+          "retrieved_at": "2026-09-04T03:29:00Z",
+          "item": {
+            "contract_version": "1.0",
+            "surface_id": "surface_hitl_default",
+            "item_id": "interaction_01K4ATTENTION",
+            "state": "staged",
+            "revision": 3,
+            "queue_sequence": 43,
+            "queue_position": 2,
+            "request_snapshot": {
+              "contract_version": "1.0",
+              "kind": "attention",
+              "idempotency_key": "nanite:session-01K4:turn-28:attention-1",
+              "title": "Migration completed with one warning",
+              "summary": "One legacy row retained uncertain provenance.",
+              "request": "Acknowledge the warning.",
+              "source": {
+                "application_id": "nanite",
+                "agent_id": "release-agent"
+              }
+            },
+            "enqueued_at": "2026-09-04T03:28:00Z",
+            "updated_at": "2026-09-04T03:28:00Z"
+          }
+        }
+      ]
+    },
+    "HITLResolveStaleRevisionErrorV1": {
+      "type": "object",
+      "required": ["contract_version", "code", "operation", "item_id", "revision_kind", "expected_revision", "actual_revision", "current_state"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "code": { "type": "string", "enum": ["stale_revision"] },
+        "operation": { "type": "string", "enum": ["resolve"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision_kind": { "type": "string", "enum": ["interaction", "presented_projection"] },
+        "expected_revision": { "type": "integer", "minimum": 1 },
+        "actual_revision": { "type": "integer", "minimum": 1 },
+        "current_state": {
+          "type": "string",
+          "enum": ["submitted", "validated", "staged", "presented", "in_progress", "resolved", "canceled", "expired", "failed", "superseded"]
+        },
+        "terminal_outcome": { "$ref": "#/$defs/HITLTerminalOutcomeV1" }
+      },
+      "additionalProperties": false
+    },
+    "HITLWithdrawStaleRevisionErrorV1": {
+      "type": "object",
+      "required": ["contract_version", "code", "operation", "item_id", "revision_kind", "expected_revision", "actual_revision", "current_state"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "code": { "type": "string", "enum": ["stale_revision"] },
+        "operation": { "type": "string", "enum": ["withdraw"] },
+        "item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision_kind": { "type": "string", "enum": ["interaction"] },
+        "expected_revision": { "type": "integer", "minimum": 1 },
+        "actual_revision": { "type": "integer", "minimum": 1 },
+        "current_state": {
+          "type": "string",
+          "enum": ["submitted", "validated", "staged", "presented", "in_progress", "resolved", "canceled", "expired", "failed", "superseded"]
+        },
+        "terminal_outcome": { "$ref": "#/$defs/HITLTerminalOutcomeV1" }
+      },
+      "additionalProperties": false
+    },
+    "HITLStaleRevisionErrorV1": {
+      "oneOf": [
+        { "$ref": "#/$defs/HITLResolveStaleRevisionErrorV1" },
+        { "$ref": "#/$defs/HITLWithdrawStaleRevisionErrorV1" }
+      ],
+      "examples": [
+        {
+          "contract_version": "1.0",
+          "code": "stale_revision",
+          "operation": "resolve",
+          "item_id": "interaction_01K4APPROVAL",
+          "revision_kind": "interaction",
+          "expected_revision": 4,
+          "actual_revision": 5,
+          "current_state": "resolved",
+          "terminal_outcome": {
+            "contract_version": "1.0",
+            "state": "resolved",
+            "item_id": "interaction_01K4APPROVAL",
+            "interaction_revision": 5,
+            "resolution": {
+              "resolution_id": "resolution_01K4",
+              "response": { "kind": "approval", "decision": "approved" },
+              "participant": {
+                "principal_ref": "local-operator",
+                "authority": "tangent-loopback",
+                "assurance": "loopback-unverified"
+              },
+              "resolved_at": "2026-09-04T03:30:00Z",
+              "interaction_revision": 5,
+              "presented_projection_revision": 3
+            }
+          }
+        }
+      ]
+    },
+    "HITLIdempotencyConflictErrorV1": {
+      "type": "object",
+      "required": ["contract_version", "code", "idempotency_key", "existing_item_id"],
+      "properties": {
+        "contract_version": { "type": "string", "enum": ["1.0"] },
+        "code": { "type": "string", "enum": ["idempotency_conflict"] },
+        "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "existing_item_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

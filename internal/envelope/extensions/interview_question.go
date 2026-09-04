@@ -24,8 +24,7 @@ func RegisterInterviewQuestion(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(interviewQuestionManifest, interviewQuestionSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(InterviewQuestionEnvelopeType, interviewQuestionManifest, interviewQuestionSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register interview-question: %w", err)
 	}
 	return nil

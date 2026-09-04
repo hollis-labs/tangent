@@ -24,8 +24,7 @@ func RegisterFeedback(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(feedbackManifest, feedbackSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(FeedbackEnvelopeType, feedbackManifest, feedbackSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register feedback: %w", err)
 	}
 	return nil

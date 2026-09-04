@@ -24,8 +24,7 @@ func RegisterFormCollect(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(formCollectManifest, formCollectSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(FormCollectEnvelopeType, formCollectManifest, formCollectSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register form-collect: %w", err)
 	}
 	return nil

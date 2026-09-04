@@ -9,6 +9,8 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -18,6 +20,9 @@ import (
 const (
 	implementationName    = "tangent"
 	implementationVersion = "v0.12.0"
+	// HostVersion is persisted in immutable definition bindings created by
+	// the production registry adapter.
+	HostVersion = implementationVersion
 )
 
 // Server wraps the SDK's *mcp.Server with Tangent's envelope service +
@@ -27,23 +32,58 @@ const (
 // NewTriageHandler in cmd/tangent/main.go (see internal/mcp/triage_handler.go),
 // not stored on the Server.
 type Server struct {
-	envSvc      *envelope.Service
-	dispatcher  *envelope.Dispatcher
-	manager     *room.Manager
-	roomURLBase string
+	envSvc       *envelope.Service
+	dispatcher   *envelope.Dispatcher
+	manager      *room.Manager
+	roomURLBase  string
+	interactions *interaction.Service
+	hitl         *hitl.Service
 
 	mcp *mcpsdk.Server
 }
 
-// New constructs a Server, registers the Tangent MCP tool surface,
-// and returns it ready to
-// expose via HTTPHandler / SSEHandler.
+// Option customizes optional MCP application-service dependencies.
+type Option func(*Server) error
+
+// WithInteractionService enables the generic durable asynchronous operation
+// tools. Omitting it preserves the legacy MCP surface for compatibility tests
+// and embedders that have not installed the durable interaction substrate.
+func WithInteractionService(service *interaction.Service) Option {
+	return func(server *Server) error {
+		if service == nil {
+			return fmt.Errorf("mcp: interaction service is nil")
+		}
+		server.interactions = service
+		return nil
+	}
+}
+
+// WithHITLService enables the stable durable HITL inbox operation surface.
+// It is separate from the generic interaction tools and from the legacy
+// tangent.approval-queue batch workflow.
+func WithHITLService(service *hitl.Service) Option {
+	return func(server *Server) error {
+		if service == nil {
+			return fmt.Errorf("mcp: hitl service is nil")
+		}
+		server.hitl = service
+		return nil
+	}
+}
+
+// New constructs a Server, registers the Tangent MCP tool surface, and returns
+// it ready to expose via HTTPHandler / SSEHandler.
 //
-// Both envSvc and dispatcher are required. dispatcher is the same
-// instance future PRs (PR 4 WS bridge, PR 5+ kinds) attach handlers to;
-// passing it through here keeps the MCP layer agnostic to which
-// transport ultimately fulfills the envelope.
-func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher, manager *room.Manager, roomURLBase string) (*Server, error) {
+// Both envSvc and dispatcher are required. dispatcher is the same instance
+// future PRs attach handlers to; passing it through here keeps the MCP layer
+// agnostic to which transport ultimately fulfills the envelope.
+func New(
+	envSvc *envelope.Service,
+	dispatcher *envelope.Dispatcher,
+	manager *room.Manager,
+	roomURLBase string,
+	options ...Option,
+) (*Server, error) {
 	if envSvc == nil {
 		return nil, fmt.Errorf("mcp: envelope service is required")
 	}
@@ -65,6 +105,14 @@ func New(envSvc *envelope.Service, dispatcher *envelope.Dispatcher, manager *roo
 		manager:     manager,
 		roomURLBase: roomURLBase,
 		mcp:         mcpServer,
+	}
+	for _, option := range options {
+		if option == nil {
+			continue
+		}
+		if err := option(s); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := s.registerTools(); err != nil {
@@ -377,6 +425,17 @@ func (s *Server) registerTools() error {
 		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present.",
 		InputSchema: sessionListSchema,
 	}, s.handleSessionList)
+
+	if s.interactions != nil {
+		if err := s.registerInteractionTools(); err != nil {
+			return fmt.Errorf("register interaction tools: %w", err)
+		}
+	}
+	if s.hitl != nil {
+		if err := s.registerHITLTools(); err != nil {
+			return fmt.Errorf("register hitl tools: %w", err)
+		}
+	}
 
 	return nil
 }

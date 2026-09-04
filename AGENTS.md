@@ -40,7 +40,8 @@ mechanical (same Go server inside a shell, same SPA build).
 - `docs/developing.md` — contributor onboarding and toolchain.
 - `docs/mcp-integration.md` — Claude Code / Cursor / Codex / curl wiring recipes.
 - `.agents/skills/` — repo-local workflow launcher skills (copy/paste known-good
-  Tangent prompts and payload shapes for each bundled workflow).
+  Tangent prompts and payload shapes for bundled workflows and the durable
+  `tangent-hitl-inbox` flow).
 
 ## Key domain concepts
 
@@ -111,6 +112,12 @@ Then ask the agent to invoke a bundled workflow tool (`tangent.triage`,
 `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`).
 Tangent logs a room URL (`http://localhost:7842/r/<roomID>`); open it in a
 browser, resolve the workflow, and the agent receives a structured response.
+
+For one durable asynchronous approval or persistent-attention request, use the
+repo-local `tangent-hitl-inbox` skill and the four `tangent.hitl_*` tools. They
+return a stable handle immediately and use the operator-owned `/hitl` surface;
+they do not create a room or replace the separate `tangent.approval-queue`
+batch workflow.
 
 ## Where to look for more
 

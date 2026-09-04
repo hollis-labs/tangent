@@ -4,9 +4,9 @@
 //
 // Wire shape (mirrors internal/ws/handler.go):
 //
-//   server → client : {type:"envelope", envelopeId, envelope}
-//   client → server : {type:"response", envelopeId, response}
-//   client → server : {type:"cancel", envelopeId}
+//   server → client : {type:"envelope", envelopeId, revision, envelope}
+//   client → server : {type:"response", envelopeId, revision, response}
+//   client → server : {type:"cancel", envelopeId, revision}
 //
 // Inbound messages are zod-validated; malformed frames are reported
 // via onError instead of being silently dropped.
@@ -19,6 +19,7 @@ import { z } from "zod";
 const EnvelopeMessageSchema = z.object({
   type: z.literal("envelope"),
   envelopeId: z.string().min(1),
+  revision: z.number().int().positive(),
   envelope: z.unknown(),
 });
 
@@ -33,7 +34,7 @@ export type WSClientOptions = {
    * envelope (kept as `unknown` until PR 5 introduces the typed
    * envelope union); the caller is responsible for narrowing.
    */
-  onEnvelope: (envelopeId: string, envelope: unknown) => void;
+  onEnvelope: (envelopeId: string, envelope: unknown, revision: number) => void;
 
   /**
    * Called once the underlying WebSocket transitions to OPEN. Use
@@ -70,10 +71,10 @@ export type WSClient = {
   isConnected: () => boolean;
 
   /** Sends a response frame for the given envelope id. */
-  submitResponse: (envelopeId: string, response: unknown) => void;
+  submitResponse: (envelopeId: string, response: unknown, revision?: number) => boolean;
 
   /** Sends a cancel frame for the given envelope id. */
-  cancel: (envelopeId: string) => void;
+  cancel: (envelopeId: string, revision?: number) => boolean;
 
   /** Switches the underlying socket to a different room. */
   switchRoom: (roomID: string) => void;
@@ -124,7 +125,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
       const msg: InboundMessage = result.data;
       if (msg.type === "envelope") {
         const env = msg as EnvelopeMessage;
-        opts.onEnvelope(env.envelopeId, env.envelope);
+        opts.onEnvelope(env.envelopeId, env.envelope, env.revision);
       }
     });
 
@@ -144,11 +145,11 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
 
   return {
     isConnected: () => connected,
-    submitResponse: (envelopeId, response) => {
-      send(ws, { type: "response", envelopeId, response });
+    submitResponse: (envelopeId, response, revision = 0) => {
+      return send(ws, { type: "response", envelopeId, revision, response });
     },
-    cancel: (envelopeId) => {
-      send(ws, { type: "cancel", envelopeId });
+    cancel: (envelopeId, revision = 0) => {
+      return send(ws, { type: "cancel", envelopeId, revision });
     },
     switchRoom: (roomID) => {
       if (!roomID || roomID === currentRoomID) {
@@ -173,15 +174,21 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   };
 }
 
-function send(ws: WebSocket, frame: object): void {
+function send(ws: WebSocket, frame: object): boolean {
   if (ws.readyState !== WebSocket.OPEN) {
     // The brief lets us drop or queue; we drop with a console warning
     // because v0.1 doesn't have a reliable backoff strategy and silent
     // queuing risks confusion. Future PRs may queue.
     console.warn("ws-client: drop frame, socket not open", frame);
-    return;
+    return false;
   }
-  ws.send(JSON.stringify(frame));
+  try {
+    ws.send(JSON.stringify(frame));
+    return true;
+  } catch {
+    console.warn("ws-client: failed to send frame", frame);
+    return false;
+  }
 }
 
 function defaultWSURL(): string {

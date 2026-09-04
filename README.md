@@ -61,6 +61,13 @@ claude mcp add --transport sse tangent http://localhost:7842/sse
 
 Then in any Claude Code session: ask Claude to use either one of the bundled workflow tools (`tangent.triage`, `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`, `tangent.whiteboard`, `tangent.spreadsheet-review`, `tangent.approval-queue`, `tangent.diff-review`, `tangent.file-picker`, `tangent.progress-panel`, `tangent.dashboard`, `tangent.wizard`) or the writing flow tools (`tangent.session_*`, `tangent.interview_question`, `tangent.synthesis_notes`, `tangent.block_draft`, `tangent.prose_revision`, `tangent.output_render`). Tangent logs a room URL like `http://localhost:7842/r/<roomID>` — open it in a browser, resolve the workflow, and Claude receives the structured response.
 
+For durable asynchronous approvals or persistent-attention items, use the four
+`tangent.hitl_*` tools and the operator-owned `/hitl` inbox. The repo-local
+[`tangent-hitl-inbox` skill](./.agents/skills/tangent-hitl-inbox/SKILL.md)
+provides the handle-first flow and known-good direct Tangent and Tether
+native-flat payloads. This is separate from the room-backed
+`tangent.approval-queue` batch workflow.
+
 Rooms now persist across server restart in `~/.tangent/tangent.db`, so a
 resolved session history survives a process bounce.
 
@@ -211,6 +218,7 @@ More docs:
 - [`docs/manual-tests/spreadsheet-review-e2e.md`](./docs/manual-tests/spreadsheet-review-e2e.md) — full spreadsheet-review workflow with recovery, saved views, and CSV export metadata
 - [`docs/manual-tests/form-collect-e2e.md`](./docs/manual-tests/form-collect-e2e.md) — full form-collect workflow with conditional sections, recovery, and attachment refs
 - [`docs/manual-tests/approval-queue-e2e.md`](./docs/manual-tests/approval-queue-e2e.md) — full approval-queue workflow with reopen, defer reasons, and audit export metadata
+- [`docs/manual-tests/hitl-inbox-e2e.md`](./docs/manual-tests/hitl-inbox-e2e.md) — durable HITL inbox with concurrent callers, evidence, reconnect, restart, and later handle retrieval
 - [`docs/manual-tests/diff-review-e2e.md`](./docs/manual-tests/diff-review-e2e.md) — full diff-review workflow with reopen, batch decisions, and summary export
 - [`docs/manual-tests/file-picker-e2e.md`](./docs/manual-tests/file-picker-e2e.md) — full file-picker workflow with reopen, local draft recovery, and artifact-ref handoff inspection
 - [`docs/manual-tests/progress-panel-e2e.md`](./docs/manual-tests/progress-panel-e2e.md) — full progress-panel workflow with update/reopen, checkpoint inspection, and export snapshot verification

@@ -28,10 +28,20 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
-      - name: Set up Node (for envelope codegen check)
+      - name: Set up Node (for envelope codegen and joined browser driver)
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.12.0"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install joined browser driver dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build embedded production frontend
+        working-directory: ui
+        run: npm run build
 
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v8
@@ -54,7 +64,7 @@ jobs:
       - name: Check envelope types are not stale
         run: make check-envelopes
 
-      - name: Build (skip frontend; placeholder ui_dist embed)
+      - name: Build
         run: go build ./...
 
       - name: Test (race)

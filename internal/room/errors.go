@@ -7,6 +7,8 @@ var (
 	ErrRoomDisconnected                   = errors.New("room: disconnected")
 	ErrRoomClosed                         = errors.New("room: closed")
 	ErrNoConn                             = errors.New("room: no active websocket connection")
+	ErrStaleConnection                    = errors.New("room: stale websocket connection")
+	ErrPresentationRevisionConflict       = errors.New("room: presentation revision conflict")
 	ErrRoomNotFound                       = errors.New("room: not found")
 	ErrInvalidPhaseID                     = errors.New("room: invalid phase id")
 	ErrInvalidPhaseKey                    = errors.New("room: invalid phase output key")

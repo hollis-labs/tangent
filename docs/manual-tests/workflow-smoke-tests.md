@@ -20,6 +20,9 @@ make build
 3. Connect one MCP-speaking agent to Tangent.
 4. Keep one browser tab ready to open room URLs printed by Tangent.
 
+The durable HITL inbox is the exception: open `/hitl` directly and retain the
+handle returned by `tangent.hitl_enqueue`; it does not create a room.
+
 ## Operator rules
 
 - Use the linked e2e doc's sample payload literally for each workflow.
@@ -27,9 +30,9 @@ make build
   seeded data.
 - Run bundled workflows in fresh rooms unless the linked doc explicitly
   says to reuse one room across multiple phases.
-- Keep one browser tab per active room until the agent confirms the MCP
-  call resolved. Navigating that tab to a different room can disconnect
-  the pending workflow and return `ROOM_DISCONNECTED`.
+- Browser tabs are replaceable attachments. Navigating away or closing a tab
+  leaves pending work unresolved; reopening the room URL resumes it. Use the
+  workflow's explicit Cancel control when cancellation is intended.
 
 ## Payload-sensitive workflows
 
@@ -82,6 +85,18 @@ workflow with the full seeded example from the linked doc.
 | `tangent.progress-panel` | [`progress-panel-e2e.md`](./progress-panel-e2e.md) | Add one update, checkpoint, or log entry, then submit. | Agent receives the appended progress state and reopening shows the accepted timeline. |
 | `tangent.dashboard` | [`dashboard-e2e.md`](./dashboard-e2e.md) | Open the dashboard, trigger one refresh or update action, then submit. | Agent receives the updated dashboard payload and reopening shows the accepted layout/state. |
 | `tangent.wizard` | [`wizard-e2e.md`](./wizard-e2e.md) | Fill the first step, choose any branch if present, save once, then complete the final step. | Agent sees partial progress first, then a submitted completion response; reopening shows accepted wizard progress. |
+
+## Durable HITL inbox
+
+Use the repo-local
+[`tangent-hitl-inbox` skill](../../.agents/skills/tangent-hitl-inbox/SKILL.md)
+and [`hitl-inbox-e2e.md`](./hitl-inbox-e2e.md). Enqueue returns immediately;
+retain its handle, then resolve in `/hitl` and retrieve the immutable outcome
+through a later Get or Await call.
+
+| Surface | Minimal interaction | Pass if |
+| --- | --- | --- |
+| `tangent.hitl_*` + `/hitl` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
 
 ## Writing flow
 

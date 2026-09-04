@@ -123,7 +123,7 @@ func TestServer_ListsTwentyFiveTools(t *testing.T) {
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 24 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 25 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	want := map[string]bool{

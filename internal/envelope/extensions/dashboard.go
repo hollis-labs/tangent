@@ -24,8 +24,7 @@ func RegisterDashboard(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(dashboardManifest, dashboardSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(DashboardEnvelopeType, dashboardManifest, dashboardSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register dashboard: %w", err)
 	}
 	return nil

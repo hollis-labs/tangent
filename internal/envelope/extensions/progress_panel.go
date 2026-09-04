@@ -24,8 +24,7 @@ func RegisterProgressPanel(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(progressPanelManifest, progressPanelSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(ProgressPanelEnvelopeType, progressPanelManifest, progressPanelSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register progress-panel: %w", err)
 	}
 	return nil

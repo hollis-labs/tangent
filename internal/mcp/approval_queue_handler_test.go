@@ -80,10 +80,11 @@ func TestApprovalQueue_SubmitReopenAndPersistState(t *testing.T) {
 				},
 				"export_refs": []any{
 					map[string]any{
-						"name":           "queue-1-audit.json",
-						"created_at":     "2026-05-09T00:00:00Z",
+						"name":           " queue-1-audit.json ",
+						"created_at":     " 2026-05-09T00:00:00Z ",
 						"item_count":     2,
 						"decision_count": 2,
+						"size_bytes":     321,
 					},
 				},
 			},
@@ -96,6 +97,28 @@ func TestApprovalQueue_SubmitReopenAndPersistState(t *testing.T) {
 	}
 	if firstRes.result.IsError {
 		t.Fatalf("approval-queue IsError=true: %s", extractText(t, firstRes.result))
+	}
+	var submitted struct {
+		Payload struct {
+			ExportRefs []struct {
+				Name          string `json:"name"`
+				CreatedAt     string `json:"created_at"`
+				ItemCount     int    `json:"item_count"`
+				DecisionCount int    `json:"decision_count"`
+				SizeBytes     int    `json:"size_bytes"`
+			} `json:"export_refs"`
+		} `json:"payload"`
+	}
+	if decodeErr := json.Unmarshal([]byte(extractText(t, firstRes.result)), &submitted); decodeErr != nil {
+		t.Fatalf("unmarshal approval-queue tool result: %v", decodeErr)
+	}
+	if len(submitted.Payload.ExportRefs) != 1 {
+		t.Fatalf("tool result export_refs len = %d, want 1", len(submitted.Payload.ExportRefs))
+	}
+	if got := submitted.Payload.ExportRefs[0]; got.Name != "queue-1-audit.json" ||
+		got.CreatedAt != "2026-05-09T00:00:00Z" || got.ItemCount != 2 || got.DecisionCount != 2 ||
+		got.SizeBytes != 321 {
+		t.Fatalf("tool result export_refs[0] = %#v, want submitted audit metadata", got)
 	}
 
 	secondDone := make(chan advanceResult, 1)
@@ -165,7 +188,11 @@ func TestApprovalQueue_SubmitReopenAndPersistState(t *testing.T) {
 				Decision string `json:"decision"`
 			} `json:"decisions"`
 			ExportRefs []struct {
-				Name string `json:"name"`
+				Name          string `json:"name"`
+				CreatedAt     string `json:"created_at"`
+				ItemCount     int    `json:"item_count"`
+				DecisionCount int    `json:"decision_count"`
+				SizeBytes     int    `json:"size_bytes"`
 			} `json:"export_refs"`
 		} `json:"approval_queue"`
 	}
@@ -189,6 +216,10 @@ func TestApprovalQueue_SubmitReopenAndPersistState(t *testing.T) {
 	}
 	if len(state.ApprovalQueue.ExportRefs) != 1 || state.ApprovalQueue.ExportRefs[0].Name != "queue-1-audit.json" {
 		t.Fatalf("export_refs = %#v, want queue-1-audit.json", state.ApprovalQueue.ExportRefs)
+	}
+	if got := state.ApprovalQueue.ExportRefs[0]; got.CreatedAt != "2026-05-09T00:00:00Z" ||
+		got.ItemCount != 2 || got.DecisionCount != 2 || got.SizeBytes != 321 {
+		t.Fatalf("persisted export_refs[0] = %#v, want normalized submitted audit metadata", got)
 	}
 }
 

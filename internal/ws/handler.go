@@ -4,9 +4,9 @@
 //
 // Wire shape:
 //
-//	server → client : {"type":"envelope","envelopeId":"<id>","envelope":{...}}
-//	client → server : {"type":"response","envelopeId":"<id>","response":{...}}
-//	client → server : {"type":"cancel","envelopeId":"<id>"}
+//	server → client : {"type":"envelope","envelopeId":"<id>","revision":1,"envelope":{...}}
+//	client → server : {"type":"response","envelopeId":"<id>","revision":1,"response":{...}}
+//	client → server : {"type":"cancel","envelopeId":"<id>","revision":1}
 //
 // Anything else from the client is logged and ignored. The handler is
 // deliberately dumb — Room owns the lifecycle of the Pending entries
@@ -77,6 +77,7 @@ func (h *Handler) SetOriginPatterns(patterns []string) {
 type inboundMessage struct {
 	Type       string              `json:"type"`
 	EnvelopeID string              `json:"envelopeId"`
+	Revision   int64               `json:"revision,omitempty"`
 	Response   *envelopes.Response `json:"response,omitempty"`
 }
 
@@ -113,24 +114,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Bind the conn to the Room. Replaces any prior conn (refresh-tab
 	// semantics).
-	rm.AttachConn(r.Context(), conn)
+	if err := rm.AttachConn(r.Context(), conn); err != nil {
+		h.logger.Debug("ws: room closed before attachment", "room", roomID)
+		_ = conn.Close(websocket.StatusGoingAway, "room closed")
+		return
+	}
 	h.logger.Info("ws: room attached", "room", roomID)
+	if err := rm.ReplayPending(r.Context(), conn); err != nil && !errors.Is(err, room.ErrStaleConnection) {
+		h.logger.Info("ws: pending replay failed", "room", roomID, "err", err)
+	}
 
 	// readLoop runs until the conn closes or the context is cancelled.
 	h.readLoop(r.Context(), rm, conn)
 
-	// On read-loop exit: try to detach this specific conn. If it
-	// returned true, this conn really was the active one and the WS
-	// genuinely disconnected — close the Room so pending envelopes
-	// surface ErrRoomDisconnected (v0.1 contract: tab close hangs no
-	// one). If it returned false, AttachConn already replaced this
-	// conn with a fresh one (refresh-tab semantics) — closing the Room
-	// here would defeat the reconnect path and kill the new conn's
-	// pending envelopes, so we leave the Room alone.
+	// A socket is a replaceable presentation attachment. Read-loop exit only
+	// updates connection state; explicit Room/Manager close is the authority
+	// that terminalizes pending work.
 	wasActive := rm.DetachConn(conn)
-	if wasActive && !rm.IsClosed() {
-		rm.Close("ws disconnected")
-	}
 	h.logger.Info("ws: room detached", "room", roomID, "was_active", wasActive)
 }
 
@@ -170,15 +170,40 @@ func (h *Handler) readLoop(ctx context.Context, rm *room.Room, conn *websocket.C
 				h.logger.Warn("ws: response missing envelopeId or response", "room", rm.ID)
 				continue
 			}
-			rm.HandleResponse(msg.EnvelopeID, msg.Response)
+			if err := rm.HandleResponseFrom(conn, msg.EnvelopeID, msg.Revision, msg.Response); err != nil {
+				h.handleDispositionConflict(ctx, rm, conn, msg.EnvelopeID, err)
+			}
 		case "cancel":
 			if msg.EnvelopeID == "" {
 				h.logger.Warn("ws: cancel missing envelopeId", "room", rm.ID)
 				continue
 			}
-			rm.HandleCancel(msg.EnvelopeID)
+			if err := rm.HandleCancelFrom(conn, msg.EnvelopeID, msg.Revision); err != nil {
+				h.handleDispositionConflict(ctx, rm, conn, msg.EnvelopeID, err)
+			}
 		default:
 			h.logger.Debug("ws: ignoring unknown frame type", "room", rm.ID, "ws_type", msg.Type)
 		}
+	}
+}
+
+func (h *Handler) handleDispositionConflict(
+	ctx context.Context,
+	rm *room.Room,
+	conn *websocket.Conn,
+	envelopeID string,
+	err error,
+) {
+	if errors.Is(err, room.ErrStaleConnection) {
+		h.logger.Debug("ws: ignored disposition from replaced connection", "room", rm.ID, "envelope", envelopeID)
+		return
+	}
+	if !errors.Is(err, room.ErrPresentationRevisionConflict) {
+		h.logger.Warn("ws: disposition failed", "room", rm.ID, "envelope", envelopeID, "err", err)
+		return
+	}
+	h.logger.Debug("ws: stale presentation revision; resynchronizing", "room", rm.ID, "envelope", envelopeID)
+	if replayErr := rm.ReplayEnvelope(ctx, conn, envelopeID); replayErr != nil && !errors.Is(replayErr, room.ErrStaleConnection) {
+		h.logger.Info("ws: revision resync failed", "room", rm.ID, "envelope", envelopeID, "err", replayErr)
 	}
 }

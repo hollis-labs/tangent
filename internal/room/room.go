@@ -10,17 +10,20 @@
 //  2. Conn is replaceable but not multiplexed. One WebSocket per Room
 //     at a time; refresh-tab semantics work because Pending entries
 //     live on the Room, not the Conn.
-//  3. Disconnect rejects pending. Closing a Room MUST fail every
-//     Pending with ROOM_DISCONNECTED so MCP callers never hang.
-//  4. Room metadata and resolved envelope state are persisted in
-//     SQLite. Active Pending entries still live in memory; restart
-//     hydration rebuilds active rooms and times out stale pending rows.
+//  3. A WebSocket is a replaceable presentation attachment. Transport
+//     loss only changes connection state; explicit Room.Close remains
+//     the authority that fails pending work.
+//  4. Room metadata and resolved envelope state are persisted in SQLite.
+//     Legacy-only Pending entries still live in memory and receive a
+//     compatibility timeout; canonical durable interactions recover without
+//     being rewritten by room hydration.
 package room
 
 import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -49,10 +52,19 @@ type Pending struct {
 	TransformResponse func(*envelopes.Response) (*envelopes.Response, error)
 
 	settleOnce sync.Once
+	settled    atomic.Bool
+
+	// presentationMu serializes delivery and terminal compare-and-set for
+	// this pending envelope. Each successful presentation gets a new revision
+	// and records the connection generation that may resolve it.
+	presentationMu          sync.Mutex
+	presentationRevision    int64
+	presentedConnGeneration uint64
 }
 
 func (p *Pending) settle(fn func()) {
 	p.settleOnce.Do(func() {
+		p.settled.Store(true)
 		fn()
 	})
 }
@@ -73,6 +85,10 @@ type Room struct {
 
 	connMu sync.Mutex
 	conn   *websocket.Conn
+	// connGeneration increases for every attachment. It distinguishes a
+	// replaced socket from the current presentation even when the envelope id
+	// is unchanged across refresh/reconnect.
+	connGeneration uint64
 
 	pendingMu sync.Mutex
 	pending   map[string]*Pending
@@ -89,6 +105,7 @@ type Room struct {
 type outboundEnvelopeMessage struct {
 	Type       string              `json:"type"`
 	EnvelopeID string              `json:"envelopeId"`
+	Revision   int64               `json:"revision"`
 	Envelope   *envelopes.Envelope `json:"envelope"`
 }
 
@@ -114,12 +131,18 @@ func (r *Room) MetaCopy() map[string]string {
 	return cloneMeta(r.Meta)
 }
 
-// AttachConn binds a WebSocket connection to the Room, replacing any
-// prior Conn.
-func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) {
+// AttachConn binds a WebSocket connection to the Room, replacing any prior
+// Conn. Pending envelopes are replayed separately by ReplayPending after the
+// handler owns the attachment.
+func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) error {
 	r.connMu.Lock()
+	if r.closed.Load() {
+		r.connMu.Unlock()
+		return ErrRoomClosed
+	}
 	prev := r.conn
 	r.conn = conn
+	r.connGeneration++
 
 	r.connectedMu.Lock()
 	close(r.connectedCh)
@@ -131,6 +154,7 @@ func (r *Room) AttachConn(ctx context.Context, conn *websocket.Conn) {
 		_ = prev.Close(websocket.StatusNormalClosure, "replaced")
 	}
 	_ = ctx
+	return nil
 }
 
 // DetachConn clears the active conn if it matches the supplied one.
@@ -149,6 +173,14 @@ func (r *Room) HasConn() bool {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
 	return r.conn != nil
+}
+
+// IsActiveConn reports whether conn is the Room's current presentation
+// attachment. Replaced sockets are never allowed to resolve current work.
+func (r *Room) IsActiveConn(conn *websocket.Conn) bool {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+	return r.conn == conn
 }
 
 // Push persists a pending envelope row, sends the envelope on the live
@@ -196,6 +228,13 @@ func (r *Room) push(
 		r.pendingMu.Unlock()
 		return nil, fmt.Errorf("%w: %q", ErrPendingExists, env.ID)
 	}
+	// Keep the pending entry invisible to reconnect replay until its durable
+	// row exists. Holding pendingMu also makes same-id reservation atomic for
+	// in-memory and SQLite-backed rooms.
+	if err := r.persistPendingEnvelope(env); err != nil {
+		r.pendingMu.Unlock()
+		return nil, fmt.Errorf("room: persist pending envelope %q: %w", env.ID, err)
+	}
 	r.pending[env.ID] = pending
 	r.pendingMu.Unlock()
 
@@ -205,10 +244,7 @@ func (r *Room) push(
 		r.pendingMu.Unlock()
 	}()
 
-	if err := r.persistPendingEnvelope(env); err != nil {
-		return nil, fmt.Errorf("room: persist pending envelope %q: %w", env.ID, err)
-	}
-	if err := r.sendEnvelopeWithReconnect(ctx, env); err != nil {
+	if err := r.sendEnvelopeWithReconnect(ctx, pending); err != nil {
 		return nil, r.finalizePushError(env.ID, pending, err)
 	}
 
@@ -222,36 +258,26 @@ func (r *Room) push(
 	}
 }
 
-func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, env *envelopes.Envelope) error {
-	frame, err := json.Marshal(outboundEnvelopeMessage{
-		Type:       "envelope",
-		EnvelopeID: env.ID,
-		Envelope:   env,
-	})
-	if err != nil {
-		return fmt.Errorf("room: marshal envelope frame: %w", err)
-	}
-
+func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, pending *Pending) error {
 	for {
 		if r.closed.Load() {
 			return fmt.Errorf("%w: %s", ErrRoomDisconnected, r.closeReasonString())
 		}
-		r.connMu.Lock()
-		conn := r.conn
-		r.connMu.Unlock()
-		if conn != nil {
-			writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			err := conn.Write(writeCtx, websocket.MessageText, frame)
-			cancel()
-			if err == nil {
-				return nil
-			}
-			r.DetachConn(conn)
+		if err := r.presentPending(ctx, pending, nil, false); err == nil {
+			return nil
+		} else if !errors.Is(err, ErrNoConn) && !errors.Is(err, ErrStaleConnection) {
+			return err
 		}
 
 		r.connectedMu.Lock()
 		ch := r.connectedCh
 		r.connectedMu.Unlock()
+		// AttachConn may have completed between the failed presentation and
+		// this channel snapshot. Recheck connection state to avoid waiting on
+		// the next attachment after missing the one we can already use.
+		if r.HasConn() {
+			continue
+		}
 		select {
 		case <-ch:
 			continue
@@ -261,12 +287,127 @@ func (r *Room) sendEnvelopeWithReconnect(ctx context.Context, env *envelopes.Env
 	}
 }
 
+// ReplayPending resynchronizes all unresolved envelopes onto conn. A fresh
+// revision is assigned once per attachment, allowing the server to reject
+// responses rendered by a replaced/stale presentation.
+func (r *Room) ReplayPending(ctx context.Context, conn *websocket.Conn) error {
+	r.pendingMu.Lock()
+	pendings := make([]*Pending, 0, len(r.pending))
+	for _, pending := range r.pending {
+		pendings = append(pendings, pending)
+	}
+	r.pendingMu.Unlock()
+
+	for _, pending := range pendings {
+		if err := r.presentPending(ctx, pending, conn, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReplayEnvelope presents the current state of one envelope again on conn.
+// It is used after a revision conflict so the active client can resynchronize
+// without a timing-dependent error exchange.
+func (r *Room) ReplayEnvelope(ctx context.Context, conn *websocket.Conn, envelopeID string) error {
+	pending := r.pendingByID(envelopeID)
+	if pending == nil {
+		return nil
+	}
+	return r.presentPending(ctx, pending, conn, true)
+}
+
+func (r *Room) presentPending(ctx context.Context, pending *Pending, expectedConn *websocket.Conn, force bool) error {
+	if pending.settled.Load() {
+		return nil
+	}
+	if r.closed.Load() {
+		return ErrRoomClosed
+	}
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	conn := r.conn
+	if conn == nil {
+		return ErrNoConn
+	}
+	if expectedConn != nil && conn != expectedConn {
+		return ErrStaleConnection
+	}
+	generation := r.connGeneration
+
+	pending.presentationMu.Lock()
+	defer pending.presentationMu.Unlock()
+	if pending.settled.Load() {
+		return nil
+	}
+	if !force && pending.presentedConnGeneration == generation {
+		return nil
+	}
+
+	revision := pending.presentationRevision + 1
+	frame, err := json.Marshal(outboundEnvelopeMessage{
+		Type:       "envelope",
+		EnvelopeID: pending.EnvelopeID,
+		Revision:   revision,
+		Envelope:   pending.Envelope,
+	})
+	if err != nil {
+		return fmt.Errorf("room: marshal envelope frame: %w", err)
+	}
+
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	err = conn.Write(writeCtx, websocket.MessageText, frame)
+	cancel()
+	if err != nil {
+		if r.conn == conn {
+			r.conn = nil
+		}
+		return ErrNoConn
+	}
+	pending.presentationRevision = revision
+	pending.presentedConnGeneration = generation
+	return nil
+}
+
 // HandleResponse resolves the matching pending envelope, if any.
 func (r *Room) HandleResponse(envelopeID string, resp *envelopes.Response) {
 	p := r.pendingByID(envelopeID)
 	if p == nil {
 		return
 	}
+	p.presentationMu.Lock()
+	defer p.presentationMu.Unlock()
+	r.settleResponse(envelopeID, p, resp)
+}
+
+// HandleResponseFrom resolves an envelope only when conn is the current
+// attachment and revision names its current presentation. revision zero is
+// accepted only for the initial presentation to preserve pre-revision clients;
+// reconnects and resyncs always require an exact revision.
+func (r *Room) HandleResponseFrom(conn *websocket.Conn, envelopeID string, revision int64, resp *envelopes.Response) error {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+	if r.conn != conn {
+		return ErrStaleConnection
+	}
+	if r.closed.Load() {
+		return ErrRoomClosed
+	}
+	p := r.pendingByID(envelopeID)
+	if p == nil {
+		return nil
+	}
+	p.presentationMu.Lock()
+	defer p.presentationMu.Unlock()
+	if !p.acceptsRevision(r.connGeneration, revision) {
+		return ErrPresentationRevisionConflict
+	}
+	r.settleResponse(envelopeID, p, resp)
+	return nil
+}
+
+func (r *Room) settleResponse(envelopeID string, p *Pending, resp *envelopes.Response) {
 	p.settle(func() {
 		nextResp := cloneResponse(resp)
 		if p.TransformResponse != nil {
@@ -304,6 +445,36 @@ func (r *Room) HandleCancel(envelopeID string) {
 	if p == nil {
 		return
 	}
+	p.presentationMu.Lock()
+	defer p.presentationMu.Unlock()
+	r.settleCancel(envelopeID, p)
+}
+
+// HandleCancelFrom applies the same active-connection and revision
+// compare-and-set rules as HandleResponseFrom.
+func (r *Room) HandleCancelFrom(conn *websocket.Conn, envelopeID string, revision int64) error {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+	if r.conn != conn {
+		return ErrStaleConnection
+	}
+	if r.closed.Load() {
+		return ErrRoomClosed
+	}
+	p := r.pendingByID(envelopeID)
+	if p == nil {
+		return nil
+	}
+	p.presentationMu.Lock()
+	defer p.presentationMu.Unlock()
+	if !p.acceptsRevision(r.connGeneration, revision) {
+		return ErrPresentationRevisionConflict
+	}
+	r.settleCancel(envelopeID, p)
+	return nil
+}
+
+func (r *Room) settleCancel(envelopeID string, p *Pending) {
 	p.settle(func() {
 		cancelErr := ErrUserCancelled
 		if p.Cancel != nil {
@@ -315,6 +486,20 @@ func (r *Room) HandleCancel(envelopeID string) {
 		}
 		trySendErr(p.ErrCh, cancelErr)
 	})
+}
+
+func (p *Pending) acceptsRevision(connGeneration uint64, revision int64) bool {
+	if p.presentedConnGeneration != connGeneration {
+		return false
+	}
+	if revision == p.presentationRevision {
+		return true
+	}
+	// Compatibility for pre-revision clients is deliberately restricted to
+	// the first presentation on the first attachment. Once any reconnect or
+	// resync has produced newer state, an omitted/zero revision cannot bypass
+	// compare-and-set.
+	return revision == 0 && p.presentationRevision == 1 && connGeneration == 1
 }
 
 // Close marks the Room closed, persists the room close, fails every
@@ -335,6 +520,7 @@ func (r *Room) Close(reason string) {
 	persistErr := r.persistRoomClose(reason)
 	for _, p := range pendings {
 		pending := p
+		pending.presentationMu.Lock()
 		pending.settle(func() {
 			if persistErr != nil {
 				trySendErr(pending.ErrCh, fmt.Errorf("room: persist room close %q: %w", r.ID, persistErr))
@@ -342,6 +528,7 @@ func (r *Room) Close(reason string) {
 			}
 			trySendErr(pending.ErrCh, fmt.Errorf("%w: %s", ErrRoomDisconnected, reason))
 		})
+		pending.presentationMu.Unlock()
 	}
 
 	r.connMu.Lock()
@@ -413,6 +600,8 @@ func (r *Room) finalizePushError(envelopeID string, pending *Pending, err error)
 		return nil
 	}
 	resolvedErr := err
+	pending.presentationMu.Lock()
+	defer pending.presentationMu.Unlock()
 	pending.settle(func() {
 		if persistErr := r.persistTerminalEnvelopeError(envelopeID, err); persistErr != nil {
 			resolvedErr = fmt.Errorf("room: persist envelope %q final state: %w", envelopeID, persistErr)
@@ -461,13 +650,14 @@ func (m *Manager) CreateWithError(meta map[string]string) (*Room, error) {
 	return r, nil
 }
 
-// Hydrate loads all open rooms from the DB and times out any stale
-// pending envelopes left behind by a previous process.
+// Hydrate loads all open rooms from the DB. Legacy-only process-local pending
+// envelopes receive their compatibility timeout; canonical interactions are
+// left to durable policy-driven recovery.
 func (m *Manager) Hydrate(ctx context.Context) error {
 	if m.db == nil {
 		return nil
 	}
-	if err := m.timeoutStalePendingEnvelopes(ctx); err != nil {
+	if err := m.reconcilePendingEnvelopesAfterRestart(ctx); err != nil {
 		return err
 	}
 	rooms, err := m.loadActiveRooms(ctx)

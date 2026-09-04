@@ -24,8 +24,7 @@ func RegisterFilePicker(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(filePickerManifest, filePickerSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(FilePickerEnvelopeType, filePickerManifest, filePickerSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register file-picker: %w", err)
 	}
 	return nil

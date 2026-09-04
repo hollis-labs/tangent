@@ -13,4 +13,10 @@ body {
   margin: 0;
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #090a0c;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgb(242 184 75 / 28%);
 }

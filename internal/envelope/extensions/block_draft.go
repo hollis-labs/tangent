@@ -24,8 +24,7 @@ func RegisterBlockDraft(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(blockDraftManifest, blockDraftSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(BlockDraftEnvelopeType, blockDraftManifest, blockDraftSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register block-draft: %w", err)
 	}
 	return nil

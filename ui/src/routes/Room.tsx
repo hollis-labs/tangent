@@ -18,11 +18,14 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
-import { connect, type WSClient } from "../lib/ws-client";
+import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
+import { connect } from "../lib/ws-client";
 
 type Pending = {
   envelopeId: string;
   envelope: unknown;
+  revision: number;
+  roomID: string;
 };
 
 type SessionStatePayload = {
@@ -47,15 +50,34 @@ export default function Room() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [status, setStatus] = useState<string>("connecting...");
   const [error, setError] = useState<string | null>(null);
-  const clientRef = useRef<WSClient | null>(null);
-  const activeRoomRef = useRef<string | null>(null);
+  const lifecycleRef = useRef<RoomLifecycle | null>(null);
   const initialRoomRef = useRef<string | null>(roomID ?? null);
-  const handleEnvelope = useEffectEvent(async (envelopeId: string, envelope: unknown) => {
-    const targetRoomID = activeRoomRef.current;
-    const enriched = targetRoomID ? await enrichEnvelope(targetRoomID, envelope) : envelope;
-    setPending({ envelopeId, envelope: enriched });
-    setStatus("envelope received");
-  });
+  const handleEnvelope = useEffectEvent(
+    async (envelopeId: string, envelope: unknown, revision = 0) => {
+      const lifecycle = lifecycleRef.current;
+      lifecycle?.receiveEnvelope(envelopeId, envelope, revision);
+      const targetRoomID = lifecycle?.currentRoomID();
+      const enriched = targetRoomID ? await enrichEnvelope(targetRoomID, envelope) : envelope;
+
+      // Enrichment is asynchronous for stateful workflows. A route switch or
+      // a newer replay may win while it is in flight; only render if this is
+      // still the exact active presentation.
+      const currentLifecycle = lifecycleRef.current;
+      const active = currentLifecycle?.activeEnvelope();
+      if (
+        !targetRoomID ||
+        !currentLifecycle ||
+        currentLifecycle !== lifecycle ||
+        currentLifecycle.currentRoomID() !== targetRoomID ||
+        active?.envelopeId !== envelopeId ||
+        active.revision !== revision
+      ) {
+        return;
+      }
+      setPending({ envelopeId, envelope: enriched, revision, roomID: targetRoomID });
+      setStatus("envelope received");
+    },
+  );
 
   useEffect(() => {
     if (!initialRoomRef.current) {
@@ -68,6 +90,7 @@ export default function Room() {
       },
       onEnvelope: handleEnvelope,
       onClose: (reason) => {
+        lifecycleRef.current?.clearEnvelope();
         setStatus(`disconnected: ${reason}`);
         setPending(null);
       },
@@ -75,63 +98,33 @@ export default function Room() {
         setError(err.message);
       },
     });
-    clientRef.current = client;
-    activeRoomRef.current = initialRoomRef.current;
+    const lifecycle = createRoomLifecycle(initialRoomRef.current, client);
+    lifecycleRef.current = lifecycle;
     return () => {
-      client.close();
-      clientRef.current = null;
-      activeRoomRef.current = null;
+      lifecycle.dispose();
+      lifecycleRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    if (!roomID || !clientRef.current) {
+    if (!roomID || !lifecycleRef.current) {
       return;
     }
-    if (activeRoomRef.current === roomID) {
+    if (!lifecycleRef.current.switchRoom(roomID)) {
       return;
     }
-    clientRef.current.switchRoom(roomID);
-    activeRoomRef.current = roomID;
     setPending(null);
     setStatus("switching rooms...");
   }, [roomID]);
 
-  useEffect(() => {
-    const onBeforeUnload = () => {
-      if (!pending || !clientRef.current) {
-        return;
-      }
-      const envelopeType = readEnvelopeType(pending.envelope);
-      if (
-        envelopeType === "tangent.whiteboard" ||
-        envelopeType === "tangent.dashboard" ||
-        envelopeType === "tangent.file-picker" ||
-        envelopeType === "tangent.progress-panel" ||
-        envelopeType === "tangent.wizard" ||
-        envelopeType === "tangent.diff-review" ||
-        envelopeType === "tangent.spreadsheet-review" ||
-        envelopeType === "tangent.form-collect" ||
-        envelopeType === "tangent.approval-queue"
-      ) {
-        return;
-      }
-      clientRef.current.cancel(pending.envelopeId);
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [pending]);
-
   const handleSubmit = (response: unknown) => {
-    if (!pending || !clientRef.current) return;
-    clientRef.current.submitResponse(pending.envelopeId, response);
+    if (!lifecycleRef.current?.submit(response)) return;
     setPending(null);
     setStatus("response submitted");
   };
 
   const handleCancel = () => {
-    if (!pending || !clientRef.current) return;
-    clientRef.current.cancel(pending.envelopeId);
+    if (!lifecycleRef.current?.cancel()) return;
     setPending(null);
     setStatus("cancelled");
   };

@@ -24,8 +24,7 @@ func RegisterApprovalQueue(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(approvalQueueManifest, approvalQueueSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(ApprovalQueueEnvelopeType, approvalQueueManifest, approvalQueueSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register approval-queue: %w", err)
 	}
 	return nil

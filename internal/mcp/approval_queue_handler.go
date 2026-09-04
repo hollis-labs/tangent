@@ -25,10 +25,11 @@ type approvalQueueSubmitDraft struct {
 }
 
 type approvalQueueSubmitPayload struct {
-	QueueID      string                       `json:"queue_id"`
-	CurrentIndex int                          `json:"current_index"`
-	Decisions    []room.ApprovalQueueDecision `json:"decisions"`
-	Notes        string                       `json:"notes,omitempty"`
+	QueueID      string                        `json:"queue_id"`
+	CurrentIndex int                           `json:"current_index"`
+	Decisions    []room.ApprovalQueueDecision  `json:"decisions"`
+	Notes        string                        `json:"notes,omitempty"`
+	ExportRefs   []room.ApprovalQueueExportRef `json:"export_refs"`
 }
 
 func (s *Server) handleApprovalQueue(
@@ -239,8 +240,13 @@ func (s *Server) normalizeApprovalQueueSubmitResponse(
 		AuditTrail:   auditTrail,
 		ExportRefs:   exportRefs,
 	}
-	if _, err := s.manager.SaveApprovalQueueSnapshot(roomID, snapshot); err != nil {
+	savedPhaseState, err := s.manager.SaveApprovalQueueSnapshot(roomID, snapshot)
+	if err != nil {
 		return nil, err
+	}
+	saved := room.ProjectApprovalQueueState(savedPhaseState)
+	if saved == nil {
+		return nil, approvalQueueResponseValidationError("room %q has no saved approval-queue state", roomID)
 	}
 
 	normalized := &envelopes.Response{
@@ -250,10 +256,11 @@ func (s *Server) normalizeApprovalQueueSubmitResponse(
 		Status:      envelopes.ResponseStatusSubmitted,
 		CompletedAt: resp.CompletedAt,
 		Payload: approvalQueueSubmitPayload{
-			QueueID:      persisted.QueueID,
-			CurrentIndex: currentIndex,
-			Decisions:    decisions,
-			Notes:        strings.TrimSpace(draft.Notes),
+			QueueID:      saved.QueueID,
+			CurrentIndex: saved.CurrentIndex,
+			Decisions:    saved.Decisions,
+			Notes:        saved.Notes,
+			ExportRefs:   saved.ExportRefs,
 		},
 	}
 	if normalized.CompletedAt == "" {

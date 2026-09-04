@@ -56,6 +56,11 @@ type Config struct {
 	// Optional in Config; when nil all /r/ requests fall through to
 	// the SPA which renders its own "room not found" view client-side.
 	RoomManager *room.Manager
+
+	// HITL is the durable operator-owned inbox application service. When set,
+	// the server mounts its dedicated browser API and revision event stream;
+	// it remains separate from caller-facing MCP and room WebSockets.
+	HITL HITLService
 }
 
 // MCPServer is the minimal contract internal/mcp satisfies. Declared as
@@ -81,6 +86,8 @@ type Server struct {
 	envelope *envelope.Service
 }
 
+const httpServerWriteTimeout = 60 * time.Second
+
 // New constructs a Server with the embedded-SPA or dev-proxy handler.
 //
 // cfg.Envelope must be non-nil. The envelope service is constructed at
@@ -105,11 +112,11 @@ func New(cfg Config) (*Server, error) {
 		// session-scoped event stream. We mount it at the path level
 		// rather than per-method so both routes resolve to the same
 		// handler.
-		mux.Handle("/mcp", cfg.MCP.HTTPHandler())
+		mux.Handle("/mcp", longLivedMCPHandler(cfg.MCP.HTTPHandler()))
 		// SSE fallback for legacy Claude Code / older MCP clients. GET
 		// opens the long-lived event stream; POST is used for outbound
 		// JSON-RPC frames keyed against the streamed session id.
-		mux.Handle("/sse", cfg.MCP.SSEHandler())
+		mux.Handle("/sse", longLivedMCPHandler(cfg.MCP.SSEHandler()))
 		// Logged URLs use 127.0.0.1 (matching the actual bind) rather
 		// than the human-friendly "localhost" alias — on systems where
 		// localhost resolves to ::1 first without an IPv4 fallback, a
@@ -127,6 +134,17 @@ func New(cfg Config) (*Server, error) {
 		logger.Info("WebSocket bridge ready",
 			"ws_url", fmt.Sprintf("ws://127.0.0.1:%d/ws", cfg.Port),
 		)
+	}
+
+	if cfg.HITL != nil {
+		hitlHandler := newHITLHTTPHandler(cfg.HITL)
+		mux.Handle("GET /api/hitl", hitlSameOrigin(http.HandlerFunc(hitlHandler.inbox)))
+		mux.Handle("GET /api/hitl/events", hitlSameOrigin(http.HandlerFunc(hitlHandler.events)))
+		mux.Handle("GET /api/hitl/items/{itemID}", hitlSameOrigin(http.HandlerFunc(hitlHandler.item)))
+		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", hitlSameOrigin(http.HandlerFunc(hitlHandler.tangentEvidence)))
+		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", hitlSameOrigin(http.HandlerFunc(hitlHandler.artifactPreview)))
+		mux.Handle("POST /api/hitl/items/{itemID}/present", hitlSameOrigin(http.HandlerFunc(hitlHandler.present)))
+		mux.Handle("POST /api/hitl/items/{itemID}/resolve", hitlSameOrigin(http.HandlerFunc(hitlHandler.resolve)))
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)
@@ -155,7 +173,7 @@ func New(cfg Config) (*Server, error) {
 		Handler:           loggingMiddleware(logger, mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      httpServerWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -166,6 +184,17 @@ func New(cfg Config) (*Server, error) {
 		httpS:    httpS,
 		envelope: cfg.Envelope,
 	}, nil
+}
+
+// longLivedMCPHandler removes the server-wide response write deadline for MCP
+// transports. Room-backed tools deliberately wait for a human response, and
+// SSE subscriptions are likewise long-lived; both may validly outlive the
+// ordinary HTTP timeout. Request-context cancellation remains authoritative.
+func longLivedMCPHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Envelope returns the wired envelope service. Exposed so future PRs

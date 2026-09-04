@@ -101,11 +101,10 @@ See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 
 - Localhost only, single-user, no auth.
 - One active pending envelope per room.
-- Twenty tools advertised on the current branch; bundled workflows now include the full
-  writing path (`interview_question`, `synthesis_notes`, `block_draft`,
-  `prose_revision`, `output_render`) alongside `triage`, `feedback`,
-  `form-collect`, `design-iteration`, `whiteboard`,
-  `spreadsheet-review`, and `approval_queue`.
+- The production server advertises 39 tools: 25 room/workflow compatibility
+  tools, 10 generic durable interaction tools, and 4 strict HITL inbox
+  operations. See [`mcp-integration.md`](./mcp-integration.md) for the
+  build-derived list.
 
 ## Persistence layer
 

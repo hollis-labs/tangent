@@ -191,4 +191,58 @@ describe("ApprovalQueue", () => {
     expect(screen.getByTestId("approval-queue-submit")).toBeDisabled();
     expect(screen.getByText("No queue items were provided.")).toBeInTheDocument();
   });
+
+  it.each([
+    ["unknown decision", { decision: "approve" }],
+    ["non-string comment", { comment: { text: "unsafe" } }],
+    ["non-string action", { action_id: 42 }],
+    ["non-string defer reason", { decision: "defer", defer_reason: null }],
+  ])("drops a corrupted recovered draft with %s", (_label, corruptFields) => {
+    const storageKey = getApprovalQueueDraftStorageKey("room-a", "queue-1");
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        version: 1,
+        roomID: "room-a",
+        queueID: "queue-1",
+        envelopeId: "approval-1",
+        baseSeedKey: "{}",
+        currentIndex: 1,
+        decisions: [
+          {
+            item_id: "item-1",
+            decision: "accept",
+            comment: "",
+            action_id: "merge",
+            defer_reason: "",
+          },
+          {
+            item_id: "item-2",
+            decision: "reject",
+            comment: "",
+            action_id: "",
+            defer_reason: "",
+            ...corruptFields,
+          },
+        ],
+        notes: "unsafe recovered notes",
+        exportRefs: [],
+        savedAt: new Date().toISOString(),
+      }),
+    );
+
+    render(
+      <ApprovalQueue
+        envelope={baseEnvelope}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        roomID="room-a"
+      />,
+    );
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+    expect(screen.getByTestId("approval-queue-submit")).toBeDisabled();
+    expect(screen.queryByText(/Recovered unsent approval-queue state/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("approval-queue-notes")).toHaveValue("seed notes");
+  });
 });

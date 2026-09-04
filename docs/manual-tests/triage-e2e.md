@@ -35,7 +35,7 @@ slog text handler Tangent ships with):
 
 ```
 level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=29
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=44
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/

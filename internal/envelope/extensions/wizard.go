@@ -24,8 +24,7 @@ func RegisterWizard(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(wizardManifest, wizardSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(WizardEnvelopeType, wizardManifest, wizardSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register wizard: %w", err)
 	}
 	return nil

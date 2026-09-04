@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS surface_open_requests_immutable_delete;
+DROP TRIGGER IF EXISTS surface_open_requests_immutable_update;
+DROP TABLE IF EXISTS surface_open_requests;
+ALTER TABLE resolutions DROP COLUMN participant_scope;
+ALTER TABLE draft_revisions DROP COLUMN participant_assurance;
+ALTER TABLE draft_revisions DROP COLUMN participant_authority;
+ALTER TABLE draft_revisions DROP COLUMN participant_scope;
+ALTER TABLE interactions DROP COLUMN participant_assurance;
+ALTER TABLE interactions DROP COLUMN participant_authority;
+ALTER TABLE interactions DROP COLUMN participant_scope;

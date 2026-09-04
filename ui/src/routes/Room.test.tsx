@@ -30,8 +30,8 @@ import {
 import Room from "./Room";
 
 const switchRoom = vi.fn();
-const submitResponse = vi.fn();
-const cancel = vi.fn();
+const submitResponse = vi.fn(() => true);
+const cancel = vi.fn(() => true);
 const close = vi.fn();
 const connectMock = vi.hoisted(() => vi.fn());
 
@@ -65,7 +65,62 @@ describe("<Room>", () => {
     });
   });
 
-  it("beforeunload cancels the active envelope", async () => {
+  it("does not render stale async enrichment after switching rooms", async () => {
+    let onEnvelope: ((id: string, envelope: unknown, revision: number) => void) | null = null;
+    connectMock.mockImplementationOnce(
+      (
+        _roomID: string,
+        opts: { onEnvelope: (id: string, envelope: unknown, revision: number) => void },
+      ) => {
+        onEnvelope = opts.onEnvelope;
+        return {
+          isConnected: () => true,
+          submitResponse,
+          cancel,
+          close,
+          switchRoom,
+        };
+      },
+    );
+
+    let finishRoomA: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, "fetch").mockReturnValue(
+      new Promise<Response>((resolve) => {
+        finishRoomA = resolve;
+      }),
+    );
+
+    renderAt("/r/room-a", true);
+    await waitFor(() => expect(onEnvelope).not.toBeNull());
+    act(() => {
+      onEnvelope?.("env-a", { v: 1, id: "env-a", type: "tangent.dashboard", data: {} }, 1);
+    });
+
+    fireEvent.click(screen.getByTestId("go-room-b"));
+    await waitFor(() => expect(switchRoom).toHaveBeenCalledWith("room-b"));
+    await act(async () => {
+      onEnvelope?.(
+        "env-b",
+        { v: 1, id: "env-b", type: "tangent.triage", data: { items: ["current"] } },
+        2,
+      );
+    });
+    expect(await screen.findByText("envelope: env-b")).toBeInTheDocument();
+
+    await act(async () => {
+      finishRoomA?.({
+        ok: true,
+        json: async () => ({
+          result: { content: [{ text: JSON.stringify({ dashboard: {} }) }] },
+        }),
+      } as Response);
+    });
+
+    expect(screen.getByText("envelope: env-b")).toBeInTheDocument();
+    expect(screen.queryByText("envelope: env-a")).not.toBeInTheDocument();
+  });
+
+  it("beforeunload leaves the active envelope unresolved", async () => {
     let onEnvelope: ((id: string, envelope: unknown) => void) | null = null;
     connectMock.mockImplementationOnce(
       (_roomID: string, opts: { onEnvelope: (id: string, envelope: unknown) => void }) => {
@@ -90,7 +145,7 @@ describe("<Room>", () => {
     await act(async () => {
       window.dispatchEvent(new Event("beforeunload"));
     });
-    expect(cancel).toHaveBeenCalledWith("env-1");
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("beforeunload does not cancel an active whiteboard envelope", async () => {

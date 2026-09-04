@@ -50,6 +50,7 @@ export function loadApprovalQueueDraft(
       typeof parsed.baseSeedKey !== "string" ||
       !isValidDraftIndex(parsed.currentIndex) ||
       !Array.isArray(parsed.decisions) ||
+      !parsed.decisions.every(isValidDraftDecision) ||
       typeof parsed.notes !== "string" ||
       !Array.isArray(parsed.exportRefs) ||
       typeof parsed.savedAt !== "string"
@@ -102,5 +103,23 @@ function getStorage(): Storage | null {
 function isValidDraftIndex(value: unknown): value is number {
   return (
     typeof value === "number" && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+  );
+}
+
+function isValidDraftDecision(value: unknown): value is ApprovalQueueDraftDecision {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const decision = value as Record<string, unknown>;
+  return (
+    typeof decision.item_id === "string" &&
+    decision.item_id.trim().length > 0 &&
+    (decision.decision === "accept" ||
+      decision.decision === "reject" ||
+      decision.decision === "defer") &&
+    typeof decision.comment === "string" &&
+    typeof decision.action_id === "string" &&
+    typeof decision.defer_reason === "string" &&
+    (decision.decided_at === undefined || typeof decision.decided_at === "string")
   );
 }

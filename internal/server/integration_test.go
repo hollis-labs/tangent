@@ -205,6 +205,7 @@ func TestIntegration_TriageRoundTrip(t *testing.T) {
 	writeFrame(t, clientConn, map[string]any{
 		"type":       "response",
 		"envelopeId": "int-rt-1",
+		"revision":   frame["revision"],
 		"response": map[string]any{
 			"v":          1,
 			"envelopeId": "int-rt-1",
@@ -239,9 +240,10 @@ func TestIntegration_TriageRoundTrip(t *testing.T) {
 	}
 }
 
-// TestIntegration_DisconnectFailsCall — closing the WS mid-call yields
-// a structured error to the MCP caller (no hang).
-func TestIntegration_DisconnectFailsCall(t *testing.T) {
+// TestIntegration_DisconnectResumesCall — closing the WS mid-call leaves the
+// MCP call pending; a replacement attachment receives a revisioned replay and
+// resolves that same call.
+func TestIntegration_DisconnectResumesCall(t *testing.T) {
 	rg := newRig(t)
 	defer rg.cleanup()
 
@@ -265,23 +267,36 @@ func TestIntegration_DisconnectFailsCall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ws dial: %v", err)
 	}
-	_ = readFrame(t, clientConn, 3*time.Second)
+	first := readFrame(t, clientConn, 3*time.Second)
 	_ = clientConn.Close(websocket.StatusGoingAway, "tab closed")
 
-	select {
-	case <-mcpDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("MCP call hung after disconnect")
+	replacement, _, err := websocket.Dial(context.Background(), rg.wsURL(rm.ID), nil)
+	if err != nil {
+		t.Fatalf("replacement ws dial: %v", err)
 	}
+	defer replacement.Close(websocket.StatusNormalClosure, "test done")
+	replayed := readFrame(t, replacement, 3*time.Second)
+	if replayed["revision"].(float64) <= first["revision"].(float64) {
+		t.Fatalf("replacement revision = %v, first = %v", replayed["revision"], first["revision"])
+	}
+	writeFrame(t, replacement, map[string]any{
+		"type":       "response",
+		"envelopeId": "int-drop-1",
+		"revision":   replayed["revision"],
+		"response": map[string]any{
+			"v":          1,
+			"envelopeId": "int-drop-1",
+			"kind":       "data",
+			"status":     "submitted",
+			"payload":    map[string]any{"resumed": true},
+		},
+	})
+	<-mcpDone
 	if mcpErr != nil {
 		t.Fatalf("MCP CallTool transport error: %v", mcpErr)
 	}
-	if !mcpRes.IsError {
-		t.Fatalf("expected IsError=true after disconnect, got success: %v", textOf(mcpRes))
-	}
-	body := textOf(mcpRes)
-	if !strings.Contains(body, "ROOM_DISCONNECTED") {
-		t.Errorf("expected ROOM_DISCONNECTED in body, got %q", body)
+	if mcpRes.IsError || !strings.Contains(textOf(mcpRes), `"resumed":true`) {
+		t.Fatalf("resumed MCP result = %q", textOf(mcpRes))
 	}
 }
 
@@ -313,10 +328,11 @@ func TestIntegration_Cancel(t *testing.T) {
 	}
 	defer clientConn.Close(websocket.StatusNormalClosure, "test done")
 
-	_ = readFrame(t, clientConn, 3*time.Second)
+	frame := readFrame(t, clientConn, 3*time.Second)
 	writeFrame(t, clientConn, map[string]any{
 		"type":       "cancel",
 		"envelopeId": "int-cancel-1",
+		"revision":   frame["revision"],
 	})
 
 	<-mcpDone
@@ -395,6 +411,7 @@ func TestIntegration_ParallelRooms(t *testing.T) {
 		writeFrame(t, c, map[string]any{
 			"type":       "response",
 			"envelopeId": envID,
+			"revision":   frame["revision"],
 			"response": map[string]any{
 				"v":          1,
 				"envelopeId": envID,

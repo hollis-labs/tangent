@@ -1,6 +1,7 @@
 import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
 
 import { TabStrip } from "./components/TabStrip";
+import HITLInbox from "./routes/HITLInbox";
 import Index from "./routes/Index";
 import Room from "./routes/Room";
 
@@ -19,6 +20,8 @@ function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Index />} />
+          <Route path="/hitl" element={<HITLInbox />} />
+          <Route path="/hitl/items/:itemID" element={<HITLInbox />} />
           <Route path="/r/:roomID" element={<Room />} />
         </Route>
       </Routes>

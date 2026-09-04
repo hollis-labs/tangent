@@ -24,8 +24,7 @@ func RegisterProseRevision(svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	reg := svc.Registry()
-	if err := reg.RegisterTypeFromManifest(proseRevisionManifest, proseRevisionSchema, PluginID); err != nil {
+	if err := svc.RegisterTypeFromManifest(ProseRevisionEnvelopeType, proseRevisionManifest, proseRevisionSchema, PluginID); err != nil {
 		return fmt.Errorf("extensions: register prose-revision: %w", err)
 	}
 	return nil
