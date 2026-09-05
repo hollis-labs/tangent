@@ -125,28 +125,12 @@ func (s *Server) handleTriage(
 		), nil, nil
 	}
 
-	roomID, reused := metaRoomID(args.Envelope.Meta)
-	if !reused || roomID == "" {
-		createRes, _, err := s.handleSessionCreate(ctx, nil, sessionCreateInput{
-			Meta: map[string]any{
-				"envelopeID":   args.Envelope.ID,
-				"envelopeType": args.Envelope.Type,
-			},
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		if createRes.IsError {
-			return createRes, nil, nil
-		}
-		var created sessionCreateResult
-		if err := json.Unmarshal([]byte(extractToolText(createRes)), &created); err != nil {
-			return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("decode session_create result: %v", err)), nil, nil
-		}
-		roomID = created.RoomID
-		s.logWorkflowRoomCreated("triage", roomID, args.Envelope.ID)
-	} else {
-		s.logWorkflowRoomReused("triage", roomID, args.Envelope.ID)
+	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "triage", &args.Envelope)
+	if roomErr != nil {
+		return nil, nil, roomErr
+	}
+	if roomResult != nil {
+		return roomResult, nil, nil
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
@@ -223,15 +207,4 @@ func toolErrorResult(code, message string) *mcpsdk.CallToolResult {
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(raw)}},
 		IsError: true,
 	}
-}
-
-func extractToolText(res *mcpsdk.CallToolResult) string {
-	if res == nil || len(res.Content) == 0 {
-		return ""
-	}
-	text, _ := res.Content[0].(*mcpsdk.TextContent)
-	if text == nil {
-		return ""
-	}
-	return text.Text
 }

@@ -153,7 +153,7 @@ func (s *Server) advanceRoomEnvelopeDurable(
 	// its own result even when the room has moved on to other work or been
 	// closed entirely — otherwise the busy gate, or a torn-down room, would
 	// hide the very outcome the retry exists to recover.
-	known, err := s.roomflow.Recognize(ctx, caller, request)
+	_, known, err := s.roomflow.Recognize(ctx, caller, request)
 	if err != nil {
 		return triageErrorResult(err), nil, nil
 	}

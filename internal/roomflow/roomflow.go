@@ -333,7 +333,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 	admitted := s.telemetry.Now()
 	key := WorkflowIdempotencyKey(request.Envelope.Type, request.Envelope.ID)
 
-	record, err := s.ensureInteraction(ctx, request, caller)
+	record, created, err := s.ensureInteraction(ctx, request, caller)
 	if err != nil {
 		s.emit(ctx, telemetry.Event{
 			Name:        telemetry.EventInteractionRefused,
@@ -352,7 +352,16 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		}
 		return Outcome{}, err
 	}
-	correlation := correlationFor(record, request.RoomID, request.Envelope.ID)
+	// From here on the room is the interaction's own, not the one this call
+	// happened to be routed to. The room is deliberately absent from the
+	// workflow identity, so a retry that arrives in a different room — or in a
+	// room this process just minted for it — is still the same request, and
+	// the handle it receives has to name the room the request is bound to.
+	// Using the requested room instead is what let an identical retry hand its
+	// caller a fresh room id, a second envelope projection, and a URL that
+	// contradicted the interaction's own legacy_room_id.
+	roomID := boundRoomID(record, request.RoomID)
+	correlation := correlationFor(record, roomID, request.Envelope.ID)
 	s.emit(ctx, telemetry.Event{
 		Name:        telemetry.EventInteractionAdmitted,
 		Outcome:     telemetry.OutcomeOK,
@@ -364,17 +373,17 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 			telemetry.Int(telemetry.AttrRevision, record.Revision),
 		},
 	})
-	handle := s.handleFor(record, request.RoomID, request.Envelope.ID)
+	handle := s.handleFor(record, roomID, request.Envelope.ID)
 
 	if isTerminal(record.State) {
 		// The identity already has an immutable outcome: an identical retry,
 		// or a caller coming back after its transport gave up. Return exactly
 		// what was recorded, never a fresh execution.
-		s.retirePresentation(request.RoomID, request.Envelope.ID)
+		s.retirePresentation(roomID, request.Envelope.ID)
 		recovered, recoverErr := s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
 			InteractionID: record.ID, RequesterScope: caller.Scope,
 			Capability:           surfaceCapability,
-			TransportCorrelation: transportCorrelation(request.RoomID, request.Envelope.ID, "named-workflow-recovery"),
+			TransportCorrelation: transportCorrelation(roomID, request.Envelope.ID, "named-workflow-recovery"),
 		})
 		if recoverErr != nil {
 			return Outcome{}, recoverErr
@@ -382,8 +391,18 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		return s.projectTerminal(ctx, recovered, handle)
 	}
 
-	if presentErr := s.present(request.RoomID, request.presented(), record.ID, caller); presentErr != nil {
-		return Outcome{}, presentErr
+	if presentErr := s.present(roomID, request.presented(), record.ID, caller); presentErr != nil {
+		// Recovery outranks the room's own existence, which is the same rule
+		// admission control already follows. For a request Tangent already
+		// owns, presentation is a view that has gone missing; the durable
+		// record is intact and the caller still has to receive its handle.
+		// A brand-new interaction is different: nothing has been shown to
+		// anyone yet, so a missing room is a real refusal.
+		if created || !errors.Is(presentErr, ErrRoomNotFound) {
+			return Outcome{}, presentErr
+		}
+		s.logger.Warn("roomflow: recognized retry has no live room to re-present in",
+			"interaction", record.ID, "room", roomID, "envelope", request.Envelope.ID)
 	}
 
 	if request.Mode == ModeAsync {
@@ -394,7 +413,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 	outcome, err := s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
 		InteractionID: record.ID, RequesterScope: caller.Scope,
 		MaximumWait: s.window, Capability: surfaceCapability,
-		TransportCorrelation: transportCorrelation(request.RoomID, request.Envelope.ID, "named-workflow-wait"),
+		TransportCorrelation: transportCorrelation(roomID, request.Envelope.ID, "named-workflow-wait"),
 	})
 	switch {
 	case err == nil:
@@ -416,22 +435,43 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 }
 
 // Recognize reports whether Tangent already owns a durable interaction for
-// this scoped workflow identity. Admission control uses it so a retry reaches
-// its own outcome instead of colliding with the room's current work.
+// this scoped workflow identity, and names the legacy room that interaction is
+// bound to.
+//
+// It answers two questions with one lookup because they are the same question
+// asked at two points. Admission control asks it so a retry reaches its own
+// outcome instead of colliding with the room's current work; room resolution
+// asks it so a retry is routed back into the room it already owns instead of
+// minting a second one.
 func (s *Service) Recognize(
 	ctx context.Context,
 	caller interaction.ActorBinding,
 	env *envelopes.Envelope,
-) (bool, error) {
+) (string, bool, error) {
 	if env == nil {
-		return false, fmt.Errorf("roomflow: envelope is required")
+		return "", false, fmt.Errorf("roomflow: envelope is required")
 	}
 	if caller == (interaction.ActorBinding{}) {
 		caller = DefaultCaller
 	}
-	_, found, err := s.interactions.FindInteractionByIdempotency(
+	record, found, err := s.interactions.FindInteractionByIdempotency(
 		ctx, caller, WorkflowIdempotencyKey(env.Type, env.ID), surfaceCapability)
-	return found, err
+	if err != nil || !found {
+		return "", found, err
+	}
+	return record.LegacyRoomID, true, nil
+}
+
+// boundRoomID is the legacy room an interaction's handle names.
+//
+// The record's own binding wins over whatever room a given call was routed to.
+// The fallback covers only a record that carries no binding at all, which no
+// path through this package can produce.
+func boundRoomID(record interaction.InteractionRecord, requested string) string {
+	if record.LegacyRoomID != "" {
+		return record.LegacyRoomID
+	}
+	return requested
 }
 
 // ConflictError reports a reused identity carrying a different payload.
@@ -450,28 +490,30 @@ func (e *ConflictError) Error() string {
 func (e *ConflictError) Unwrap() error { return interaction.ErrIdempotencyConflict }
 
 // ensureInteraction returns the durable interaction that owns this invocation,
-// creating it only when the scoped identity has never been seen.
+// creating it only when the scoped identity has never been seen. The boolean
+// reports whether this call is the one that created it, which is what
+// separates a first invocation from a retry for every decision downstream.
 func (s *Service) ensureInteraction(
 	ctx context.Context,
 	request Request,
 	caller interaction.ActorBinding,
-) (interaction.InteractionRecord, error) {
+) (interaction.InteractionRecord, bool, error) {
 	key := WorkflowIdempotencyKey(request.Envelope.Type, request.Envelope.ID)
 	existing, found, err := s.interactions.FindInteractionByIdempotency(ctx, caller, key, surfaceCapability)
 	if err != nil {
-		return interaction.InteractionRecord{}, err
+		return interaction.InteractionRecord{}, false, err
 	}
 	if found {
 		snapshot, snapshotErr := canonicalRequest(request.Envelope)
 		if snapshotErr != nil {
-			return interaction.InteractionRecord{}, snapshotErr
+			return interaction.InteractionRecord{}, false, snapshotErr
 		}
 		if !json.Valid(existing.RequestSnapshot) || string(existing.RequestSnapshot) != string(snapshot) {
-			return interaction.InteractionRecord{}, &ConflictError{
+			return interaction.InteractionRecord{}, false, &ConflictError{
 				IdempotencyKey: key, ExistingInteractionID: existing.ID,
 			}
 		}
-		return existing, nil
+		return existing, false, nil
 	}
 
 	if _, _, surfaceErr := s.interactions.EnsureLegacyRoomSurface(ctx, interaction.EnsureLegacyRoomSurfaceInput{
@@ -479,16 +521,16 @@ func (s *Service) ensureInteraction(
 		Metadata:   roomSurfaceMetadata(request.RoomID),
 		Capability: surfaceCapability,
 	}); surfaceErr != nil {
-		return interaction.InteractionRecord{}, surfaceErr
+		return interaction.InteractionRecord{}, false, surfaceErr
 	}
 
 	snapshot, err := canonicalRequest(request.Envelope)
 	if err != nil {
-		return interaction.InteractionRecord{}, err
+		return interaction.InteractionRecord{}, false, err
 	}
 	presented, err := json.Marshal(request.presented())
 	if err != nil {
-		return interaction.InteractionRecord{}, fmt.Errorf(
+		return interaction.InteractionRecord{}, false, fmt.Errorf(
 			"roomflow: marshal presented envelope %q: %w", request.Envelope.ID, err)
 	}
 	handle, err := s.interactions.SubmitInteraction(ctx, interaction.SubmitInteractionInput{
@@ -519,20 +561,20 @@ func (s *Service) ensureInteraction(
 			if lookupErr == nil && found {
 				existingID = conflicting.ID
 			}
-			return interaction.InteractionRecord{}, &ConflictError{
+			return interaction.InteractionRecord{}, false, &ConflictError{
 				IdempotencyKey: key, ExistingInteractionID: existingID,
 			}
 		}
-		return interaction.InteractionRecord{}, err
+		return interaction.InteractionRecord{}, false, err
 	}
 	outcome, err := s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
 		InteractionID: handle.InteractionID, RequesterScope: caller.Scope,
 		Capability: surfaceCapability,
 	})
 	if err != nil {
-		return interaction.InteractionRecord{}, err
+		return interaction.InteractionRecord{}, false, err
 	}
-	return outcome.Interaction, nil
+	return outcome.Interaction, true, nil
 }
 
 // present attaches the envelope to its room. Presentation is a delivery
