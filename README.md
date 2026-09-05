@@ -204,9 +204,26 @@ make test            # go test -race + vitest
 ./tangent            # serves on :7842 (override via TANGENT_HTTP_PORT)
 ```
 
+Database operations (one at a time; each exits before the server would start):
+
+```bash
+./tangent --db-check                              # integrity, schema, guards, storage, ownership
+./tangent --db-backup ~/backups/tangent.db        # consistent while the service runs
+./tangent --db-backup ~/backups/tangent.db --db-drain   # checkpoints first; requires exclusive access
+./tangent --db-restore ~/backups/tangent.db --confirm
+./tangent --db-repair                             # recreate missing immutability guards
+./tangent --retention-plan                        # what is past its retention window
+./tangent --erase-interaction <id> --dry-run      # see what an erasure would remove
+```
+
+Anything that removes content or replaces the database requires `--confirm`,
+and refuses while a Tangent is serving. See
+[`docs/database-operations.md`](./docs/database-operations.md).
+
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
+- [`docs/database-operations.md`](./docs/database-operations.md) — single-writer ownership, backup and restore modes, repair, and the six deletion kinds
 - [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes

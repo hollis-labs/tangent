@@ -9,6 +9,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Database operations: single-writer ownership, backup, restore, repair, and
+  six distinct deletion kinds.** Implements
+  [ADR 0002](docs/adr/0002-retention-and-draft-custody.md) §6 and §7, and clears
+  the obstruction it recorded: there was no deletion path at all for canonical
+  records, because twelve `*_immutable_delete` triggers abort `DELETE` and
+  SQLite fires them on foreign-key cascades too, while the legacy
+  `rooms`/`envelopes` pair holding the same payloads deleted cleanly.
+  Deletability was exactly backwards.
+  - **Single-writer is enforced, not hoped for.** Every mode that writes takes a
+    non-blocking exclusive `flock` on `<database>.owner` before opening the
+    database and refuses — naming the holding process — rather than queuing. The
+    kernel lock is the authority and is released on process death, so a crash
+    needs no manual cleanup. Commands needing exclusive ownership additionally
+    probe `/readyz` and refuse if anything is serving, which catches a Tangent
+    deployed before the lock existed.
+  - **Backup is opt-in and uses `VACUUM INTO`**, in two modes with two different
+    guarantees: online (a point-in-time snapshot taken while the service runs,
+    verified against 200 concurrent writes) and drained (`wal_checkpoint(TRUNCATE)`
+    first, requiring that nothing else holds the database). A `cp` of a WAL-mode
+    file is not a backup. Each backup writes a sidecar manifest carrying its
+    fingerprint and no filesystem path.
+  - **Restore verifies before it touches anything**, moves the existing database
+    and its WAL companions to `<database>.superseded-<timestamp>` rather than
+    deleting them, restores them on any failure, and asserts five preservation
+    properties individually: definition digests, interaction identities
+    (including idempotency keys), resolutions (including integrity digests and
+    participant binding), audit history, and delivery obligations. Pending
+    deliveries and held leases survive and are reconciled by `RecoverAfterRestart`
+    at the next boot — proven end to end, with the retryable/manual distinction
+    intact and reconciliation idempotent across two boots.
+  - **`--db-check` and `--db-repair`.** The expected immutability-guard inventory
+    is derived by migrating a throwaway in-memory database with this binary's own
+    embedded migrations, so it cannot drift; a missing guard is recreated from
+    that reference's exact text. Repair fixes exactly two things — a missing guard
+    and an unbounded WAL — and reports everything else with the action that fixes
+    it, which is a restore.
+  - **The custody maintenance path.** One narrowly scoped function in
+    `internal/db` drops only the guards an operation needs, inside one
+    transaction, recreates them from `sqlite_master`'s own text, and verifies
+    them back before committing. A rollback restores them too, because SQLite DDL
+    is transactional; the single connection and the single-writer lock mean the
+    window is unobservable to any other statement or process.
+  - **Six deletion kinds, kept distinct**: capability expiry (`effect_handles`,
+    no guard suspension needed), draft deletion (tombstones `draft_revisions.payload`
+    and finally gives `draft_revision_tombstones` a writer), payload redaction
+    (ADR 0002 §2's typed tombstone, preserving identity and digests, idempotent),
+    surface close (removes nothing, and is logged saying so), surface purge (the
+    cascade delete, never automatic), and external-source deletion (a recorded
+    refusal — Tangent never held the bytes).
+  - **`retention_operations`** (migration `0012`): append-only *and* undeletable,
+    with no foreign keys so an audit row outlives the surface it records.
+    Carries digests, identifiers, counts, and states — never content — plus
+    `guards_restored` and a backup survey that says `not-surveyed` when nobody
+    looked.
+  - **`tangent.retention_status`** reports the custody posture over MCP,
+    read-only; production `tools/list` is now 46. The operations themselves are
+    CLI commands, because erasure authority belongs to the local user and MCP has
+    no authenticated caller identity to hold it.
+  - See [docs/database-operations.md](docs/database-operations.md), including
+    what deletion cannot reach and what this work did not implement.
+
 - **Separate liveness, readiness, and capability health.** `/healthz` proved
   only that the process was responding while reporting `{"status":"ok"}` for a
   host whose database, migrations, registry, renderer host, or requested kind
@@ -69,6 +130,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   mux so no route can forget them.
 
 ### Changed
+
+- **`surface_open_requests.surface_id` moves from `ON DELETE RESTRICT` to
+  `ON DELETE CASCADE`** (migration `0012`, ADR 0002 §Q9). Its `request_snapshot`
+  was a permanent second copy of the caller payload that no operation could
+  reach and that made every surface opened through the async path undeletable.
+  The immutability trigger stays: the table still refuses `UPDATE` and direct
+  `DELETE`.
+- **New CLI commands**: `--db-check`, `--db-backup` (with `--db-drain`),
+  `--db-restore`, `--db-compact`, `--db-repair`, `--retention-plan`,
+  `--retention-apply`, `--retention-history`, `--erase-interaction`,
+  `--erase-surface`, `--erase-drafts`, `--purge-surface`, `--close-surface`,
+  `--expire-capabilities`, `--external-deletion-report`, with `--actor`,
+  `--policy-ref`, `--backup-dir`, `--dry-run`, and a mandatory `--confirm` for
+  anything that removes content or replaces the database.
 
 - **`definition_bindings.revision` is a real field.** It previously held a copy
   of `version`. Migration `0007` normalizes existing rows to `1`; new bindings

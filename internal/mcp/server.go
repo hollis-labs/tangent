@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -68,6 +69,15 @@ type Server struct {
 	telemetry      *telemetry.Recorder
 	telemetryStore *telemetry.SQLStore
 
+	// maintenanceDB answers tangent.retention_status. It is the same handle
+	// everything else shares — a custody posture read from a different
+	// connection could describe a different transaction — and it is read-only
+	// here by discipline rather than by type: the retention *operations* are
+	// operator commands on the machine, never tools (see retention_tool.go).
+	// Nil is valid, and the tool says so.
+	maintenanceDB     *sql.DB
+	maintenanceDBPath string
+
 	roomflowOptions []roomflow.Option
 
 	mcp *mcpsdk.Server
@@ -117,6 +127,23 @@ func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Opti
 		server.telemetry = recorder
 		server.telemetryStore = store
 		server.roomflowOptions = append(server.roomflowOptions, roomflow.WithTelemetry(recorder))
+		return nil
+	}
+}
+
+// WithMaintenance enables tangent.retention_status by giving the MCP server
+// the database handle and the configured database path.
+//
+// The path is needed for exactly one thing — probing the single-writer lock
+// sidecar — and it never leaves this process: internal/db.Status returns
+// whether the lock is held and by which role, never where it lives.
+func WithMaintenance(database *sql.DB, databasePath string) Option {
+	return func(server *Server) error {
+		if database == nil {
+			return fmt.Errorf("mcp: maintenance database handle is nil")
+		}
+		server.maintenanceDB = database
+		server.maintenanceDBPath = databasePath
 		return nil
 	}
 }
@@ -543,6 +570,15 @@ func (s *Server) registerTools() error {
 	}
 	if err := s.registerTelemetryTool(); err != nil {
 		return err
+	}
+	// Registered only when a database handle was supplied. Unlike health and
+	// telemetry, there is no useful "unavailable" answer to advertise: a build
+	// with no database has no custody posture to report, and a tool that always
+	// refuses is a tool that costs a listing entry for nothing.
+	if s.maintenanceDB != nil {
+		if err := s.registerRetentionTool(); err != nil {
+			return err
+		}
 	}
 	if s.interactions != nil {
 		if err := s.registerInteractionTools(); err != nil {

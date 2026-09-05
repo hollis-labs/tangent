@@ -103,6 +103,7 @@ func ensureParentDir(path string) error {
 	if dir == "." || dir == "" {
 		return nil
 	}
+	//nolint:gosec // dir is the parent of the operator-configured database path
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create sqlite dir %q: %w", dir, err)
 	}

@@ -89,20 +89,71 @@ func main() {
 	// mints a fresh session on its next page load.
 	revokeSessions := flagSet.Bool("revoke-participant-sessions", false,
 		"revoke every browser participant session and exit")
+	// The operator surface for backup, restore, repair, compaction, and the six
+	// retention operations (CW-20260825-0072). Each is a one-shot that exits
+	// before the server would start; see maintenance.go.
+	maintenance := registerMaintenanceFlags(flagSet)
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
 		os.Exit(2)
 	}
-	if exclusiveModes(*migrateOnly, *rollbackOne, *revokeSessions) > 1 {
+	maintenanceModes := maintenance.requested()
+	if maintenanceModes > 1 {
+		fmt.Fprintln(os.Stderr, "tangent: maintenance commands are one at a time")
+		os.Exit(2)
+	}
+	oneShots := exclusiveModes(*migrateOnly, *rollbackOne, *revokeSessions) + maintenanceModes
+	if oneShots > 1 {
 		fmt.Fprintln(os.Stderr,
-			"tangent: --migrate-only, --rollback-one, and --revoke-participant-sessions are mutually exclusive")
+			"tangent: --migrate-only, --rollback-one, --revoke-participant-sessions, and the "+
+				"maintenance commands are mutually exclusive")
 		os.Exit(2)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	sqlDB, err := tangentdb.Open(resolveDBPath())
+	// The single-writer contract (ADR 0002 §6, CW-20260825-0072). Every mode
+	// that writes takes an exclusive advisory lock on `<database>.owner` before
+	// the database is opened, and refuses rather than queues when another
+	// process holds it. The maintenance path suspends immutability triggers for
+	// the length of one transaction, and a second writer during that window
+	// would write into a database without its guards.
+	//
+	// Read-only maintenance commands take no lock on purpose: an operator
+	// diagnosing a live installation must not have to stop it to look at it.
+	dbPath := resolveDBPath()
+	var ownership *tangentdb.Ownership
+	if maintenanceModes > 0 {
+		claimed, refusal := refuseIfServing(dbPath, *port, maintenance.needsExclusiveOwnership())
+		if refusal != nil {
+			fmt.Fprintf(os.Stderr, "tangent: %v\n", refusal)
+			os.Exit(1)
+		}
+		ownership = claimed
+	} else {
+		// Serving and the three existing one-shots all write. They differ only
+		// in the role a refusal quotes back, which is the difference between
+		// telling an operator to stop a service and telling them to wait a few
+		// seconds.
+		role, label := tangentdb.RoleServer, "tangent serve"
+		if exclusiveModes(*migrateOnly, *rollbackOne, *revokeSessions) > 0 {
+			role, label = tangentdb.RoleMaintenance, commandLabel()
+		}
+		claimed, claimErr := tangentdb.AcquireOwnership(dbPath, role, label)
+		if claimErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: %v\n", claimErr)
+			os.Exit(1)
+		}
+		ownership = claimed
+	}
+	defer func() {
+		if releaseErr := ownership.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: release database ownership: %v\n", releaseErr)
+		}
+	}()
+
+	sqlDB, err := tangentdb.Open(dbPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: open db: %v\n", err)
 		os.Exit(1)
@@ -140,6 +191,29 @@ func main() {
 		}
 		logger.Info("revoked browser participant sessions", "count", revoked)
 		return
+	}
+	if maintenanceModes > 0 {
+		// Migrations deliberately do NOT run first. A restore, a check, and a
+		// repair are all things an operator reaches for when the schema is the
+		// problem, and silently migrating the database they are trying to
+		// inspect is how a diagnosis becomes a second incident.
+		closed := false
+		closeOnce := func() error {
+			if closed {
+				return nil
+			}
+			closed = true
+			return tangentdb.Close(sqlDB)
+		}
+		code := runMaintenance(context.Background(), maintenance, sqlDB, dbPath, closeOnce)
+		if closeErr := closeOnce(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: close db: %v\n", closeErr)
+		}
+		if releaseErr := ownership.Release(); releaseErr != nil {
+			fmt.Fprintf(os.Stderr, "tangent: release database ownership: %v\n", releaseErr)
+		}
+		ownership = nil
+		os.Exit(code)
 	}
 	if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
@@ -387,6 +461,10 @@ func main() {
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
 		mcp.WithTelemetry(recorder, telemetryStore),
+		// tangent.retention_status. Read-only by design: the retention
+		// operations are CLI commands, because erasure authority belongs to the
+		// local user and MCP has no authenticated caller identity to hold it.
+		mcp.WithMaintenance(sqlDB, dbPath),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
