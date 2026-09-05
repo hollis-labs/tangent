@@ -111,9 +111,12 @@ See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
   authorities. See
   [`architecture.md`](./architecture.md#room-access-and-caller-scope).
 - One active pending envelope per room.
-- The production server advertises 43 tools: room/workflow compatibility tools,
-  generic durable interaction tools, and 4 strict HITL inbox operations. See
-  [`mcp-integration.md`](./mcp-integration.md) for the build-derived list.
+- The production server's tool surface is room/workflow compatibility tools,
+  generic durable interaction tools, 4 strict HITL inbox operations, the
+  definition-registry diagnostics, and the operability probes. The count is
+  deliberately not recorded here — it has been wrong in this repository's docs
+  more often than right. `make smoke` derives it from the build and reports any
+  hop that disagrees; see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Persistence layer
 

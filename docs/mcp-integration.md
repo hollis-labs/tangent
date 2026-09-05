@@ -313,54 +313,36 @@ curl -fsS -X POST http://localhost:7842/mcp \
   | jq '.result.tools[].name'
 ```
 
-The production binary currently advertises **43 tools**: room/workflow and
-session compatibility tools, generic durable surface/interaction tools, and the
-4 HITL inbox operations. Expected names from the shipped build:
+Do not compare the answer against a number written in a document. This one has
+been wrong repeatedly — it has moved from 25 to 46 across the tasks that grew
+the surface — so the check that matters compares the deployment against the
+build on disk rather than against prose:
 
+```bash
+make smoke                       # transports, parity, and one read-only tool call
+TANGENT_SMOKE_ENV=1 make smoke   # …plus the live deployment, Cerberus, and the Tether gateway
 ```
-"tangent.approval-queue"
-"tangent.block_draft"
-"tangent.dashboard"
-"tangent.definition_get"
-"tangent.definition_registry_diagnostics"
-"tangent.definition_registry_list"
-"tangent.design-iteration"
-"tangent.diff-review"
-"tangent.feedback"
-"tangent.file-picker"
-"tangent.form-collect"
-"tangent.hitl_await"
-"tangent.hitl_enqueue"
-"tangent.hitl_get"
-"tangent.hitl_withdraw"
-"tangent.interaction_acknowledge"
-"tangent.interaction_await"
-"tangent.interaction_cancel"
-"tangent.interaction_get"
-"tangent.interaction_list_kinds"
-"tangent.interaction_resolve_definition"
-"tangent.interaction_submit"
-"tangent.interaction_supersede"
-"tangent.interview_question"
-"tangent.list_workflows"
-"tangent.output_render"
-"tangent.progress-panel"
-"tangent.prose_revision"
-"tangent.session_advance"
-"tangent.session_advance_phase"
-"tangent.session_close"
-"tangent.session_create"
-"tangent.session_get"
-"tangent.session_list"
-"tangent.session_set_phase_output"
-"tangent.spreadsheet-review"
-"tangent.surface_close"
-"tangent.surface_get"
-"tangent.surface_open"
-"tangent.synthesis_notes"
-"tangent.triage"
-"tangent.whiteboard"
-"tangent.wizard"
+
+`make smoke` prints the surface the shipped build advertises and its digest,
+and the gated run reports any hop that disagrees as `CATALOG_STALE`, naming the
+tools that are absent. See [`mcp-smoketest.md`](./mcp-smoketest.md) for the
+four failure modes and the operator recipe.
+
+The names group into room/workflow and session compatibility tools, generic
+durable surface/interaction tools, the 4 HITL inbox operations
+(`tangent.hitl_enqueue`, `_get`, `_await`, `_withdraw`), the definition-registry
+diagnostics (`tangent.definition_registry_list`, `tangent.definition_get`,
+`tangent.definition_registry_diagnostics`), and the operability probes
+(`tangent.health_report`, `tangent.telemetry_query`,
+`tangent.retention_status`). To list them from the artifact you are about to
+deploy, boot it on a scratch database and port:
+
+```bash
+TANGENT_DB_PATH=$(mktemp -d)/t.db TANGENT_HTTP_PORT=17842 ./tangent &
+curl -fsS -X POST http://localhost:17842/mcp \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  | jq -r '.result.tools[].name' | sort
 ```
 
 `tangent.list_workflows` currently returns 17 dispatcher-backed room workflow
