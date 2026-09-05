@@ -61,6 +61,26 @@ installation must not require stopping it.
 | every retention operation | yes | no |
 | serving (`tangent` with no command) | yes | — |
 
+### The multi-host escape hatch
+
+SQLite is a strong local-first store **while one authoritative Tangent runtime
+owns migrations, claims, and writes** — which is what the lock above enforces.
+WAL, connection limits, transaction discipline, backup, and repair are part of
+that deployment contract, not incidental tuning.
+
+A shared or multi-host deployment can use another transactional store **without
+changing the interaction model**. Horizontal processes coordinate through
+durable claims and event delivery, not through process-local room maps. Nothing
+in this document's operational contract — the six deletion kinds, the
+immutability guards, the restore guarantees — assumes SQLite specifically; it
+assumes a single writer per database and a transactional store.
+
+No such deployment exists today, and none is planned; this is recorded so that
+"Tangent is SQLite-only" is not mistaken for a product boundary. The product
+boundary is in
+[ADR 0005](./adr/0005-product-boundary-and-portfolio-composition.md), and it
+says nothing about the store.
+
 ---
 
 ## 2. Backup

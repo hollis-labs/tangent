@@ -10,7 +10,12 @@
 
 **Implementation reviewed:** `f457ad1`
 
-**Source:** [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+**Source:** `docs/interactive-collaboration-direction.md`, retired 2026-09-04
+under `CW-20260825-0067`. Its durable content is
+[`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md); the rest was
+superseded by this ADR and its siblings, converted to Torque tasks, or
+captured to Tesseract knowledge. The file remains readable in git history
+between `f457ad1` and `a332e76`.
 
 ## Context
 
@@ -510,7 +515,8 @@ The review disposition was: accept this decision as drafted.
 
 ## References
 
-- [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+- [`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md) — the
+  product boundary promoted from the retired direction document
 - [`../architecture.md`](../architecture.md)
 - [`../mcp-integration.md`](../mcp-integration.md)
 - [`../../internal/room/room.go`](../../internal/room/room.go)

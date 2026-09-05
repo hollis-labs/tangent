@@ -10,7 +10,12 @@
 
 **Baseline reviewed:** `0a45caa`
 
-**Source:** [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+**Source:** `docs/interactive-collaboration-direction.md`, retired 2026-09-04
+under `CW-20260825-0067`. Its durable content is
+[`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md); the rest was
+superseded by this ADR and its siblings, converted to Torque tasks, or
+captured to Tesseract knowledge. The file remains readable in git history
+between `f457ad1` and `a332e76`.
 
 **Composes with:** [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md),
 [`0003-definition-and-package-ownership.md`](0003-definition-and-package-ownership.md),
@@ -739,9 +744,11 @@ folded in.
 - [`0004-caller-participant-and-room-access-authority.md`](0004-caller-participant-and-room-access-authority.md)
   — §3 `standalone-local` partitions are advisory, §5 room URLs are locators,
   §6 capability material never leaves the session store
-- [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
-  — "Sensitivity and retention", "Browser local storage has implicit custody",
-  "SQLite maintenance and backup are not product contracts", open questions 10
+- [`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md) — §3
+  responsibility boundaries and §3.1 the secret boundary, promoted from the
+  retired direction document; the "SQLite maintenance and backup" material is
+  now [`../database-operations.md`](../database-operations.md) and the browser
+  draft custody gap is a Torque task, open question 10
   and 16
 - [`../contracts/hitl-inbox-v1.md`](../contracts/hitl-inbox-v1.md)
 - [`../../internal/db/db.go`](../../internal/db/db.go) — WAL,

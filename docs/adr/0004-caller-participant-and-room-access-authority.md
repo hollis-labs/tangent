@@ -10,7 +10,12 @@
 
 **Baseline reviewed:** `0a45caa`
 
-**Source:** [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+**Source:** `docs/interactive-collaboration-direction.md`, retired 2026-09-04
+under `CW-20260825-0067`. Its durable content is
+[`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md); the rest was
+superseded by this ADR and its siblings, converted to Torque tasks, or
+captured to Tesseract knowledge. The file remains readable in git history
+between `f457ad1` and `a332e76`.
 — "Identity and authorization model" and "Room invitations and browser sessions"
 
 **Builds on:** [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md)
@@ -146,6 +151,17 @@ surface or an interaction. They are a different namespace from the
 [ADR 0003 §2.5](0003-definition-and-package-ownership.md) (`clipboard.write`,
 `export.download`, `file.read_scoped`, …). The two never substitute for one
 another, and `CW-20260825-0077` consumes both without merging them.
+
+*(Amended 2026-09-04, C1.)* Non-substitution alone is necessary and not
+sufficient: it is satisfied by two systems that ignore each other, which is the
+failure this rule was written to prevent, approached from the other side. The
+positive rule is that **an effect is admitted only when its object-access
+precondition is also satisfied**, evaluated through `authz.Authorize` like every
+other refusal in the process. A renderer that may not `view` an interaction may
+not read a file on its behalf, however complete its effect grant.
+`effect.ObjectPrecondition` is that mapping — it names which question must be
+answered first, and it is a mapping and never an equivalence between the two
+powers.
 
 | Capability | Grants | Shipped operations it gates |
 |---|---|---|
@@ -325,8 +341,37 @@ line takes. Neither weakens the other.
 
 ### 6. Capability material never leaves the session store
 
-The only capability material in the system is the participant session id.
-`CW-20260825-0078` inherits these as hard constraints.
+*(Amended 2026-09-04, C3 — the original text of this paragraph read "The only
+capability material in the system is the participant session id" and enumerated
+capability material as a closed set. That was true at `0a45caa` and stopped
+being true the moment scoped grants existed. It is corrected here rather than
+footnoted, because the uncorrected sentence makes the model unimplementable.)*
+
+This section governs **two** classes of material, and the distinction between
+them is load-bearing in both directions.
+
+**Capability material — never leaves the session store.** The participant
+session id is the only member. Possessing it *is* authority: it identifies the
+session whose capability set `authz.Authorize` reads. Rules 1 through 7 below
+are about this class and are hard constraints, inherited by
+`CW-20260825-0078`.
+
+**Scoped locators — may travel, because they grant nothing alone.** A room URL
+(§5) and an `effect.Handle` id (ADR 0003 §2.5, B3) are both in this class. A
+handle is short-lived grant *material* in the sense
+[ADR 0002 §5](0002-retention-and-draft-custody.md) cares about — it is scoped,
+expiring, and use-counted — and it is **not a credential**: it is re-authorized
+on every use against the session and the pinned binding, and possessing one
+without them grants nothing. That is precisely why a handle id may appear in a
+renderer payload where a session id may not. Without this distinction the honest
+reading of §6 forbids a handle id in a renderer payload, which makes the whole
+host-mediated capability model unimplementable; and the dishonest reading treats
+the handle as a bearer token, which is worse. A scoped locator is therefore
+exempt from rule 1's placement list and subject to its own scoping rules, not to
+this section's secrecy rules.
+
+`CW-20260825-0078` inherits the following as hard constraints on **capability
+material**.
 
 1. The session id appears in exactly two places: the `Set-Cookie` / `Cookie`
    header, and a hash column in the session table. It must never appear in a
@@ -490,11 +535,26 @@ required argument, the authority is `standalone-local`, the assurance is
 `loopback-unverified`, and the participant is the local operator. Standalone use
 is the default configuration, not a degraded one.
 
-`CW-20260825-0077` supplies the real `PrivilegedActorPolicy` when a Cerberus
-Workspace authority is present. `CW-20260825-0075` leaves the deny-by-default
-policy in place and does not invent an administrator credential. `0077`
-composes by *providing* the administrator and host-policy decisions this ADR
-reserves; it does not change the principals or the capability set.
+`CW-20260825-0077` **wires the `PrivilegedActorPolicy` seam**; it does not grant
+the capability. *(Amended 2026-09-04, C2 — the original wording, "supplies the
+real `PrivilegedActorPolicy` when a Cerberus Workspace authority is present",
+reads as licence to ship an administrator. It is not, and `0077` did not.)*
+Two things were conflated and are now separate:
+
+1. **Wiring the seam — done.** `cmd/tangent` constructs a policy over
+   `effect.Standalone()`, which denies both questions, so the composition point
+   has a call site and a test. A composition point that had only ever run with
+   the deny answer had not been tested at all; one that has never granted
+   anything is still correct.
+2. **Granting the capability — not done, and not grantable.** §12 puts
+   credential custody out of scope and §7 says nothing administers in the
+   shipped binary. Until the credential-custody decision exists there is nothing
+   to grant an administrator *with*.
+
+`CW-20260825-0075` leaves the deny-by-default policy in place and does not
+invent an administrator credential. `0077` composes by providing the
+host-policy *seam* this ADR reserves; it does not change the principals or the
+capability set.
 
 ### 11. Scope of `CW-20260825-0075`, and the recipes it breaks
 
@@ -677,7 +737,10 @@ following material choices as locked:
    `resolve`, and participant-cause `cancel`. `close` and `administer` are
    withheld.
 10. `CW-20260825-0075` leaves `PrivilegedActorPolicy` deny-by-default;
-    `CW-20260825-0077` supplies a real one.
+    `CW-20260825-0077` **wires the seam over `effect.Standalone()`, which denies
+    both questions**. *(Amended 2026-09-04, C2.)* It does not supply an
+    administrator: granting the capability needs the credential-custody decision
+    §12 defers.
 11. `Referrer-Policy: no-referrer` and `X-Content-Type-Options: nosniff` are
     applied process-wide in the middleware that already wraps the mux.
 12. **`standalone-local` partitions are advisory, not a security boundary.**
@@ -691,7 +754,12 @@ SPA migration in scope.
 
 ## Amendments required by CW-20260825-0077
 
-**Status: proposed, pending review.** `CW-20260825-0077` reconciled this ADR's
+**Status: Accepted.** Approved 2026-09-04 by Chrispian during the Tangent
+foundation orchestration session, under `CW-20260825-0067`. Each amendment
+below has been applied in place to the section it names; this block records
+the reasoning.
+
+`CW-20260825-0077` reconciled this ADR's
 object-access capabilities with
 [ADR 0003 §2.5](0003-definition-and-package-ownership.md)'s host-mediated
 effect capabilities, and wired `PrivilegedActorPolicy`. Three things this ADR
@@ -756,9 +824,12 @@ token, which is worse.
 - [`0003-definition-and-package-ownership.md`](0003-definition-and-package-ownership.md)
   — §2.5 the separate host-mediated capability namespace, §5 publisher identity
   is provenance and not authority
-- [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
-  — "Identity and authorization model" and "Room invitations and browser
-  sessions"
+- [`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md) — §3
+  responsibility boundaries (participant identity) and §3.1 the secret
+  boundary, promoted from the retired direction document. Its "Room invitations
+  and browser sessions" paragraph stated the pre-C3 locator-versus-capability
+  framing and was deliberately **not** promoted; §5 and §6 above are the
+  authority.
 - [`../architecture.md`](../architecture.md) — "Limits": localhost only, no
   remote access, no auth, no capability gating
 - [`../mcp-integration.md`](../mcp-integration.md) — "Agent labels, MCP

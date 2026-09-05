@@ -89,6 +89,55 @@ make lint-frontend
   Review fixes go in their own commit (`fix(prN): address Copilot review
   feedback` is the v0.1 pattern).
 
+## Operating model
+
+Tangent follows the portfolio's adapted twelve-factor direction. These are
+engineering conventions, not aspirations — a change that breaks one of them is
+a change that needs an argument. The boundary they serve is
+[ADR 0005](./adr/0005-product-boundary-and-portfolio-composition.md).
+
+- One version-controlled codebase produces versioned binaries and packages for
+  many deployments.
+- Go and frontend dependencies are explicitly declared and isolated. Optional
+  renderer helpers are registered capabilities, not ambient assumptions about
+  globally installed tools.
+- Configuration is external and contains no secret values. Environment
+  variables bind deployment-specific values and credential references.
+- SQLite or another database, artifact stores, identity providers, credential
+  brokers, Tether gateways, and external source systems are attached resources.
+- Build creates an immutable Go binary, embedded frontend, and verified
+  renderer assets; release binds them to configuration and registrations; run
+  executes that release.
+- Processes are disposable. Durable surfaces, interactions, drafts,
+  resolutions, and delivery obligations live in an attached stateful store.
+- Tangent embeds its own HTTP server and binds an explicitly configured port or
+  local endpoint.
+- Concurrency scales through durable claims and a coordinated store rather than
+  larger process-local room maps or competing uncoordinated writers.
+- Startup is deterministic, shutdown is graceful, and in-flight interactions
+  and resolution deliveries have explicit recovery semantics.
+- Development, test, and production exercise the same definition, renderer,
+  identity, persistence, and transport boundaries.
+- Logs are structured event streams to stdout and stderr; durable audit and
+  interaction history use application stores.
+- Migrations, backup, restore, definition validation, cache repair, export,
+  retention, and reconciliation run as one-off processes from the same release
+  — see [`database-operations.md`](./database-operations.md).
+
+Go-specific conventions follow the broader Hollis Labs engineering direction:
+
+- transports depend inward on application contracts
+- domain and application packages do not depend on HTTP, MCP, WebSocket, Wails,
+  SQLite, or a particular plugin transport
+- constructors validate required dependencies and fail fast
+- contexts carry cancellation and deadlines, not optional service dependencies
+- interfaces are consumer-owned and intentionally narrow
+- errors remain typed across adapters
+- process-global mutable state is avoided
+- generated code records its source and is reproducibly checked
+- official Go clients, SDKs, and CLIs are preferred before bespoke protocol
+  implementations
+
 ## Architecture pointer
 
 For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,

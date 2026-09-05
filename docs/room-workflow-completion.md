@@ -189,5 +189,7 @@ the outcome stays immutable and retrievable either way.
 
 - `internal/roomflow` — the shared compatibility adapter.
 - `internal/interaction` — the canonical durable substrate.
-- `docs/interactive-collaboration-direction.md` — the architectural direction
-  this implements.
+- `docs/adr/0001-lifecycle-boundaries.md` — the lifecycle separation this
+  implements.
+- `docs/adr/0005-product-boundary-and-portfolio-composition.md` — §4, why
+  room phase state is not part of Tangent's target core domain.

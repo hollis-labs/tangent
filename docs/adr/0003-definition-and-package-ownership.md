@@ -10,7 +10,12 @@
 
 **Baseline reviewed:** `0a45caa`
 
-**Source:** [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+**Source:** `docs/interactive-collaboration-direction.md`, retired 2026-09-04
+under `CW-20260825-0067`. Its durable content is
+[`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md); the rest was
+superseded by this ADR and its siblings, converted to Torque tasks, or
+captured to Tesseract knowledge. The file remains readable in git history
+between `f457ad1` and `a332e76`.
 
 **Depends on:** [`0001-lifecycle-boundaries.md`](0001-lifecycle-boundaries.md).
 This ADR extends, and does not restate, the vocabulary and lifecycle
@@ -204,7 +209,7 @@ the value; where Tangent computes it, the value is *derived*, never authored.
 | `request_schema_identity` | `string` (URI) | **Tangent, derived** | The compiled schema's resource URI, today `TypeSpec.DataSchema.Location`. It is a stable *identity*, not a content hash — it does not change when the schema body changes. Persisted already as `schema_identity`. |
 | `request_schema_digest` | `string` (`sha256:…`) | **Tangent, derived** | Already computed in `catalog.go:binding()`. |
 | `response_kind` | `enum` | publisher | `data` \| `ack` \| `ui` \| `async-ack` \| `error`, the upstream `ResponseKind` vocabulary. Already pinned. Tangent enforces it in `ValidateInteractionResponse`; upstream `ValidateResponse` does not. |
-| `response_schema` | JSON Schema | publisher | **New. Mandatory for every new definition**, per §9. Validates the terminal response payload and closes the gap where `ValidateInteractionResponse` only compares a kind string. `TypeSpec.PayloadSchema` is the existing upstream slot for it, reachable via `RegisterType` — no upstream change is needed to start carrying it. May also mark fields reference-only. |
+| `response_schema` | JSON Schema | publisher | **New. Mandatory for every new definition**, per §9. Validates the terminal response **payload** — the body a handler returns — and never the marshalled `envelopes.Response` frame that wraps it. *(Amended 2026-09-04, A2.)* The value a durable resolution record *stores* is a separate concern whose shape is the caller's: `ResolveInteractionInput.ResponsePayload` is the durable record, `ResponseBody` is the validated contract, and the two are not interchangeable. Closes the gap where `ValidateInteractionResponse` only compared a kind string. `TypeSpec.PayloadSchema` is the existing upstream slot, reachable via `RegisterType` — no upstream change is needed. May also mark fields reference-only. |
 | `response_schema_digest` | `string` | **Tangent, derived** | |
 | `error_schema` | JSON Schema, optional | publisher | Typed publisher errors (the HITL `HITLStaleRevisionErrorV1` / `HITLIdempotencyConflictErrorV1` pattern, generalized). |
 | `named_definitions` | `map[string]string` | publisher | Stable `$defs` entry points and what each is for — the generalization of the HITL adapter/codegen target table. Consumed by MCP schema derivation and by Sigil. |
@@ -218,7 +223,7 @@ the value; where Tangent computes it, the value is *derived*, never authored.
 | `renderer.class` | `enum` | publisher | `react-component` \| `declarative` \| `sandboxed-frame` \| `external-surface`. |
 | `renderer.entry` | `string` | publisher | Module specifier / exported symbol for `react-component`; a Sigil page reference for `declarative`; a frame entry for `sandboxed-frame`; a handoff URL template for `external-surface`. Replaces today's unused `ui.component` slug. |
 | `renderer.asset_digest` | `string`, optional | publisher, verified by Tangent | Digest of the renderer bundle when assets ship separately from the host binary. Empty for in-tree renderers built with the release. |
-| `renderer.trust_class` | `enum` | publisher declares, **Tangent policy decides** | `core-trusted` \| `portfolio-trusted` \| `declarative` \| `sandboxed-code` \| `external-surface`, exactly the direction document's classes. A manifest *requests* a class; Tangent never grants more than the trust evidence in §2.7 supports. **This is the field `CW-20260825-0073` binds to.** |
+| `renderer.trust_class` | `enum` | publisher declares, **Tangent policy decides** | `core-trusted` \| `portfolio-trusted` \| `declarative` \| `sandboxed-code` \| `external-surface`. A manifest *requests* a class; Tangent never grants more than the trust evidence in §2.7 supports. *(Amended 2026-09-04, D1.)* A granted class produces exactly two facts, and a class that produces neither is decoration: an **isolation** (`main-origin` \| `host-primitive` \| `sandboxed-frame` \| `external-surface`) and a **capability ceiling** over §2.5's namespace, ordered `core ⊃ portfolio ⊃ sandboxed ⊃ declarative = external = ∅`. Isolation is the host's derivation and is never a manifest field — a publisher that could name its own isolation could name the one whose enforcement table flatters it. Implemented in `internal/definition/trust.go` (`37c39e1`). **This is the field `CW-20260825-0073` binds to.** |
 | `renderer.fallback.renderer_id` | `string`, optional | publisher | Declared safe fallback. |
 | `renderer.fallback.preserves_meaning` | `bool` | publisher | Whether the fallback still captures the interaction's required decision. Tangent uses the fallback **only** when this is true (§8). |
 | `renderer.fallback.degradation` | `enum` | publisher | `none` \| `read-only` \| `raw-payload`. |
@@ -245,14 +250,50 @@ substitute for one another: a granted `export.download` never implies `resolve`,
 and a participant's `resolve` never implies `file.read_scoped`. Both are inputs
 to `CW-20260825-0077`, which must keep them separately named.
 
+*(Amended 2026-09-04, C1 of [ADR 0004](0004-caller-participant-and-room-access-authority.md).)*
+Non-substitutability is necessary and not sufficient. The positive rule is that
+an effect is admitted only when its **object-access precondition** is also
+satisfied, evaluated through `authz.Authorize` like every other refusal in the
+process: a renderer that may not `view` an interaction may not read a file on
+its behalf, however complete its effect grant. `effect.ObjectPrecondition` is
+that mapping, and it is a mapping and not an equivalence.
+
+*(Amended 2026-09-04, B1.)* There is a **third** spelling of this namespace in
+the tree and a reader who trusts the "two namespaces" framing will not find it.
+`internal/hitl/evidence.go` ships `ArtifactPreviewCapability{Authority,
+CapabilityID}` with its own registry (`RegisterArtifactPreviewAdapter`). It is
+an instance of the effect namespace whose capability id is `evidence.preview`,
+not a fourth authority model. No preview adapter is registered in production, so
+`/preview` always answers `evidence_unsupported`.
+
+*(Amended 2026-09-04, B4 and D4.)* "Capability-mediated" is not one thing, and
+it is not even one thing per capability. `file.read_scoped` is genuinely
+enforced, because Tangent is the only actor that can open the file.
+`clipboard.write`, `export.download`, and `network.fetch` are not, because the
+browser hands a same-origin renderer the same power directly —
+`navigator.clipboard`, an `<a download>` over a Blob, a bare `fetch()` — and
+five shipped components already use two of them without asking anyone. Each
+capability therefore carries a **mediation** class (`effect.Mediation`), and a
+declaration-only capability is audited and **never described as enforced**.
+Mediation is further a function of the capability *and* the isolation granted by
+§2.3: `clipboard.write` is a bare DOM call from Tangent's origin and an
+impossibility from an opaque-origin frame. Every audit record of an effect must
+therefore carry the **isolation beside the mediation** — without it a receipt
+reading `clipboard.write / host` is indistinguishable between a genuinely
+contained renderer and a mislabelled one. `effect_receipts` carries both from
+migration `0010`. A declaration-only capability becomes real enforcement only for
+a renderer that `CW-20260825-0073`'s sandbox and CSP actually contain, which is
+a dependency of this ADR on that work rather than a discovery inside it.
+
 | Field | Type | Produced by | Meaning |
 |---|---|---|---|
 | `required_capabilities` | `[]Capability` | publisher | Host-mediated effects the renderer cannot perform on its own authority. **This is the field `CW-20260825-0077` binds to.** |
 | `Capability.id` | `string` | publisher | Namespaced grant name, e.g. `clipboard.write`, `export.download`, `file.read_scoped`, `network.fetch`, `process.exec`. |
-| `Capability.scope` | `object` | publisher | Grant-shaped constraint (allowed roots, allowed origins, byte ceilings). A path string is not a capability. |
+| `Capability.scope` | `object` | publisher (advisory half) / **Tangent, derived** (enforced half) | Grant-shaped constraint. A path string is not a capability. *(Amended 2026-09-04, B6.)* The two halves are not equally real. **Publisher-authored and advisory:** a declaration of intent shown at grant time beside `rationale`. **Host-derived and enforced:** allowed roots come from the `effect.Authority` registration and byte ceilings from the registered root, because which directories a renderer may reach is the host's answer, not the publisher's. `allowed_origins` has no consumer at `a332e76` and is therefore advisory only; it cannot be enforced at all for a renderer the browser lets `fetch()` directly (B4). |
+| `Capability.handle` | `string` (host-minted) | **Tangent, at grant time** | *(Added 2026-09-04, B3.)* What a renderer names instead of a path: a host-minted, scoped, expiring, use-counted reference. Its id is a **locator**, not a credential, in exactly the sense [ADR 0004 §5](0004-caller-participant-and-room-access-authority.md) makes a room URL one and [ADR 0004 §6](0004-caller-participant-and-room-access-authority.md) makes a scoped locator one — possessing a handle grants nothing without the session and the pinned binding. That property is load-bearing for [ADR 0002 §5](0002-retention-and-draft-custody.md): a handle id has to be able to travel in a renderer payload, and it can only do so if it is not bearer material. `internal/effect/handle.go` (`c6a20b2`). |
 | `Capability.optional` | `bool` | publisher | When true, denial degrades the renderer rather than failing resolution. |
 | `Capability.rationale` | `string` | publisher | Shown to the user at grant time. |
-| `granted_capabilities` | `[]Capability` | **Tangent policy, at materialization** | The intersection of requested capabilities with host policy. Persisted in the binding so a resolution records what the renderer could actually do. Never authored. |
+| `granted_capabilities` | `[]Capability` | **Tangent policy, at materialization** | The intersection of requested capabilities with host policy. Persisted in the binding so a resolution records what the renderer could actually do. Never authored. *(Amended 2026-09-04, B2.)* The source is named: an `effect.Authority` installed at construction, whose grant set is **filtered to capabilities this build both knows and can execute**. The filter is not optional — an authority that grants `process.exec` must not make a definition materialize as `available` on the strength of a grant nothing in the process can honour. |
 
 #### 2.6 Persistence and sensitivity
 
@@ -328,6 +369,20 @@ retrofitted.
   a version bump. It may advance within a `version` only when
   `contract_digest`, `renderer.class`, `renderer.trust_class`, and
   `required_capabilities` are all unchanged. Otherwise it is a new `version`.
+- **The one-time response-schema exception.** *(Amended 2026-09-04, A1.)*
+  Adding a `response_schema` necessarily changes `contract_digest`, which the
+  rules above would force into a `version` bump — while §8 C3 freezes the
+  eighteen shipped kinds' wire names and versions, and leaving both unchanged
+  republishes different content under one `(publisher, kind, version)`. All
+  three readings violate a rule of this ADR, so one named exception is granted:
+  the transition from `compatibility_response_schema: absent` to `present`, for
+  a schema authored from the shipped handler's **actual** behaviour, advances
+  `revision` and holds `version`. It is the only `contract_digest` change
+  permitted without a `version` bump, it is available **once per kind**, and the
+  manifest must say so at the field. The reasoning is that `version` is on the
+  wire — `tangent.list_workflows`, the generated TypeScript, every pinned
+  binding — and `revision` is not. `tangent.form-collect` is at
+  `version: "0.6"`, `revision: 2` on that reading.
 - Interactions pinned to an older `revision` are never re-pinned. The registry
   may list only the newest revision; the store keeps every pinned one.
 - **The version index lives in Tangent, not upstream.**
@@ -391,7 +446,7 @@ drift is *detected* rather than inferred from a successful build.
 |---|---|---|
 | **`go-envelopes`** | The portable wire model (`Envelope`, `Response`, the `ResponseKind` / `ResponseStatus` / error-code / `Presentation` vocabularies, `Trace`), `ProtocolVersion`, the manifest *format*, and the catalog of **generic** interaction kinds with their request and response schemas. To carry a manifest it must gain three things it does not have at v0.1.0: retained source bytes plus a content digest; a registry keyed on `(name, version)` rather than name alone; and a manifest path that populates the already-present `TypeSpec.PayloadSchema`. Until then a generic kind cannot be bound at all (`ErrDefinitionUnavailable`). | Any product's workflow phases, business status enums, renderer implementations, capability grants, trust decisions, or host policy. It is a catalog, not a dumping ground — and it explicitly does not enforce trust. |
 | **Plugin SDK** | How a package is declared, discovered, registered, configured, granted capabilities, initialized, observed, and stopped: the package manifest envelope carrying one or more interaction definition manifests, package identity, host/protocol/SDK compatibility ranges, config schema (no secret values), and health/diagnostics. `libs/plugin-sdk` today is Go-only subprocess JSON-RPC with declarative `plugin.yaml` registration including a `registers.envelopes` section — but it **ships no manifest struct, schema, or parser** (the shape is host-owned), has no trust or permission gating, and Tangent does not depend on it. Owning the manifest envelope is a *destination* for that SDK, not a description of it. | Interaction semantics, schemas, or renderer content. The SDK is packaging, not meaning. |
-| **Tangent** | Host authority: the definition registry and materialization cache; digest derivation and binding pinning; request/response validation against retained bytes; trust-class evaluation and capability granting; the renderer host, isolation, and fallback policy; surfaces, interactions, connections, drafts, resolutions, delivery, and audit; and the compatibility adapters for shipped kinds. Owns `granted_capabilities` and `trust.assurance` — never the publisher's declarations. | Publisher-owned schemas or renderer semantics; caller-owned business state; downstream acceptance. Registration does not transfer definition ownership. A bundled package being in the binary does not make its business semantics Tangent core. |
+| **Tangent** | Host authority: the definition registry and materialization cache; digest derivation and binding pinning; request/response validation against retained bytes; trust-class evaluation and capability granting; the renderer host, isolation, and fallback policy; surfaces, interactions, connections, drafts, resolutions, delivery, and audit; and the compatibility adapters for shipped kinds. Owns `granted_capabilities` and `trust.assurance` — never the publisher's declarations. | Publisher-owned schemas or renderer semantics; caller-owned business state; downstream acceptance. Registration does not transfer definition ownership. A bundled package being in the binary does not make its business semantics Tangent core. **A definition's *runtime behaviour* is publisher-owned on the same terms as its schema** *(amended 2026-09-04, A3)*: the request projection, the response normalization, and the codec between a kind's business state and the phase blob belong to the package, not to `internal/mcp` or `internal/room`. Before `CW-20260825-0074` all three sat in core, which is precisely the "bundled therefore core" error §6 warns about, and this ADR as originally written did not forbid it because it never mentioned them. `internal/interactionpkg` is the contract — `Describe`, `PresentRequest`, `NormalizeResponse`, `ProjectState`, `ProjectionSchema`, over an opaque `map[string]any` state store. |
 | **Sigil** | Build-time generation from manifests: TypeScript types, Go bindings, MCP tool input schemas from `named_definitions`, and declarative renderer scaffolds for `renderer.class: declarative`. Must stamp `@definition-source` into everything it emits. | Runtime rendering, registry authority, plugin lifecycle, or trust decisions. Sigil is a code generator; it is not in the request path. |
 | **Application-owned packages** (Nanite, Torque, Hadron, Fragments Engine, third parties) | Their own interaction kinds, schemas, renderers, response interpretation, and the business meaning of a resolution. The purpose, external object, requested participant, expiry policy, and downstream consequence of each request. | Tangent's operational state, surface/interaction lifecycle, or the resolution capture fact. They receive typed evidence; they do not get host authority by shipping a package. |
 
@@ -415,6 +470,14 @@ Tangent-registered extensions (`cmd/tangent/main.go:118-190`). Seventeen have
 dispatcher handlers (`internal/mcp/triage_handler.go:186-275`) and React
 adapters (`ui/src/main.tsx:282-298`); `tangent.hitl-item` has neither and
 instead flows through the durable interaction service and the `/hitl` route.
+
+*(Amended 2026-09-04, A3.)* Each row's **Owner** assigns the definition; the
+**Runtime** column below records where that kind's behaviour lives today, or
+that it has none yet. At `a332e76` exactly one kind has a package runtime:
+`tangent.form-collect` (`internal/packages/formcollect/`, `25700d0`). Every
+other row's runtime is still `internal/mcp` plus `internal/room`, which the
+Tangent row of §5 now names as a thing Tangent must not own. Recording the gap
+per kind is what makes the remaining migrations countable rather than aspirational.
 
 | Kind | Version | Response kind | Owner | Rationale |
 |---|---|---|---|---|
@@ -483,6 +546,20 @@ name no product noun, status enum, or policy? Would a reasonable second host
 (Nanite inline, a CLI) render it? *All four yes* → `go-envelopes` generic
 catalog.
 
+**T1a — Durable-between-turns test.** *(Added 2026-09-04, A6.)* Does the kind
+require durable state **between turns of one interaction**? T5 below covers
+state surviving *between interactions*; this covers the case neither T1 nor T5
+addressed. `tangent.form-collect` is genuinely domain-free — its schema is
+caller-supplied, so T1 is right — and it also owns a durable per-room document
+of schema, answers, saved drafts, templates, actions, attachment refs, and a
+derived submission summary. A host adopting it from the generic catalog would
+have to implement that state model to render it at all, and the catalog has
+nowhere to put behaviour. *Yes* → the generic catalog may carry the kind's
+schemas but not its behaviour, and the destination in §6 is a shared **package**
+rather than the catalog. Of the six generic-catalog candidates, four are
+stateless (`triage`, `feedback`, `interview-question`, `output-render`);
+`form-collect` and `progress-panel` are not.
+
 **T2 — Host-primitive test (Tangent core).** Is this about the surface,
 interaction, connection, resolution, or delivery *lifecycle* — rather than
 about what is being decided? Would every kind break if it were removed? Does it
@@ -513,6 +590,23 @@ third-party assets, render untrusted markup, or touch the filesystem, clipboard,
 network, or a process? *Yes* → it must declare `renderer.trust_class` and
 `required_capabilities`, and it cannot be `core-trusted` unless it ships and is
 reviewed with the Tangent release. Ambient host authority is never inherited.
+
+*(Amended 2026-09-04, D2.)* The shape rule is general and runs in **both**
+directions: a manifest's `renderer.class` and `renderer.trust_class` must
+describe the same thing. The original T6 only forbade a `sandboxed-frame` from
+claiming `core-trusted`, which left `react-component` free to declare
+`sandboxed-code` — a renderer that is not sandboxed, wearing the label of the
+class that is. A disagreement between the two fields is a **manifest error**,
+never a value to reinterpret.
+
+*(Amended 2026-09-04, D3.)* "Reviewed with the release" is a review obligation
+with no expressible check, which is how a trust class becomes self-assigned.
+Three facts about a manifest *are* mechanically checkable and together
+approximate it, and they are the **necessary** conditions for any
+release-provenance class: the publisher namespace, a grantable
+`trust.assurance`, and an **empty `renderer.asset_digest`** — a separately
+distributed bundle is by definition not the one the release reviewed. They are
+necessary and **not sufficient**; the review itself stays a human obligation.
 
 **Tie-break.** When T1 and T3 both plausibly apply, prefer T3 and revisit after
 a second independent publisher actually adopts the kind. Promoting a package
@@ -570,11 +664,33 @@ a participant cancellation. The existing JSON debug fallback in
 `EnvelopeRouter.tsx` remains a *development* affordance and is not a
 `preserves_meaning` fallback.
 
+*(Amended 2026-09-04, D5.)* C5 as written governs only what Tangent does when a
+*definition* has no usable renderer. Extend the fail-closed rule to **dispatch**:
+a renderer with **no manifest classification is refused** by the browser. That
+is the case that actually occurred — `ui/src/main.tsx` registered components by
+string literal, so a component registered under any name ran with the host's
+authority whether or not a manifest existed for it. The JSON debug affordance
+remains reachable only because it executes no publisher code. A
+`preserves_meaning: false` fallback must never be named in a projection a client
+could act on; the generated renderer table omits it for that reason.
+
 **C6 — Frozen contracts.** `tangent.hitl-item` v1.0, the `/api/hitl` surface,
 and the four `tangent.hitl_*` tools are frozen at their contract version.
 `tangent.session_*`, the workflow-named tools, and `tangent.approval-queue`
 keep their current shapes. Any removal requires a separate accepted ADR, per
 ADR 0001 §11.7.
+
+*(Amended 2026-09-04, A4.)* C6 as written freezes a **core Go struct's field
+list** by accident. `tangent.session_get` advertises an output schema the MCP
+SDK derives by reflection from `sessionGetResult`, a struct in `internal/mcp`
+naming fourteen workflows as typed fields; under C6 that tool's shape is frozen,
+so moving any projection type into its package would delete a property from a
+frozen contract. C6 therefore distinguishes the **advertised contract** from
+**how it is produced**: a package contributes its own projection schema, the
+host composes them, and the composed schema must match the frozen one
+property-for-property. JSON object member **order is not part of the contract** —
+a composed property is appended rather than slotted where a deleted struct field
+sat, and no conforming client can observe the difference.
 
 **C7 — Unavailable is a state, not an error to paper over.** `incompatible`,
 `quarantined`, and `unavailable` are distinguishable in the registry projection
@@ -583,6 +699,19 @@ and in `tangent.interaction_resolve_definition`. Failing closed —
 The existing upstream error vocabulary is sufficient and is reused rather than
 extended: `unsupported-type`, `unsupported-version`, `validation-failed`,
 `capability-denied`, `component-load-failed`.
+
+*(Amended 2026-09-04, B5.)* C7's quarantine became reachable for the first time
+once `granted_capabilities` gained a producer (B2), which exposes a consequence
+C7 did not state: a host that composes an authority, materializes definitions
+under its grant set, and then **loses** that authority will re-materialize the
+same definitions into `quarantined` on the next boot, with live interactions
+pinned to bindings whose grants no longer exist. The rule for a pinned binding
+whose granted capability set narrows on re-materialization is **fail closed at
+the effect boundary and not at the interaction**: a handle is scoped to the
+binding digest that admitted it, and a changed binding refuses every handle
+minted under the old one, while the interaction itself stays open and
+respondable through any renderer path that needs no ungranted capability. An
+interaction is not cancelled by a host's loss of an authority.
 
 ### 9. Sequencing
 
@@ -622,6 +751,19 @@ upgrade tripwire. None of the eight removed kinds is used by Tangent today, so
 the upgrade is low-risk; it should still not be bundled with a registry
 rewrite.
 
+**S4 — The remaining migrations are independent and each is paired with its
+`response_schema` backfill.** *(Added 2026-09-04, A7.)* The boundary is proven,
+not applied: one kind of eighteen is packaged, `internal/room` still holds the
+per-kind state files, and `internal/mcp` still holds the per-kind tool handlers,
+the `NormalizeResponse` switch arms, and the `room.Project*` calls in one struct
+literal. The mechanism costs core roughly 450 workflow-neutral lines **once**,
+and each further migration removes its kind's lines outright. Because each
+migration is independent of the others and carries its own S2 backfill, they may
+be taken one at a time in any order, with a round-trip test per kind rather than
+as manifest edits. `tangent.triage` and `tangent.feedback` are the cheapest (no
+state file, no normalizer) and prove the least; `tangent.dashboard` and
+`tangent.whiteboard` are the most expensive and would prove the most.
+
 ### 10. Not decided here
 
 Dynamic/out-of-process package loading, a JavaScript sandbox runtime,
@@ -644,7 +786,15 @@ sandboxed-code` is expressible in the manifest and unimplemented in v0.x.
   re-validated later against the exact definition that produced it.
 - Digest-stamped artifacts make schema drift a reported failure naming the
   drifted kind, instead of a whole-file diff on the wrong 26 definitions.
-- Renderer binding becomes one mechanism instead of three.
+- Renderer binding becomes one mechanism instead of three — **a destination,
+  not a delivered consequence** *(amended 2026-09-04, A5)*. It is not true at
+  `a332e76`: `renderer.entry` remains metadata no runtime consumes, and
+  `ui/src/main.tsx` still registers seventeen adapters by wire-name string
+  literal, held to the manifests only by a drift test. Packaging form-collect
+  changed nothing on the browser side — its 1,408-line renderer and its
+  `browser-local` draft module still live in the core SPA bundle. **A package's
+  renderer has no home until a task authorizes one**, which is the same
+  observation §6 already records for the generic-catalog column.
 - Draft custody, sandbox policy, and export capability become declared and
   auditable rather than hard-coded in nine UI modules and one iframe.
 - The manifest's custody, sensitivity, and telemetry fields give ADR 0002 a
@@ -783,15 +933,21 @@ in, and with the dump-tool fix sequenced as an isolated prerequisite commit.
 
 ## Amendments required by CW-20260825-0074
 
-**Status: proposed, pending review.** `CW-20260825-0074` expressed
+**Status: Accepted.** Approved 2026-09-04 by Chrispian during the Tangent
+foundation orchestration session, under `CW-20260825-0067`. Each amendment
+below has been applied in place to the section it names; this block records
+the reasoning.
+
+`CW-20260825-0074` expressed
 `tangent.form-collect@0.6` as a registered interaction package over the generic
 service and backfilled its `response_schema`. The boundary held; seven things
 this ADR says, or does not say, did not. They are recorded here because
 `CW-20260825-0074`'s acceptance requires findings to feed back into this
 decision, and because each one is a rule a later task will otherwise rediscover.
 
-Nothing below is adopted. The implementation took the least wire-visible
-reading in each case and said so at the point of the choice.
+All seven are adopted. The implementation took the least wire-visible reading
+in each case and said so at the point of the choice; the amendment text below is
+now the ADR's position, and the sections it names carry the correction.
 
 ### A1 — The C4-to-`present` backfill has no legal identity move
 
@@ -928,14 +1084,21 @@ prove the most.
 
 ## Amendments required by CW-20260825-0077
 
-**Status: proposed, pending review.** `CW-20260825-0077` made §2.5's effect
+**Status: Accepted.** Approved 2026-09-04 by Chrispian during the Tangent
+foundation orchestration session, under `CW-20260825-0067`. Each amendment
+below has been applied in place to the section it names; this block records
+the reasoning.
+
+`CW-20260825-0077` made §2.5's effect
 capabilities real: `internal/effect` holds the namespace, the scoped handles
 that replace path strings, the broker every effect passes through, and the
 typed receipt each one produces. Six things this ADR says, or does not say,
 did not survive contact.
 
-Nothing below is adopted. The implementation took the least wire-visible
-reading in each case and said so at the point of the choice. The full model is
+All six are adopted. The implementation took the least wire-visible reading in
+each case and said so at the point of the choice; the amendment text below is now
+the ADR's position, and the sections it names carry the correction. The full
+model is
 [`../host-mediated-capabilities.md`](../host-mediated-capabilities.md).
 
 ### B1 — There is a third capability namespace, and §2.5 does not know about it
@@ -1040,14 +1203,21 @@ browser lets `fetch()` directly, which is B4 again from the other side.
 
 ## Amendments required by CW-20260825-0073
 
-**Status: proposed, pending review.** `CW-20260825-0073` made §2.3's
+**Status: Accepted.** Approved 2026-09-04 by Chrispian during the Tangent
+foundation orchestration session, under `CW-20260825-0067`. Each amendment
+below has been applied in place to the section it names; this block records
+the reasoning.
+
+`CW-20260825-0073` made §2.3's
 `renderer.trust_class` decide something. Before it, the field was validated for
 spelling and copied through; a `sandboxed-code` renderer and a `core-trusted`
 one ran in the same React tree with the same authority. Five things this ADR
 says, or leaves unsaid, did not survive that.
 
-Nothing below is adopted. The implementation took the fail-closed reading in
-each case and said so at the point of the choice. The full model is
+All five are adopted. The implementation took the fail-closed reading in each
+case and said so at the point of the choice; the amendment text below is now the
+ADR's position, and the sections it names carry the correction. The full model
+is
 [`../renderer-trust-classes.md`](../renderer-trust-classes.md).
 
 ### D1 — §2.3 names five trust classes and assigns them no consequence
@@ -1126,7 +1296,9 @@ could act on — the generated renderer table omits it for that reason.
 - [`0004-caller-participant-and-room-access-authority.md`](0004-caller-participant-and-room-access-authority.md)
   — §1 the plugin publisher holds no capability, §2 the object-access
   capability namespace
-- [`../interactive-collaboration-direction.md`](../interactive-collaboration-direction.md)
+- [`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md) — §1
+  the portfolio axiom, §4 the workflow boundary, §5 the `go-envelopes` / plugin
+  SDK / Sigil role split, promoted from the retired direction document
 - [`../contracts/hitl-inbox-v1.md`](../contracts/hitl-inbox-v1.md) — `$defs`
   named as code-generation targets, version semantics
 - [`../../internal/interaction/catalog.go`](../../internal/interaction/catalog.go)

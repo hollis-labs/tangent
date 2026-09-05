@@ -6,36 +6,74 @@ see [`developing.md`](./developing.md).
 
 ## Shape
 
-```
-                  ┌────────────────────────────────────────────────┐
-                  │              Tangent (single binary)           │
-                  │                                                │
-   Browser  ◀──── │  HTTP server :7842                             │
-   (SPA at /r/.) ─│   ├── Embedded Vite SPA  (go:embed ui_dist)    │
-                  │   ├── WebSocket bridge   (/ws, per-room state) │
-                  │   └── MCP server         (/mcp + /sse)         │
-                  │                │                               │
-                  │                ▼                               │
-                  │         Envelope dispatcher                    │
-                  │                │                               │
-                  │                ▼                               │
-                  │         go-envelopes registry                  │
-                  │           + plugin extensions                  │
-                  └────────────────────────────────────────────────┘
-                                   ▲
-                                   │ MCP (Streamable HTTP / SSE)
-                                   │
-                  ┌────────────────┴────────────────┐
-                  │   Agent  (Claude Code, Cursor,  │
-                  │   Codex, Nanite, …)             │
-                  └─────────────────────────────────┘
+Transport connections, browser windows, Tangent surfaces, interaction
+instances, agent sessions, workflow runs, and business objects are distinct
+identities even when a simple deployment maps some of them one-to-one. The
+sketch below is drawn along those seams rather than along the process
+boundary; the boundary decision behind it is
+[ADR 0005](./adr/0005-product-boundary-and-portfolio-composition.md).
+
+```text
+Envelope publisher                   Calling application
+schema · response schema             Nanite · Torque · Hadron · CLI · peer app
+renderer · capabilities                         |
+retention defaults                              | InteractionRequest
+        |                                        v
+        | definition reference       +-----------------------------+
+        +---------------------------> |           Tangent           |
+                                      |                             |
+ Portable MCP ----------------------> | transport adapters          |
+ Nanite native channel ------------> | interaction application svc |
+ local HTTP/API --------------------> | definition resolver         |
+                                      | durable surface/room store  |
+                                      | resolution + delivery log   |
+                                      | extension/runtime boundary  |
+                                      +--------------+--------------+
+                                                     |
+                                             SurfaceProjection
+                                                     |
+                                      +--------------v--------------+
+                                      | browser or desktop shell     |
+                                      | trusted renderer host        |
+                                      | sandboxed extension frames   |
+                                      +--------------+--------------+
+                                                     |
+                                             authenticated input
+                                                     |
+                                                     v
+                                                Participant
+
+ ResolutionRecord -------------------------------> calling application
+ DeliveryReceipt <------------------------------- calling application
+
+ Tesseract receives only explicit promoted knowledge or pointers.
+ Cerberus/OS may install and supervise Tangent but do not own interactions.
 ```
 
-Both the agent (over MCP) and the browser (over WS) talk to the same
-binary. They meet in the **room** — a per-session piece of state created
-when the agent invokes a workflow tool. The agent puts an envelope in;
-the user resolves it through the SPA; the response travels back through
-the room to the agent's MCP call.
+Two of those rows are intended rather than shipped: there is no Nanite native
+channel and no desktop shell in the tree today, and Tesseract is not composed
+at all. Everything else runs in one binary — the agent (over MCP) and the
+browser (over WS) talk to the same process. They meet in the **room**, the
+compatibility projection of a surface, created when the agent invokes a
+workflow tool. The agent puts an envelope in; the participant resolves it
+through the SPA; the response travels back as a sealed resolution.
+
+### The shared application service
+
+MCP, HTTP, the WebSocket projection, CLI administration, and any future
+native or desktop transport **adapt one application service. They do not
+implement parallel business rules.** This is the invariant that makes a new
+transport cheap and a second rule set a defect.
+
+Every interface preserves:
+
+- caller and participant identity
+- definition and instance revisions
+- idempotency
+- lifecycle semantics
+- typed errors
+- sensitivity and authorization
+- causation, correlation, and trace context
 
 ## Layers
 
