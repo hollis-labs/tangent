@@ -19,6 +19,14 @@
 //   2. On `onEnvelope`, store the envelope id + payload in state.
 //   3. EnvelopeRouter dispatches by type and fires onSubmit/onCancel.
 //   4. On unmount or onClose, close the WS.
+//
+// `pending` is the presentation whose renderer is *mounted*, which is not the
+// same thing as the answer the server is still waiting for — `submitting` says
+// that. Keeping the two apart is the whole of CW-20260905-0016: the optimistic
+// clear used to be `setPending(null)`, which unmounted the workflow component
+// and destroyed every answer the operator had typed, because that is where the
+// answers live. The lifecycle then restored the envelope on a refusal and the
+// operator got a blank form back.
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
@@ -44,6 +52,10 @@ type Pending = {
 export default function Room() {
   const { roomID } = useParams<{ roomID: string }>();
   const [pending, setPending] = useState<Pending | null>(null);
+  // True from the moment a response or cancel goes out until the server either
+  // presents something new or refuses it. The renderer stays mounted for the
+  // whole of it; this only decides whether the operator can see and touch it.
+  const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string>("waiting for envelope...");
   const [transport, setTransport] = useState<string>("connecting...");
   const [connection, setConnection] = useState<ConnectionState | null>(null);
@@ -75,6 +87,7 @@ export default function Room() {
         return;
       }
       setPending({ envelopeId, envelope: enriched, revision, roomID: targetRoomID });
+      setSubmitting(false);
       setStatus("envelope received");
       setServerError(null);
     },
@@ -100,12 +113,15 @@ export default function Room() {
         setSync(next);
       },
       onServerError: (refused) => {
-        // A refused action did not happen. The lifecycle restores the envelope
-        // it optimistically cleared so the operator can act again once the
-        // reason — a lease held elsewhere, or a stale view — is resolved.
+        // A refused action did not happen, so the operator goes back to the
+        // form they were looking at — the same component instance, still
+        // holding everything they typed, not a fresh one seeded from
+        // `envelope.data`. The lifecycle restore stays as the backstop for the
+        // paths that genuinely have no mounted renderer left.
         lifecycleRef.current?.receiveServerError(refused);
         setServerError(refused);
         setPending((current) => current ?? restoredPending(lifecycleRef.current));
+        setSubmitting(false);
         setStatus("submission refused");
       },
       onClose: (reason) => {
@@ -116,6 +132,7 @@ export default function Room() {
         setTransport(`disconnected: ${reason}`);
         setConnection(null);
         setPending(null);
+        setSubmitting(false);
       },
       onError: (err) => {
         setError(err.message);
@@ -137,6 +154,7 @@ export default function Room() {
       return;
     }
     setPending(null);
+    setSubmitting(false);
     setConnection(null);
     setSync(null);
     setServerError(null);
@@ -146,13 +164,13 @@ export default function Room() {
 
   const handleSubmit = (response: unknown) => {
     if (!lifecycleRef.current?.submit(response)) return;
-    setPending(null);
+    setSubmitting(true);
     setStatus("response submitted");
   };
 
   const handleCancel = () => {
     if (!lifecycleRef.current?.cancel()) return;
-    setPending(null);
+    setSubmitting(true);
     setStatus("cancelled");
   };
 
@@ -174,18 +192,36 @@ export default function Room() {
       </header>
 
       {pending ? (
-        <section className="space-y-3">
+        // Hidden while a submission is outstanding, never unmounted. The pane
+        // reads exactly as it did before — an accepted answer leaves "waiting
+        // for envelope..." behind, with nothing stale on screen — but the
+        // component behind it keeps its state, so a refusal is a re-reveal of
+        // the operator's own filled-in form rather than a rebuild from
+        // `envelope.data`. `inert` makes "not on screen" also mean "not
+        // reachable", by keyboard or by an assistive technology.
+        <section className="space-y-3" hidden={submitting} inert={submitting}>
           <div className="text-xs text-zinc-500">envelope: {pending.envelopeId}</div>
           <EnvelopeRouter
+            // Presentation identity, and now the only thing that resets a
+            // workflow's local state. Most renderers seed `useState` from
+            // `envelope.data` once and never re-sync when the prop changes —
+            // safe only while the Room remounted between envelopes, which it no
+            // longer does. Keying on the envelope id keeps that guarantee
+            // without the unmount: a different envelope is a different
+            // component, a replay of the same one is not. So the operator's
+            // answers survive a refusal and can never leak into the next
+            // envelope (CW-20260904-0141 item 5).
+            key={pending.envelopeId}
             envelope={pending.envelope}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
             roomID={roomID}
           />
         </section>
-      ) : (
+      ) : null}
+      {!pending || submitting ? (
         <p className="text-sm text-zinc-500">waiting for envelope...</p>
-      )}
+      ) : null}
     </main>
   );
 }

@@ -8,6 +8,16 @@ import {
   type BlockDraftResponse,
 } from "../components/envelopes/BlockDraft";
 import {
+  Feedback,
+  type FeedbackEnvelope,
+  type FeedbackResponse,
+} from "../components/envelopes/Feedback";
+import {
+  FormCollect,
+  type FormCollectEnvelope,
+  type FormCollectResponse,
+} from "../components/envelopes/FormCollect";
+import {
   OutputRender,
   type OutputRenderEnvelope,
   type OutputRenderResponse,
@@ -27,12 +37,16 @@ import {
   type EnvelopeComponentProps,
   register,
 } from "../lib/envelope-registry";
+import type { ConnectionState, ServerError } from "../lib/ws-client";
 import Room from "./Room";
 
 const switchRoom = vi.fn();
 const submitResponse = vi.fn(() => true);
 const cancel = vi.fn(() => true);
 const close = vi.fn();
+const claimResolver = vi.fn(() => true);
+const releaseResolver = vi.fn(() => true);
+const resync = vi.fn(() => true);
 const connectMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/ws-client", () => ({
@@ -587,6 +601,154 @@ describe("<Room>", () => {
   });
 });
 
+// CW-20260905-0016. These mount a real workflow renderer, on purpose.
+//
+// `room-lifecycle.test.ts` already proves `receiveServerError` restores the
+// envelope it optimistically cleared, and it passed throughout the bug's life:
+// what a lifecycle test cannot see is that Room rendered that clear as an
+// unmount, so by the time the envelope came back the component holding the
+// operator's answers had been torn down and re-seeded from `envelope.data`.
+// The values have to be read back out of live inputs for the defect to exist
+// at all, so every test here does.
+describe("<Room> submissions the server refuses", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    _resetRegistryForTests();
+    window.localStorage.clear();
+  });
+
+  it("returns the operator to their filled-in form, not a blank one", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("form-1", formCollectEnvelope("form-1"), 1);
+    });
+
+    fireEvent.change(await screen.findByTestId("form-collect-input-headline"), {
+      target: { value: "Launch week" },
+    });
+    fireEvent.change(screen.getByTestId("form-collect-notes"), {
+      target: { value: "Ship on Thursday." },
+    });
+    fireEvent.click(screen.getByTestId("form-collect-submit"));
+    expect(submitResponse).toHaveBeenCalledWith("form-1", expect.anything(), 1);
+
+    // While the answer is outstanding the pane reads as cleared — the operator
+    // sees the same thing they always did — but the component is still there.
+    expect(screen.getByTestId("form-collect-root")).not.toBeVisible();
+    expect(screen.getByText("waiting for envelope...")).toBeInTheDocument();
+
+    await act(async () => {
+      handlers.onServerError?.({
+        code: "resolver_lease_held",
+        message: "another connection holds the resolver lease",
+        envelopeId: "form-1",
+        lease: { connection_id: "conn-1", label: "client 1" },
+      });
+    });
+
+    expect(screen.getByTestId("form-collect-root")).toBeVisible();
+    expect(screen.getByTestId("form-collect-input-headline")).toHaveValue("Launch week");
+    expect(screen.getByTestId("form-collect-notes")).toHaveValue("Ship on Thursday.");
+    expect(screen.getByTestId("connection-error")).toHaveTextContent(
+      "Not submitted: client 1 holds the resolver lease. Take over to answer here.",
+    );
+  });
+
+  it("keeps the answers through a take-over after a refusal", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("form-2", formCollectEnvelope("form-2"), 1);
+    });
+
+    fireEvent.change(await screen.findByTestId("form-collect-input-headline"), {
+      target: { value: "Launch week" },
+    });
+    fireEvent.click(screen.getByTestId("form-collect-submit"));
+
+    await act(async () => {
+      handlers.onConnectionState?.(observerState());
+      handlers.onServerError?.({
+        code: "resolver_lease_held",
+        message: "another connection holds the resolver lease",
+        envelopeId: "form-2",
+        lease: { connection_id: "conn-1", label: "client 1" },
+      });
+    });
+
+    fireEvent.click(screen.getByTestId("connection-take-over"));
+    expect(claimResolver).toHaveBeenCalledWith(true);
+
+    await act(async () => {
+      handlers.onConnectionState?.(resolverState());
+    });
+
+    expect(screen.queryByTestId("connection-error")).not.toBeInTheDocument();
+    expect(screen.getByTestId("form-collect-input-headline")).toHaveValue("Launch week");
+  });
+
+  it("clears the pane when the server does not refuse the submission", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("form-3", formCollectEnvelope("form-3"), 1);
+    });
+
+    fireEvent.change(await screen.findByTestId("form-collect-input-headline"), {
+      target: { value: "Launch week" },
+    });
+    fireEvent.click(screen.getByTestId("form-collect-submit"));
+
+    expect(screen.getByText("waiting for envelope...")).toBeInTheDocument();
+    expect(screen.getByTestId("form-collect-root")).not.toBeVisible();
+    expect(screen.queryByRole("textbox", { name: /headline/i })).not.toBeInTheDocument();
+  });
+
+  // The other half of the same change. Keeping the renderer mounted removed the
+  // remount that was quietly re-seeding every workflow between envelopes, and
+  // `Feedback` is the one that never re-initialises `answers` from a changed
+  // prop (CW-20260904-0141 item 5). Without the envelope-id key on the router,
+  // the second envelope here renders the first one's answer.
+  it("does not carry one envelope's answers into the next", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.feedback", FeedbackAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("fb-1", feedbackEnvelope("fb-1"), 1);
+    });
+
+    fireEvent.change(await screen.findByTestId("feedback-input-q1"), {
+      target: { value: "The first envelope's answer" },
+    });
+    fireEvent.click(screen.getByTestId("feedback-submit"));
+
+    await act(async () => {
+      handlers.onEnvelope?.("fb-2", feedbackEnvelope("fb-2"), 2);
+    });
+
+    expect(screen.getByText("envelope: fb-2")).toBeInTheDocument();
+    expect(screen.getByTestId("feedback-root")).toBeVisible();
+    expect(screen.getByTestId("feedback-input-q1")).toHaveValue("");
+  });
+});
+
 function renderAt(path: string, includeNavigator = false) {
   return render(router(path, includeNavigator));
 }
@@ -683,6 +845,117 @@ function WhiteboardProbeAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompon
       </button>
     </div>
   );
+}
+
+function FormCollectAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
+  return (
+    <FormCollect
+      envelope={envelope as FormCollectEnvelope}
+      onSubmit={onSubmit as (response: FormCollectResponse) => void}
+      onCancel={onCancel}
+      roomID={roomID}
+    />
+  );
+}
+
+function FeedbackAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
+  return (
+    <Feedback
+      envelope={envelope as FeedbackEnvelope}
+      onSubmit={onSubmit as (response: FeedbackResponse) => void}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function formCollectEnvelope(id: string): FormCollectEnvelope {
+  return {
+    v: 1,
+    id,
+    type: "tangent.form-collect",
+    title: "Collect launch facts",
+    data: {
+      form_id: id,
+      schema: { fields: [{ id: "headline", type: "text", label: "Headline", required: true }] },
+    },
+  };
+}
+
+function feedbackEnvelope(id: string): FeedbackEnvelope {
+  return {
+    v: 1,
+    id,
+    type: "tangent.feedback",
+    title: "How did that go?",
+    data: { questions: [{ id: "q1", type: "text", label: "What went well?" }] },
+  };
+}
+
+// The connection frames a losing tab and then a winning tab receive, with this
+// tab as `self` in both so ConnectionStatus renders the right control.
+function observerState(): ConnectionState {
+  return {
+    connectionId: "conn-2",
+    role: "observer",
+    lease: { connection_id: "conn-1", label: "client 1" },
+    connections: [
+      { connection_id: "conn-1", label: "client 1", role: "resolver" },
+      { connection_id: "conn-2", role: "observer", self: true },
+    ],
+  };
+}
+
+function resolverState(): ConnectionState {
+  return {
+    connectionId: "conn-2",
+    role: "resolver",
+    lease: { connection_id: "conn-2" },
+    connections: [
+      { connection_id: "conn-1", label: "client 1", role: "observer" },
+      { connection_id: "conn-2", role: "resolver", self: true },
+    ],
+  };
+}
+
+type CapturedHandlers = {
+  onEnvelope: ((id: string, envelope: unknown, revision: number) => void) | null;
+  onServerError: ((error: ServerError) => void) | null;
+  onConnectionState: ((state: ConnectionState) => void) | null;
+};
+
+// Captures the server-facing callbacks Room registers, so a test can play the
+// server: present an envelope, refuse a submission, hand the lease around.
+function mockConnectOnce(): CapturedHandlers {
+  const handlers: CapturedHandlers = {
+    onEnvelope: null,
+    onServerError: null,
+    onConnectionState: null,
+  };
+  connectMock.mockImplementationOnce(
+    (
+      _roomID: string,
+      opts: {
+        onEnvelope: (id: string, envelope: unknown, revision: number) => void;
+        onServerError?: (error: ServerError) => void;
+        onConnectionState?: (state: ConnectionState) => void;
+      },
+    ) => {
+      handlers.onEnvelope = opts.onEnvelope;
+      handlers.onServerError = opts.onServerError ?? null;
+      handlers.onConnectionState = opts.onConnectionState ?? null;
+      return {
+        isConnected: () => true,
+        submitResponse,
+        cancel,
+        close,
+        switchRoom,
+        claimResolver,
+        releaseResolver,
+        resync,
+      };
+    },
+  );
+  return handlers;
 }
 
 function SpreadsheetReviewProbeAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponentProps) {
