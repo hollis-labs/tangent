@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,31 +39,56 @@ export type OutputRenderProps = {
   onCancel: () => void;
 };
 
+// How long a copy/download outcome stays on screen. Without this the label was
+// never reset, so "Copy failed" from one attempt sat beside a later successful
+// download and read as its result.
+const TRANSFER_STATUS_TIMEOUT_MS = 4000;
+
 export function OutputRender({ envelope, onSubmit, onCancel }: OutputRenderProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  // This workflow has no terminal gate by design: it is a read-only
+  // acknowledgement with no editable controls, so "Done" is always available.
+  // The only outcomes it has to report are the copy and download side effects.
+  const [transferState, setTransferState] = useState<{
+    tone: "ok" | "error";
+    message: string;
+  } | null>(null);
   const output = envelope.data;
   const markdown = output?.markdown ?? "";
   const filename = output?.filename?.trim() || "tangent-output.md";
 
+  useEffect(() => {
+    if (!transferState) {
+      return;
+    }
+    const handle = window.setTimeout(() => setTransferState(null), TRANSFER_STATUS_TIMEOUT_MS);
+    return () => window.clearTimeout(handle);
+  }, [transferState]);
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(markdown);
-      setCopyState("copied");
+      setTransferState({ tone: "ok", message: "Copied" });
     } catch {
-      setCopyState("failed");
+      setTransferState({ tone: "error", message: "Copy failed" });
     }
   };
 
   const handleDownload = () => {
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    try {
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setTransferState({ tone: "ok", message: `Downloaded ${filename}` });
+    } catch {
+      // A blocked object URL or a sandboxed download used to fail in silence.
+      setTransferState({ tone: "error", message: "Download failed" });
+    }
   };
 
   const handleDone = () => {
@@ -121,20 +146,24 @@ export function OutputRender({ envelope, onSubmit, onCancel }: OutputRenderProps
           >
             Download .md
           </Button>
-          {copyState === "copied" ? (
-            <span className="text-xs text-emerald-400" data-testid="output-render-copy-status">
-              Copied
-            </span>
-          ) : null}
-          {copyState === "failed" ? (
-            <span className="text-xs text-red-400" data-testid="output-render-copy-status">
-              Copy failed
-            </span>
-          ) : null}
+          <span
+            role="status"
+            aria-live="polite"
+            data-testid="output-render-copy-status"
+            className={
+              transferState === null
+                ? "sr-only"
+                : transferState.tone === "ok"
+                  ? "text-xs text-emerald-400"
+                  : "text-xs text-red-400"
+            }
+          >
+            {transferState?.message ?? ""}
+          </span>
         </div>
 
         <section className="space-y-2" data-testid="output-render-markdown">
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Markdown</p>
+          <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Markdown</h3>
           <pre className="whitespace-pre-wrap break-words rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100">
             {markdown}
           </pre>

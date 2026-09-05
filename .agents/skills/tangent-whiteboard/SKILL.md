@@ -15,8 +15,34 @@ Use `tangent.whiteboard` to open a board called `board-1` so I can sketch a simp
 
 ## Notes
 
-- Keep the browser tab on the same room until submit resolves.
+- Several tabs may watch one room; exactly one holds the resolver lease and
+  can submit. Closing or refreshing a tab does not lose the work — the
+  interaction is durable and the wait resumes.
 - For reproducible runs, prefer the exact payload from the manual recipe.
+
+## Completion and recovery
+
+Prefer async so the call returns as soon as the request is durable:
+
+```json
+{ "completion": { "mode": "async" } }
+```
+
+It returns a successful receipt with `"status": "pending"`, a durable handle,
+and the room URL to hand a human. Omitting `completion` keeps the inline
+default: wait up to 45 seconds, return the normal response if the operator
+answers in time, and otherwise return that same pending receipt — never an
+error, and never a cancellation.
+
+Recover a result three equivalent ways: `tangent.interaction_get`,
+`tangent.interaction_await`, or by retrying this call with the identical
+envelope id and payload. All three return the same immutable result. A retry
+with a *changed* payload is an `IDEMPOTENCY_CONFLICT`; use a new envelope id.
+
+Acknowledge with `tangent.interaction_acknowledge` when your side has committed
+to the result. Reading a result does not acknowledge it.
+
+Full contract: `docs/room-workflow-completion.md`
 
 ## Pointers
 
@@ -24,5 +50,6 @@ Use `tangent.whiteboard` to open a board called `board-1` so I can sketch a simp
 - Smoke runbook: `docs/manual-tests/workflow-smoke-tests.md`
 - Integration guide: `docs/mcp-integration.md`
 - Envelope extension: `internal/envelope/extensions/whiteboard.go`
-- Data schema: `internal/envelope/extensions/whiteboard_schema.json`
+- Data schema: `internal/envelope/extensions/packages/tangent.canvas/whiteboard/request.schema.json`
 - Handler: `internal/mcp/whiteboard_handler.go`
+- Completion contract: `docs/room-workflow-completion.md`

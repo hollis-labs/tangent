@@ -1,4 +1,40 @@
+// Hand-written adapter over the `tangent.hitl-item` v1 `$defs` bundle.
+//
+// @definition-source sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8
+//
+// This file is NOT generated, and the stamp above is the whole reason it is
+// safe for it not to be. ADR 0003 §4.7 names it as the highest-risk
+// hand-written surface in the tree — a frozen v1 wire contract whose `$defs`
+// `docs/contracts/hitl-inbox-v1.md` already lists as code-generation targets —
+// and then fixes the accepted floor when full generation is out of scope: a
+// `@definition-source` digest stamp plus a test asserting it matches the
+// bundle. That floor is what is landed here, deliberately, because generating
+// this file is a rename of its entire public surface rather than a mechanical
+// swap:
+//   - the names diverge from the `$defs` names on purpose (`HITLOperatorItem`
+//     for `HITLItemViewV1`, `HITLRequest` for `HITLItemRequestV1`,
+//     `HITLTerminalOutcome` for `HITLTerminalOutcomeV1`), and the UI reads
+//     better for it;
+//   - `HITLRequest.evidence` is typed by `HITLEvidence`, which the renderer
+//     owns (`@/components/hitl-evidence`), not the bundle;
+//   - every exported type below has importers, so regenerating under the
+//     `$defs` names would break all of them at once.
+//
+// `hitl-api.drift.test.ts` fails the moment the bundle digest moves. The
+// correct response to that failure is to read this file against the new bundle,
+// fix whatever the contract changed, and only then update the stamp. Updating
+// the stamp alone turns a detected drift into a silent one, which is the single
+// failure the stamp exists to prevent.
+
 import type { HITLEvidence } from "@/components/hitl-evidence";
+
+/**
+ * The `@definition-source` stamp above, as a value, so `hitl-api.drift.test.ts`
+ * compares digests instead of parsing a comment. Keep the two in sync; the
+ * comment is what a reader sees and this is what CI sees.
+ */
+export const HITL_API_DEFINITION_SOURCE =
+  "sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8";
 
 export type HITLState =
   | "submitted"

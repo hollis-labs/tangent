@@ -3,8 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  buildSubmitGate,
+  describedBy,
+  focusControl,
+  useRevealRequirement,
+} from "@/lib/submit-gate";
 import {
   buildWizardCanonicalSeedKey,
   clearWizardDraft,
@@ -12,6 +20,10 @@ import {
   saveWizardDraft,
   WIZARD_AUTOSAVE_DEBOUNCE_MS,
 } from "@/lib/wizard-draft-storage";
+
+// Focus target for a step change. The whole content region swaps while focus
+// sits on a footer button, so the heading is where focus has to land.
+const STEP_HEADING_ID = "wizard-step-heading";
 
 type WizardFieldOption = {
   value: string;
@@ -187,6 +199,40 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     progress.find((item) => item.step_id === currentStep?.step_id) ??
     (currentStep ? { step_id: currentStep.step_id, status: "pending", response: {} } : null);
 
+  const revealRequirement = useRevealRequirement();
+  // Bumped whenever the step actually changes; the effect below moves focus
+  // once the new step has rendered.
+  const [stepFocusToken, setStepFocusToken] = useState(0);
+
+  // `field.required` was declared on the field type and read nowhere: a
+  // required field rendered byte-identically to an optional one, and the
+  // terminal CTA marked the step "completed" no matter what was left blank.
+  // This is that declaration finally enforced, scoped to the fields the
+  // operator can see — the current step's. Back, Next Step, Save Progress, the
+  // action buttons and every `partial` submit are untouched, because a wizard
+  // has to stay navigable while it is incomplete.
+  const currentStepFields = currentStep?.fields?.fields ?? [];
+  const missingRequired = currentStepFields.filter(
+    (field) =>
+      field.required && !isWizardFieldFilled(field, currentProgress?.response?.[field.field_id]),
+  );
+  const isFinalStep = currentIndex >= steps.length - 1;
+  const submitLabel = isFinalStep ? "Complete Wizard" : "Submit Step";
+  const gate = buildSubmitGate(
+    missingRequired.map((field) => ({
+      controlID: `wizard-field-${field.field_id}`,
+      label: field.label,
+      message: `"${field.label}" is required before this step can be submitted.`,
+    })),
+  );
+
+  useEffect(() => {
+    if (stepFocusToken === 0) {
+      return;
+    }
+    focusControl(STEP_HEADING_ID);
+  }, [stepFocusToken]);
+
   const completedCount = progress.filter((item) => item.status === "completed").length;
   const summary: WizardSummary = {
     status: completedCount >= steps.length && steps.length > 0 ? "completed" : "in_progress",
@@ -296,6 +342,7 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
 
   const goToStep = (stepID: string) => {
     setCurrentStepID(stepID);
+    setStepFocusToken((token) => token + 1);
     persist("partial", stepID, progress, branchSelections);
   };
 
@@ -304,6 +351,7 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     const nextStepID =
       selectedBranch?.target_step_id ?? steps[currentIndex + 1]?.step_id ?? currentStepID;
     setCurrentStepID(nextStepID);
+    setStepFocusToken((token) => token + 1);
     persist("partial", nextStepID, progress, branchSelections);
     setMessage("Moved to the next step.");
   };
@@ -319,6 +367,12 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
 
   const handleSubmitStep = () => {
     if (!currentStep) return;
+    // The one new refusal in this workflow. Everything below it is unchanged,
+    // including the payload this sends.
+    if (gate.blocked) {
+      revealRequirement(gate.first);
+      return;
+    }
     const selectedBranch = branchSelections.find((item) => item.step_id === currentStep.step_id);
     const nextStepID =
       selectedBranch?.target_step_id ?? steps[currentIndex + 1]?.step_id ?? currentStep.step_id;
@@ -331,6 +385,9 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
     const isFinal = currentIndex >= steps.length - 1 && !selectedBranch?.target_step_id;
     const targetStepID = isFinal ? currentStep.step_id : nextStepID;
     setCurrentStepID(targetStepID);
+    if (targetStepID !== currentStepID) {
+      setStepFocusToken((token) => token + 1);
+    }
     persist(isFinal ? "submitted" : "partial", targetStepID, nextProgress, branchSelections);
     setMessage(isFinal ? "Wizard completed." : "Step submitted.");
   };
@@ -340,7 +397,10 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
   }
 
   return (
-    <Card className="border-zinc-800 bg-zinc-950 text-zinc-100" data-testid="wizard-envelope">
+    <Card
+      className="w-full max-w-4xl border-zinc-800 bg-zinc-950 text-zinc-100"
+      data-testid="wizard-envelope"
+    >
       <CardHeader className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
@@ -366,6 +426,8 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
                 <button
                   type="button"
                   onClick={() => goToStep(step.step_id)}
+                  aria-current={isActive ? "step" : undefined}
+                  data-testid={`wizard-step-${step.step_id}`}
                   className={`w-full rounded-lg border px-3 py-2 text-left ${
                     isActive ? "border-amber-400 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/70"
                   }`}
@@ -381,24 +443,39 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       </CardHeader>
 
       <CardContent className="space-y-5">
-        {message ? <p className="text-sm text-emerald-400">{message}</p> : null}
+        {/*
+          Rendered unconditionally so the live region exists before the message
+          does — a region that appears together with its text is announced
+          unreliably, which is why step changes used to pass in silence.
+        */}
+        <p
+          role="status"
+          aria-live="polite"
+          data-testid="wizard-message"
+          className={message ? "text-sm text-emerald-400" : "sr-only"}
+        >
+          {message}
+        </p>
 
         <section className="space-y-2">
           <div className="text-xs uppercase tracking-[0.2em] text-zinc-500">
             {currentStep.kind ?? "step"}
           </div>
-          <h2 className="text-lg font-semibold">{currentStep.title}</h2>
+          <h2 className="text-lg font-semibold" id={STEP_HEADING_ID} tabIndex={-1}>
+            {currentStep.title}
+          </h2>
           {currentStep.description ? (
             <p className="text-sm text-zinc-400">{currentStep.description}</p>
           ) : null}
         </section>
 
         <section className="space-y-4">
-          {(currentStep.fields?.fields ?? []).map((field) => (
+          {currentStepFields.map((field) => (
             <FieldControl
               key={field.field_id}
               field={field}
               value={currentProgress?.response?.[field.field_id]}
+              missing={missingRequired.some((item) => item.field_id === field.field_id)}
               onChange={(value) => setFieldValue(field.field_id, value)}
             />
           ))}
@@ -422,34 +499,48 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
           ) : null}
 
           {currentStep.branches && currentStep.branches.length > 0 ? (
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Choose the next branch</div>
+            /*
+              The radios were a bare `<div>` heading over a list of inputs whose
+              `aria-label` overrode the visible text, so the description — the
+              only thing that says where a branch leads — was never announced.
+              A fieldset gives the group a name, and naming and describing by id
+              keeps both halves of each option.
+            */
+            <fieldset className="space-y-2" data-testid="wizard-branches">
+              <legend className="text-sm font-medium">Choose the next branch</legend>
               {currentStep.branches.map((branch) => {
                 const selected = branchSelections.find(
                   (item) => item.step_id === currentStep.step_id,
                 )?.option_id;
+                const branchID = `wizard-branch-${currentStep.step_id}-${branch.branch_id}`;
                 return (
                   <label
                     key={branch.branch_id}
+                    htmlFor={branchID}
                     className="flex items-start gap-3 rounded border border-zinc-800 p-3 text-sm"
                   >
                     <input
+                      id={branchID}
                       type="radio"
                       name={`branch-${currentStep.step_id}`}
-                      aria-label={branch.label}
+                      aria-labelledby={`${branchID}-label`}
+                      aria-describedby={`${branchID}-description`}
                       checked={selected === branch.branch_id}
                       onChange={() => setBranchSelection(branch.branch_id, branch.target_step_id)}
+                      data-testid={branchID}
                     />
                     <div>
-                      <div className="font-medium">{branch.label}</div>
-                      <div className="text-zinc-400">
+                      <div id={`${branchID}-label`} className="font-medium">
+                        {branch.label}
+                      </div>
+                      <div id={`${branchID}-description`} className="text-zinc-400">
                         {branch.description ?? `Next: ${branch.target_step_id}`}
                       </div>
                     </div>
                   </label>
                 );
               })}
-            </div>
+            </fieldset>
           ) : null}
         </section>
 
@@ -471,7 +562,7 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
       </CardContent>
 
       <CardFooter className="flex flex-wrap justify-between gap-3">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="secondary"
@@ -496,12 +587,29 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
             Save Progress
           </Button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          {/*
+            `mode="attempt"`: the CTA stays live exactly as it always has, and
+            validates on click. Disabling it would have been a second behaviour
+            change on top of the enforcement itself.
+          */}
+          <SubmitGateNotice
+            gate={gate}
+            testID="wizard-submit-gate"
+            action={submitLabel}
+            mode="attempt"
+            onReveal={revealRequirement}
+          />
           <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleSubmitStep}>
-            {currentIndex >= steps.length - 1 ? "Complete Wizard" : "Submit Step"}
+          <Button
+            type="button"
+            data-testid="wizard-submit"
+            onClick={handleSubmitStep}
+            aria-describedby={gate.blocked ? "wizard-submit-gate" : undefined}
+          >
+            {submitLabel}
           </Button>
         </div>
       </CardFooter>
@@ -509,43 +617,92 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
   );
 }
 
+/**
+ * Is a wizard field's stored answer non-empty?
+ *
+ * Mirrors the shapes `setFieldValue` writes: a checkbox stores a boolean, the
+ * attachments editor stores an array of rows, everything else a string.
+ */
+function isWizardFieldFilled(field: WizardField, value: unknown): boolean {
+  switch (field.kind ?? "text") {
+    case "checkbox":
+      return value === true;
+    case "attachments":
+      return Array.isArray(value) && value.length > 0;
+    default:
+      return typeof value === "string"
+        ? value.trim().length > 0
+        : value !== undefined && value !== null;
+  }
+}
+
 function FieldControl({
   field,
   value,
+  missing,
   onChange,
 }: {
   field: WizardField;
   value: unknown;
+  /** True while this field is declared required and still empty. */
+  missing: boolean;
   onChange: (value: unknown) => void;
 }) {
   const kind = field.kind ?? "text";
   const inputID = `wizard-field-${field.field_id}`;
+  const required = Boolean(field.required);
+  const hintID = `${inputID}-hint`;
+  const errorID = `${inputID}-error`;
+  const aria = {
+    "aria-required": required,
+    "aria-invalid": missing,
+    "aria-describedby": describedBy(required && hintID, missing && errorID),
+  };
+  const label = (
+    <label htmlFor={inputID} className="block text-sm font-medium">
+      {field.label}
+      <RequiredMark active={required} testID={`${inputID}-required`} />
+    </label>
+  );
+  const messages = (
+    <>
+      {required ? (
+        <FieldMessage id={hintID}>Required before this step can be submitted.</FieldMessage>
+      ) : null}
+      {missing ? (
+        <FieldMessage id={errorID} tone="error" testID={errorID}>
+          Enter {field.label} before submitting this step.
+        </FieldMessage>
+      ) : null}
+    </>
+  );
   if (kind === "textarea") {
     return (
       <div className="space-y-2">
-        <label htmlFor={inputID} className="block text-sm font-medium">
-          {field.label}
-        </label>
+        {label}
         <Textarea
           id={inputID}
           value={typeof value === "string" ? value : ""}
           onChange={(event) => onChange(event.target.value)}
           placeholder={field.placeholder}
+          {...aria}
+          data-testid={inputID}
         />
+        {messages}
       </div>
     );
   }
   if (kind === "select") {
     return (
       <div className="space-y-2">
-        <label htmlFor={inputID} className="block text-sm font-medium">
-          {field.label}
-        </label>
+        {label}
         <select
           id={inputID}
           className="flex h-10 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm"
           value={typeof value === "string" ? value : ""}
           onChange={(event) => onChange(event.target.value)}
+          {...aria}
+          data-testid={inputID}
         >
           <option value="">Select</option>
           {(field.options ?? []).map((option) => (
@@ -554,6 +711,7 @@ function FieldControl({
             </option>
           ))}
         </select>
+        {messages}
       </div>
     );
   }
@@ -566,9 +724,7 @@ function FieldControl({
       : [];
     return (
       <div className="space-y-2">
-        <label htmlFor={inputID} className="block text-sm font-medium">
-          {field.label}
-        </label>
+        {label}
         <Textarea
           id={inputID}
           value={lines.join("\n")}
@@ -585,33 +741,45 @@ function FieldControl({
             )
           }
           placeholder={field.placeholder ?? "name|artifact://ref"}
+          {...aria}
+          data-testid={inputID}
         />
+        {messages}
       </div>
     );
   }
   if (kind === "checkbox") {
     return (
-      <div className="flex items-center gap-3 text-sm">
-        <Checkbox
-          id={inputID}
-          checked={Boolean(value)}
-          onChange={(event) => onChange(event.currentTarget.checked)}
-        />
-        <label htmlFor={inputID}>{field.label}</label>
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 text-sm">
+          <Checkbox
+            id={inputID}
+            checked={Boolean(value)}
+            onChange={(event) => onChange(event.currentTarget.checked)}
+            {...aria}
+            data-testid={inputID}
+          />
+          <label htmlFor={inputID}>
+            {field.label}
+            <RequiredMark active={required} testID={`${inputID}-required`} />
+          </label>
+        </div>
+        {messages}
       </div>
     );
   }
   return (
     <div className="space-y-2">
-      <label htmlFor={inputID} className="block text-sm font-medium">
-        {field.label}
-      </label>
+      {label}
       <Input
         id={inputID}
         value={typeof value === "string" ? value : ""}
         onChange={(event) => onChange(event.target.value)}
         placeholder={field.placeholder}
+        {...aria}
+        data-testid={inputID}
       />
+      {messages}
     </div>
   );
 }

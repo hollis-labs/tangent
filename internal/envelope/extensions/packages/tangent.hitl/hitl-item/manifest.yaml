@@ -1,0 +1,99 @@
+# Interaction definition manifest — tangent.hitl-item@1.0
+#
+# ADR 0003 §6 designates `tangent.hitl` the reference implementation of the
+# package boundary: the operator inbox is host infrastructure with a frozen v1
+# wire contract, and it ships as a package with a manifest like any other. It
+# is also the one shipped kind with a real `response_schema`, so the §2.2
+# contract is exercised end to end here rather than only described.
+#
+# internal/hitl/ already behaves as a package — it owns one definition, reserves
+# a named surface behind an application-internal capability string, validates
+# against its own schema bundle, and ships its own MCP tools and route. This
+# manifest is what makes that legible to the registry.
+#
+# Compatibility defaults under ADR 0003 §8 C4 — what the code actually does,
+# never something more permissive:
+#
+#   * required_capabilities is empty. The /hitl route mediates no host effect
+#     the renderer could not perform on its own; CW-20260825-0077 is what
+#     authors real grants.
+#   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
+#     (interaction, redacted 30 days after terminal) governs new interactions
+#     while existing rows keep `surface` under ADR 0002 §12. Authoring
+#     `surface` here would re-loosen, through the min() in ADR 0002 §3, exactly
+#     the default ADR 0002 tightened.
+#   * draft_custody is `disabled`: the HITL inbox ships no *-draft-storage
+#     module and the durable draft path has no production caller.
+#
+# ADR 0003 §8 C6 freezes tangent.hitl-item v1.0, the /api/hitl surface, and the
+# four tangent.hitl_* tools at their contract version. Nothing in this manifest
+# may change a wire shape; it describes what already ships.
+
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.hitl-item
+version: "1.0"
+revision: 1
+title: "HITL inbox item"
+description: "Durable HITL inbox item: one operator-owned approval or persistent-attention interaction with typed evidence and an immutable per-item terminal outcome."
+package_id: tangent.hitl
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+# The response and error schemas are projections of the same v1 `$defs` bundle
+# the request schema roots, regenerated and drift-tested against it by
+# TestHITLContractProjectionsMatchBundle. See hitl_contract_schemas.go.
+response_schema: response.schema.json
+error_schema: error.schema.json
+compatibility_response_schema: present
+
+# The stable $defs entry points and what each is for — the generalization of
+# the HITL adapter/codegen target table docs/contracts/hitl-inbox-v1.md already
+# names. Consumed by MCP schema derivation and by Sigil (ADR 0003 §2.2).
+named_definitions:
+  HITLItemRequestV1: "Enqueue request root: one operator-owned approval or attention item."
+  HITLResolutionCommandV1: "Operator resolution command, carrying the expected interaction and projection revisions."
+  HITLTerminalOutcomeV1: "Immutable per-item terminal outcome across resolved, canceled, expired, failed, and superseded."
+  HITLGetCommandV1: "Retrieve one item by durable handle."
+  HITLAwaitCommandV1: "Wait for one item's terminal outcome without changing its lifecycle."
+  HITLWithdrawCommandV1: "Caller withdrawal of an outstanding item."
+  HITLItemHandleV1: "Durable handle returned at enqueue."
+  HITLItemViewV1: "Operator-facing projection of one item, including typed evidence."
+  HITLRetrievalResultV1: "Retrieval projection distinguishing terminal delivery from acknowledgement."
+  HITLResponseV1: "Resolution response payload: an approval decision or an attention acknowledgement."
+  HITLStaleRevisionErrorV1: "Typed stale-revision conflict carrying the current revision."
+  HITLIdempotencyConflictErrorV1: "Typed idempotency conflict for a reused key with different content."
+
+renderer:
+  # The HITL inbox renders through its own route rather than the envelope
+  # router, which is why it carries no ui.component slug and appears in no
+  # EnvelopeKindMap entry. renderer.entry is what makes that binding legible
+  # instead of being a third unrelated convention.
+  id: tangent.renderer.hitl-inbox
+  class: react-component
+  entry: "routes/HITLInbox#HITLInbox"
+  trust_class: core-trusted
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: disabled
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

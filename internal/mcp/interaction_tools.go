@@ -120,6 +120,9 @@ func (s *Server) registerInteractionTools() error {
 	if err := addInteractionTool(s, "tangent.interaction_supersede", "Supersede a caller-owned interaction with another durable interaction on the same surface.", s.handleInteractionSupersede); err != nil {
 		return err
 	}
+	if err := addInteractionTool(s, "tangent.interaction_acknowledge", "Acknowledge an immutable terminal outcome exactly once. Idempotent, and deliberately separate from retrieval and delivery: reading a result or receiving it over HTTP does not acknowledge it.", s.handleInteractionAcknowledge); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -179,9 +182,16 @@ func (s *Server) handleSurfaceOpen(
 	_ *mcpsdk.CallToolRequest,
 	input surfaceOpenInput,
 ) (*mcpsdk.CallToolResult, any, error) {
+	caller := directMCPActor(input.Caller)
+	// The owner scope is the caller's own, derived here. A wire-supplied
+	// `owner_scope` used to be accepted unchecked, which let a caller open a
+	// surface owned by any scope it could spell; it is now retained only as an
+	// attribution label beside the surface's metadata.
 	return s.interactionResult(s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
-		ID: input.SurfaceID, Caller: directMCPActor(input.Caller), IdempotencyKey: input.IdempotencyKey,
-		OwnerScope: input.OwnerScope, Metadata: rawJSON(input.Metadata), Policy: rawJSON(input.Policy),
+		ID: input.SurfaceID, Caller: caller, IdempotencyKey: input.IdempotencyKey,
+		OwnerScope: caller.Scope,
+		Metadata:   surfaceMetadataWithAttribution(input.Metadata, input.OwnerScope, input.Caller.Scope),
+		Policy:     rawJSON(input.Policy),
 	}))
 }
 
@@ -191,7 +201,7 @@ func (s *Server) handleSurfaceGet(
 	input surfaceGetInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.GetSurface(ctx, interaction.GetSurfaceInput{
-		SurfaceID: input.SurfaceID, RequesterScope: input.RequesterScope,
+		SurfaceID: input.SurfaceID, RequesterScope: requesterScope(input.RequesterScope),
 	}))
 }
 
@@ -225,7 +235,7 @@ func (s *Server) handleInteractionGet(
 	input interactionGetInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
-		InteractionID: input.InteractionID, RequesterScope: input.RequesterScope,
+		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
 }
@@ -236,7 +246,7 @@ func (s *Server) handleInteractionAwait(
 	input interactionAwaitInput,
 ) (*mcpsdk.CallToolResult, any, error) {
 	return s.interactionResult(s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
-		InteractionID: input.InteractionID, RequesterScope: input.RequesterScope,
+		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		MaximumWaitMillis:    input.MaximumWaitMillis,
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
@@ -278,6 +288,16 @@ func (s *Server) interactionResult(value any, err error) (*mcpsdk.CallToolResult
 
 func (s *Server) interactionError(err error) (*mcpsdk.CallToolResult, any, error) {
 	code := "interaction_error"
+	// A definition this host cannot serve is a distinguishable state, not one
+	// opaque failure (ADR 0003 §8 C7): a caller's next move differs between
+	// "this host is too old for that definition", "its capability request was
+	// refused", and "an operator turned it off". These codes are additive —
+	// before the versioned registry every shipped definition was available, so
+	// no caller can have been relying on the collapsed code.
+	var definitionState *interaction.DefinitionStateError
+	if errors.As(err, &definitionState) {
+		return toolErrorResult("definition_"+definitionState.State, definitionState.Error()), nil, nil
+	}
 	switch {
 	case errors.Is(err, interaction.ErrIdempotencyConflict):
 		code = "idempotency_conflict"
@@ -320,9 +340,13 @@ func rawJSON(value any) json.RawMessage {
 	return raw
 }
 
+// directMCPActor derives the caller identity for one generic tool call.
+//
+// The `caller.scope` / `requester.scope` argument is still accepted — shipped
+// schemas do not break — but it is no longer the authorization value. Only its
+// partition half survives; the authority is host-assigned from admission
+// facts. A caller that spells another authority into that field lands in a
+// partition of its own authority, never in the authority it named.
 func directMCPActor(assertion assertedActorInput) interaction.ActorBinding {
-	return interaction.ActorBinding{
-		Scope: assertion.Scope, PrincipalRef: assertion.PrincipalRef,
-		Authority: "direct-mcp", Assurance: "asserted",
-	}
+	return declaredCaller(assertion.Scope, assertion.PrincipalRef)
 }

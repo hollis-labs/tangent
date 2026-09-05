@@ -30,6 +30,30 @@ Reuse the same `roomID` across the whole flow.
 Create one Tangent writing-flow room with `tangent.session_create`, reuse that same roomID through interview, synthesis, drafting, revision, and output, and use the exact sample payloads from `docs/manual-tests/writing-flow-e2e.md`. Wait for my submit/cancel response at each browser step.
 ```
 
+## Completion and recovery
+
+Prefer async so the call returns as soon as the request is durable:
+
+```json
+{ "completion": { "mode": "async" } }
+```
+
+It returns a successful receipt with `"status": "pending"`, a durable handle,
+and the room URL to hand a human. Omitting `completion` keeps the inline
+default: wait up to 45 seconds, return the normal response if the operator
+answers in time, and otherwise return that same pending receipt — never an
+error, and never a cancellation.
+
+Recover a result three equivalent ways: `tangent.interaction_get`,
+`tangent.interaction_await`, or by retrying this call with the identical
+envelope id and payload. All three return the same immutable result. A retry
+with a *changed* payload is an `IDEMPOTENCY_CONFLICT`; use a new envelope id.
+
+Acknowledge with `tangent.interaction_acknowledge` when your side has committed
+to the result. Reading a result does not acknowledge it.
+
+Full contract: `docs/room-workflow-completion.md`
+
 ## Pointers
 
 - Full flow: `docs/manual-tests/writing-flow-e2e.md`
@@ -47,3 +71,4 @@ Create one Tangent writing-flow room with `tangent.session_create`, reuse that s
   `internal/mcp/block_draft_schema.go`,
   `internal/mcp/prose_revision_schema.go`,
   `internal/mcp/output_render_schema.go`
+- Completion contract: `docs/room-workflow-completion.md`

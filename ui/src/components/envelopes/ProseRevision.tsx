@@ -2,7 +2,10 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
+import { buildSubmitGate, describedBy, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 
 import type { CurrentDraft } from "./BlockDraft";
@@ -94,21 +97,54 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
   const [comments, setComments] = useState<Record<string, string>>({});
   const [generalComment, setGeneralComment] = useState("");
 
-  const unresolved = suggestions.filter((suggestion) => !decisions[suggestion.id]).length;
-  const submitDisabled =
-    unresolved > 0 ||
-    suggestions.some(
-      (suggestion) =>
-        decisions[suggestion.id] === "comment" &&
-        (comments[suggestion.id] ?? "").trim().length === 0,
-    );
+  const revealRequirement = useRevealRequirement();
+
+  const suggestionLabel = (suggestion: ProseRevisionSuggestion, index: number) =>
+    suggestion.label ?? `Suggestion ${index + 1}`;
+  const commentMissing = (suggestion: ProseRevisionSuggestion) =>
+    decisions[suggestion.id] === "comment" && (comments[suggestion.id] ?? "").trim().length === 0;
+
+  const undecided = suggestions.filter((suggestion) => !decisions[suggestion.id]);
+  const unresolved = undecided.length;
+  const awaitingComment = suggestions.filter(commentMissing);
+
+  // The gate walks the suggestions in the order they are rendered and reports
+  // whichever thing each one still owes. Both causes were previously folded
+  // into one `submitDisabled` boolean, and the second had no indicator at all:
+  // with every suggestion decided but one Comment body left blank, the header
+  // said "All suggestions decided" while Submit stayed dead and nothing on
+  // screen named the suggestion holding it.
+  const gate = buildSubmitGate(
+    suggestions.map((suggestion, index) => {
+      const label = suggestionLabel(suggestion, index);
+      if (!decisions[suggestion.id]) {
+        return {
+          // Single column: every suggestion is mounted, so there is nothing
+          // to reveal — the decision buttons are already in the DOM.
+          controlID: `prose-revision-decision-${suggestion.id}-accept`,
+          label: `"${label}"`,
+          message: `"${label}" still needs a decision.`,
+        };
+      }
+      if (commentMissing(suggestion)) {
+        return {
+          controlID: `prose-revision-comment-${suggestion.id}`,
+          label: `the comment on "${label}"`,
+          message: `"${label}" is marked Comment and still needs the comment itself.`,
+        };
+      }
+      return null;
+    }),
+  );
+  const submitDisabled = gate.blocked;
 
   const handleDecision = (suggestionID: string, decision: "accept" | "reject" | "comment") => {
     setDecisions((current) => ({ ...current, [suggestionID]: decision }));
   };
 
   const handleSubmit = () => {
-    if (submitDisabled) {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
       return;
     }
     onSubmit({
@@ -199,8 +235,23 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Suggestions</p>
-            <p className="text-xs text-zinc-500">
-              {unresolved === 0 ? "All suggestions decided" : `${unresolved} undecided`}
+            {/*
+              "All suggestions decided" used to be printed the moment the last
+              decision landed, even when a Comment decision still owed its
+              comment — the reviewer read a green light beside a dead button.
+              The counter now reports both outstanding kinds.
+            */}
+            <p data-testid="prose-revision-counts" className="text-xs text-zinc-500">
+              {unresolved === 0 && awaitingComment.length === 0
+                ? "All suggestions decided"
+                : [
+                    unresolved > 0 ? `${unresolved} undecided` : null,
+                    awaitingComment.length > 0
+                      ? `${awaitingComment.length} awaiting a comment`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
             </p>
           </div>
 
@@ -213,11 +264,25 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                 data-testid={`prose-revision-suggestion-${suggestion.id}`}
               >
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-zinc-100">
-                    {suggestion.label ?? `Suggestion ${index + 1}`}
+                  <p
+                    id={`prose-revision-suggestion-${suggestion.id}-label`}
+                    className="text-sm font-medium text-zinc-100"
+                  >
+                    {suggestionLabel(suggestion, index)}
                   </p>
+                  {/*
+                    `reason` is the agent's justification for proposing the
+                    change — read-only, and not the reviewer's "comment" below.
+                    The two words are the workflow's own and stay as they are;
+                    the hint on the comment box is what keeps them apart.
+                  */}
                   {suggestion.reason ? (
-                    <p className="text-sm text-zinc-400">{suggestion.reason}</p>
+                    <p
+                      data-testid={`prose-revision-reason-${suggestion.id}`}
+                      className="text-sm text-zinc-400"
+                    >
+                      {suggestion.reason}
+                    </p>
                   ) : null}
                 </div>
 
@@ -241,31 +306,54 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
-                  {DECISIONS.map((option) => (
-                    <button
-                      type="button"
-                      key={option.id}
-                      onClick={() => handleDecision(suggestion.id, option.id)}
-                      data-testid={`prose-revision-decision-${suggestion.id}-${option.id}`}
-                      className={cn(
-                        "rounded-full border px-3 py-2 text-sm transition-colors",
-                        decision === option.id
-                          ? "border-zinc-200 bg-zinc-100 text-zinc-900"
-                          : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:border-zinc-500",
-                      )}
+                <div className="space-y-2">
+                  <div className="flex items-center">
+                    <span
+                      id={`prose-revision-decision-label-${suggestion.id}`}
+                      className="text-[11px] font-medium uppercase tracking-wide text-zinc-500"
                     >
-                      {option.label}
-                    </button>
-                  ))}
+                      Decision
+                    </span>
+                    <RequiredMark
+                      active={!decision}
+                      testID={`prose-revision-decision-required-${suggestion.id}`}
+                    />
+                  </div>
+                  <fieldset
+                    aria-labelledby={`prose-revision-suggestion-${suggestion.id}-label prose-revision-decision-label-${suggestion.id}`}
+                    className="flex flex-wrap gap-2"
+                  >
+                    {DECISIONS.map((option) => (
+                      <button
+                        type="button"
+                        key={option.id}
+                        id={`prose-revision-decision-${suggestion.id}-${option.id}`}
+                        onClick={() => handleDecision(suggestion.id, option.id)}
+                        data-testid={`prose-revision-decision-${suggestion.id}-${option.id}`}
+                        aria-pressed={decision === option.id}
+                        className={cn(
+                          "rounded-full border px-3 py-2 text-sm transition-colors",
+                          decision === option.id
+                            ? "border-zinc-200 bg-zinc-100 text-zinc-900"
+                            : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:border-zinc-500",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </fieldset>
                 </div>
 
                 <div className="space-y-2">
                   <label
                     htmlFor={`prose-revision-comment-${suggestion.id}`}
-                    className="text-sm font-medium text-zinc-100"
+                    className="block text-sm font-medium text-zinc-100"
                   >
                     {decision === "comment" ? "Required comment" : "Optional note"}
+                    <RequiredMark
+                      active={decision === "comment"}
+                      testID={`prose-revision-comment-required-${suggestion.id}`}
+                    />
                   </label>
                   <Textarea
                     id={`prose-revision-comment-${suggestion.id}`}
@@ -278,6 +366,12 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                       }));
                     }}
                     className="min-h-24"
+                    aria-required={decision === "comment"}
+                    aria-invalid={commentMissing(suggestion)}
+                    aria-describedby={describedBy(
+                      `prose-revision-comment-hint-${suggestion.id}`,
+                      commentMissing(suggestion) && `prose-revision-comment-error-${suggestion.id}`,
+                    )}
                     data-testid={`prose-revision-comment-${suggestion.id}`}
                     placeholder={
                       decision === "comment"
@@ -285,6 +379,20 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                         : "Optional note for this suggestion."
                     }
                   />
+                  <FieldMessage id={`prose-revision-comment-hint-${suggestion.id}`}>
+                    Your reply to this suggestion, separate from the agent's own reason for
+                    proposing it. Choosing Comment makes it the recorded answer and Submit waits for
+                    it; under any other decision it is an optional note.
+                  </FieldMessage>
+                  {commentMissing(suggestion) ? (
+                    <FieldMessage
+                      id={`prose-revision-comment-error-${suggestion.id}`}
+                      tone="error"
+                      testID={`prose-revision-comment-error-${suggestion.id}`}
+                    >
+                      This suggestion is marked Comment. Write the comment.
+                    </FieldMessage>
+                  ) : null}
                 </div>
               </article>
             );
@@ -292,11 +400,23 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
         </section>
 
         <section className="space-y-2">
+          {/*
+            Typographically identical to the per-suggestion comment above it,
+            and one of them can be mandatory. The badge and the hint are what
+            tell them apart.
+          */}
           <label
             htmlFor="prose-revision-general-comment"
-            className="text-sm font-medium text-zinc-100"
+            className="block text-sm font-medium text-zinc-100"
           >
             Overall note
+            <span
+              aria-hidden="true"
+              data-testid="prose-revision-general-comment-optional"
+              className="ml-2 rounded bg-zinc-700/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-400"
+            >
+              optional
+            </span>
           </label>
           <Textarea
             id="prose-revision-general-comment"
@@ -305,13 +425,24 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
               setGeneralComment(event.currentTarget.value);
             }}
             className="min-h-24"
+            aria-describedby="prose-revision-general-comment-hint"
             data-testid="prose-revision-general-comment"
             placeholder="Optional note about the pass as a whole."
           />
+          <FieldMessage id="prose-revision-general-comment-hint">
+            Optional. Covers the pass as a whole and never stands in for a comment a single
+            suggestion is waiting on.
+          </FieldMessage>
         </section>
       </CardContent>
 
-      <CardFooter className="justify-end gap-3">
+      <CardFooter className="flex-wrap justify-end gap-3">
+        <SubmitGateNotice
+          gate={gate}
+          testID="prose-revision-submit-gate"
+          action="Submit"
+          onReveal={revealRequirement}
+        />
         <Button
           type="button"
           variant="ghost"
@@ -324,6 +455,7 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
           type="button"
           onClick={handleSubmit}
           disabled={submitDisabled}
+          aria-describedby={gate.blocked ? "prose-revision-submit-gate" : undefined}
           data-testid="prose-revision-submit"
         >
           Submit

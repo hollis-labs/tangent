@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
+.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -70,6 +70,24 @@ test-go: build-ui ## Build the embedded SPA, then run Go tests with -race
 
 test-frontend: check-node ## Run vitest
 	cd ui && npm test -- --run
+
+# ── Smoke ──────────────────────────────────────────────────────────────
+#
+# One command, two layers. By default it builds ./cmd/tangent, boots it on a
+# reserved port against a database in a temp directory, and checks direct
+# /mcp, legacy /sse, one read-only tool call, and the three health probes —
+# no live instance, no Cerberus resource, no Tether catalog, so it is safe in
+# CI and it is what `go test ./...` already runs.
+#
+# The environment-coupled layer — the running deployment, its supervisor, and
+# the Tether gateway that fronts it — is behind one explicit gate:
+#
+#   TANGENT_SMOKE_ENV=1 make smoke
+#
+# See docs/mcp-smoketest.md for the operator recipe and the four failure modes.
+
+smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live deployment, Cerberus, and Tether checks
+	go test -count=1 -v ./internal/smoke/...
 
 # ── Lint ───────────────────────────────────────────────────────────────
 

@@ -1,12 +1,12 @@
 # Tangent writing flow e2e
 
-Manual recipe for the full v0.3 writing workflow in one room, including one
+Manual recipe for the full writing workflow in one room, including one
 explicit jump-back from `revision` to `drafting`.
 
 ## Setup
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 make build
 ./tangent --port=7842
 ```

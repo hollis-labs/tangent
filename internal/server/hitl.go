@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/participant"
 )
 
 const (
@@ -86,7 +89,7 @@ func (h *hitlHTTPHandler) present(w http.ResponseWriter, r *http.Request) {
 	_, err := h.service.Present(r.Context(), hitl.PresentInput{
 		ItemID: r.PathValue("itemID"), ExpectedRevision: command.ExpectedRevision,
 		PresentedProjectionRevision: command.PresentedProjectionRevision,
-		ConnectionID:                command.ConnectionID,
+		ConnectionID:                canonicalConnectionID(r, command.ConnectionID),
 	})
 	if err != nil {
 		writeHITLError(w, err)
@@ -116,6 +119,27 @@ func (h *hitlHTTPHandler) resolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeHITLJSON(w, http.StatusOK, outcome)
+}
+
+// canonicalConnectionID returns the server-assigned connection id for a
+// browser request.
+//
+// The client-supplied value has always been a diagnostic label — its own
+// comment in ui/src/lib/hitl-api.ts says so — and ADR 0004 §6.6 makes the
+// canonical id server-assigned from the participant session instead. It is
+// derived rather than copied: the session identifier is not something a
+// durable record needs, and a truncated digest is a stable per-session label
+// that reveals nothing about the session it names.
+//
+// With no session (an embedder that wired no gate) the client's label is used
+// unchanged, which is the pre-ADR-0004 behavior.
+func canonicalConnectionID(r *http.Request, clientLabel string) string {
+	session, ok := participant.FromContext(r.Context())
+	if !ok {
+		return clientLabel
+	}
+	digest := sha256.Sum256([]byte(session.ID))
+	return "browser-" + hex.EncodeToString(digest[:6])
 }
 
 // events sends only durable revision notifications. The browser always

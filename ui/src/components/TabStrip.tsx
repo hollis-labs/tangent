@@ -2,15 +2,17 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { closeRoom as closeRoomRequest, fetchRooms, type RoomSummary } from "@/lib/rooms-api";
 import { cn } from "@/lib/utils";
 
-export interface SessionListRoom {
-  id: string;
-  title?: string;
-  current_envelope_type?: string;
-  created_at: string;
-  updated_at: string;
-}
+/**
+ * SessionListRoom is the room shape the tab strip renders.
+ *
+ * It is re-exported from the room API client rather than redeclared, so the
+ * strip and the transport cannot drift. The name is kept for the modules that
+ * already import it.
+ */
+export type SessionListRoom = RoomSummary;
 
 const REFRESH_MS = 5000;
 
@@ -55,7 +57,7 @@ export function TabStrip() {
 
   const closeRoom = async (roomID: string) => {
     try {
-      await callTool("tangent.session_close", { roomID });
+      await closeRoomRequest(roomID);
       const next = await fetchRooms();
       setRooms(next);
       setError("");
@@ -100,6 +102,7 @@ export function TabStrip() {
               const active = room.id === activeRoomID;
               const label = room.title || shortRoomID(room.id);
               const suffix = room.current_envelope_type ? ` (${room.current_envelope_type})` : "";
+              const attached = room.connection_count ?? 0;
               return (
                 <div
                   key={room.id}
@@ -119,6 +122,18 @@ export function TabStrip() {
                     {label}
                     {suffix}
                   </button>
+                  {attached > 1 ? (
+                    <span
+                      data-testid={`tab-strip-connections-${room.id}`}
+                      title={`${attached} clients attached`}
+                      className={cn(
+                        "rounded-full px-1.5 text-[10px] leading-4",
+                        active ? "bg-zinc-300 text-zinc-800" : "bg-zinc-800 text-zinc-400",
+                      )}
+                    >
+                      {attached}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void closeRoom(room.id)}
@@ -166,39 +181,6 @@ async function refreshRooms(
   } catch (err) {
     setError((err as Error).message);
   }
-}
-
-export async function fetchRooms(): Promise<SessionListRoom[]> {
-  const result = await callTool("tangent.session_list", { active_only: true });
-  const text = result?.result?.content?.[0]?.text;
-  if (typeof text !== "string") {
-    return [];
-  }
-  const parsed = JSON.parse(text) as { rooms?: SessionListRoom[] };
-  return parsed.rooms ?? [];
-}
-
-async function callTool(name: string, args: Record<string, unknown>) {
-  const response = await fetch("/mcp", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name,
-        arguments: args,
-      },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`tool ${name} HTTP ${response.status}`);
-  }
-  return response.json();
 }
 
 function shortRoomID(roomID: string): string {

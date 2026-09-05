@@ -62,6 +62,8 @@ describe("ws-client", () => {
     try {
       const client = connect("room-a", {
         wsURL: "ws://example.test/ws",
+        clientID: "tab-1",
+        heartbeatMs: 0,
         onOpen,
         onClose,
         onEnvelope,
@@ -120,6 +122,8 @@ describe("ws-client", () => {
     try {
       const client = connect("room-a", {
         wsURL: "ws://example.test/ws",
+        clientID: "tab-1",
+        heartbeatMs: 0,
         onEnvelope: vi.fn(),
       });
       const socket = MockWebSocket.instances[0];
@@ -135,6 +139,124 @@ describe("ws-client", () => {
 
       socket.readyState = MockWebSocket.CLOSING;
       expect(client.cancel("env-3", 9)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+  it("carries the tab client id and reports connection, sync, and refusal frames", () => {
+    const originalWS = globalThis.WebSocket;
+    Object.assign(MockWebSocket, { instances: [] });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    const onConnectionState = vi.fn();
+    const onSync = vi.fn();
+    const onServerError = vi.fn();
+    const onError = vi.fn();
+
+    try {
+      const client = connect("room-a", {
+        wsURL: "ws://example.test/ws",
+        clientID: "tab-7",
+        heartbeatMs: 0,
+        onEnvelope: vi.fn(),
+        onConnectionState,
+        onSync,
+        onServerError,
+        onError,
+      });
+      const socket = MockWebSocket.instances[0];
+      // The client id is what tells the server a reconnect is a refresh of
+      // this tab rather than a second tab.
+      expect(socket.url).toContain("clientID=tab-7");
+      expect(client.clientID()).toBe("tab-7");
+      socket.emitOpen();
+
+      socket.emitMessage(
+        JSON.stringify({
+          type: "connection",
+          connectionId: "conn-1",
+          role: "observer",
+          roomId: "room-a",
+          lease: { connection_id: "conn-2", label: "tab a" },
+          connections: [
+            { connection_id: "conn-1", role: "observer", self: true },
+            { connection_id: "conn-2", role: "resolver", label: "tab a" },
+          ],
+        }),
+      );
+      expect(onConnectionState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          connectionId: "conn-1",
+          role: "observer",
+          lease: expect.objectContaining({ connection_id: "conn-2" }),
+        }),
+      );
+
+      socket.emitMessage(
+        JSON.stringify({
+          type: "sync",
+          sync: {
+            room_id: "room-a",
+            surface_revision: 12,
+            presentations: [
+              {
+                envelope_id: "env-1",
+                durable: true,
+                interaction_id: "int-1",
+                interaction_revision: 3,
+              },
+            ],
+          },
+        }),
+      );
+      expect(onSync).toHaveBeenCalledWith(expect.objectContaining({ surface_revision: 12 }));
+
+      socket.emitMessage(
+        JSON.stringify({
+          type: "error",
+          code: "resolver_lease_held",
+          message: "held by tab a",
+          envelopeId: "env-1",
+          lease: { connection_id: "conn-2", label: "tab a" },
+        }),
+      );
+      expect(onServerError).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "resolver_lease_held", envelopeId: "env-1" }),
+      );
+
+      expect(client.claimResolver(true)).toBe(true);
+      expect(client.releaseResolver()).toBe(true);
+      expect(client.resync()).toBe(true);
+      expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
+        { type: "claim_resolver", takeover: true },
+        { type: "release_resolver" },
+        { type: "resync" },
+      ]);
+
+      // A frame type this build does not know about is a forward-compatible
+      // server, not a protocol fault.
+      socket.emitMessage(JSON.stringify({ type: "future-frame", whatever: 1 }));
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+
+  it("attaches as an observer when asked", () => {
+    const originalWS = globalThis.WebSocket;
+    Object.assign(MockWebSocket, { instances: [] });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    try {
+      connect("room-a", {
+        wsURL: "ws://example.test/ws",
+        clientID: "tab-9",
+        observer: true,
+        heartbeatMs: 0,
+        onEnvelope: vi.fn(),
+      });
+      expect(MockWebSocket.instances[0].url).toContain("role=observer");
     } finally {
       vi.unstubAllGlobals();
       globalThis.WebSocket = originalWS;

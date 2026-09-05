@@ -185,7 +185,7 @@ func normalizeFilePickerSnapshot(snapshot FilePickerSnapshot) (FilePickerSnapsho
 	if err != nil {
 		return FilePickerSnapshot{}, err
 	}
-	queryState, err := normalizeFormMap(snapshot.QueryState, ErrInvalidFilePickerQueryState)
+	queryState, err := normalizeObjectMap(snapshot.QueryState, ErrInvalidFilePickerQueryState)
 	if err != nil {
 		return FilePickerSnapshot{}, err
 	}
@@ -587,7 +587,7 @@ func readFilePickerQueryState(raw any) map[string]any {
 	if !ok {
 		return map[string]any{}
 	}
-	out, err := normalizeFormMap(record, ErrInvalidFilePickerQueryState)
+	out, err := normalizeObjectMap(record, ErrInvalidFilePickerQueryState)
 	if err != nil {
 		return map[string]any{}
 	}

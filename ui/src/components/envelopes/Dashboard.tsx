@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import {
   clearDashboardDraft,
   DASHBOARD_DRAFT_AUTOSAVE_DEBOUNCE_MS,
   loadDashboardDraft,
   saveDashboardDraft,
 } from "@/lib/dashboard-draft-storage";
+import { describedBy, focusControl } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
 
 type DashboardTile = {
@@ -121,6 +123,12 @@ export interface DashboardResponse {
   completedAt?: string;
 }
 
+// Control ids. Only the layout name carries a requirement, and it is the one
+// the layout actions focus when they refuse to run.
+const LAYOUT_NAME_ID = "dashboard-layout-name";
+const STATUS_FILTER_ID = "dashboard-status-filter";
+const NOTE_ID = "dashboard-note";
+
 type DashboardProps = {
   envelope: DashboardEnvelope;
   onSubmit: (response: DashboardResponse) => void;
@@ -166,8 +174,17 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
   const [layoutMessage, setLayoutMessage] = useState<string | null>(
     draft ? "Recovered unsent dashboard layout edits from this browser." : null,
   );
+  // Layout failures used to share `layoutMessage` with layout successes, so
+  // "Layout name is required before saving." rendered in success green. The
+  // error carries the control it belongs to, which is what lets the layout name
+  // point `aria-describedby` at it only when the error is actually about it.
+  const [layoutError, setLayoutError] = useState<{ controlID: string; message: string } | null>(
+    null,
+  );
   const [artifactMessage, setArtifactMessage] = useState<string | null>(null);
   const lastSavedDraftRef = useRef<string | null>(draft ? JSON.stringify(draft) : null);
+
+  const layoutNameMissing = layoutName.trim().length === 0;
 
   const orderedTiles = useMemo(() => {
     const order = new Map(layout.map((item, index) => [item.tile_id, index]));
@@ -250,6 +267,7 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
   };
 
   const selectLayout = (layoutID: string) => {
+    setLayoutError(null);
     setActiveLayoutID(layoutID);
     const next = savedLayouts.find((item) => item.layout_id === layoutID) ?? null;
     setLayout(next ? cloneLayout(next.tiles) : buildDefaultLayout(tiles));
@@ -262,9 +280,17 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
   const saveLayout = (mode: "update" | "duplicate") => {
     const trimmedName = layoutName.trim();
     if (!trimmedName) {
-      setLayoutMessage("Layout name is required before saving.");
+      // Same refusal as before, now in an error surface rather than an emerald
+      // one, and the operator is taken to the field that clears it.
+      setLayoutMessage(null);
+      setLayoutError({
+        controlID: LAYOUT_NAME_ID,
+        message: "Layout name is required before saving.",
+      });
+      focusControl(LAYOUT_NAME_ID);
       return;
     }
+    setLayoutError(null);
     const timestamp = new Date().toISOString();
     const baseID =
       mode === "update" && activeLayout ? activeLayout.layout_id : slugifyLayoutName(trimmedName);
@@ -296,6 +322,7 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
   };
 
   const moveTile = (tileID: string, direction: -1 | 1) => {
+    setLayoutError(null);
     const currentIndex = layout.findIndex((item) => item.tile_id === tileID);
     const targetIndex = currentIndex + direction;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= layout.length) {
@@ -310,9 +337,15 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
 
   const applyLayoutToSaved = () => {
     if (!activeLayout) {
-      setLayoutMessage("Save the current arrangement as a named layout first.");
+      setLayoutMessage(null);
+      setLayoutError({
+        controlID: "dashboard-active-layout",
+        message: "Save the current arrangement as a named layout first.",
+      });
+      focusControl("dashboard-active-layout");
       return;
     }
+    setLayoutError(null);
     setSavedLayouts(
       normalizeDefaultLayout(
         savedLayouts.map((item) =>
@@ -460,13 +493,18 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
               Status filter
             </label>
             <input
-              id="dashboard-status-filter"
+              id={STATUS_FILTER_ID}
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}
               className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
               placeholder="running, blocked"
+              aria-describedby={`${STATUS_FILTER_ID}-hint`}
               data-testid="dashboard-status-filter"
             />
+            <FieldMessage id={`${STATUS_FILTER_ID}-hint`}>
+              Comma-separated. Submitted as a single status "in" filter; the placeholder was the
+              only thing that said so.
+            </FieldMessage>
           </div>
           <div className="space-y-2">
             <label
@@ -531,20 +569,40 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
               </select>
             </div>
             <div className="space-y-2">
+              {/*
+                Conditionally required: the dashboard submits happily without a
+                layout name, but Save layout and Save as new both refuse without
+                one and used to say so only after the click, in green.
+              */}
               <label
-                htmlFor="dashboard-layout-name"
+                htmlFor={LAYOUT_NAME_ID}
                 className="text-xs font-medium uppercase tracking-wide text-zinc-500"
               >
                 Layout name
+                <RequiredMark active={layoutNameMissing} testID="dashboard-layout-name-required" />
               </label>
               <input
-                id="dashboard-layout-name"
+                id={LAYOUT_NAME_ID}
                 value={layoutName}
-                onChange={(event) => setLayoutName(event.target.value)}
+                onChange={(event) => {
+                  setLayoutName(event.target.value);
+                  if (layoutError?.controlID === LAYOUT_NAME_ID) {
+                    setLayoutError(null);
+                  }
+                }}
                 className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
                 data-testid="dashboard-layout-name"
                 placeholder="Focus, Reviews, Triage"
+                aria-required={layoutNameMissing}
+                aria-invalid={layoutNameMissing}
+                aria-describedby={describedBy(
+                  `${LAYOUT_NAME_ID}-hint`,
+                  layoutError?.controlID === LAYOUT_NAME_ID && "dashboard-layout-error",
+                )}
               />
+              <FieldMessage id={`${LAYOUT_NAME_ID}-hint`}>
+                Required by Save layout and Save as new. Submitting the dashboard does not need one.
+              </FieldMessage>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -573,9 +631,24 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
               </Button>
             </div>
             {layoutMessage ? (
-              <p className="text-sm text-emerald-300" data-testid="dashboard-layout-message">
+              <p
+                className="text-sm text-emerald-300"
+                role="status"
+                aria-live="polite"
+                data-testid="dashboard-layout-message"
+              >
                 {layoutMessage}
               </p>
+            ) : null}
+            {layoutError ? (
+              <FieldMessage
+                id="dashboard-layout-error"
+                tone="error"
+                testID="dashboard-layout-error"
+                className="text-sm"
+              >
+                {layoutError.message}
+              </FieldMessage>
             ) : null}
           </div>
 
@@ -597,6 +670,7 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
                       variant="ghost"
                       disabled={index === 0}
                       onClick={() => moveTile(tile.tile_id, -1)}
+                      aria-label={`Move ${tile.title} up`}
                       data-testid={`dashboard-move-up-${tile.tile_id}`}
                     >
                       Up
@@ -606,6 +680,7 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
                       variant="ghost"
                       disabled={index === orderedTiles.length - 1}
                       onClick={() => moveTile(tile.tile_id, 1)}
+                      aria-label={`Move ${tile.title} down`}
                       data-testid={`dashboard-move-down-${tile.tile_id}`}
                     >
                       Down
@@ -681,7 +756,12 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
         </section>
 
         {artifactMessage ? (
-          <p className="text-sm text-emerald-300" data-testid="dashboard-artifact-message">
+          <p
+            className="text-sm text-emerald-300"
+            role="status"
+            aria-live="polite"
+            data-testid="dashboard-artifact-message"
+          >
             {artifactMessage}
           </p>
         ) : null}
@@ -726,19 +806,24 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
 
         <section className="space-y-2">
           <label
-            htmlFor="dashboard-note"
+            htmlFor={NOTE_ID}
             className="text-xs font-medium uppercase tracking-wide text-zinc-500"
           >
             Operator note
           </label>
           <textarea
-            id="dashboard-note"
+            id={NOTE_ID}
             value={note}
             onChange={(event) => setNote(event.target.value)}
             className="min-h-24 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-zinc-600"
-            placeholder="Capture what changed or what should refresh."
+            placeholder="Optional — what changed, or what should refresh"
+            aria-describedby={`${NOTE_ID}-hint`}
             data-testid="dashboard-note"
           />
+          <FieldMessage id={`${NOTE_ID}-hint`}>
+            Optional. Sent with Refresh and Submit update, but the local draft only keeps the layout
+            — a reload clears this note.
+          </FieldMessage>
         </section>
 
         <div className="flex flex-wrap justify-end gap-3">

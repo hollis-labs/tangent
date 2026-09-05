@@ -87,7 +87,9 @@ describe("FormCollect", () => {
     );
 
     expect(screen.queryByTestId("form-collect-section-assets")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Checked"));
+    // The checkbox's accessible name is the field's own label now; it used to
+    // be the literal string "Checked" (see FormCollect's checkbox branch).
+    fireEvent.click(screen.getByLabelText("Need assets?"));
     expect(screen.getByTestId("form-collect-section-assets")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("form-collect-add-row-assets"));
     expect(screen.getAllByText(/Assets #/)).toHaveLength(2);

@@ -360,7 +360,7 @@ func normalizeDashboardTiles(items []DashboardTile) ([]DashboardTile, map[string
 		if _, exists := seen[tileID]; exists {
 			return nil, nil, fmt.Errorf("%w: duplicate tile_id %q", ErrInvalidDashboardTile, tileID)
 		}
-		metadata, err := normalizeFormMap(item.Metadata, ErrInvalidDashboardTile)
+		metadata, err := normalizeObjectMap(item.Metadata, ErrInvalidDashboardTile)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -810,7 +810,7 @@ func readDashboardTiles(raw any) []DashboardTile {
 			RoomID:      readString(m, dashboardTileRoomIDKey),
 			Workflow:    readString(m, dashboardTileWorkflowKey),
 			ArtifactRef: readString(m, dashboardTileArtifactKey),
-			Metadata:    readObjectValueMap(m[dashboardTileMetadataKey]),
+			Metadata:    readObjectMapValue(m[dashboardTileMetadataKey]),
 		})
 	}
 	return out

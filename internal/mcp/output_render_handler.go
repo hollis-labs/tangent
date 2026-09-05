@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -13,7 +12,8 @@ import (
 )
 
 type outputRenderInput struct {
-	Envelope envelopes.Envelope `json:"envelope"`
+	Envelope   envelopes.Envelope `json:"envelope"`
+	Completion completionInput    `json:"completion,omitempty"`
 }
 
 func (s *Server) handleOutputRender(
@@ -32,31 +32,12 @@ func (s *Server) handleOutputRender(
 		), nil, nil
 	}
 
-	roomID, reused := metaRoomID(args.Envelope.Meta)
-	if !reused || roomID == "" {
-		createRes, _, err := s.handleSessionCreate(ctx, nil, sessionCreateInput{
-			Meta: map[string]any{
-				"envelopeID":   args.Envelope.ID,
-				"envelopeType": args.Envelope.Type,
-			},
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		if createRes.IsError {
-			return createRes, nil, nil
-		}
-		var created sessionCreateResult
-		if err := json.Unmarshal([]byte(extractToolText(createRes)), &created); err != nil {
-			return toolErrorResult(
-				envelopes.ErrorCodeHostError,
-				fmt.Sprintf("decode session_create result: %v", err),
-			), nil, nil
-		}
-		roomID = created.RoomID
-		s.logWorkflowRoomCreated("output-render", roomID, args.Envelope.ID)
-	} else {
-		s.logWorkflowRoomReused("output-render", roomID, args.Envelope.ID)
+	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "output-render", &args.Envelope)
+	if roomErr != nil {
+		return nil, nil, roomErr
+	}
+	if roomResult != nil {
+		return roomResult, nil, nil
 	}
 
 	if _, err := s.manager.SetFinalOutput(roomID, room.FinalOutputView{
@@ -78,7 +59,7 @@ func (s *Server) handleOutputRender(
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
 	}
 
-	return s.advanceRoomEnvelope(ctx, roomID, buildVisibleOutputRenderEnvelope(&args.Envelope, room.ProjectFinalOutput(phaseState)))
+	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleOutputRenderEnvelope(&args.Envelope, room.ProjectFinalOutput(phaseState)), args.Completion)
 }
 
 func buildVisibleOutputRenderEnvelope(env *envelopes.Envelope, view *room.FinalOutputView) *envelopes.Envelope {

@@ -128,8 +128,11 @@ describe("<ProgressPanel>", () => {
 
     fireEvent.click(screen.getByTestId("progress-panel-submit"));
     expect(onSubmit).not.toHaveBeenCalled();
+    // The old message told the operator to select an item on a panel that has
+    // none to select. The gate splits the two requirements so each states its
+    // own truth (CW-20260904-0067).
     expect(screen.getByTestId("progress-panel-submit-error")).toHaveTextContent(
-      "Select a progress item before submitting an update.",
+      "This panel has no progress items to update yet.",
     );
   });
 
@@ -194,8 +197,11 @@ describe("<ProgressPanel>", () => {
     render(
       <ProgressPanel envelope={envelope} onSubmit={() => {}} onCancel={() => {}} roomID="room-9" />,
     );
+    // The draft store is named ".view." but also carries the unsent status,
+    // note and checkpoint label; the banner now says what was actually
+    // restored (CW-20260904-0067).
     expect(screen.getByTestId("progress-panel-message")).toHaveTextContent(
-      "Recovered progress-panel view state from this browser.",
+      "Recovered your unsent progress update — item, status, note, and checkpoint label — along with the timeline filters, from this browser.",
     );
     expect(screen.getByTestId("progress-panel-logs")).toBeInTheDocument();
     expect(screen.getByTestId("progress-panel-filter-item")).toHaveValue("item-2");

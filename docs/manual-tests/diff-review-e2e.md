@@ -7,7 +7,7 @@ Manual room-backed smoke test for `tangent.diff-review`.
 Start Tangent:
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 make build
 ./tangent
 ```

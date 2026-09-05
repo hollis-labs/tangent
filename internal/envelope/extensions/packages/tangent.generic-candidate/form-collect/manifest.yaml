@@ -1,0 +1,88 @@
+# Interaction definition manifest — tangent.form-collect@0.6
+#
+# Authored per docs/adr/0003-definition-and-package-ownership.md §2. Every field
+# below is publisher-authored; Tangent derives the digests, the granted
+# capabilities, and the effective trust assurance and refuses a manifest that
+# tries to author them.
+#
+# ADR 0003 §6 labels this kind for the go-envelopes generic catalog. That is a
+# destination, not a plan: no upstream move is scheduled until go-envelopes
+# retains source bytes for core kinds and a second host actually consumes one.
+# Until then it ships bundled and Tangent-published, under a holding package.
+#
+# Compatibility defaults under ADR 0003 §8 C4 — what the code actually does,
+# never something more permissive:
+#
+#   * response_schema is now PRESENT. ADR 0003 §9 S2 scheduled this backfill
+#     for CW-20260825-0074, and it is authored from what
+#     internal/packages/formcollect actually accepts — only form_id required,
+#     unknown keys ignored, malformed list entries skipped rather than refused
+#     — so no payload production accepts today starts being rejected.
+#
+#     The backfill has no ADR-legal identity move, and this manifest takes the
+#     least wire-visible one. Adding response_schema changes contract_digest.
+#     §2.1 and §3 say a contract_digest change requires a `version` bump and
+#     forbid a `revision` bump; §8 C3 says all 18 shipped kinds keep their
+#     exact versions with "no wire breakage, in either direction"; and leaving
+#     both unchanged would republish different content under one identity,
+#     which §3 calls a publisher error. Every option violates one of the ADR's
+#     own rules. `version` is on the wire (tangent.list_workflows, the
+#     generated TypeScript, every pinned binding) and `revision` is not, so
+#     `version` holds at 0.6 and `revision` advances to 2. ADR 0003 needs an
+#     amendment naming the C4-to-present transition as a defined move; see the
+#     CW-20260825-0074 findings.
+#   * required_capabilities is empty. Nothing in this kind is capability-
+#     mediated today, and CW-20260825-0077 is what authors real grants.
+#   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
+#     (interaction, redacted 30 days after terminal) governs new interactions
+#     while existing rows keep `surface` under ADR 0002 §12. Authoring
+#     `surface` here would re-loosen, through the min() in ADR 0002 §3, exactly
+#     the default ADR 0002 tightened.
+# draft_custody: browser-local is a truthful description of the existing
+# ui/src/lib/form-collect-draft-storage.ts module (ADR 0003 §8 C4), not a grant.
+# Effective browser persistence still derives from ADR 0002 §5.
+
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.form-collect
+version: "0.6"
+revision: 2
+title: "Form collect"
+description: "Generalized schema-driven form workflow with room-backed persistence."
+package_id: tangent.generic-candidate
+package_version: "1.0.0"
+ownership_class: generic-catalog
+
+request_schema: request.schema.json
+response_kind: data
+response_schema: response.schema.json
+compatibility_response_schema: present
+
+renderer:
+  id: tangent.renderer.form-collect
+  class: react-component
+  entry: "components/envelopes/FormCollect#FormCollect"
+  trust_class: core-trusted
+  component: FormCollectView
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: browser-local
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

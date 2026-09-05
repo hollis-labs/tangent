@@ -9,7 +9,7 @@
 **Decision basis:** [ADR 0001](../adr/0001-lifecycle-boundaries.md)
 
 **Machine-readable contract:**
-[`hitl_item_schema.json`](../../internal/envelope/extensions/hitl_item_schema.json)
+[`packages/tangent.hitl/hitl-item/request.schema.json`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json)
 
 This contract defines one item in Tangent's persistent operator-owned `/hitl`
 inbox. It covers approval and persistent-attention requests, participant
@@ -53,6 +53,21 @@ has an explicit object root. TypeScript generation emits the named definitions
 and discriminated unions from their `enum` and `oneOf` constraints. Typed
 conflicts use `HITLStaleRevisionErrorV1` or
 `HITLIdempotencyConflictErrorV1` as applicable.
+
+These entry points are now declared in the package's own
+[`manifest.yaml`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/manifest.yaml)
+under `named_definitions`, so the table above has a machine-readable
+counterpart the registry serves through `tangent.definition_get`. The
+`response_schema` and `error_schema` the manifest references are projections of
+this same bundle — `HITLResponseV1`, and a `oneOf` of the two typed conflicts —
+committed as files and drift-tested against it.
+
+`ui/src/lib/hitl-api.ts` remains hand-written. It carries a
+`@definition-source` stamp over this bundle's `$defs` plus a test asserting the
+match, which is the floor
+[ADR 0003 §4.7](../adr/0003-definition-and-package-ownership.md) accepts when
+full generation is out of scope. A stamp mismatch means the file must be
+reviewed against the new bundle before the stamp is updated.
 
 ## Item request
 
@@ -137,9 +152,20 @@ first direct-loopback MCP slice Tangent stores it with asserted assurance; it
 does not call an agent label, MCP session, process, browser tab, or item URL
 authenticated identity. The operator participant binding is the separate
 `local-operator` binding with `loopback-unverified` assurance from ADR 0001.
-For new direct-MCP enqueues, the adapter establishes a stable asserted caller
-scope from `source.application_id` inside the direct-loopback authority; it does
-not use `agent_id` or a transport-session ID as the idempotency scope.
+For new direct-MCP enqueues, the adapter establishes a stable caller scope from
+`source.application_id` inside the host-assigned `standalone-local` authority;
+it does not use `agent_id` or a transport-session ID as the idempotency scope.
+The request shape is unchanged — only the derived spelling moved, from
+`direct-loopback:<app>` to `standalone-local:<app>`, and the old spelling still
+reads as the same caller through a fixed alias with no data rewrite
+([ADR 0004](../adr/0004-caller-participant-and-room-access-authority.md) §3.5).
+
+> **`standalone-local` partitions are advisory, not a security boundary.** The
+> partition is the caller's own declared `application_id` and nothing verifies
+> it, so any local caller can assert any partition. Isolation is enforced only
+> *across* authorities, where the prefix is host-assigned. A partition prevents
+> one agent's retry from withdrawing another agent's item; it does not prevent
+> one agent from claiming to be another.
 
 A trusted Tether or future authenticated adapter may attach a separately
 verified caller binding and transport receipt. It must not rewrite the original
@@ -148,7 +174,8 @@ source assertion or silently upgrade its assurance.
 Post-enqueue Get, Await, and Withdraw commands carry a `caller` assertion with
 a required stable `application_id` and optional `principal_ref`. On direct
 loopback, the adapter resolves the durable caller scope from that application
-ID under `direct-loopback/asserted` authority. With a verified gateway, the
+ID under the host-assigned `standalone-local` authority, with
+`loopback-unverified` assurance. With a verified gateway, the
 out-of-band authenticated binding is authoritative: the payload assertion is
 correlation only, must agree with the binding, and can never downgrade or
 replace it. The resolved scope must match the interaction's immutable
@@ -344,6 +371,15 @@ opaque `DownstreamOutcomeRef` separately from the ResolutionRecord. That receipt
 cannot alter the human result.
 
 ## Versioning and compatibility
+
+> **Forward-looking language in this contract is non-committed direction.**
+> Sentences about a later slice, a verified gateway binding, a typed
+> downstream receipt, or an authenticated adapter describe shapes the v1
+> contract is designed to accommodate — not behaviour this build has. The
+> shipped authority model is
+> [ADR 0004](../adr/0004-caller-participant-and-room-access-authority.md),
+> under which every direct loopback caller is `standalone-local:<app>` and
+> its partition is advisory.
 
 - Additive optional fields require a compatible minor contract/definition
   version and an exact persisted DefinitionBinding.

@@ -70,6 +70,6 @@ action. Use the full assertions in
 - Contract semantics:
   [`docs/contracts/hitl-inbox-v1.md`](../../../docs/contracts/hitl-inbox-v1.md)
 - Machine-readable schema:
-  [`internal/envelope/extensions/hitl_item_schema.json`](../../../internal/envelope/extensions/hitl_item_schema.json)
+  [`internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json`](../../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json)
 - MCP wiring and Tether caveat:
   [`docs/mcp-integration.md`](../../../docs/mcp-integration.md)

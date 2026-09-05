@@ -22,19 +22,22 @@ func (m deadlineTestMCP) HTTPHandler() http.Handler { return m.httpHandler }
 func (m deadlineTestMCP) SSEHandler() http.Handler  { return m.sseHandler }
 
 type deadlineProbeResponseWriter struct {
-	header   http.Header
-	body     strings.Builder
-	now      time.Time
-	deadline time.Time
-	calls    int
+	header       http.Header
+	body         strings.Builder
+	now          time.Time
+	deadline     time.Time
+	calls        int
+	readDeadline time.Time
+	readCalls    int
 }
 
 func newDeadlineProbeResponseWriter() *deadlineProbeResponseWriter {
 	now := time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
 	return &deadlineProbeResponseWriter{
-		header:   make(http.Header),
-		now:      now,
-		deadline: now.Add(httpServerWriteTimeout),
+		header:       make(http.Header),
+		now:          now,
+		deadline:     now.Add(httpServerWriteTimeout),
+		readDeadline: now.Add(httpServerReadTimeout),
 	}
 }
 
@@ -45,6 +48,9 @@ func (w *deadlineProbeResponseWriter) Write(p []byte) (int, error) {
 	if !w.deadline.IsZero() && w.now.After(w.deadline) {
 		return 0, errors.New("simulated response write deadline exceeded")
 	}
+	if !w.readDeadline.IsZero() && w.now.After(w.readDeadline) {
+		return 0, errors.New("simulated connection read deadline exceeded")
+	}
 	return w.body.Write(p)
 }
 
@@ -54,7 +60,13 @@ func (w *deadlineProbeResponseWriter) SetWriteDeadline(deadline time.Time) error
 	return nil
 }
 
-func TestMCPRoutesClearWriteDeadlineBeforeLongRunningHandler(t *testing.T) {
+func (w *deadlineProbeResponseWriter) SetReadDeadline(deadline time.Time) error {
+	w.readDeadline = deadline
+	w.readCalls++
+	return nil
+}
+
+func TestMCPRoutesClearBothDeadlinesBeforeLongRunningHandler(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		method string
@@ -66,7 +78,7 @@ func TestMCPRoutesClearWriteDeadlineBeforeLongRunningHandler(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			probe := newDeadlineProbeResponseWriter()
 			longResponse := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				probe.now = probe.now.Add(httpServerWriteTimeout + time.Second)
+				probe.now = probe.now.Add(httpServerWriteTimeout + httpServerReadTimeout + time.Second)
 				if _, err := w.Write([]byte("completed after operator response")); err != nil {
 					t.Errorf("write after original deadline: %v", err)
 				}
@@ -81,6 +93,9 @@ func TestMCPRoutesClearWriteDeadlineBeforeLongRunningHandler(t *testing.T) {
 			if probe.calls != 1 || !probe.deadline.IsZero() {
 				t.Fatalf("write deadline calls/deadline = %d/%v, want one clear", probe.calls, probe.deadline)
 			}
+			if probe.readCalls != 1 || !probe.readDeadline.IsZero() {
+				t.Fatalf("read deadline calls/deadline = %d/%v, want one clear", probe.readCalls, probe.readDeadline)
+			}
 			if got := probe.body.String(); got != "completed after operator response" {
 				t.Fatalf("response body = %q", got)
 			}
@@ -88,9 +103,10 @@ func TestMCPRoutesClearWriteDeadlineBeforeLongRunningHandler(t *testing.T) {
 	}
 }
 
-func TestOrdinaryHTTPRoutesRetainServerWriteDeadline(t *testing.T) {
+func TestOrdinaryHTTPRoutesRetainServerDeadlines(t *testing.T) {
 	probe := newDeadlineProbeResponseWriter()
 	initialDeadline := probe.deadline
+	initialReadDeadline := probe.readDeadline
 	srv := newDeadlineTestServer(t, deadlineTestMCP{
 		httpHandler: http.NotFoundHandler(),
 		sseHandler:  http.NotFoundHandler(),
@@ -100,6 +116,9 @@ func TestOrdinaryHTTPRoutesRetainServerWriteDeadline(t *testing.T) {
 
 	if probe.calls != 0 || !probe.deadline.Equal(initialDeadline) {
 		t.Fatalf("ordinary route changed write deadline: calls=%d deadline=%v", probe.calls, probe.deadline)
+	}
+	if probe.readCalls != 0 || !probe.readDeadline.Equal(initialReadDeadline) {
+		t.Fatalf("ordinary route changed read deadline: calls=%d deadline=%v", probe.readCalls, probe.readDeadline)
 	}
 }
 

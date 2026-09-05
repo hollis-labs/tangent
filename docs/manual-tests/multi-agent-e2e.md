@@ -1,13 +1,19 @@
 # Multi-agent e2e
 
-The v0.2 acceptance gate: two independent agent sessions, two active
-rooms, and one persistent multi-envelope room that survives a browser
-close/reopen.
+Two independent callers holding two live rooms concurrently, plus one
+persistent multi-envelope room that survives a browser close/reopen.
+
+**A room is not an agent session.** It is a compatibility projection of a
+durable surface (ADR 0001). This recipe drives each room from a different
+agent session because that is the easy way to produce concurrent callers — not
+because the two are the same thing. Nothing binds a room to one agent, one
+caller, or one tab, and a single room accepts several simultaneous connections
+with one resolver lease among them.
 
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 
@@ -37,13 +43,15 @@ Fallback for older clients: use `--transport sse` with `/sse`.
 
 Expected:
 
-- Each agent gets the correct response for its own room.
-- The tab strip keeps both rooms visible while they are active.
-- No cross-talk between sessions.
+- Each caller gets the correct response for the room it is driving.
+- The tab strip keeps both rooms visible while they are active. The strip
+  reads `GET /api/rooms`, which requires a participant session and is scoped
+  to the caller authority, so a browser with no session sees nothing.
+- No cross-talk between rooms.
 
 ## 4. Persistent multi-envelope room check
 
-Use one agent session to drive a single room through multiple envelopes,
+Use one caller to drive a single room through multiple envelopes,
 for example:
 
 1. first interview-style question

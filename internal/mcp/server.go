@@ -1,25 +1,35 @@
 package mcp
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/roomflow"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
 // initialize response. Keep them stable across minor versions; v0.1
 // clients pin against this string.
 const (
-	implementationName    = "tangent"
-	implementationVersion = "v0.12.0"
+	implementationName = "tangent"
+	// implementationVersion is the same string definitions declare
+	// compatibility against in `compatible_host_versions`, so it is taken from
+	// the package that owns the definition registry rather than declared twice.
+	// TestHostVersionHasOneSource keeps the alias honest.
+	implementationVersion = envelope.HostVersion
 	// HostVersion is persisted in immutable definition bindings created by
 	// the production registry adapter.
 	HostVersion = implementationVersion
@@ -38,6 +48,37 @@ type Server struct {
 	roomURLBase  string
 	interactions *interaction.Service
 	hitl         *hitl.Service
+	roomflow     *roomflow.Service
+
+	// packages resolves a wire name to the publisher-owned interaction
+	// package that serves it. It is how ADR 0003 §5's ownership split reaches
+	// the request path: core looks a kind up here and never learns what the
+	// kind means. Nil is a valid state — a build with no packages installed
+	// runs every kind on the generic path, which is what the sixteen kinds
+	// this task did not migrate still do.
+	packages *interactionpkg.Registry
+
+	// health answers liveness, readiness, and per-capability health. Nil is a
+	// valid state — a transport-level test constructs an MCP server with no
+	// durable substrate — and the tool says so rather than inventing a report.
+	health *health.Reporter
+
+	// telemetry answers tangent.telemetry_query and is handed to the roomflow
+	// adapter so a workflow invocation is observed at the point it acquires
+	// its durable identity. Nil is valid; the tool then says so.
+	telemetry      *telemetry.Recorder
+	telemetryStore *telemetry.SQLStore
+
+	// maintenanceDB answers tangent.retention_status. It is the same handle
+	// everything else shares — a custody posture read from a different
+	// connection could describe a different transaction — and it is read-only
+	// here by discipline rather than by type: the retention *operations* are
+	// operator commands on the machine, never tools (see retention_tool.go).
+	// Nil is valid, and the tool says so.
+	maintenanceDB     *sql.DB
+	maintenanceDBPath string
+
+	roomflowOptions []roomflow.Option
 
 	mcp *mcpsdk.Server
 }
@@ -58,6 +99,66 @@ func WithInteractionService(service *interaction.Service) Option {
 	}
 }
 
+// WithHealthReporter enables tangent.health_report. Omitting it leaves the
+// tool registered and answering `health_unavailable`, which is the honest
+// answer for a build that cannot measure its own readiness.
+func WithHealthReporter(reporter *health.Reporter) Option {
+	return func(server *Server) error {
+		if reporter == nil {
+			return fmt.Errorf("mcp: health reporter is nil")
+		}
+		server.health = reporter
+		return nil
+	}
+}
+
+// WithTelemetry installs the correlation recorder and its durable store.
+//
+// Both are passed together because they answer different halves of one
+// question: the recorder is what observes, and the store is what a caller
+// queries afterwards. A build with a recorder and no store still emits metrics
+// and still exports spans; it simply cannot answer tangent.telemetry_query,
+// and the tool says that rather than returning an empty trace.
+func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Option {
+	return func(server *Server) error {
+		if recorder == nil {
+			return fmt.Errorf("mcp: telemetry recorder is nil")
+		}
+		server.telemetry = recorder
+		server.telemetryStore = store
+		server.roomflowOptions = append(server.roomflowOptions, roomflow.WithTelemetry(recorder))
+		return nil
+	}
+}
+
+// WithMaintenance enables tangent.retention_status by giving the MCP server
+// the database handle and the configured database path.
+//
+// The path is needed for exactly one thing — probing the single-writer lock
+// sidecar — and it never leaves this process: internal/db.Status returns
+// whether the lock is held and by which role, never where it lives.
+func WithMaintenance(database *sql.DB, databasePath string) Option {
+	return func(server *Server) error {
+		if database == nil {
+			return fmt.Errorf("mcp: maintenance database handle is nil")
+		}
+		server.maintenanceDB = database
+		server.maintenanceDBPath = databasePath
+		return nil
+	}
+}
+
+// WithCompatibilityWindow overrides how long a wait-mode room workflow blocks
+// before returning a durable pending receipt. Production uses the package
+// default; tests compress it so the pending path is exercised without a
+// wall-clock wait.
+func WithCompatibilityWindow(window time.Duration) Option {
+	return func(server *Server) error {
+		server.roomflowOptions = append(server.roomflowOptions, roomflow.WithCompatibilityWindow(window))
+		return nil
+	}
+}
+
 // WithHITLService enables the stable durable HITL inbox operation surface.
 // It is separate from the generic interaction tools and from the legacy
 // tangent.approval-queue batch workflow.
@@ -67,6 +168,21 @@ func WithHITLService(service *hitl.Service) Option {
 			return fmt.Errorf("mcp: hitl service is nil")
 		}
 		server.hitl = service
+		return nil
+	}
+}
+
+// WithInteractionPackages installs the publisher-owned interaction packages
+// this build hosts. Omitting it is not an error: an unpackaged kind takes the
+// generic path, and a packaged kind whose package is absent fails closed with
+// `unsupported-type` rather than silently falling back to a core default that
+// knows the kind (ADR 0003 §8 C7).
+func WithInteractionPackages(registry *interactionpkg.Registry) Option {
+	return func(server *Server) error {
+		if registry == nil {
+			return fmt.Errorf("mcp: interaction package registry is nil")
+		}
+		server.packages = registry
 		return nil
 	}
 }
@@ -113,6 +229,17 @@ func New(
 		if err := option(s); err != nil {
 			return nil, err
 		}
+	}
+	if s.interactions != nil && s.roomflow == nil {
+		// Every named room workflow routes through the durable compatibility
+		// adapter whenever the substrate is present, so installing the
+		// interaction service is the only switch: there is no per-workflow
+		// opt-in that a new workflow could forget to set.
+		flow, flowErr := roomflow.New(s.interactions, manager, s, roomURLBase, s.roomflowOptions...)
+		if flowErr != nil {
+			return nil, flowErr
+		}
+		s.roomflow = flow
 	}
 
 	if err := s.registerTools(); err != nil {
@@ -206,7 +333,7 @@ func (s *Server) registerTools() error {
 		InputSchema: feedbackSchema,
 	}, s.handleFeedback)
 
-	formCollectSchema, err := buildSchema(formCollectInputSchemaJSON, "form_collect")
+	formCollectSchema, err := buildRoomWorkflowSchema(formCollectInputSchemaJSON, "form_collect")
 	if err != nil {
 		return fmt.Errorf("build form-collect input schema: %w", err)
 	}
@@ -214,7 +341,7 @@ func (s *Server) registerTools() error {
 		Name:        "tangent.form-collect",
 		Description: "Dispatch a generalized schema-driven form through Tangent. Persists canonical form state on the room and waits for explicit submit/cancel.",
 		InputSchema: formCollectSchema,
-	}, s.handleFormCollect)
+	}, s.packagedWorkflowHandler(formCollectEnvelopeType))
 
 	designIterationSchema, err := buildDesignIterationInputSchema()
 	if err != nil {
@@ -276,7 +403,7 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
-	dashboardSchema, err := buildSchema(dashboardInputSchemaJSON, "dashboard")
+	dashboardSchema, err := buildRoomWorkflowSchema(dashboardInputSchemaJSON, "dashboard")
 	if err != nil {
 		return fmt.Errorf("build dashboard input schema: %w", err)
 	}
@@ -286,7 +413,7 @@ func (s *Server) registerTools() error {
 		InputSchema: dashboardSchema,
 	}, s.handleDashboard)
 
-	filePickerSchema, err := buildSchema(filePickerInputSchemaJSON, "file_picker")
+	filePickerSchema, err := buildRoomWorkflowSchema(filePickerInputSchemaJSON, "file_picker")
 	if err != nil {
 		return fmt.Errorf("build file-picker input schema: %w", err)
 	}
@@ -296,7 +423,7 @@ func (s *Server) registerTools() error {
 		InputSchema: filePickerSchema,
 	}, s.handleFilePicker)
 
-	progressPanelSchema, err := buildSchema(progressPanelInputSchemaJSON, "progress_panel")
+	progressPanelSchema, err := buildRoomWorkflowSchema(progressPanelInputSchemaJSON, "progress_panel")
 	if err != nil {
 		return fmt.Errorf("build progress-panel input schema: %w", err)
 	}
@@ -306,7 +433,7 @@ func (s *Server) registerTools() error {
 		InputSchema: progressPanelSchema,
 	}, s.handleProgressPanel)
 
-	wizardSchema, err := buildSchema(wizardInputSchemaJSON, "wizard")
+	wizardSchema, err := buildRoomWorkflowSchema(wizardInputSchemaJSON, "wizard")
 	if err != nil {
 		return fmt.Errorf("build wizard input schema: %w", err)
 	}
@@ -316,7 +443,7 @@ func (s *Server) registerTools() error {
 		InputSchema: wizardSchema,
 	}, s.handleWizard)
 
-	diffReviewSchema, err := buildSchema(diffReviewInputSchemaJSON, "diff_review")
+	diffReviewSchema, err := buildRoomWorkflowSchema(diffReviewInputSchemaJSON, "diff_review")
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)
 	}
@@ -336,7 +463,7 @@ func (s *Server) registerTools() error {
 		InputSchema: spreadsheetReviewSchema,
 	}, s.handleSpreadsheetReview)
 
-	approvalQueueSchema, err := buildSchema(approvalQueueInputSchemaJSON, "approval_queue")
+	approvalQueueSchema, err := buildRoomWorkflowSchema(approvalQueueInputSchemaJSON, "approval_queue")
 	if err != nil {
 		return fmt.Errorf("build approval-queue input schema: %w", err)
 	}
@@ -362,17 +489,17 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_create",
-		Description: "Create a Tangent room and return its room ID plus SPA URL.",
+		Description: "Create a Tangent room and return its room ID plus SPA URL. The room is owned by your caller scope. The URL is a locator, not a credential: opening it in a browser is what grants access, so sharing or logging it transfers nothing.",
 		InputSchema: sessionCreateSchema,
 	}, s.handleSessionCreate)
 
-	sessionAdvanceSchema, err := buildSchema(sessionAdvanceInputSchemaJSON, "session_advance")
+	sessionAdvanceSchema, err := buildRoomWorkflowSchema(sessionAdvanceInputSchemaJSON, "session_advance")
 	if err != nil {
 		return fmt.Errorf("build session_advance input schema: %w", err)
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_advance",
-		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it.",
+		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it. Only rooms in your own caller partition accept an advance.",
 		InputSchema: sessionAdvanceSchema,
 	}, s.handleSessionAdvance)
 
@@ -380,10 +507,15 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_get input schema: %w", err)
 	}
+	sessionGetOutput, err := s.sessionGetOutputSchema()
+	if err != nil {
+		return fmt.Errorf("build session_get output schema: %w", err)
+	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
-		Name:        "tangent.session_get",
-		Description: "Read the current room state and persisted envelope history for a Tangent room.",
-		InputSchema: sessionGetSchema,
+		Name:         "tangent.session_get",
+		Description:  "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
+		InputSchema:  sessionGetSchema,
+		OutputSchema: sessionGetOutput,
 	}, s.handleSessionGet)
 
 	sessionAdvancePhaseSchema, err := buildSchema(sessionAdvancePhaseInputSchemaJSON, "session_advance_phase")
@@ -412,7 +544,7 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_close",
-		Description: "Close a Tangent room explicitly and remove its live UI tab.",
+		Description: "Close a Tangent room explicitly and remove its live UI tab. Only rooms in your own caller partition can be closed, because closing dispositions another caller's outstanding human work.",
 		InputSchema: sessionCloseSchema,
 	}, s.handleSessionClose)
 
@@ -422,10 +554,32 @@ func (s *Server) registerTools() error {
 	}
 	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
 		Name:        "tangent.session_list",
-		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present.",
+		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present. The listing spans every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema: sessionListSchema,
 	}, s.handleSessionList)
 
+	// Registry diagnostics do not depend on the durable interaction substrate:
+	// the definition registry exists whenever an envelope service does, and an
+	// embedder without the substrate still needs to be able to ask why a kind
+	// is not being served.
+	if err := s.registerDefinitionTools(); err != nil {
+		return err
+	}
+	if err := s.registerHealthTool(); err != nil {
+		return err
+	}
+	if err := s.registerTelemetryTool(); err != nil {
+		return err
+	}
+	// Registered only when a database handle was supplied. Unlike health and
+	// telemetry, there is no useful "unavailable" answer to advertise: a build
+	// with no database has no custody posture to report, and a tool that always
+	// refuses is a tool that costs a listing entry for nothing.
+	if s.maintenanceDB != nil {
+		if err := s.registerRetentionTool(); err != nil {
+			return err
+		}
+	}
 	if s.interactions != nil {
 		if err := s.registerInteractionTools(); err != nil {
 			return fmt.Errorf("register interaction tools: %w", err)
@@ -455,43 +609,55 @@ func buildEmptyObjectSchema() (*jsonschema.Schema, error) {
 // buildTriageInputSchema parses the hand-rolled triage input schema (see
 // triage_schema.go for the rationale).
 func buildTriageInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(triageInputSchemaJSON, "triage")
+	return buildRoomWorkflowSchema(triageInputSchemaJSON, "triage")
 }
 
 func buildFeedbackInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(feedbackInputSchemaJSON, "feedback")
+	return buildRoomWorkflowSchema(feedbackInputSchemaJSON, "feedback")
 }
 
 func buildDesignIterationInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(designIterationInputSchemaJSON, "design-iteration")
+	return buildRoomWorkflowSchema(designIterationInputSchemaJSON, "design-iteration")
 }
 
 func buildInterviewQuestionInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(interviewQuestionInputSchemaJSON, "interview_question")
+	return buildRoomWorkflowSchema(interviewQuestionInputSchemaJSON, "interview_question")
 }
 
 func buildBlockDraftInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(blockDraftInputSchemaJSON, "block_draft")
+	return buildRoomWorkflowSchema(blockDraftInputSchemaJSON, "block_draft")
 }
 
 func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(proseRevisionInputSchemaJSON, "prose_revision")
+	return buildRoomWorkflowSchema(proseRevisionInputSchemaJSON, "prose_revision")
 }
 
 func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(outputRenderInputSchemaJSON, "output_render")
+	return buildRoomWorkflowSchema(outputRenderInputSchemaJSON, "output_render")
 }
 
 func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(whiteboardInputSchemaJSON, "whiteboard")
+	return buildRoomWorkflowSchema(whiteboardInputSchemaJSON, "whiteboard")
 }
 
 func buildSpreadsheetReviewInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(spreadsheetReviewInputSchemaJSON, "spreadsheet_review")
+	return buildRoomWorkflowSchema(spreadsheetReviewInputSchemaJSON, "spreadsheet_review")
 }
 
 func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {
-	return buildSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
+	return buildRoomWorkflowSchema(synthesisNotesInputSchemaJSON, "synthesis_notes")
+}
+
+// buildRoomWorkflowSchema parses a room-backed tool's input schema and adds
+// the shared completion selector. Every named room workflow and
+// tangent.session_advance goes through it, so a workflow cannot ship without
+// advertising the async mode its callers need.
+func buildRoomWorkflowSchema(raw []byte, name string) (*jsonschema.Schema, error) {
+	schema, err := buildSchema(raw, name)
+	if err != nil {
+		return nil, err
+	}
+	return withCompletionMode(schema, name)
 }
 
 func buildSchema(raw []byte, name string) (*jsonschema.Schema, error) {

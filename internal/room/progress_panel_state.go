@@ -218,7 +218,7 @@ func normalizeProgressPanelItems(items []ProgressPanelItem) ([]ProgressPanelItem
 		if _, exists := itemIDs[itemID]; exists {
 			return nil, nil, fmt.Errorf("%w: duplicate item_id %q", ErrInvalidProgressPanelItem, itemID)
 		}
-		metadata, err := normalizeFormMap(item.Metadata, ErrInvalidProgressPanelItem)
+		metadata, err := normalizeObjectMap(item.Metadata, ErrInvalidProgressPanelItem)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -253,7 +253,7 @@ func normalizeProgressPanelUpdates(updates []ProgressPanelUpdate, itemIDs map[st
 		if _, exists := updateIDs[updateID]; exists {
 			return nil, fmt.Errorf("%w: duplicate update_id %q", ErrInvalidProgressPanelUpdate, updateID)
 		}
-		metadata, err := normalizeFormMap(update.Metadata, ErrInvalidProgressPanelUpdate)
+		metadata, err := normalizeObjectMap(update.Metadata, ErrInvalidProgressPanelUpdate)
 		if err != nil {
 			return nil, err
 		}
@@ -399,7 +399,7 @@ func readProgressPanelItems(raw any) []ProgressPanelItem {
 			CreatedAt:   readString(record, progressPanelItemCreatedAtKey),
 			UpdatedAt:   readString(record, progressPanelItemUpdatedAtKey),
 			CompletedAt: readString(record, progressPanelItemCompletedAtKey),
-			Metadata:    readObjectValueMap(record[progressPanelItemMetadataKey]),
+			Metadata:    readObjectMapValue(record[progressPanelItemMetadataKey]),
 		})
 	}
 	return out
@@ -421,14 +421,14 @@ func readProgressPanelUpdates(raw any) []ProgressPanelUpdate {
 			CreatedAt:       readString(record, progressPanelUpdateCreatedAtKey),
 			CheckpointID:    readString(record, progressPanelUpdateCheckpointIDKey),
 			CheckpointLabel: readString(record, progressPanelUpdateCheckpointLabelKey),
-			Metadata:        readObjectValueMap(record[progressPanelUpdateMetadataKey]),
+			Metadata:        readObjectMapValue(record[progressPanelUpdateMetadataKey]),
 		})
 	}
 	return out
 }
 
 func readProgressPanelSummary(raw any) *ProgressPanelSummary {
-	record := readObjectValueMap(raw)
+	record := readObjectMapValue(raw)
 	if len(record) == 0 {
 		return nil
 	}

@@ -44,6 +44,9 @@ export type SynthesisNotesProps = {
 };
 
 export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesProps) {
+  // No terminal gate by design: this workflow is a read-only acknowledgement
+  // with no editable controls, so "Continue" is never blocked and there is
+  // nothing for a submit gate to name.
   const visibility = envelope.data?.visibility ?? "hidden";
   const outlineState = envelope.data?.outline_state ?? "absent";
   const outline = envelope.data?.outline;
@@ -70,7 +73,12 @@ export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesP
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      {/*
+        The card swaps whole content branches — hidden, outline, skipped, empty
+        — depending on envelope state, and did so inside plain divs. A screen
+        reader on a room that flips from hidden to visible heard nothing at all.
+      */}
+      <CardContent className="space-y-4" aria-live="polite" data-testid="synthesis-notes-content">
         {visibility === "hidden" ? (
           <section
             className="rounded-lg border border-dashed border-zinc-700 bg-zinc-950/60 p-4"
@@ -85,16 +93,18 @@ export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesP
           <section className="space-y-4" data-testid="synthesis-notes-visible">
             {summary ? (
               <div className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Summary</p>
+                <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Summary
+                </h3>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{summary}</p>
               </div>
             ) : null}
 
             {outlineState === "present" && outline ? (
               <div className="space-y-3" data-testid="synthesis-notes-outline">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                   Outline preview
-                </p>
+                </h3>
                 {outline.title ? (
                   <p className="text-sm font-medium text-zinc-100">{outline.title}</p>
                 ) : null}

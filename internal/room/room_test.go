@@ -55,7 +55,9 @@ func newTestServer(t *testing.T) (*room.Room, *websocket.Conn, *sql.DB, func()) 
 	}
 
 	serverConn := <-connCh
-	rm.AttachConn(context.Background(), serverConn)
+	if _, err := rm.AttachConn(context.Background(), serverConn, room.AttachOptions{ClientID: "test-tab"}); err != nil {
+		t.Fatalf("attach test connection: %v", err)
+	}
 
 	readDone := make(chan struct{})
 	readCtx, readCancel := context.WithCancel(context.Background())
@@ -1325,187 +1327,6 @@ func TestRoom_SaveSpreadsheetReviewSavedViewsRejectsInvalidView(t *testing.T) {
 	}
 }
 
-func TestRoom_SaveFormSnapshotPersistsAndReloads(t *testing.T) {
-	db := newTestDB(t)
-	defer func() {
-		_ = tangentdb.Close(db)
-	}()
-
-	mgr := room.NewManager(db)
-	rm := mgr.Create(map[string]string{"title": "form-collect"})
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "intake-form",
-		Intent: "  Collect launch inputs  ",
-		Schema: map[string]any{
-			"fields": []any{
-				map[string]any{"id": "name", "type": "text", "label": "Name"},
-			},
-		},
-		Answers: map[string]any{
-			"name": "Alpha",
-			"attendees": []any{
-				map[string]any{"name": "Beta"},
-			},
-		},
-		Notes:     "keep this note",
-		UpdatedAt: "2026-05-09T20:40:00Z",
-		SavedDrafts: []room.FormSavedDraft{
-			{
-				ID:      "draft-1",
-				Label:   "Morning draft",
-				Answers: map[string]any{"name": "Draft Alpha"},
-				Notes:   "saved note",
-				SavedAt: "2026-05-09T20:30:00Z",
-			},
-		},
-		Templates: []room.FormTemplate{
-			{
-				ID:      "template-1",
-				Label:   "Default template",
-				Answers: map[string]any{"name": "Template Alpha"},
-				Notes:   "template note",
-			},
-		},
-		Actions: []room.FormAction{
-			{
-				ID:          "submit-review",
-				Label:       "Submit for review",
-				Description: "route to review queue",
-			},
-		},
-		AttachmentRefs: []room.FormAttachmentRef{
-			{
-				ID:         "attachment-1",
-				Name:       "brief.pdf",
-				ArtifactID: "artifact-1",
-				URI:        "artifact://artifact-1",
-				MIMEType:   "application/pdf",
-				Kind:       "brief",
-				SizeBytes:  4096,
-			},
-		},
-		SubmissionSummary: &room.FormSubmissionSummary{
-			SubmittedAt:     "2026-05-09T20:45:00Z",
-			ActionID:        "submit-review",
-			AnswerCount:     2,
-			AttachmentCount: 1,
-			ExportText:      "Alpha summary",
-			ExportName:      "alpha-summary.txt",
-		},
-	}); err != nil {
-		t.Fatalf("SaveFormSnapshot: %v", err)
-	}
-
-	state := rm.PhaseState()
-	form := room.ProjectFormState(state)
-	if form == nil {
-		t.Fatal("ProjectFormState returned nil")
-	}
-	if got := form.FormID; got != "intake-form" {
-		t.Fatalf("form_id = %q, want intake-form", got)
-	}
-	if got := form.Intent; got != "Collect launch inputs" {
-		t.Fatalf("intent = %q, want trimmed intent", got)
-	}
-	if got := form.Answers["name"]; got != "Alpha" {
-		t.Fatalf("answers[name] = %v, want Alpha", got)
-	}
-	if got := len(form.SavedDrafts); got != 1 {
-		t.Fatalf("saved_drafts len = %d, want 1", got)
-	}
-	if got := form.SavedDrafts[0].Label; got != "Morning draft" {
-		t.Fatalf("saved_drafts[0].label = %q, want Morning draft", got)
-	}
-	if form.SubmissionSummary == nil {
-		t.Fatal("submission_summary = nil, want value")
-	}
-	if got := form.SubmissionSummary.ExportName; got != "alpha-summary.txt" {
-		t.Fatalf("submission_summary.export_name = %q, want alpha-summary.txt", got)
-	}
-
-	reloaded, found, err := mgr.GetPhaseState(context.Background(), rm.ID)
-	if err != nil {
-		t.Fatalf("GetPhaseState reload: %v", err)
-	}
-	if !found {
-		t.Fatal("GetPhaseState found = false, want true")
-	}
-
-	reloadedForm := room.ProjectFormState(reloaded)
-	if reloadedForm == nil {
-		t.Fatal("reloaded ProjectFormState returned nil")
-	}
-	if got := len(reloadedForm.Templates); got != 1 {
-		t.Fatalf("reloaded templates len = %d, want 1", got)
-	}
-	if got := reloadedForm.Templates[0].Label; got != "Default template" {
-		t.Fatalf("reloaded templates[0].label = %q, want Default template", got)
-	}
-	if got := len(reloadedForm.AttachmentRefs); got != 1 {
-		t.Fatalf("reloaded attachment_refs len = %d, want 1", got)
-	}
-	if got := reloadedForm.AttachmentRefs[0].URI; got != "artifact://artifact-1" {
-		t.Fatalf("reloaded attachment_refs[0].uri = %q, want artifact://artifact-1", got)
-	}
-}
-
-func TestRoom_SaveFormSnapshotRejectsInvalidData(t *testing.T) {
-	rm := newAnonRoom(t, nil)
-
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{}); !errors.Is(err, room.ErrInvalidFormID) {
-		t.Fatalf("SaveFormSnapshot invalid form id err = %v, want ErrInvalidFormID", err)
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "form-1",
-		Schema: map[string]any{"invalid": make(chan int)},
-	}); err == nil {
-		t.Fatal("SaveFormSnapshot invalid schema err = nil, want error")
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID:  "form-1",
-		Schema:  map[string]any{},
-		Answers: map[string]any{"invalid": make(chan int)},
-	}); err == nil {
-		t.Fatal("SaveFormSnapshot invalid answers err = nil, want error")
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "form-1",
-		Schema: map[string]any{},
-		SavedDrafts: []room.FormSavedDraft{
-			{Label: "Missing ID", Answers: map[string]any{}},
-		},
-	}); !errors.Is(err, room.ErrInvalidFormSavedDraft) {
-		t.Fatalf("SaveFormSnapshot invalid saved draft err = %v, want ErrInvalidFormSavedDraft", err)
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "form-1",
-		Schema: map[string]any{},
-		Templates: []room.FormTemplate{
-			{ID: "template-1", Answers: map[string]any{}},
-		},
-	}); !errors.Is(err, room.ErrInvalidFormTemplate) {
-		t.Fatalf("SaveFormSnapshot invalid template err = %v, want ErrInvalidFormTemplate", err)
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "form-1",
-		Schema: map[string]any{},
-		Actions: []room.FormAction{
-			{Label: "Missing ID"},
-		},
-	}); !errors.Is(err, room.ErrInvalidFormAction) {
-		t.Fatalf("SaveFormSnapshot invalid action err = %v, want ErrInvalidFormAction", err)
-	}
-	if err := rm.SaveFormSnapshot(room.FormSnapshot{
-		FormID: "form-1",
-		Schema: map[string]any{},
-		AttachmentRefs: []room.FormAttachmentRef{
-			{ID: "attachment-1"},
-		},
-	}); !errors.Is(err, room.ErrInvalidFormAttachmentRef) {
-		t.Fatalf("SaveFormSnapshot invalid attachment ref err = %v, want ErrInvalidFormAttachmentRef", err)
-	}
-}
-
 func TestRoom_SaveSpreadsheetReviewSnapshotRejectsUnsupportedBlobVersion(t *testing.T) {
 	db := newTestDB(t)
 	defer func() {
@@ -2147,7 +1968,7 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "https://assets.example.test/screenshot.png",
+				Source:     "artifact://artifact-1",
 				URI:        "artifact://artifact-1",
 				Kind:       "reference_image",
 				Width:      1200,
@@ -2193,7 +2014,7 @@ func TestRoom_WhiteboardStatePersistsAndHydrates(t *testing.T) {
 				ArtifactID: "artifact-1",
 				Name:       "screenshot.png",
 				MIMEType:   "image/png",
-				Source:     "https://assets.example.test/screenshot.png",
+				Source:     "artifact://artifact-1",
 				URI:        "artifact://artifact-1",
 				Kind:       "reference_image",
 				Width:      1200,
@@ -2426,4 +2247,36 @@ func nullableString(v sql.NullString) string {
 		return ""
 	}
 	return v.String
+}
+
+// TestRoom_WhiteboardStateRejectsARemoteAssetSource is the regression for the
+// one place in the tree where an unmediated host-mediated effect was actually
+// happening.
+//
+// `assets[].source` is written into a tldraw asset record's `props.src` by
+// ui/src/lib/whiteboard-assets.ts, so a caller-supplied `https://…` made the
+// operator's browser fetch an origin the caller chose — `effect.NetworkFetch`
+// with no declaration, no grant, and no receipt. `uri` had always been held to
+// `artifact://`; `source` now is too. Admitting a remote origin again requires
+// a definition that declares `network.fetch` and a host policy that grants it.
+func TestRoom_WhiteboardStateRejectsARemoteAssetSource(t *testing.T) {
+	db := newTestDB(t)
+	defer func() { _ = tangentdb.Close(db) }()
+
+	rm := newAnonRoom(t, db)
+	for _, source := range []string{
+		"https://assets.example.test/reference.png",
+		"http://127.0.0.1:9/reference.png",
+		"file:///etc/passwd",
+	} {
+		err := rm.SaveWhiteboardSnapshot(room.WhiteboardSnapshot{
+			BoardID: "board-remote",
+			Assets: []room.WhiteboardAssetRef{
+				{AssetID: "asset-remote", Source: source},
+			},
+		})
+		if !errors.Is(err, room.ErrInvalidWhiteboardAssetRef) {
+			t.Errorf("SaveWhiteboardSnapshot(source=%q) = %v, want ErrInvalidWhiteboardAssetRef", source, err)
+		}
+	}
 }

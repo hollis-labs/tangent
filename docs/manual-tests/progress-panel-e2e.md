@@ -1,6 +1,6 @@
 # Progress-panel e2e
 
-Manual verification recipe for Tangent `v0.10.0` progress-panel turns.
+Manual verification recipe for Tangent progress-panel turns.
 
 ## Goal
 
@@ -14,7 +14,7 @@ Verify that Tangent can:
 
 ## Prerequisites
 
-- Tangent built from the `v0.10.0` release branch or newer.
+- Tangent built from the current branch (`make build`).
 - `tangent` running locally on `:7842`.
 - A browser available for the room URL.
 

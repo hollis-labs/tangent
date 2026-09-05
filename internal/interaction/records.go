@@ -75,19 +75,67 @@ type SurfaceRecord struct {
 }
 
 // DefinitionBinding pins an interaction to the exact definition Tangent used.
+// It is the pinned *projection* of an interaction definition manifest — the
+// authored document lives in its package, this is what the interaction record
+// carries forever.
+//
+// ADR 0003 §2.9 requires the pin to cover schemas, renderer, capabilities,
+// persistence, trust, compatibility, and the source digest, so that a resolution
+// years later can be inspected without the package that produced it still being
+// installed. Digest is the pin; everything else is inspectable identity derived
+// alongside it.
 type DefinitionBinding struct {
-	InteractionID  string    `json:"interaction_id"`
-	Publisher      string    `json:"publisher"`
-	Kind           string    `json:"kind"`
-	Version        string    `json:"version"`
-	Revision       string    `json:"revision"`
-	Digest         string    `json:"digest,omitempty"`
-	Source         string    `json:"source"`
-	SchemaIdentity string    `json:"schema_identity,omitempty"`
-	SchemaDigest   string    `json:"schema_digest,omitempty"`
-	HostVersion    string    `json:"host_version,omitempty"`
-	Assurance      string    `json:"assurance"`
-	BoundAt        time.Time `json:"bound_at"`
+	InteractionID string `json:"interaction_id"`
+	Publisher     string `json:"publisher"`
+	Kind          string `json:"kind"`
+	Version       string `json:"version"`
+	// Revision is the manifest's monotonic non-semantic revision within a
+	// version (ADR 0003 §2.1), not a copy of Version. It may advance only
+	// while contract digest, renderer class, renderer trust class, and
+	// required capabilities are all unchanged; anything else is a new
+	// Version. Records pinned to an older revision are never re-pinned.
+	Revision int64 `json:"revision"`
+	// Digest is the composite binding digest — the pin itself.
+	Digest string `json:"digest,omitempty"`
+	Source string `json:"source"`
+	// SchemaIdentity is the request schema's resource URI. A stable identity,
+	// not a content hash: it does not move when the schema body changes.
+	SchemaIdentity string `json:"schema_identity,omitempty"`
+	SchemaDigest   string `json:"schema_digest,omitempty"`
+	HostVersion    string `json:"host_version,omitempty"`
+	// Assurance is how the manifest was obtained and verified — Tangent's
+	// derivation, never the manifest's request.
+	Assurance string `json:"assurance"`
+
+	// ── ADR 0003 §2.9 manifest identity ─────────────────────────────
+	ManifestDigest       string `json:"manifest_digest,omitempty"`
+	ContractDigest       string `json:"contract_digest,omitempty"`
+	ResponseSchemaDigest string `json:"response_schema_digest,omitempty"`
+	PackageID            string `json:"package_id,omitempty"`
+	PackageVersion       string `json:"package_version,omitempty"`
+	OwnershipClass       string `json:"ownership_class,omitempty"`
+	CompatibilityClass   string `json:"compatibility_class,omitempty"`
+	RendererID           string `json:"renderer_id,omitempty"`
+	RendererClass        string `json:"renderer_class,omitempty"`
+	RendererTrustClass   string `json:"renderer_trust_class,omitempty"`
+	// RequiredCapabilities and GrantedCapabilities are the host-mediated
+	// *effect* capability namespace (ADR 0003 §2.5) — what the renderer may
+	// cause the host to do. They are not the object-access capabilities in
+	// ADR 0004 §2 (view, submit, draft, resolve, cancel, close, administer),
+	// which govern who may perform an operation. A granted export.download
+	// never implies resolve, and a participant's resolve never implies
+	// file.read_scoped. CW-20260825-0077 consumes both and must keep them
+	// separately named.
+	RequiredCapabilities json.RawMessage `json:"required_capabilities,omitempty"`
+	// GrantedCapabilities is the intersection with host policy, recorded so a
+	// resolution says what the renderer could actually do.
+	GrantedCapabilities json.RawMessage `json:"granted_capabilities,omitempty"`
+	// MaterializationState is the state at pin time. It is a historical fact,
+	// never re-evaluated: ADR 0003 §8 C1 makes a later registry change affect
+	// new submissions only.
+	MaterializationState string `json:"materialization_state,omitempty"`
+
+	BoundAt time.Time `json:"bound_at"`
 }
 
 // InteractionRecord is one immutable caller request and its operational state.
@@ -254,8 +302,15 @@ type LegacyRoomHistoryEntry struct {
 	ErrorMessage    string          `json:"error_message,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	ResolvedAt      *time.Time      `json:"resolved_at,omitempty"`
-	SurfaceID       string          `json:"surface_id"`
-	InteractionID   string          `json:"interaction_id"`
+	SurfaceID       string          `json:"surface_id,omitempty"`
+	InteractionID   string          `json:"interaction_id,omitempty"`
+
+	// InteractionState and CallerAcknowledgedAt make the projection honest
+	// about its own status. A legacy row can read "pending" long after the
+	// canonical interaction resolved — the row is a projection, and these
+	// fields say which record actually holds the outcome.
+	InteractionState     InteractionState `json:"interaction_state,omitempty"`
+	CallerAcknowledgedAt *time.Time       `json:"caller_acknowledged_at,omitempty"`
 }
 
 // SurfaceSnapshot is a restart-safe hydration of canonical state for a surface.

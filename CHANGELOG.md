@@ -7,9 +7,214 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_None._
+### Added
 
-## [v0.12.0] - 2026-05-10
+- **Database operations: single-writer ownership, backup, restore, repair, and
+  six distinct deletion kinds.** Implements
+  [ADR 0002](docs/adr/0002-retention-and-draft-custody.md) §6 and §7, and clears
+  the obstruction it recorded: there was no deletion path at all for canonical
+  records, because twelve `*_immutable_delete` triggers abort `DELETE` and
+  SQLite fires them on foreign-key cascades too, while the legacy
+  `rooms`/`envelopes` pair holding the same payloads deleted cleanly.
+  Deletability was exactly backwards.
+  - **Single-writer is enforced, not hoped for.** Every mode that writes takes a
+    non-blocking exclusive `flock` on `<database>.owner` before opening the
+    database and refuses — naming the holding process — rather than queuing. The
+    kernel lock is the authority and is released on process death, so a crash
+    needs no manual cleanup. Commands needing exclusive ownership additionally
+    probe `/readyz` and refuse if anything is serving, which catches a Tangent
+    deployed before the lock existed.
+  - **Backup is opt-in and uses `VACUUM INTO`**, in two modes with two different
+    guarantees: online (a point-in-time snapshot taken while the service runs,
+    verified against 200 concurrent writes) and drained (`wal_checkpoint(TRUNCATE)`
+    first, requiring that nothing else holds the database). A `cp` of a WAL-mode
+    file is not a backup. Each backup writes a sidecar manifest carrying its
+    fingerprint and no filesystem path.
+  - **Restore verifies before it touches anything**, moves the existing database
+    and its WAL companions to `<database>.superseded-<timestamp>` rather than
+    deleting them, restores them on any failure, and asserts five preservation
+    properties individually: definition digests, interaction identities
+    (including idempotency keys), resolutions (including integrity digests and
+    participant binding), audit history, and delivery obligations. Pending
+    deliveries and held leases survive and are reconciled by `RecoverAfterRestart`
+    at the next boot — proven end to end, with the retryable/manual distinction
+    intact and reconciliation idempotent across two boots.
+  - **`--db-check` and `--db-repair`.** The expected immutability-guard inventory
+    is derived by migrating a throwaway in-memory database with this binary's own
+    embedded migrations, so it cannot drift; a missing guard is recreated from
+    that reference's exact text. Repair fixes exactly two things — a missing guard
+    and an unbounded WAL — and reports everything else with the action that fixes
+    it, which is a restore.
+  - **The custody maintenance path.** One narrowly scoped function in
+    `internal/db` drops only the guards an operation needs, inside one
+    transaction, recreates them from `sqlite_master`'s own text, and verifies
+    them back before committing. A rollback restores them too, because SQLite DDL
+    is transactional; the single connection and the single-writer lock mean the
+    window is unobservable to any other statement or process.
+  - **Six deletion kinds, kept distinct**: capability expiry (`effect_handles`,
+    no guard suspension needed), draft deletion (tombstones `draft_revisions.payload`
+    and finally gives `draft_revision_tombstones` a writer), payload redaction
+    (ADR 0002 §2's typed tombstone, preserving identity and digests, idempotent),
+    surface close (removes nothing, and is logged saying so), surface purge (the
+    cascade delete, never automatic), and external-source deletion (a recorded
+    refusal — Tangent never held the bytes).
+  - **`retention_operations`** (migration `0012`): append-only *and* undeletable,
+    with no foreign keys so an audit row outlives the surface it records.
+    Carries digests, identifiers, counts, and states — never content — plus
+    `guards_restored` and a backup survey that says `not-surveyed` when nobody
+    looked.
+  - **`tangent.retention_status`** reports the custody posture over MCP,
+    read-only. The operations themselves are
+    CLI commands, because erasure authority belongs to the local user and MCP has
+    no authenticated caller identity to hold it.
+  - See [docs/database-operations.md](docs/database-operations.md), including
+    what deletion cannot reach and what this work did not implement.
+
+- **Separate liveness, readiness, and capability health.** `/healthz` proved
+  only that the process was responding while reporting `{"status":"ok"}` for a
+  host whose database, migrations, registry, renderer host, or requested kind
+  was unavailable. Three probes now answer three questions: `GET /healthz`
+  (liveness — touches no dependency, so a supervisor never restarts a
+  repairable process in a loop), `GET /readyz` (readiness — database, schema
+  version against the version this binary embeds, definition registry, renderer
+  host, delivery-worker authorization; `ok`/`degraded`/`unavailable`, 503 only
+  on the last), and `GET /healthz/capability[/{kind}]` (per-kind, reported in
+  `internal/definition`'s existing `available`/`incompatible`/`quarantined`/
+  `unavailable` vocabulary rather than a second one). `tangent.health_report`
+  exposes all three over MCP for a Tether-connected client with no HTTP path to
+  the host. Every non-passing check carries
+  an operator action, and no report carries a payload, participant text,
+  filesystem path, session, or capability material.
+- **Versioned interaction-definition registry.** Every Tangent-owned kind now
+  ships as a package under `internal/envelope/extensions/packages/` with an
+  authored `manifest.yaml`: identity, request/response/error schemas, renderer
+  binding and trust class, host-mediated effect capabilities, draft custody and
+  sensitivity, trust evidence, telemetry, and compatibility ranges. See
+  [ADR 0003](docs/adr/0003-definition-and-package-ownership.md).
+- **Durable definition material.** Migration `0007` adds the immutable
+  `definition_manifests` table and extends `definition_bindings` with the full
+  manifest identity. A submitted interaction retains the exact material behind
+  its pinned digest, so it can still be validated and replayed after a restart,
+  after the installed catalog changes, and after the current version moves on.
+- **`tangent.definition_registry_list`, `tangent.definition_get`,
+  `tangent.definition_registry_diagnostics`.** Payload-bounded registry
+  diagnostics reporting materialization state, ownership, renderer binding,
+  digests, and retained-material coverage.
+- **Response-schema validation.** `envelope.Service.RegisterDefinition` carries
+  a response schema into `TypeSpec.PayloadSchema` and into the binding digest.
+  `tangent.hitl-item` is the first kind to use it; the other seventeen declare
+  `compatibility_response_schema: absent` and keep today's response-kind-only
+  check until they are backfilled.
+- **Definition source digests on generated artifacts.** Every generated file
+  carries a `@definition-source` stamp, `make check-envelopes` reports which
+  kind drifted rather than which byte, and `ui/src/generated/renderer-bindings.ts`
+  makes the manifest's renderer binding checkable against `main.tsx`.
+- **Authenticated browser participant sessions.** A same-origin loopback
+  document navigation with no session cookie mints one: an `HttpOnly`,
+  `SameSite=Lax` cookie naming a durable row (migration `0008`) that stores
+  only the SHA-256 of the cookie value. No idle expiry, absolute 30-day
+  lifetime, rotation on assurance change, and revocation via
+  `tangent --revoke-participant-sessions`. See
+  [ADR 0004](docs/adr/0004-caller-participant-and-room-access-authority.md).
+- **Object-access authorization.** Seven capabilities (`view`, `submit`,
+  `draft`, `resolve`, `cancel`, `close`, `administer`) evaluated against a
+  named surface or interaction through one decision function in
+  `internal/authz`. Caller scope is `<authority>:<partition>`, with the
+  authority host-assigned from admission facts and the partition
+  caller-declared.
+- **`/api/rooms`.** A participant-authenticated, origin-guarded browser room
+  API mirroring `/api/hitl`, replacing the SPA's direct `/mcp` JSON-RPC POSTs
+  for `session_list`, `session_get`, and `session_close`.
+- **Process-wide `Referrer-Policy: no-referrer` and
+  `X-Content-Type-Options: nosniff`,** applied in the middleware that wraps the
+  mux so no route can forget them.
+
+### Changed
+
+- **`surface_open_requests.surface_id` moves from `ON DELETE RESTRICT` to
+  `ON DELETE CASCADE`** (migration `0012`, ADR 0002 §Q9). Its `request_snapshot`
+  was a permanent second copy of the caller payload that no operation could
+  reach and that made every surface opened through the async path undeletable.
+  The immutability trigger stays: the table still refuses `UPDATE` and direct
+  `DELETE`.
+- **New CLI commands**: `--db-check`, `--db-backup` (with `--db-drain`),
+  `--db-restore`, `--db-compact`, `--db-repair`, `--retention-plan`,
+  `--retention-apply`, `--retention-history`, `--erase-interaction`,
+  `--erase-surface`, `--erase-drafts`, `--purge-surface`, `--close-surface`,
+  `--expire-capabilities`, `--external-deletion-report`, with `--actor`,
+  `--policy-ref`, `--backup-dir`, `--dry-run`, and a mandatory `--confirm` for
+  anything that removes content or replaces the database.
+
+- **`definition_bindings.revision` is a real field.** It previously held a copy
+  of `version`. Migration `0007` normalizes existing rows to `1`; new bindings
+  carry the manifest's own monotonic revision.
+- **Definitions that cannot be served are distinguishable.** `incompatible`,
+  `quarantined`, and `unavailable` surface as `definition_incompatible`,
+  `definition_quarantined`, and `definition_unavailable`, each carrying a reused
+  go-envelopes error code. No shipped kind is in any of those states.
+- **A room UUID is no longer an answer credential.** The `/ws` upgrade requires
+  a valid participant session immediately, with no grace period. A raw
+  WebSocket client that dials `/ws?roomID=…` with no cookie now receives a 403.
+  Opening the room URL in a browser mints the session and is unchanged for a
+  human; scripted attachments need the cookie recipe in
+  [`docs/mcp-integration.md`](docs/mcp-integration.md#room-access-and-caller-scope).
+- **`tangent.session_close` and `tangent.surface_close` are
+  partition-enforcing.** Closing dispositions another caller's pending human
+  work. `session_list` and `session_get` stay authority-wide, so "show me all
+  my rooms" is unchanged. The seventeen workflow tools and
+  `tangent.session_advance` can no longer push into a room another partition
+  owns. Refusals are 403-shaped within an authority and 404-shaped across one.
+- **`caller.scope`, `requester_scope`, and `owner_scope` are no longer the
+  authorization value.** The arguments are still accepted so shipped schemas do
+  not break, but only their partition half survives; the authority is
+  host-assigned. `tangent.surface_open` derives `owner_scope` from the caller
+  and keeps the supplied value as an attribution label.
+- **`tangent.interaction_submit` checks the target surface.** A caller can no
+  longer create an interaction on a surface it neither owns nor opened.
+- **Caller scope spelling.** `direct-loopback:<app>` becomes
+  `standalone-local:<app>`. `hitl_*` request shapes are unchanged, existing rows
+  are not rewritten, and the old spelling reads as the same caller through a
+  fixed alias.
+- **`/mcp`, `/sse`, and `/ws` carry the same-origin guard** `/api/hitl/*`
+  already had. It permits header-less non-browser clients, so MCP clients and
+  the documented `curl` recipes are unaffected.
+
+No wire name, version, request schema, response payload, MCP tool name, room
+id, or phase projection changed. Two routes were added (`/api/rooms`,
+`/api/rooms/{roomID}`); none was removed.
+
+### Security
+
+- **`standalone-local` partitions are advisory, not a security boundary.** Any
+  local caller can assert any partition; isolation is enforced only across
+  authorities, where the prefix is host-assigned. Loopback admission is not
+  authentication: a hostile local process running as the same user can still
+  mint a participant session. Nothing downstream may present a partition as
+  isolation.
+- **`clipboard.write` and `export.download` are enforced only inside a
+  sandboxed frame.** On the main origin they remain declared-not-enforced.
+  `network.fetch` is genuinely enforced by the document CSP's `connect-src`.
+- **No definition declares a host-mediated effect capability**, so every
+  request through `POST /api/effects` refuses `effect_capability_undeclared`.
+  The broker has zero production traffic (`CW-20260905-0010`).
+- **There is no browser in CI.** CSP and sandboxing are proven by construction
+  and by unit tests over the emitted policy, never by observing a browser
+  refuse anything; `docs/manual-tests/renderer-sandbox-e2e.md` is the real
+  verification and it is manual (`CW-20260904-0171`).
+- **The OpenTelemetry bridge has never been observed against a collector**
+  (`CW-20260905-0011`).
+- **`SaveDraft` has no production caller**; browser `localStorage` is the only
+  running draft custody, so server-side draft tables are empty in production
+  (`CW-20260905-0001`).
+- **`renderer.entry` loads nothing**; `ui/src/main.tsx` registers renderers by
+  string literal (`CW-20260905-0004`).
+- **The ADR 0002 §3 custody-precedence engine is not implemented**; retention
+  uses host windows only (`CW-20260905-0008`).
+
+The full, canonical list is
+[docs/architecture.md](docs/architecture.md#current-limitations).
+
+## [v0.12.0] - 2026-05-10 — documented, not tagged
 
 Wizard. Tangent now ships a persistent room-backed guided wizard
 workflow with explicit partial updates, canonical branch-aware step
@@ -556,8 +761,7 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.12.0...HEAD
-[v0.12.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.12.0
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.11.0...HEAD
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
 [v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.9.0

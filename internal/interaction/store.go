@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -191,6 +192,13 @@ type CreateInteractionParams struct {
 	Policy             json.RawMessage
 	ActorRef           string
 	Authority          string
+
+	// LegacyRoomID / LegacyEnvelopeID bind a canonical interaction to the
+	// v0.12 room projection it is presented through. They are correlation
+	// only: the interaction record remains the sole lifecycle authority and
+	// the legacy rows are derived from it.
+	LegacyRoomID     string
+	LegacyEnvelopeID string
 }
 
 type CreateInteractionResult struct {
@@ -233,7 +241,7 @@ func (s *Store) CreateInteraction(ctx context.Context, params CreateInteractionP
 		return CreateInteractionResult{}, fmt.Errorf("%w: caller authority and assurance are required", ErrInvalidRecord)
 	}
 	if params.Definition.Publisher == "" || params.Definition.Kind == "" || params.Definition.Version == "" ||
-		params.Definition.Revision == "" || params.Definition.Source == "" || params.Definition.Assurance == "" {
+		params.Definition.Revision < 1 || params.Definition.Source == "" || params.Definition.Assurance == "" {
 		return CreateInteractionResult{}, fmt.Errorf("%w: complete immutable definition binding is required", ErrInvalidRecord)
 	}
 	externalRefs, externalRefsErr := canonicalJSON(params.ExternalRefs, "{}")
@@ -287,25 +295,39 @@ INSERT INTO interactions (
   id, surface_id, caller_scope, caller_principal_ref, caller_authority,
   caller_assurance, idempotency_key, surface_sequence,
   request_snapshot, external_refs, policy, lifecycle_state, revision,
-  created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  created_at, updated_at, legacy_room_id, legacy_envelope_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, params.SurfaceID, params.CallerScope, nullString(params.CallerPrincipalRef),
 		params.CallerAuthority, params.CallerAssurance, params.IdempotencyKey, sequence,
 		string(request), string(externalRefs), string(policy), InteractionStateStaged,
 		stagedRevision, now, now,
+		nullString(params.LegacyRoomID), nullString(params.LegacyEnvelopeID),
 	); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("insert interaction: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO definition_bindings (
   interaction_id, publisher, kind, version, revision, digest, source,
-  schema_identity, schema_digest, host_version, assurance, bound_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  schema_identity, schema_digest, host_version, assurance, bound_at,
+  manifest_digest, contract_digest, response_schema_digest,
+  package_id, package_version, ownership_class, compatibility_class,
+  renderer_id, renderer_class, renderer_trust_class,
+  required_capabilities, granted_capabilities, materialization_state
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, params.Definition.Publisher, params.Definition.Kind,
-		params.Definition.Version, params.Definition.Revision,
+		params.Definition.Version, strconv.FormatInt(params.Definition.Revision, 10),
 		nullString(params.Definition.Digest), params.Definition.Source,
 		nullString(params.Definition.SchemaIdentity), nullString(params.Definition.SchemaDigest),
 		nullString(params.Definition.HostVersion), params.Definition.Assurance, now,
+		nullString(params.Definition.ManifestDigest), nullString(params.Definition.ContractDigest),
+		nullString(params.Definition.ResponseSchemaDigest),
+		nullString(params.Definition.PackageID), nullString(params.Definition.PackageVersion),
+		nullString(params.Definition.OwnershipClass), nullString(params.Definition.CompatibilityClass),
+		nullString(params.Definition.RendererID), nullString(params.Definition.RendererClass),
+		nullString(params.Definition.RendererTrustClass),
+		nullString(string(params.Definition.RequiredCapabilities)),
+		nullString(string(params.Definition.GrantedCapabilities)),
+		nullString(params.Definition.MaterializationState),
 	); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("insert definition binding: %w", err)
 	}
@@ -1144,7 +1166,8 @@ func (s *Store) ListLegacyRoomHistory(ctx context.Context, roomID string) ([]Leg
 	rows, err := s.db.QueryContext(ctx, `
 SELECT room_id, envelope_id, type, request_payload, response_kind,
        response_payload, status, error_code, error_message,
-       created_at, resolved_at, surface_id, interaction_id
+       created_at, resolved_at, surface_id, interaction_id,
+       interaction_state, caller_acknowledged_at
 FROM legacy_room_history_v12
 WHERE room_id = ?
 ORDER BY created_at, envelope_id`, roomID)
@@ -1157,14 +1180,25 @@ ORDER BY created_at, envelope_id`, roomID)
 		var record LegacyRoomHistoryEntry
 		var request string
 		var responseKind, responsePayload, errorCode, errorMessage sql.NullString
-		var resolvedAt sql.NullTime
+		// A legacy room that predates the durable substrate and was never
+		// touched since has no surface or interaction. That is a legitimate
+		// projection, not a scan failure.
+		var surfaceID, interactionID, interactionState sql.NullString
+		var resolvedAt, acknowledgedAt sql.NullTime
 		if err := rows.Scan(
 			&record.RoomID, &record.EnvelopeID, &record.Type, &request,
 			&responseKind, &responsePayload, &record.Status, &errorCode,
 			&errorMessage, &record.CreatedAt, &resolvedAt,
-			&record.SurfaceID, &record.InteractionID,
+			&surfaceID, &interactionID, &interactionState, &acknowledgedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan legacy room history: %w", err)
+		}
+		record.SurfaceID = surfaceID.String
+		record.InteractionID = interactionID.String
+		record.InteractionState = InteractionState(interactionState.String)
+		if acknowledgedAt.Valid {
+			acknowledged := acknowledgedAt.Time
+			record.CallerAcknowledgedAt = &acknowledged
 		}
 		record.RequestPayload = json.RawMessage(request)
 		record.ResponseKind = responseKind.String

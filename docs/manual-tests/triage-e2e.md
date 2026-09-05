@@ -1,7 +1,7 @@
-# Triage e2e — manual test recipe (v0.2)
+# Triage e2e — manual test recipe
 
 End-to-end smoke for `tangent.triage` driven by a real Claude Code
-session. Verifies the v0.2 acceptance gate: a real LLM client calls the
+session. Verifies the multi-envelope room acceptance gate: a real LLM client calls the
 MCP tool, the human responds in the browser, and the LLM receives a
 structured response payload.
 
@@ -16,7 +16,7 @@ the same loop. The recipe below is the real-LLM verification.
 
 ## Prerequisites
 
-- Repo cloned at `~/Projects-apps/tangent` (or equivalent).
+- Repo cloned at `~/dev/hollis-labs/apps/tangent` (or equivalent).
 - `make build` produced `./tangent` in the repo root.
 - Claude Code installed (`claude` CLI on `$PATH`).
 - A modern browser pointing at `localhost`.
@@ -26,7 +26,7 @@ the same loop. The recipe below is the real-LLM verification.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 
@@ -34,17 +34,19 @@ Expected log lines (timestamps elided; key=value attributes match the
 slog text handler Tangent ships with):
 
 ```
-level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=44
+level=INFO msg="loaded envelope types" count=<go-envelopes core catalog size>
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=<total registered kinds, core + Tangent>
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
 level=INFO msg="tangent listening" addr=127.0.0.1:7842 dev_frontend_url=""
 ```
 
-Note: triage room URLs are emitted by Tangent's MCP triage handler the
-moment a call arrives. Watch this terminal for `triage room created
-room=... url=http://127.0.0.1:7842/r/<roomID>`.
+Note: the MCP triage tool logs `triage room created room=<roomID>
+envelope=<id>` the moment a call arrives. It logs the room **id**, not a URL —
+ADR 0002 §8 keeps assembled locators out of log lines. The tool *response*
+carries the room URL back to the caller; from the log alone, construct
+`http://127.0.0.1:7842/r/<roomID>`.
 
 ## 2. Wire Tangent into Claude Code
 
@@ -87,7 +89,19 @@ Tangent log prints the room URL (see step 1).
 ## 4. Open the browser and triage
 
 Paste the `http://localhost:7842/r/<roomID>` URL from the Tangent log
-into a browser tab. The page renders:
+into a browser tab.
+
+> **The browser step is load-bearing, not a convenience.** Since
+> [ADR 0004](../adr/0004-caller-participant-and-room-access-authority.md) the
+> `/ws` upgrade requires a participant session, immediately and with no grace
+> period: knowing the room UUID grants nothing. Loading the page is what mints
+> that session — an `HttpOnly` cookie the tab then presents on the upgrade — so
+> a raw WebSocket client dialing `ws://127.0.0.1:7842/ws?roomID=...` with no
+> cookie receives a 403 rather than an envelope. If you are scripting this
+> step, use the cookie recipe in
+> [`../mcp-integration.md`](../mcp-integration.md#room-access-and-caller-scope).
+
+The page renders:
 
 - A `<Triage>` card with the prompt and three items.
 - Three buttons per item — Accept, Backlog, Delete — and a
@@ -135,8 +149,21 @@ no errors in either log.
 - **"Port 7842 is in use"** — set `TANGENT_HTTP_PORT=7900` (or any free
   port) and rerun. Update the `claude mcp add` URL to match.
 - **"WS connects but never receives an envelope"** — confirm the room
-  ID in the URL matches what Tangent printed. Each MCP call gets a
-  fresh room; stale URLs hang at "waiting for envelope...".
+  ID in the URL matches what Tangent printed. A call carrying no
+  `meta.roomID` gets a fresh room; a call naming an existing room reuses it
+  (`room reused` in the log). A room with no active envelope shows
+  "waiting for envelope..." until one is advanced into it — that is the room
+  idling, not a hang.
+- **"The WebSocket upgrade returns 403"** — the client presented no
+  participant session. A browser gets one automatically by loading the
+  room page; a scripted client has to mint and present the cookie, per
+  [`../mcp-integration.md`](../mcp-integration.md#room-access-and-caller-scope).
+  This is deliberate: the room UUID is a locator, and it is printed in
+  logs and pasted into transcripts precisely because it is not a
+  credential.
+- **"The tab strip's close button says it is not authorized"** — the
+  room belongs to a different caller partition. `session_close` is
+  partition-enforcing; listing and reading rooms are not.
 - **"Submit is disabled"** — by design until every item has a decision.
   Pick one of Accept / Backlog / Delete for each row.
 - **"My LLM hallucinated a custom envelope shape"** — `tangent.triage`'s
@@ -161,6 +188,6 @@ The Go integration test
 (`internal/server/integration_test.go::TestIntegration_TriageRoundTrip`)
 exercises the same path in-process with the official MCP SDK in-memory
 transport. The mock script adds the Node-from-the-outside parity check
-for the same loop. In v0.2, the triage tool still preserves the v0.1
-public contract even though it now routes through the session substrate
-internally.
+for the same loop. The triage tool still preserves its original public
+contract even though it now routes through the session substrate — and, since
+the foundation phase, through the canonical durable substrate — internally.

@@ -2,8 +2,16 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
+import { buildSubmitGate, describedBy, useRevealRequirement } from "@/lib/submit-gate";
 import { cn } from "@/lib/utils";
+
+// The answer control's DOM id, matched by its `<label htmlFor>` and by the
+// submit gate so "marked required" and "what the gate focuses" stay one fact.
+const ANSWER_ID = "interview-answer";
+const OUTPUT_SHAPE_ID = "interview-output-shape";
 
 export interface InterviewQuestionChoice {
   id: string;
@@ -62,15 +70,33 @@ export function InterviewQuestion({ envelope, onSubmit, onCancel }: InterviewQue
   const [answerText, setAnswerText] = useState("");
   const [selectedChoiceID, setSelectedChoiceID] = useState<string>("");
   const [outputShapeSignal, setOutputShapeSignal] = useState("");
+  // The answer is required from the moment the envelope mounts, so an empty
+  // box is not yet a mistake. The marker and `aria-required` announce the
+  // requirement up front; the red line waits until the interviewee has been
+  // in the field (or has been sent to it by the gate) and left it empty.
+  const [answerTouched, setAnswerTouched] = useState(false);
+
+  const revealRequirement = useRevealRequirement();
 
   const prompt = envelope.data?.prompt_markdown ?? envelope.data?.prompt ?? "";
   const helperText = envelope.data?.helper_text;
   const choices = envelope.data?.choices ?? [];
   const outputShape = envelope.data?.output_shape;
-  const submitDisabled = answerText.trim().length === 0;
+  const answerMissing = answerText.trim().length === 0;
+
+  const gate = buildSubmitGate([
+    answerMissing && {
+      controlID: ANSWER_ID,
+      label: "the answer",
+      message: "the answer is still empty.",
+      reveal: () => setAnswerTouched(true),
+    },
+  ]);
+  const submitDisabled = gate.blocked;
 
   const handleSubmit = () => {
-    if (submitDisabled) {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
       return;
     }
     onSubmit({
@@ -124,13 +150,27 @@ export function InterviewQuestion({ envelope, onSubmit, onCancel }: InterviewQue
       <CardContent className="space-y-4">
         {choices.length > 0 ? (
           <section className="space-y-2" data-testid="interview-question-choices">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Quick picks</p>
-            <div className="flex flex-wrap gap-2">
+            <p
+              id="interview-question-choices-label"
+              className="text-xs font-medium uppercase tracking-wide text-zinc-500"
+            >
+              Quick picks
+            </p>
+            {/*
+              One choice made out of several buttons. Selection was carried by
+              colour alone, which says nothing to a screen reader and nothing
+              at all in a high-contrast theme.
+            */}
+            <fieldset
+              aria-labelledby="interview-question-choices-label"
+              className="flex flex-wrap gap-2"
+            >
               {choices.map((choice) => (
                 <button
                   type="button"
                   key={choice.id}
                   data-testid={`interview-question-choice-${choice.id}`}
+                  aria-pressed={selectedChoiceID === choice.id}
                   onClick={() => setSelectedChoiceID(choice.id)}
                   className={cn(
                     "rounded-full border px-3 py-2 text-sm transition-colors",
@@ -142,7 +182,7 @@ export function InterviewQuestion({ envelope, onSubmit, onCancel }: InterviewQue
                   {choice.label}
                 </button>
               ))}
-            </div>
+            </fieldset>
             {selectedChoiceID ? (
               <p className="text-xs text-zinc-500">Selected: {selectedChoiceID}</p>
             ) : null}
@@ -150,38 +190,81 @@ export function InterviewQuestion({ envelope, onSubmit, onCancel }: InterviewQue
         ) : null}
 
         <section className="space-y-2">
-          <label htmlFor="interview-answer" className="text-sm font-medium text-zinc-100">
+          <label htmlFor={ANSWER_ID} className="block text-sm font-medium text-zinc-100">
             Answer
+            <RequiredMark testID="interview-answer-required" />
           </label>
           <Textarea
-            id="interview-answer"
+            id={ANSWER_ID}
             value={answerText}
-            onChange={(event) => setAnswerText(event.currentTarget.value)}
+            onChange={(event) => {
+              setAnswerTouched(true);
+              setAnswerText(event.currentTarget.value);
+            }}
             placeholder="Write a detailed answer"
             className="min-h-40"
+            aria-required="true"
+            aria-invalid={answerMissing}
+            aria-describedby={describedBy(
+              "interview-answer-hint",
+              answerMissing && answerTouched && "interview-answer-error",
+            )}
             data-testid="interview-question-answer"
           />
+          <FieldMessage id="interview-answer-hint">
+            Required. This is the answer recorded against the thread — a quick pick above narrows
+            the topic but does not stand in for it.
+          </FieldMessage>
+          {answerMissing && answerTouched ? (
+            <FieldMessage id="interview-answer-error" tone="error" testID="interview-answer-error">
+              Write the answer before submitting.
+            </FieldMessage>
+          ) : null}
         </section>
 
         {outputShape ? (
           <section className="space-y-2" data-testid="interview-question-output-shape">
-            <label htmlFor="interview-output-shape" className="text-sm font-medium text-zinc-100">
+            {/*
+              The label here is envelope-authored, so it is left exactly as the
+              agent wrote it — and an agent-written label ("Preferred output
+              shape") reads every bit as mandatory as the Answer above. The
+              badge and the hint are what say otherwise.
+            */}
+            <label htmlFor={OUTPUT_SHAPE_ID} className="block text-sm font-medium text-zinc-100">
               {outputShape.label}
+              <span
+                aria-hidden="true"
+                data-testid="interview-output-shape-optional"
+                className="ml-2 rounded bg-zinc-700/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-400"
+              >
+                optional
+              </span>
             </label>
-            {outputShape.help ? <p className="text-xs text-zinc-400">{outputShape.help}</p> : null}
             <Textarea
-              id="interview-output-shape"
+              id={OUTPUT_SHAPE_ID}
               value={outputShapeSignal}
               onChange={(event) => setOutputShapeSignal(event.currentTarget.value)}
               placeholder={outputShape.placeholder ?? "Optional output-shape preference"}
               className="min-h-24"
+              aria-describedby="interview-output-shape-hint"
               data-testid="interview-question-output-shape-input"
             />
+            <FieldMessage id="interview-output-shape-hint">
+              {outputShape.help
+                ? `${outputShape.help} Optional — Submit never waits on it.`
+                : "Optional — Submit never waits on it."}
+            </FieldMessage>
           </section>
         ) : null}
       </CardContent>
 
-      <CardFooter className="justify-end gap-3">
+      <CardFooter className="flex-wrap justify-end gap-3">
+        <SubmitGateNotice
+          gate={gate}
+          testID="interview-question-submit-gate"
+          action="Submit"
+          onReveal={revealRequirement}
+        />
         <Button
           type="button"
           variant="ghost"
@@ -194,6 +277,7 @@ export function InterviewQuestion({ envelope, onSubmit, onCancel }: InterviewQue
           type="button"
           onClick={handleSubmit}
           disabled={submitDisabled}
+          aria-describedby={gate.blocked ? "interview-question-submit-gate" : undefined}
           data-testid="interview-question-submit"
         >
           Submit

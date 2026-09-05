@@ -296,8 +296,27 @@ func normalizeWhiteboardAssetRef(asset WhiteboardAssetRef) (WhiteboardAssetRef, 
 	if normalized.AssetID == "" && normalized.ArtifactID == "" && normalized.Source == "" && normalized.URI == "" {
 		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
 	}
-	if strings.HasPrefix(normalized.Source, "data:") || strings.HasPrefix(normalized.Source, "blob:") {
-		return WhiteboardAssetRef{}, ErrInvalidWhiteboardAssetRef
+	// A `source` is a renderer *effect request*, not a label.
+	//
+	// `URI` has always been held to `artifact://`; `Source` was not, and the
+	// difference was load-bearing in the wrong direction: `Source` is what
+	// ui/src/lib/whiteboard-assets.ts writes into a tldraw asset record's
+	// `props.src`, so a caller-supplied `https://…` made the operator's
+	// browser issue a GET to an origin the caller chose. That is
+	// `effect.NetworkFetch` (ADR 0003 §2.5) happening with no declaration, no
+	// grant, and no receipt — the exact shape CW-20260825-0077 exists to
+	// close, and the only place in the tree where it was actually happening.
+	//
+	// The rule is now the same as `URI`'s: a source names durable content this
+	// host already holds, or it names nothing. Admitting a remote origin again
+	// requires the definition to declare `network.fetch` in
+	// `required_capabilities` and this host's policy to grant it, at which
+	// point the fetch is brokered and receipted rather than implicit. No
+	// shipped definition declares it and the standalone host grants nothing,
+	// so today the answer is always no — and it is now a refusal at the
+	// authority rather than a silent success in a renderer.
+	if err := validateWhiteboardArtifactURI(normalized.Source); err != nil {
+		return WhiteboardAssetRef{}, err
 	}
 	if err := validateWhiteboardArtifactURI(normalized.URI); err != nil {
 		return WhiteboardAssetRef{}, err

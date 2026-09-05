@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FieldMessage, RequiredMark } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SubmitGateNotice } from "@/components/ui/submit-gate-notice";
 import { Textarea } from "@/components/ui/textarea";
 import {
   buildFormCollectCanonicalSeedKey,
@@ -12,6 +14,12 @@ import {
   loadFormCollectDraft,
   saveFormCollectDraft,
 } from "@/lib/form-collect-draft-storage";
+import {
+  buildSubmitGate,
+  describedBy,
+  focusControl,
+  useRevealRequirement,
+} from "@/lib/submit-gate";
 
 export type FormCollectFieldType =
   | "text"
@@ -154,6 +162,13 @@ export type FormCollectProps = {
 
 const repeatableRowIDKey = "__row_id";
 
+// Ids for the controls that are not part of the schema. They are constants
+// because the submit gate points at the same strings the labels do, and a typo
+// in either would silently break both "Go to …" and the label association.
+const NOTES_ID = "form-collect-notes";
+const ACTION_ID = "form-collect-action";
+const ATTACHMENT_NAME_ID = "form-collect-attachment-name";
+
 export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollectProps) {
   const formID = envelope.data?.form_id ?? "form";
   const schema = envelope.data?.schema ?? {};
@@ -176,6 +191,11 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
   const [attachmentDraft, setAttachmentDraft] = useState<FormCollectAttachmentRef>({ name: "" });
   const [message, setMessage] = useState<string | null>(null);
   const [summaryCopied, setSummaryCopied] = useState(false);
+  // "Add attachment ref" used to return silently when the display name was
+  // empty. The flag turns that dead click into a visible, focused refusal.
+  const [attachmentAttempted, setAttachmentAttempted] = useState(false);
+
+  const revealRequirement = useRevealRequirement();
 
   const seedKey = useMemo(
     () =>
@@ -257,9 +277,45 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
 
   const validation = evaluateCompletion(schema, answers);
   const summary = envelope.data?.submission_summary;
+  const outstanding = validation.outstanding;
+  const attachmentNameMissing =
+    attachmentAttempted && (attachmentDraft.name ?? "").trim().length === 0;
+
+  // What the operator still owes, named. `requiredRemaining` on its own could
+  // only dim the button, and that is what made this form's worst case
+  // unreadable: a `show_when` section can reveal a whole block of required
+  // fields from a control several screens above, so the count jumped and
+  // Submit died with nothing on screen saying which field had just appeared.
+  // The gate carries the first outstanding field's own label and the id its
+  // label points at. No `reveal` step — the form is one scrolling column, so
+  // scrolling to the control and focusing it is the whole journey.
+  //
+  // The missing form id is the other half. `handleSubmit` has always refused to
+  // fire without one, but `disabled` never reflected that, so an envelope with
+  // an empty `form_id` rendered a live button that did nothing at all.
+  const gate = buildSubmitGate([
+    // One requirement per outstanding field rather than one aggregate: the
+    // notice then names the field the operator is being sent to, and the
+    // header's "N required remaining" count carries the total.
+    ...outstanding.map((entry) => ({
+      controlID: entry.controlID,
+      label: entry.label,
+      message: `"${entry.label}" is required and still empty.`,
+    })),
+    !formID && {
+      controlID: "",
+      label: "form",
+      message: "this envelope carries no form id, so a submission cannot be recorded against it.",
+    },
+  ]);
+  // Gating semantics are unchanged: the button is disabled by the required
+  // field count exactly as before. The form-id requirement is surfaced through
+  // the notice on a CTA that stays live, and enforced in the handler.
+  const submitDisabled = validation.requiredRemaining > 0;
 
   const handleSubmit = () => {
-    if (!formID || validation.requiredRemaining > 0) {
+    if (gate.blocked) {
+      revealRequirement(gate.first);
       return;
     }
     if (roomID) {
@@ -310,6 +366,8 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
         {message ? (
           <div
             data-testid="form-collect-message"
+            role="status"
+            aria-live="polite"
             className="rounded-md border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-200"
           >
             {message}
@@ -370,22 +428,40 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
           />
         ))}
 
+        {/*
+          Notes sat in a bordered section under a heading styled exactly like a
+          required field's label, so it read as one more thing the form was
+          waiting on. It is a real label now, and the hint says outright that it
+          is optional and not one of the schema's fields.
+        */}
         <section className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-          <p className="text-sm font-medium text-zinc-100">Notes</p>
+          <label className="block text-sm font-medium text-zinc-100" htmlFor={NOTES_ID}>
+            Notes
+          </label>
           <Textarea
+            id={NOTES_ID}
             value={notes}
             onChange={(event) => setNotes(event.currentTarget.value)}
             placeholder="Optional submission notes"
+            aria-describedby={`${NOTES_ID}-hint`}
             data-testid="form-collect-notes"
           />
+          <FieldMessage id={`${NOTES_ID}-hint`}>
+            Optional. A freeform note kept alongside the submission — never one of the form's
+            fields, and never required.
+          </FieldMessage>
         </section>
 
         {envelope.data?.actions && envelope.data.actions.length > 0 ? (
           <section className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
-            <p className="text-sm font-medium text-zinc-100">Submit action</p>
+            <label className="block text-sm font-medium text-zinc-100" htmlFor={ACTION_ID}>
+              Submit action
+            </label>
             <select
+              id={ACTION_ID}
               value={actionID}
               onChange={(event) => setActionID(event.currentTarget.value)}
+              aria-describedby={`${ACTION_ID}-hint`}
               data-testid="form-collect-action"
               className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
             >
@@ -396,11 +472,16 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
                 </option>
               ))}
             </select>
+            <FieldMessage id={`${ACTION_ID}-hint`}>
+              Optional. Leaving the default submits the form without naming an action.
+            </FieldMessage>
           </section>
         ) : null}
 
         <SavedItemsEditor
           title="Saved drafts"
+          controlID="form-collect-draft-label"
+          fieldLabel="Draft name"
           inputLabel={draftLabel}
           setInputLabel={setDraftLabel}
           items={savedDrafts}
@@ -431,6 +512,8 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
 
         <SavedItemsEditor
           title="Templates"
+          controlID="form-collect-template-label"
+          fieldLabel="Template name"
           inputLabel={templateLabel}
           setInputLabel={setTemplateLabel}
           items={templates}
@@ -459,42 +542,73 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
 
         <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
           <p className="text-sm font-medium text-zinc-100">Attachment refs</p>
-          <div className="grid gap-2 md:grid-cols-2">
-            <Input
-              value={attachmentDraft.name ?? ""}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setAttachmentDraft((current) => ({ ...current, name: value }));
-              }}
-              placeholder="Display name"
-              data-testid="form-collect-attachment-name"
-            />
-            <Input
+          <div className="grid gap-3 md:grid-cols-2">
+            {/*
+              The display name is the one thing "Add attachment ref" actually
+              requires, and it was an anonymous box in a row of anonymous boxes:
+              no id, no label, and a click that returned silently when it was
+              empty. It is marked required and reports the refusal in place.
+            */}
+            <div className="space-y-1">
+              <label className="block text-xs text-zinc-400" htmlFor={ATTACHMENT_NAME_ID}>
+                Display name
+                <RequiredMark testID="form-collect-attachment-name-required" />
+              </label>
+              <Input
+                id={ATTACHMENT_NAME_ID}
+                value={attachmentDraft.name ?? ""}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  setAttachmentAttempted(false);
+                  setAttachmentDraft((current) => ({ ...current, name: value }));
+                }}
+                placeholder="Display name"
+                aria-required="true"
+                aria-invalid={attachmentNameMissing}
+                aria-describedby={describedBy(
+                  `${ATTACHMENT_NAME_ID}-hint`,
+                  attachmentNameMissing && `${ATTACHMENT_NAME_ID}-error`,
+                )}
+                data-testid="form-collect-attachment-name"
+              />
+              <FieldMessage id={`${ATTACHMENT_NAME_ID}-hint`}>
+                Required. Each attachment ref is listed and removed under this name.
+              </FieldMessage>
+              {attachmentNameMissing ? (
+                <FieldMessage
+                  id={`${ATTACHMENT_NAME_ID}-error`}
+                  tone="error"
+                  testID="form-collect-attachment-name-error"
+                >
+                  Enter a display name before adding the attachment ref.
+                </FieldMessage>
+              ) : null}
+            </div>
+            <AttachmentFieldInput
+              id="form-collect-attachment-uri"
+              label="URI"
               value={attachmentDraft.uri ?? ""}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setAttachmentDraft((current) => ({ ...current, uri: value }));
-              }}
-              placeholder="URI"
-              data-testid="form-collect-attachment-uri"
+              placeholder="artifact://…"
+              testID="form-collect-attachment-uri"
+              onChange={(value) => setAttachmentDraft((current) => ({ ...current, uri: value }))}
             />
-            <Input
+            <AttachmentFieldInput
+              id="form-collect-attachment-mime"
+              label="MIME type"
               value={attachmentDraft.mime_type ?? ""}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setAttachmentDraft((current) => ({ ...current, mime_type: value }));
-              }}
-              placeholder="MIME type"
-              data-testid="form-collect-attachment-mime"
+              placeholder="application/pdf"
+              testID="form-collect-attachment-mime"
+              onChange={(value) =>
+                setAttachmentDraft((current) => ({ ...current, mime_type: value }))
+              }
             />
-            <Input
+            <AttachmentFieldInput
+              id="form-collect-attachment-kind"
+              label="Kind"
               value={attachmentDraft.kind ?? ""}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setAttachmentDraft((current) => ({ ...current, kind: value }));
-              }}
-              placeholder="Kind"
-              data-testid="form-collect-attachment-kind"
+              placeholder="spec, transcript, …"
+              testID="form-collect-attachment-kind"
+              onChange={(value) => setAttachmentDraft((current) => ({ ...current, kind: value }))}
             />
           </div>
           <Button
@@ -503,8 +617,11 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
             data-testid="form-collect-add-attachment"
             onClick={() => {
               if (!attachmentDraft.name?.trim()) {
+                setAttachmentAttempted(true);
+                focusControl(ATTACHMENT_NAME_ID);
                 return;
               }
+              setAttachmentAttempted(false);
               setAttachmentRefs((current) => [
                 ...current,
                 {
@@ -549,7 +666,14 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
         </section>
       </CardContent>
 
-      <CardFooter className="justify-end gap-3">
+      <CardFooter className="flex-wrap justify-end gap-3">
+        <SubmitGateNotice
+          gate={gate}
+          testID="form-collect-submit-gate"
+          action="Submit form"
+          mode={submitDisabled ? "disabled" : "attempt"}
+          onReveal={revealRequirement}
+        />
         <Button
           type="button"
           variant="ghost"
@@ -561,8 +685,9 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
         <Button
           type="button"
           onClick={handleSubmit}
-          disabled={validation.requiredRemaining > 0}
+          disabled={submitDisabled}
           data-testid="form-collect-submit"
+          aria-describedby={gate.blocked ? "form-collect-submit-gate" : undefined}
         >
           Submit form
         </Button>
@@ -590,6 +715,31 @@ function FieldRenderer({
 
   const currentValue = value ?? defaultFieldValue(field);
   const isGrouped = isGroupedFieldType(field.type);
+  // `required` is a schema fact that used to reach the operator as a bare red
+  // asterisk with no legend anywhere on the page, and never reached a screen
+  // reader at all. The badge says the word, the control carries it in aria, and
+  // `field.help` finally has an id so the control can point at it.
+  const required = Boolean(field.required);
+  const missing = required && !isFilled(field, currentValue);
+  const hintID = `${controlId}-hint`;
+  const errorID = `${controlId}-error`;
+  const help = field.help ? <FieldMessage id={hintID}>{field.help}</FieldMessage> : null;
+  const control = (
+    <FieldControl
+      field={field}
+      controlId={controlId}
+      value={currentValue}
+      required={required}
+      invalid={missing}
+      describedByIDs={describedBy(field.help ? hintID : undefined, missing && errorID)}
+      onChange={onChange}
+    />
+  );
+  const error = missing ? (
+    <FieldMessage id={errorID} tone="error" testID={`form-collect-error-${controlId}`}>
+      {field.label} is required and still empty.
+    </FieldMessage>
+  ) : null;
 
   if (isGrouped) {
     return (
@@ -599,15 +749,11 @@ function FieldRenderer({
       >
         <legend className="text-sm font-medium text-zinc-100">
           {field.label}
-          {field.required ? <span className="ml-1 text-red-300">*</span> : null}
+          <RequiredMark active={required} testID={`form-collect-required-${controlId}`} />
         </legend>
-        {field.help ? <p className="text-xs text-zinc-400">{field.help}</p> : null}
-        <FieldControl
-          field={field}
-          controlId={controlId}
-          value={currentValue}
-          onChange={onChange}
-        />
+        {help}
+        {control}
+        {error}
       </fieldset>
     );
   }
@@ -620,11 +766,12 @@ function FieldRenderer({
       <div className="space-y-1">
         <label htmlFor={controlId} className="text-sm font-medium text-zinc-100">
           {field.label}
-          {field.required ? <span className="ml-1 text-red-300">*</span> : null}
+          <RequiredMark active={required} testID={`form-collect-required-${controlId}`} />
         </label>
-        {field.help ? <p className="text-xs text-zinc-400">{field.help}</p> : null}
+        {help}
       </div>
-      <FieldControl field={field} controlId={controlId} value={currentValue} onChange={onChange} />
+      {control}
+      {error}
     </section>
   );
 }
@@ -662,7 +809,7 @@ function SectionRenderer({
         </div>
         {visibleRows.map((row, index) => (
           <div
-            key={repeatableRowKey(section.id, row)}
+            key={repeatableRowKey(section.id, row, index)}
             className="space-y-3 rounded-md border border-zinc-800 p-3"
           >
             <div className="flex items-center justify-between">
@@ -682,9 +829,9 @@ function SectionRenderer({
             </div>
             {section.fields.map((field) => (
               <FieldRenderer
-                key={`${repeatableRowKey(section.id, row)}-${field.id}`}
+                key={`${repeatableRowKey(section.id, row, index)}-${field.id}`}
                 field={field}
-                controlId={`${section.id}-${field.id}-${repeatableRowKey(section.id, row)}`}
+                controlId={`${section.id}-${field.id}-${repeatableRowKey(section.id, row, index)}`}
                 value={row[field.id]}
                 rootAnswers={{ ...rootAnswers, ...row }}
                 onChange={(next) =>
@@ -744,13 +891,27 @@ function FieldControl({
   field,
   controlId,
   value,
+  required,
+  invalid,
+  describedByIDs,
   onChange,
 }: {
   field: FormCollectField;
   controlId: string;
   value: unknown;
+  required: boolean;
+  invalid: boolean;
+  describedByIDs: string | undefined;
   onChange: (value: unknown) => void;
 }) {
+  // Grouped types put their ids on the options rather than on the field, so the
+  // aria goes on every option: that is what a screen reader reads as it arrows
+  // through them, and it is what `focusTargetFor` sends the gate to.
+  const aria = {
+    "aria-required": required,
+    "aria-invalid": invalid,
+    "aria-describedby": describedByIDs,
+  };
   switch (field.type) {
     case "textarea":
       return (
@@ -759,6 +920,7 @@ function FieldControl({
           value={String(value ?? "")}
           placeholder={field.placeholder}
           onChange={(event) => onChange(event.currentTarget.value)}
+          {...aria}
           data-testid={`form-collect-input-${field.id}`}
         />
       );
@@ -768,6 +930,7 @@ function FieldControl({
           id={controlId}
           value={String(value ?? "")}
           onChange={(event) => onChange(event.currentTarget.value)}
+          {...aria}
           data-testid={`form-collect-input-${field.id}`}
           className="h-10 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
         >
@@ -788,6 +951,7 @@ function FieldControl({
               <Checkbox
                 id={`${controlId}-${option.value}`}
                 checked={values.includes(option.value)}
+                {...aria}
                 onChange={(event) =>
                   onChange(
                     event.currentTarget.checked
@@ -813,6 +977,7 @@ function FieldControl({
                 name={controlId}
                 checked={String(value ?? "") === option.value}
                 onChange={() => onChange(option.value)}
+                {...aria}
                 data-testid={`form-collect-radio-${field.id}-${option.value}`}
               />
               <label htmlFor={`${controlId}-${option.value}`}>{option.label}</label>
@@ -821,14 +986,21 @@ function FieldControl({
         </div>
       );
     case "checkbox":
+      // The checkbox's own `<label htmlFor>` used to read `placeholder ?? "Checked"`,
+      // which made "Checked" the control's accessible name while the thing being
+      // agreed to sat in a `<legend>` the checkbox never pointed at. The field
+      // label is now the single label above (see `isGroupedFieldType`), and the
+      // placeholder stays as visible choice wording beside the box.
       return (
         <div className="flex items-center gap-2 text-sm text-zinc-200">
           <Checkbox
             id={controlId}
             checked={Boolean(value)}
             onChange={(event) => onChange(event.currentTarget.checked)}
+            {...aria}
+            data-testid={`form-collect-input-${field.id}`}
           />
-          <label htmlFor={controlId}>{field.placeholder ?? "Checked"}</label>
+          {field.placeholder ? <span className="text-zinc-400">{field.placeholder}</span> : null}
         </div>
       );
     case "number":
@@ -841,6 +1013,7 @@ function FieldControl({
           onChange={(event) =>
             onChange(event.currentTarget.value === "" ? "" : Number(event.currentTarget.value))
           }
+          {...aria}
           data-testid={`form-collect-input-${field.id}`}
         />
       );
@@ -851,16 +1024,57 @@ function FieldControl({
           value={String(value ?? "")}
           placeholder={field.placeholder}
           onChange={(event) => onChange(event.currentTarget.value)}
+          {...aria}
           data-testid={`form-collect-input-${field.id}`}
         />
       );
   }
 }
 
+/**
+ * One optional field in the attachment-ref editor.
+ *
+ * The four inputs were placeholder-only boxes; a placeholder is not a label and
+ * disappears the moment anyone types. Only the display name is required, so the
+ * required affordances live at the call site and this covers the rest.
+ */
+function AttachmentFieldInput({
+  id,
+  label,
+  value,
+  placeholder,
+  testID,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  placeholder: string;
+  testID: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="block text-xs text-zinc-400" htmlFor={id}>
+        {label}
+      </label>
+      <Input
+        id={id}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        data-testid={testID}
+      />
+    </div>
+  );
+}
+
 function SavedItemsEditor<
   T extends { id: string; label: string; answers: Record<string, unknown>; notes?: string },
 >({
   title,
+  controlID,
+  fieldLabel,
   inputLabel,
   setInputLabel,
   items,
@@ -868,20 +1082,67 @@ function SavedItemsEditor<
   onRestore,
 }: {
   title: string;
+  controlID: string;
+  fieldLabel: string;
   inputLabel: string;
   setInputLabel: (value: string) => void;
   items: T[];
   onSave: () => void;
   onRestore: (item: T) => void;
 }) {
+  // Save returned silently when the name was blank, and the input it read had
+  // no id, no label and no placeholder — a dead button beside an anonymous box.
+  // The name is what Save requires, so it says so, and an empty Save reports
+  // the refusal on the control instead of doing nothing.
+  const [attempted, setAttempted] = useState(false);
+  const missing = attempted && inputLabel.trim().length === 0;
   return (
     <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/50 p-4">
       <p className="text-sm font-medium text-zinc-100">{title}</p>
-      <div className="flex gap-2">
-        <Input value={inputLabel} onChange={(event) => setInputLabel(event.currentTarget.value)} />
-        <Button type="button" variant="outline" onClick={onSave}>
-          Save
-        </Button>
+      <div className="space-y-1">
+        <label className="block text-xs text-zinc-400" htmlFor={controlID}>
+          {fieldLabel}
+          <RequiredMark testID={`${controlID}-required`} />
+        </label>
+        <div className="flex gap-2">
+          <Input
+            id={controlID}
+            value={inputLabel}
+            onChange={(event) => {
+              setAttempted(false);
+              setInputLabel(event.currentTarget.value);
+            }}
+            placeholder={fieldLabel}
+            aria-required="true"
+            aria-invalid={missing}
+            aria-describedby={describedBy(`${controlID}-hint`, missing && `${controlID}-error`)}
+            data-testid={controlID}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            data-testid={`${controlID}-save`}
+            onClick={() => {
+              if (inputLabel.trim().length === 0) {
+                setAttempted(true);
+                focusControl(controlID);
+                return;
+              }
+              setAttempted(false);
+              onSave();
+            }}
+          >
+            Save
+          </Button>
+        </div>
+        <FieldMessage id={`${controlID}-hint`}>
+          Required. {title} are listed and restored under this name.
+        </FieldMessage>
+        {missing ? (
+          <FieldMessage id={`${controlID}-error`} tone="error" testID={`${controlID}-error`}>
+            Enter a {fieldLabel.toLowerCase()} before saving.
+          </FieldMessage>
+        ) : null}
       </div>
       <div className="space-y-2">
         {items.map((item) => (
@@ -965,13 +1226,28 @@ function defaultFieldValue(field: FormCollectField): unknown {
   }
 }
 
+// A lone checkbox is not a group. Rendering it in a `<fieldset>` pushed its
+// accessible name onto an inline label that read "Checked" while the field's
+// own label sat in a `<legend>` the control never referenced; it renders like
+// every other single-value field now, with one `<label htmlFor>`.
 function isGroupedFieldType(type: FormCollectFieldType): boolean {
-  return type === "multiselect" || type === "radio" || type === "checkbox";
+  return type === "multiselect" || type === "radio";
 }
+
+/** A required field that is still empty, named the way the operator sees it. */
+type OutstandingRequired = {
+  /** The DOM id the gate scrolls to and focuses. */
+  controlID: string;
+  /** The field's own label, plus its row when the section repeats. */
+  label: string;
+};
 
 function evaluateCompletion(schema: FormCollectSchema, answers: Record<string, unknown>) {
   let visibleCount = 0;
   let requiredRemaining = 0;
+  // Collected in the same walk as the count so the notice can never name a
+  // field the count disagrees about.
+  const outstanding: OutstandingRequired[] = [];
   for (const field of schema.fields ?? []) {
     if (!isVisible(field.show_when, answers)) {
       continue;
@@ -979,6 +1255,7 @@ function evaluateCompletion(schema: FormCollectSchema, answers: Record<string, u
     visibleCount += 1;
     if (field.required && !isFilled(field, answers[field.id])) {
       requiredRemaining += 1;
+      outstanding.push({ controlID: focusTargetFor(field, field.id), label: field.label });
     }
   }
   for (const section of schema.sections ?? []) {
@@ -990,7 +1267,7 @@ function evaluateCompletion(schema: FormCollectSchema, answers: Record<string, u
         ? (answers[section.id] as Record<string, unknown>[])
         : []
       : [(answers[section.id] as Record<string, unknown>) ?? {}];
-    for (const row of rows) {
+    rows.forEach((row, index) => {
       for (const field of section.fields) {
         if (!isVisible(field.show_when, { ...answers, ...row })) {
           continue;
@@ -998,11 +1275,34 @@ function evaluateCompletion(schema: FormCollectSchema, answers: Record<string, u
         visibleCount += 1;
         if (field.required && !isFilled(field, row[field.id])) {
           requiredRemaining += 1;
+          const controlId = section.repeatable
+            ? `${section.id}-${field.id}-${repeatableRowKey(section.id, row, index)}`
+            : `${section.id}-${field.id}`;
+          outstanding.push({
+            controlID: focusTargetFor(field, controlId),
+            label: section.repeatable
+              ? `${field.label} (${section.title} #${index + 1})`
+              : field.label,
+          });
         }
       }
-    }
+    });
   }
-  return { visibleCount, requiredRemaining };
+  return { visibleCount, requiredRemaining, outstanding };
+}
+
+/**
+ * The id the gate can actually focus for a field.
+ *
+ * Grouped controls carry no id of their own — each option owns one — so the
+ * first option stands in for the group.
+ */
+function focusTargetFor(field: FormCollectField, controlId: string): string {
+  if (!isGroupedFieldType(field.type)) {
+    return controlId;
+  }
+  const first = field.options?.[0]?.value;
+  return first === undefined ? controlId : `${controlId}-${first}`;
 }
 
 function isVisible(
@@ -1054,8 +1354,20 @@ function buildRow(section: FormCollectSection): Record<string, unknown> {
   };
 }
 
-function repeatableRowKey(sectionID: string, row: Record<string, unknown>): string {
-  return `${sectionID}-${readRepeatableRowID(row)}`;
+/**
+ * Stable key for one repeatable row.
+ *
+ * This used to fall through to `readRepeatableRowID`, which mints a fresh
+ * `Math.random()` id whenever `__row_id` is absent — so a row without one got a
+ * new id on every render and its `<label htmlFor>` stopped pointing at its
+ * control. Rows held in state always carry `__row_id` (normalizeSectionRow
+ * assigns it once); the index keeps the fallback stable for the rows
+ * SectionRenderer synthesises to satisfy `min_items`.
+ */
+function repeatableRowKey(sectionID: string, row: Record<string, unknown>, index: number): string {
+  const value = row[repeatableRowIDKey];
+  const rowID = typeof value === "string" && value.length > 0 ? value : `row-${index}`;
+  return `${sectionID}-${rowID}`;
 }
 
 function readRepeatableRowID(row: Record<string, unknown>): string {

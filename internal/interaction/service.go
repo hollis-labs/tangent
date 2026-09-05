@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 var (
@@ -27,6 +29,11 @@ type Service struct {
 	surfaces     SurfaceAccessPolicy
 	pollInterval time.Duration
 	maximumAwait time.Duration
+	// observer records refused draft revisions. It is the only telemetry this
+	// service emits: everything else about an interaction's lifecycle is
+	// observed by the adapter that owns the invocation, which is the one that
+	// knows the room, the envelope, and the caller's mode.
+	observer *telemetry.Recorder
 }
 
 type ServiceOption func(*Service)
@@ -53,6 +60,18 @@ type DeliveryWorkerPolicy interface {
 type denyDeliveryWorkers struct{}
 
 func (denyDeliveryWorkers) AuthorizeDeliveryWorker(ActorBinding) bool { return false }
+
+// AuthorizesDeliveryWorker asks the installed policy whether an actor may
+// deliver terminal outcomes, without performing or claiming a delivery.
+//
+// It exists for readiness reporting. A build whose policy denies the
+// in-process caller-pull adapter still accepts participant resolutions and
+// still answers /healthz — it simply never hands an outcome back, which is the
+// failure mode that looks healthiest from outside and therefore the one worth
+// being able to ask about directly.
+func (s *Service) AuthorizesDeliveryWorker(actor ActorBinding) bool {
+	return s.delivery.AuthorizeDeliveryWorker(actor)
+}
 
 // SurfaceAccessPolicy lets a host reserve named surfaces without teaching the
 // generic interaction service any workflow-specific IDs. Capabilities are
@@ -85,6 +104,15 @@ func WithSurfaceAccessPolicy(policy SurfaceAccessPolicy) ServiceOption {
 	return func(service *Service) {
 		if policy != nil {
 			service.surfaces = policy
+		}
+	}
+}
+
+// WithTelemetry installs the correlation recorder. A nil recorder is a no-op.
+func WithTelemetry(recorder *telemetry.Recorder) ServiceOption {
+	return func(service *Service) {
+		if recorder != nil {
+			service.observer = recorder
 		}
 	}
 }
@@ -176,6 +204,12 @@ func (s *Service) OpenSurface(ctx context.Context, input OpenSurfaceInput) (Surf
 	if !s.surfaces.Authorize(input.ID, input.Capability) {
 		return SurfaceHandle{}, ErrUnauthorized
 	}
+	// The owner scope reaching here is host-derived. ADR 0004 §8 puts that
+	// derivation in the adapter rather than in this service, because an
+	// in-process host legitimately opens a surface owned by a scope other than
+	// its own — `surface_hitl_default` is operator-owned and caller-opened —
+	// while no wire request may. internal/mcp never forwards a caller-supplied
+	// `owner_scope` into this field; it keeps it as an attribution label.
 	request, err := json.Marshal(struct {
 		OwnerScope string          `json:"owner_scope"`
 		Metadata   json.RawMessage `json:"metadata"`
@@ -205,6 +239,12 @@ type SubmitInteractionInput struct {
 	ExternalRefs   json.RawMessage `json:"external_refs,omitempty"`
 	Policy         json.RawMessage `json:"policy,omitempty"`
 	Capability     string          `json:"-"`
+
+	// LegacyRoomID / LegacyEnvelopeID correlate the canonical interaction with
+	// the v0.12 room projection that presents it. They never participate in
+	// idempotency identity or authorization.
+	LegacyRoomID     string `json:"-"`
+	LegacyEnvelopeID string `json:"-"`
 }
 
 func (s *Service) SubmitInteraction(
@@ -219,6 +259,22 @@ func (s *Service) SubmitInteraction(
 	}
 	if !s.surfaces.Authorize(input.SurfaceID, input.Capability) {
 		return InteractionHandle{}, ErrUnauthorized
+	}
+	// Creating work on an *existing* surface is a distinct power from reading
+	// it, and until now it was the unguarded one: SubmitInteraction checked
+	// only the surface access policy, so any caller could submit onto another
+	// caller's surface.
+	//
+	// The check applies to wire-driven submits. An in-process adapter presents
+	// a host-internal capability that no request can spell — the same seam
+	// SurfaceAccessPolicy already relies on — and carries the host's own
+	// authority over surfaces it opened itself; the operator inbox is
+	// reachable exactly that way, which is what ADR 0004 §7 means by a caller
+	// holding `submit` on the operator inbox surface.
+	if input.Capability == "" {
+		if err := s.authorizeSurfaceSubmit(ctx, input.SurfaceID, input.Caller.Scope); err != nil {
+			return InteractionHandle{}, err
+		}
 	}
 	request, err := canonicalJSON(input.Request, "")
 	if err != nil {
@@ -242,12 +298,27 @@ func (s *Service) SubmitInteraction(
 	if validationErr := s.catalog.ValidateInteractionRequest(ctx, binding, input.Request); validationErr != nil {
 		return InteractionHandle{}, validationErr
 	}
+	// Retain the exact material this binding was cut from before the record
+	// that pins it exists. ADR 0001 §3 requires an interaction to pin "the
+	// exact definition Tangent used", which is only true for as long as those
+	// bytes can still be found: a later release that bumps this kind's version
+	// would otherwise leave the record pinned to material nothing holds.
+	//
+	// Deliberately outside the record transaction and deliberately first. The
+	// row is content-addressed on the binding digest, so a crash between the
+	// two writes leaves an orphan material row — harmless, and reused verbatim
+	// by the retry. The reverse order would leave a record whose pin cannot be
+	// resolved, which is the failure this exists to prevent.
+	if retainErr := s.catalog.RetainDefinitionMaterial(ctx, binding); retainErr != nil {
+		return InteractionHandle{}, retainErr
+	}
 	result, err := s.store.CreateInteraction(ctx, CreateInteractionParams{
 		ID: input.ID, SurfaceID: input.SurfaceID, CallerScope: input.Caller.Scope,
 		CallerPrincipalRef: input.Caller.PrincipalRef, CallerAuthority: input.Caller.Authority,
 		CallerAssurance: input.Caller.Assurance, IdempotencyKey: input.IdempotencyKey,
 		Definition: binding, RequestSnapshot: input.Request, ExternalRefs: input.ExternalRefs,
 		Policy: input.Policy, ActorRef: input.Caller.PrincipalRef, Authority: input.Caller.Authority,
+		LegacyRoomID: input.LegacyRoomID, LegacyEnvelopeID: input.LegacyEnvelopeID,
 	})
 	if err != nil {
 		return InteractionHandle{}, err
@@ -269,13 +340,13 @@ func (s *Service) GetSurface(ctx context.Context, input GetSurfaceInput) (Surfac
 	if err != nil {
 		return SurfaceSnapshot{}, err
 	}
-	if input.RequesterScope == "" || input.RequesterScope != snapshot.Surface.OwnerScope {
+	if !scopeMatches(input.RequesterScope, snapshot.Surface.OwnerScope) {
 		openedByRequester, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, input.SurfaceID, input.RequesterScope)
 		if lookupErr != nil {
 			return SurfaceSnapshot{}, lookupErr
 		}
 		if !openedByRequester {
-			return SurfaceSnapshot{}, ErrUnauthorized
+			return SurfaceSnapshot{}, denial(input.RequesterScope, snapshot.Surface.OwnerScope)
 		}
 	}
 	return snapshot, nil
@@ -294,13 +365,13 @@ func (s *Service) GetSurfaceInteractions(
 	if err != nil {
 		return SurfaceInteractionSnapshot{}, err
 	}
-	if input.RequesterScope == "" || input.RequesterScope != snapshot.Surface.OwnerScope {
+	if !scopeMatches(input.RequesterScope, snapshot.Surface.OwnerScope) {
 		openedByRequester, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, input.SurfaceID, input.RequesterScope)
 		if lookupErr != nil {
 			return SurfaceInteractionSnapshot{}, lookupErr
 		}
 		if !openedByRequester {
-			return SurfaceInteractionSnapshot{}, ErrUnauthorized
+			return SurfaceInteractionSnapshot{}, denial(input.RequesterScope, snapshot.Surface.OwnerScope)
 		}
 	}
 	return snapshot, nil
@@ -489,7 +560,7 @@ func (s *Service) SaveDraft(ctx context.Context, input SaveDraftInput) (DraftRev
 	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {
 		return DraftRevision{}, ErrUnauthorized
 	}
-	return s.store.SaveDraftRevision(ctx, DraftRevision{
+	draft, err := s.store.SaveDraftRevision(ctx, DraftRevision{
 		InteractionID: input.InteractionID, Revision: input.DraftRevision,
 		InteractionRevision:  input.InteractionRevision,
 		ParticipantScope:     input.Participant.Scope,
@@ -499,19 +570,82 @@ func (s *Service) SaveDraft(ctx context.Context, input SaveDraftInput) (DraftRev
 		DefinitionVersion:    input.DefinitionVersion, Payload: input.Payload,
 		Sensitivity: input.Sensitivity, ExpiresAt: input.ExpiresAt,
 	})
+	if err != nil {
+		// A draft conflict is a refusal, not a failure: the participant's
+		// browser held a revision the record has moved past, and the correct
+		// response is to resynchronize and try again. The payload is not
+		// touched here and cannot be — the observation carries revisions and a
+		// code, which is the whole of what is safe to say about a draft.
+		s.observer.Emit(ctx, telemetry.Event{
+			Name:    telemetry.EventDraftRefused,
+			Outcome: telemetry.OutcomeRefused,
+			Code:    telemetry.CodeForError(err, draftErrorCodes),
+			Correlation: telemetry.Correlation{
+				Trace: telemetry.TraceForRecord(
+					current.CallerScope, current.IdempotencyKey, current.ID),
+				Span:              telemetry.NewSpanID(),
+				SurfaceID:         current.SurfaceID,
+				InteractionID:     current.ID,
+				DefinitionKind:    current.Definition.Kind,
+				DefinitionVersion: current.Definition.Version,
+				CallerScope:       current.CallerScope,
+				ParticipantScope:  input.Participant.Scope,
+			},
+			Attrs: []telemetry.Attr{
+				telemetry.Int(telemetry.AttrRevision, current.Revision),
+				telemetry.Int(telemetry.AttrExpectedRevision, input.InteractionRevision),
+				telemetry.String(telemetry.AttrState, string(current.State)),
+			},
+		})
+	}
+	return draft, err
+}
+
+// draftErrorCodes maps the store's draft refusals onto typed codes. It is a
+// table rather than a switch so a new sentinel that is not classified reaches
+// telemetry as `unclassified` instead of as its message.
+var draftErrorCodes = []telemetry.ErrorCode{
+	{Sentinel: ErrRevisionConflict, Code: "revision_conflict"},
+	{Sentinel: ErrTerminal, Code: "terminal"},
+	{Sentinel: ErrNotRespondable, Code: "not_respondable"},
+	{Sentinel: ErrUnauthorized, Code: "unauthorized"},
+	{Sentinel: ErrNotFound, Code: "not_found"},
+	{Sentinel: ErrInvalidRecord, Code: "invalid_record"},
 }
 
 type ResolveInteractionInput struct {
-	InteractionID               string                     `json:"interaction_id"`
-	ExpectedInteractionRevision int64                      `json:"expected_interaction_revision"`
-	PresentedProjectionRevision int64                      `json:"presented_projection_revision"`
-	Participant                 ActorBinding               `json:"participant"`
-	ResponseKind                string                     `json:"response_kind"`
-	ResponsePayload             json.RawMessage            `json:"response_payload"`
-	SourceDraftRevision         *int64                     `json:"source_draft_revision,omitempty"`
-	SubmittedAt                 time.Time                  `json:"submitted_at,omitempty"`
-	Deliveries                  []ResolutionDeliveryParams `json:"deliveries,omitempty"`
-	Capability                  string                     `json:"-"`
+	InteractionID               string       `json:"interaction_id"`
+	ExpectedInteractionRevision int64        `json:"expected_interaction_revision"`
+	PresentedProjectionRevision int64        `json:"presented_projection_revision"`
+	Participant                 ActorBinding `json:"participant"`
+	ResponseKind                string       `json:"response_kind"`
+	// ResponsePayload is what the durable resolution record stores and what
+	// tangent.interaction_get and tangent.interaction_await hand back. Its
+	// shape is the caller's: the room path stores the whole envelopes.Response
+	// so a resolution replays as the frame the participant sent, while the
+	// HITL path stores the bare typed response body.
+	ResponsePayload json.RawMessage `json:"response_payload"`
+	// ResponseBody is the contract-bearing value the definition's
+	// `response_schema` validates — the response *payload*, matching what
+	// upstream TypeSpec.PayloadSchema validates and what ADR 0003 §2.2 means
+	// by "the terminal response payload".
+	//
+	// It is a separate field because ResponsePayload's shape is not the same
+	// across callers, and one field cannot be both the durable record and the
+	// validated contract without those two callers agreeing. They do not, and
+	// the disagreement was invisible while tangent.hitl-item was the only kind
+	// carrying a response schema: the room path validated a whole
+	// envelopes.Response object against a schema describing a payload, which
+	// no shipped schema was ever applied to. CW-20260825-0074's form-collect
+	// backfill is what surfaced it.
+	//
+	// Empty falls back to ResponsePayload, which preserves the behavior of
+	// every caller that does not distinguish the two.
+	ResponseBody        json.RawMessage            `json:"response_body,omitempty"`
+	SourceDraftRevision *int64                     `json:"source_draft_revision,omitempty"`
+	SubmittedAt         time.Time                  `json:"submitted_at,omitempty"`
+	Deliveries          []ResolutionDeliveryParams `json:"deliveries,omitempty"`
+	Capability          string                     `json:"-"`
 }
 
 func (s *Service) ResolveInteraction(
@@ -531,7 +665,11 @@ func (s *Service) ResolveInteraction(
 	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {
 		return ResolveInteractionResult{}, ErrUnauthorized
 	}
-	if err := s.catalog.ValidateInteractionResponse(ctx, current.Definition, input.ResponseKind, input.ResponsePayload); err != nil {
+	body := input.ResponseBody
+	if len(body) == 0 {
+		body = input.ResponsePayload
+	}
+	if err := s.catalog.ValidateInteractionResponse(ctx, current.Definition, input.ResponseKind, body); err != nil {
 		return ResolveInteractionResult{}, err
 	}
 	deliveries := input.Deliveries
@@ -702,8 +840,12 @@ func (s *Service) CloseSurface(ctx context.Context, input CloseSurfaceInput) (Cl
 	if err != nil {
 		return CloseSurfaceResult{}, err
 	}
-	if input.Requester.Scope != surface.OwnerScope {
-		return CloseSurfaceResult{}, ErrUnauthorized
+	// Close is partition-scoped even inside `standalone-local`, where reads are
+	// authority-wide. Closing dispositions other partitions' outstanding human
+	// work, so the advisory boundary is enforced for the destructive operation
+	// and only for it (ADR 0004 §9).
+	if !scopeMatches(input.Requester.Scope, surface.OwnerScope) {
+		return CloseSurfaceResult{}, denial(input.Requester.Scope, surface.OwnerScope)
 	}
 	return s.store.CloseSurface(ctx, CloseSurfaceParams{
 		SurfaceID: input.SurfaceID, ExpectedRevision: input.ExpectedRevision,
@@ -779,6 +921,28 @@ func (s *Service) AwaitResolution(ctx context.Context, input AwaitResolutionInpu
 	}
 }
 
+// authorizeSurfaceSubmit answers whether a caller may create an interaction on
+// a surface it does not necessarily own. The rule is the read rule: the
+// surface's owner, or a caller that opened it — the existing
+// SurfaceWasOpenedByScope relation, reused rather than replaced.
+func (s *Service) authorizeSurfaceSubmit(ctx context.Context, surfaceID, callerScope string) error {
+	surface, err := s.store.GetSurface(ctx, surfaceID)
+	if err != nil {
+		return err
+	}
+	if scopeMatches(callerScope, surface.OwnerScope) {
+		return nil
+	}
+	openedByCaller, lookupErr := s.store.SurfaceWasOpenedByScope(ctx, surfaceID, callerScope)
+	if lookupErr != nil {
+		return lookupErr
+	}
+	if openedByCaller {
+		return nil
+	}
+	return denial(callerScope, surface.OwnerScope)
+}
+
 func (s *Service) authorizeInteraction(
 	ctx context.Context,
 	interaction InteractionRecord,
@@ -787,15 +951,15 @@ func (s *Service) authorizeInteraction(
 	if requesterScope == "" {
 		return ErrUnauthorized
 	}
-	if requesterScope == interaction.CallerScope {
+	if scopeMatches(requesterScope, interaction.CallerScope) {
 		return nil
 	}
 	surface, err := s.store.GetSurface(ctx, interaction.SurfaceID)
 	if err != nil {
 		return err
 	}
-	if requesterScope != surface.OwnerScope {
-		return ErrUnauthorized
+	if !scopeMatches(requesterScope, surface.OwnerScope) {
+		return denial(requesterScope, surface.OwnerScope)
 	}
 	return nil
 }
@@ -854,4 +1018,15 @@ func callerPullTerminalNotification(
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", operation, interaction.ID, interaction.Revision),
 		Policy:         json.RawMessage(`{"delivery":"durable-caller-pull"}`),
 	}
+}
+
+// RetainedDefinitionCount reports how many definitions have durable retained
+// material — the coverage of the replay guarantee in ADR 0001 §3. Surfaced
+// through registry diagnostics so an operator can see that the pins in the
+// record store still have something to resolve against.
+func (s *Service) RetainedDefinitionCount(ctx context.Context) (int64, error) {
+	if s == nil || s.store == nil {
+		return 0, fmt.Errorf("%w: store is required", ErrInvalidRecord)
+	}
+	return s.store.CountRetainedDefinitions(ctx)
 }

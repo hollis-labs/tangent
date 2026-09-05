@@ -3,20 +3,31 @@
 ## Project conventions
 
 - Module: `github.com/hollis-labs/tangent`. Go 1.26.1.
-- Two-root contract: code lives here; session tracking, plans, BLGs,
-  and handoff notes go in `~/Projects-apps/agent-workspaces/execution/tangent/...`.
+- Two-root contract: code lives here; session tracking, plans, and
+  handoff notes go in `~/dev/agent-os/workspaces/execution/tangent/`,
+  and drafts awaiting review go in
+  `~/dev/agent-os/workspaces/drafts/tangent/`.
   Don't write tracking artifacts inside this repo.
+  (The older `~/Projects-apps/agent-workspaces/execution/tangent/` path
+  never existed on this machine; do not restore it.)
 - License: MIT. Don't add license headers per file — the top-level
   `LICENSE` is sufficient.
 - HTTP layer is intentionally separated from app logic so a Wails
-  wrapper is mechanical to add later. Don't import `cmd/tangent` from
-  `internal/...`; the dependency is one-way.
+  wrapper is mechanical to add later. Wails is a future migration, not a
+  current dependency — nothing in the tree is Wails today. Don't import
+  `cmd/tangent` from `internal/...`; the dependency is one-way.
 - No Nanite-style plugin sandbox / importmap / shared-chunk pattern in
-  v0.x. Adding one needs an explicit decision, not drift.
+  v0.x. Adding one needs an explicit decision, not drift. Renderer trust
+  classes and presentation sandboxing (`docs/renderer-trust-classes.md`)
+  are the shipped isolation model; they are not a plugin system.
+- Never write a tool, envelope-kind, or workflow count into prose without
+  a test that fails when it drifts. `make smoke` derives the surface from
+  the shipped build; `internal/smoke/docs_test.go` holds the doc gate.
 
 ## nanite
 
-<!-- TODO: this repo does not (yet) carry a `.nanite/` directory.
+<!-- Verified: this repo carries no `.nanite/` directory, and none exists
+     at any workspace root.
      If a project-level Nanite config is added later, mirror the block
      used in ~/.claude/CLAUDE.md and Nanite's own `.claude/CLAUDE.md`:
 

@@ -13,8 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/health"
+	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
 // Config controls Server construction.
@@ -61,6 +66,49 @@ type Config struct {
 	// the server mounts its dedicated browser API and revision event stream;
 	// it remains separate from caller-facing MCP and room WebSockets.
 	HITL HITLService
+
+	// Rooms is the browser room API's application service. When set, the
+	// server mounts /api/rooms — the participant-authenticated replacement for
+	// the SPA's direct /mcp POSTs (ADR 0004 §11). Optional in Config for the
+	// same reason MCP and HITL are; production main always passes it.
+	Rooms RoomService
+
+	// Effects is the host-mediated effect broker (ADR 0003 §2.5,
+	// CW-20260825-0077). When set together with EffectContext the server
+	// mounts POST /api/effects, the single channel a renderer uses to ask the
+	// host to act on the world. Optional in Config for the same reason MCP,
+	// HITL, and Rooms are.
+	Effects *effect.Broker
+
+	// EffectContext resolves the pinned definition binding whose granted
+	// capabilities govern an interaction's effects.
+	EffectContext EffectContextResolver
+
+	// Health answers the three operability questions liveness, readiness, and
+	// per-capability health (CW-20260825-0066). Optional in Config for the
+	// same reason MCP and HITL are: a transport-level test constructs a server
+	// without a database. When nil, /healthz still answers — liveness reads no
+	// dependency — and every other probe reports that the reporter is missing
+	// rather than 404ing, so an unwired build is visible instead of silent.
+	Health *health.Reporter
+
+	// Participants is the authenticated browser participant session gate.
+	//
+	// When set, document navigations mint a session, the browser APIs and the
+	// /ws upgrade require one, and a room UUID alone grants nothing. Optional
+	// in Config so an embedder or a transport-level test can construct a
+	// server without a database — production main always passes it, and
+	// leaving it nil is what the pre-ADR-0004 behavior was.
+	Participants *participant.Gate
+
+	// Telemetry records correlation-bearing observations for the browser
+	// transports this package owns: an object-access refusal at the
+	// participant gate, and a host-mediated effect the broker declined.
+	//
+	// Optional, and a nil recorder is a silent no-op rather than a nil
+	// dereference. A build with no telemetry serves exactly the same traffic;
+	// it just cannot answer what happened afterwards.
+	Telemetry *telemetry.Recorder
 }
 
 // MCPServer is the minimal contract internal/mcp satisfies. Declared as
@@ -86,7 +134,10 @@ type Server struct {
 	envelope *envelope.Service
 }
 
-const httpServerWriteTimeout = 60 * time.Second
+const (
+	httpServerWriteTimeout = 60 * time.Second
+	httpServerReadTimeout  = 30 * time.Second
+)
 
 // New constructs a Server with the embedded-SPA or dev-proxy handler.
 //
@@ -103,7 +154,7 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", handleHealth)
+	registerHealthRoutes(mux, cfg.Health)
 
 	if cfg.MCP != nil {
 		// Streamable-HTTP transport (modern MCP clients). The SDK's
@@ -112,11 +163,16 @@ func New(cfg Config) (*Server, error) {
 		// session-scoped event stream. We mount it at the path level
 		// rather than per-method so both routes resolve to the same
 		// handler.
-		mux.Handle("/mcp", longLivedMCPHandler(cfg.MCP.HTTPHandler()))
+		//
+		// The origin guard now covers it. It always permitted header-less
+		// non-browser clients, so MCP clients are unaffected; what it stops is
+		// a drive-by POST from any page the operator happens to have open,
+		// which until now could reach every session_* tool.
+		mux.Handle("/mcp", sameOriginGuard(longLivedMCPHandler(cfg.MCP.HTTPHandler())))
 		// SSE fallback for legacy Claude Code / older MCP clients. GET
 		// opens the long-lived event stream; POST is used for outbound
 		// JSON-RPC frames keyed against the streamed session id.
-		mux.Handle("/sse", longLivedMCPHandler(cfg.MCP.SSEHandler()))
+		mux.Handle("/sse", sameOriginGuard(longLivedMCPHandler(cfg.MCP.SSEHandler())))
 		// Logged URLs use 127.0.0.1 (matching the actual bind) rather
 		// than the human-friendly "localhost" alias — on systems where
 		// localhost resolves to ::1 first without an IPv4 fallback, a
@@ -130,21 +186,64 @@ func New(cfg Config) (*Server, error) {
 	if cfg.WSHandler != nil {
 		// /ws upgrades to WebSocket. Mounted before the catch-all so
 		// the SPA (or dev proxy) never sees the upgrade request.
-		mux.Handle("GET /ws", cfg.WSHandler)
+		// The upgrade is same-origin guarded here and participant-session
+		// guarded inside the handler, before the upgrade, so a refusal is an
+		// ordinary 403 rather than a socket that closes for no stated reason.
+		mux.Handle("GET /ws", sameOriginGuard(cfg.WSHandler))
 		logger.Info("WebSocket bridge ready",
 			"ws_url", fmt.Sprintf("ws://127.0.0.1:%d/ws", cfg.Port),
 		)
 	}
 
 	if cfg.HITL != nil {
+		// Each route names the capability it exercises, so the ADR 0004 §2
+		// table is readable straight off the route table: reads need `view`,
+		// acknowledging a presented projection needs `draft`, and submitting a
+		// terminal response needs `resolve`.
 		hitlHandler := newHITLHTTPHandler(cfg.HITL)
-		mux.Handle("GET /api/hitl", hitlSameOrigin(http.HandlerFunc(hitlHandler.inbox)))
-		mux.Handle("GET /api/hitl/events", hitlSameOrigin(http.HandlerFunc(hitlHandler.events)))
-		mux.Handle("GET /api/hitl/items/{itemID}", hitlSameOrigin(http.HandlerFunc(hitlHandler.item)))
-		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", hitlSameOrigin(http.HandlerFunc(hitlHandler.tangentEvidence)))
-		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", hitlSameOrigin(http.HandlerFunc(hitlHandler.artifactPreview)))
-		mux.Handle("POST /api/hitl/items/{itemID}/present", hitlSameOrigin(http.HandlerFunc(hitlHandler.present)))
-		mux.Handle("POST /api/hitl/items/{itemID}/resolve", hitlSameOrigin(http.HandlerFunc(hitlHandler.resolve)))
+		guard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
+			return hitlSameOrigin(requireParticipant(
+				cfg.Participants, cfg.Telemetry, capability, handler))
+		}
+		mux.Handle("GET /api/hitl", guard(authz.View, hitlHandler.inbox))
+		mux.Handle("GET /api/hitl/events", guard(authz.View, hitlHandler.events))
+		mux.Handle("GET /api/hitl/items/{itemID}", guard(authz.View, hitlHandler.item))
+		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", guard(authz.View, hitlHandler.tangentEvidence))
+		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", guard(authz.View, hitlHandler.artifactPreview))
+		mux.Handle("POST /api/hitl/items/{itemID}/present", guard(authz.Draft, hitlHandler.present))
+		mux.Handle("POST /api/hitl/items/{itemID}/resolve", guard(authz.Resolve, hitlHandler.resolve))
+	}
+
+	if cfg.Rooms != nil {
+		// The browser room API.
+		//
+		// All three routes require `view`, which is the session proving that
+		// this browser is an admitted participant. Closing is deliberately not
+		// gated on a participant `close` capability, because a participant
+		// never holds one (ADR 0004 §7): the tab-strip close button is the
+		// SPA's own *caller application* acting, and the close is authorized
+		// against that caller's scope inside the room service. The session
+		// establishes which browser is asking; the caller identity decides
+		// what it may destroy.
+		roomHandler := newRoomHTTPHandler(cfg.Rooms)
+		mux.Handle("GET /api/rooms", hitlSameOrigin(requireParticipant(
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.list))))
+		mux.Handle("GET /api/rooms/{roomID}", hitlSameOrigin(requireParticipant(
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.inspect))))
+		mux.Handle("POST /api/rooms/{roomID}/close", hitlSameOrigin(requireParticipant(
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.close))))
+	}
+
+	if cfg.Effects != nil && cfg.EffectContext != nil {
+		// `view` is the route's floor, not its decision. Every effect names
+		// its own object-access precondition (effect.ObjectPrecondition) and
+		// the broker evaluates it; requiring `view` here means a browser with
+		// no admitted session never reaches the broker at all, which keeps the
+		// audit table free of rows for requests that were never participant
+		// acts.
+		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext, cfg.Telemetry)
+		mux.Handle("POST /api/effects", hitlSameOrigin(requireParticipant(
+			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(effectHandler.request))))
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)
@@ -169,10 +268,15 @@ func New(cfg Config) (*Server, error) {
 	// here rather than relying on docs/firewall hygiene.
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	httpS := &http.Server{
-		Addr:              addr,
-		Handler:           loggingMiddleware(logger, mux),
+		Addr: addr,
+		// Order matters and is the decision, not a detail. Security headers are
+		// outermost so nothing below can forget them; minting sits inside the
+		// headers and outside the routes so a document navigation has a
+		// session before any route reads one; logging stays innermost so it
+		// measures the handler rather than the middleware.
+		Handler:           securityHeaders(cfg.DevFrontendURL, mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux))),
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
+		ReadTimeout:       httpServerReadTimeout,
 		WriteTimeout:      httpServerWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
@@ -186,13 +290,21 @@ func New(cfg Config) (*Server, error) {
 	}, nil
 }
 
-// longLivedMCPHandler removes the server-wide response write deadline for MCP
-// transports. Room-backed tools deliberately wait for a human response, and
-// SSE subscriptions are likewise long-lived; both may validly outlive the
-// ordinary HTTP timeout. Request-context cancellation remains authoritative.
+// longLivedMCPHandler removes both server-wide deadlines for MCP transports.
+// Room-backed tools deliberately wait for a human response, and SSE
+// subscriptions are likewise long-lived; both may validly outlive the ordinary
+// HTTP timeouts. Request-context cancellation remains authoritative.
+//
+// Clearing the write deadline alone is not enough. A legacy `/sse` session is a
+// GET whose request body is never closed by the client, so the server-wide
+// ReadTimeout keeps counting against the connection and tears the stream down
+// mid-session — the MCP session id then disappears and the next POST answers
+// "session not found". Both deadlines must go.
 func longLivedMCPHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		controller := http.NewResponseController(w)
+		_ = controller.SetWriteDeadline(time.Time{})
+		_ = controller.SetReadDeadline(time.Time{})
 		next.ServeHTTP(w, r)
 	})
 }
@@ -274,13 +386,6 @@ func buildRootHandler(cfg Config, logger *slog.Logger) (http.Handler, error) {
 	return proxy, nil
 }
 
-// handleHealth returns a tiny liveness probe. Useful for `curl` smoke
-// checks and for later container/orchestrator probes.
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"status":"ok"}`)
-}
-
 // roomFallbackHandler validates the {roomID} path variable against the
 // live room manager and either delegates to the SPA handler (allowing
 // the React Router to pick up the route) or returns a 404. We don't
@@ -302,6 +407,12 @@ func roomFallbackHandler(mgr *room.Manager, fallback http.Handler) http.Handler 
 }
 
 // loggingMiddleware emits a single structured log entry per request.
+//
+// It logs method, path, and duration. It must never be extended to log
+// r.URL.RawQuery, the Cookie or Authorization headers, or request bodies. That
+// is a maintenance rule, not an observation: the participant session id is the
+// only capability material in the system, and this is the one place in the
+// process with an obvious temptation to log it (ADR 0004 §6.2).
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

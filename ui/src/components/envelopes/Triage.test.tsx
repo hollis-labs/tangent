@@ -158,7 +158,10 @@ describe("<Triage>", () => {
 
     expect(screen.getByText("Please decide each item.")).toBeInTheDocument();
     const root = screen.getByTestId("triage-root");
-    expect(within(root).getByText(/2 items/)).toBeInTheDocument();
+    // Narrowed from /2 items/: the submit gate now also names the outstanding
+    // count next to the CTA, so the loose match found two elements. This
+    // assertion is about the header line specifically.
+    expect(within(root).getByText(/2 items . 2 undecided/)).toBeInTheDocument();
   });
 
   it("handles object items with extra context by rendering a JSON detail block", () => {

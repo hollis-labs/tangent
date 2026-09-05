@@ -47,6 +47,12 @@ type RoomSummary struct {
 	CurrentEnvelopeType string `json:"current_envelope_type,omitempty"`
 	CreatedAt           string `json:"created_at"`
 	UpdatedAt           string `json:"updated_at"`
+	// ConnectionCount and ResolverLease describe the room's Connection
+	// lifecycle. They are reported next to, never instead of, the interaction
+	// summary: a tab strip has to be able to show "two tabs open here" without
+	// implying anything about the work in the room.
+	ConnectionCount int        `json:"connection_count"`
+	ResolverLease   *LeaseView `json:"resolver_lease,omitempty"`
 }
 
 func (m *Manager) persistRoomCreate(room *Room) error {
@@ -299,6 +305,7 @@ FROM rooms`
 			if env := rm.CurrentEnvelope(); env != nil {
 				summary.CurrentEnvelopeType = env.Type
 			}
+			applyConnectionSummary(&summary, rm)
 		}
 		summaries = append(summaries, summary)
 	}
@@ -325,9 +332,17 @@ func (m *Manager) listInMemory(activeOnly bool) []RoomSummary {
 		if env := rm.CurrentEnvelope(); env != nil {
 			summary.CurrentEnvelopeType = env.Type
 		}
+		applyConnectionSummary(&summary, rm)
 		summaries = append(summaries, summary)
 	}
 	return summaries
+}
+
+// applyConnectionSummary copies the room's connection lifecycle onto a summary.
+func applyConnectionSummary(summary *RoomSummary, rm *Room) {
+	state := rm.ConnectionState()
+	summary.ConnectionCount = len(state.Connections)
+	summary.ResolverLease = state.Lease
 }
 
 func (r *Room) persistPendingEnvelope(env *envelopes.Envelope) error {
@@ -357,6 +372,54 @@ func (r *Room) persistPendingEnvelope(env *envelopes.Envelope) error {
 		now,
 	); err != nil {
 		return fmt.Errorf("insert pending envelope row: %w", err)
+	}
+	if _, err := tx.ExecContext(
+		context.Background(),
+		`UPDATE rooms SET updated_at = ? WHERE id = ?`,
+		now,
+		r.ID,
+	); err != nil {
+		return fmt.Errorf("touch room updated_at: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit pending envelope tx: %w", err)
+	}
+	return nil
+}
+
+// persistPendingEnvelopeIfAbsent projects a durable presentation into the
+// v0.12 envelopes table without treating an existing row as a conflict. The
+// canonical interaction is the authority for "this request exists"; the legacy
+// row is a projection that a previous process may already have written.
+func (r *Room) persistPendingEnvelopeIfAbsent(env *envelopes.Envelope) error {
+	if r.db == nil {
+		return nil
+	}
+	requestPayload, err := marshalJSONText(env.Data, "{}")
+	if err != nil {
+		return fmt.Errorf("marshal request payload: %w", err)
+	}
+	now := nowUTC()
+
+	tx, err := r.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("begin pending envelope tx: %w", err)
+	}
+	defer rollbackTx(tx)
+
+	if _, err := tx.ExecContext(
+		context.Background(),
+		`INSERT INTO envelopes (room_id, envelope_id, type, request_payload, status, created_at)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (room_id, envelope_id) DO NOTHING`,
+		r.ID,
+		env.ID,
+		env.Type,
+		requestPayload,
+		envelopeStatusPending,
+		now,
+	); err != nil {
+		return fmt.Errorf("project pending envelope row: %w", err)
 	}
 	if _, err := tx.ExecContext(
 		context.Background(),

@@ -38,6 +38,16 @@ type browserEvent struct {
 	Switched     bool   `json:"switched"`
 	Submitted    bool   `json:"submitted"`
 	Cancelled    bool   `json:"cancelled"`
+
+	// Connection lifecycle, reported alongside interaction state so a
+	// regression can assert on the two independently.
+	ConnectionID    string `json:"connectionID"`
+	Role            string `json:"role"`
+	Connections     int    `json:"connections"`
+	LeaseHolder     string `json:"leaseHolder"`
+	SurfaceRevision int64  `json:"surfaceRevision"`
+	Code            string `json:"code"`
+	Sent            bool   `json:"sent"`
 }
 
 type productionBrowserDriver struct {
@@ -204,14 +214,41 @@ func (d *productionBrowserDriver) awaitBrowser(t *testing.T, browser, event stri
 
 func (d *productionBrowserDriver) open(t *testing.T, browser, roomID, wsURL string) browserEvent {
 	t.Helper()
-	d.command(t, map[string]any{
+	return d.openAs(t, browser, roomID, wsURL, "")
+}
+
+// openAs opens a production client under an explicit tab identity. Two opens
+// sharing one clientID are the same tab refreshing; distinct ids are separate
+// tabs that attach alongside each other.
+func (d *productionBrowserDriver) openAs(t *testing.T, browser, roomID, wsURL, clientID string) browserEvent {
+	t.Helper()
+	command := map[string]any{
 		"command": "open",
 		"browser": browser,
 		"roomID":  roomID,
 		"wsURL":   wsURL,
-	})
+	}
+	if clientID != "" {
+		command["clientID"] = clientID
+	}
+	d.command(t, command)
 	_ = d.awaitBrowser(t, browser, "open-started")
 	return d.awaitBrowser(t, browser, "opened")
+}
+
+// claim asks for the resolver lease through the production client.
+func (d *productionBrowserDriver) claim(t *testing.T, browser string, takeover bool) browserEvent {
+	t.Helper()
+	d.command(t, map[string]any{"command": "claim", "browser": browser, "takeover": takeover})
+	return d.awaitBrowser(t, browser, "claimed")
+}
+
+// awaitRole waits until the named browser reports the requested role.
+func (d *productionBrowserDriver) awaitRole(t *testing.T, browser, role string) browserEvent {
+	t.Helper()
+	return d.await(t, func(got browserEvent) bool {
+		return got.Browser == browser && got.Event == "connection" && got.Role == role
+	}, browser+" role "+role)
 }
 
 func (d *productionBrowserDriver) switchRoom(t *testing.T, browser, roomID string) browserEvent {
@@ -342,20 +379,22 @@ func TestRegression_ProductionRoomSwitchResumesOriginatingCall(t *testing.T) {
 	}
 }
 
-// TestRegression_ProductionSameRoomRefreshReplacement exercises two production
-// clients connecting to one room while work is pending. The replacement gets
-// an immediate revisioned replay and resolves the original call.
+// TestRegression_ProductionSameRoomRefreshReplacement exercises one tab
+// refreshing while work is pending. Both production clients share a client id,
+// which is what tells Tangent this is the same tab reconnecting: the
+// predecessor is replaced, the replacement inherits the resolver lease, gets
+// an immediate revisioned replay, and resolves the original call.
 func TestRegression_ProductionSameRoomRefreshReplacement(t *testing.T) {
 	rg := newRig(t)
 	defer rg.cleanup()
 	driver := startProductionBrowserDriver(t)
 
 	rm := rg.mgr.Create(map[string]string{"scenario": "refresh"})
-	driver.open(t, "old-page", rm.ID, regressionWSURL(rg))
+	driver.openAs(t, "old-page", rm.ID, regressionWSURL(rg), "one-tab")
 	call := startRegressionTriageCall(rg, rm.ID, "reg-refresh")
 	first := driver.receive(t, "old-page", "reg-refresh")
 
-	refreshed := driver.open(t, "refreshed-page", rm.ID, regressionWSURL(rg))
+	refreshed := driver.openAs(t, "refreshed-page", rm.ID, regressionWSURL(rg), "one-tab")
 	assertBrowserState(t, refreshed, rm.ID, "connected", "")
 	closedOld := driver.awaitBrowser(t, "old-page", "closed")
 	assertBrowserState(t, closedOld, rm.ID, "disconnected: replaced", "")
@@ -363,10 +402,15 @@ func TestRegression_ProductionSameRoomRefreshReplacement(t *testing.T) {
 	if replayed.Revision <= first.Revision {
 		t.Fatalf("refresh replay revision = %d, first = %d", replayed.Revision, first.Revision)
 	}
+	// A refresh must not demote the operator to an observer.
+	driver.awaitRole(t, "refreshed-page", "resolver")
 	oldUnloaded := driver.unload(t, "old-page")
 	assertBrowserState(t, oldUnloaded, rm.ID, "unloading", "")
 	if rm.IsClosed() || !rm.HasConn() || !rm.HasPending() {
 		t.Fatalf("same-room replacement state: closed=%v connected=%v pending=%v", rm.IsClosed(), rm.HasConn(), rm.HasPending())
+	}
+	if got := rm.ConnectionCount(); got != 1 {
+		t.Fatalf("refresh left %d connections attached, want 1", got)
 	}
 
 	driver.submit(t, "refreshed-page", "refreshed-page")
@@ -440,26 +484,57 @@ func TestRegression_ProductionExplicitCancelIsNotConnectionLoss(t *testing.T) {
 	}
 }
 
-func TestRegression_ProductionTwoBrowserTabsRejectStaleRevision(t *testing.T) {
+// TestRegression_ProductionTwoBrowserTabsObserveAndArbitrate is acceptance
+// criteria 2 and 3 through the production client. Two distinct tabs observe
+// one surface simultaneously: neither is closed and the room stays open. The
+// tab without the resolver lease is refused with an explicit lease error
+// rather than silently doing nothing, an explicit takeover moves the lease,
+// and a stale revision is still rejected with a resync afterwards.
+func TestRegression_ProductionTwoBrowserTabsObserveAndArbitrate(t *testing.T) {
 	rg := newRig(t)
 	defer rg.cleanup()
 	driver := startProductionBrowserDriver(t)
 
 	rm := rg.mgr.Create(map[string]string{"scenario": "two-tabs"})
-	driver.open(t, "first-tab", rm.ID, regressionWSURL(rg))
+	driver.openAs(t, "first-tab", rm.ID, regressionWSURL(rg), "tab-one")
 	call := startRegressionTriageCall(rg, rm.ID, "reg-two-tabs")
 	firstPresentation := driver.receive(t, "first-tab", "reg-two-tabs")
-	second := driver.open(t, "second-tab", rm.ID, regressionWSURL(rg))
+
+	second := driver.openAs(t, "second-tab", rm.ID, regressionWSURL(rg), "tab-two")
 	assertBrowserState(t, second, rm.ID, "connected", "")
-	firstClosed := driver.awaitBrowser(t, "first-tab", "closed")
-	assertBrowserState(t, firstClosed, rm.ID, "disconnected: replaced", "")
 	secondPresentation := driver.receive(t, "second-tab", "reg-two-tabs")
 	if secondPresentation.Revision <= firstPresentation.Revision {
 		t.Fatalf("second-tab revision = %d, first-tab = %d", secondPresentation.Revision, firstPresentation.Revision)
 	}
+	driver.awaitRole(t, "first-tab", "resolver")
+	driver.awaitRole(t, "second-tab", "observer")
+	awaitRegressionState(t, "both tabs attached", func() bool { return rm.ConnectionCount() == 2 })
+	if rm.IsClosed() {
+		t.Fatal("a second tab closed the room")
+	}
 
-	// Send a response carrying the replaced tab's revision through the real
-	// production client. The server must reject it and issue a fresh resync.
+	// The observer submits. The server refuses with an explicit lease error
+	// and nothing about the interaction changes.
+	driver.command(t, map[string]any{"command": "submit", "browser": "second-tab", "marker": "observer"})
+	refused := driver.await(t, func(got browserEvent) bool {
+		return got.Browser == "second-tab" && got.Event == "server-error"
+	}, "second-tab lease refusal")
+	if refused.Code != "resolver_lease_held" || refused.LeaseHolder == "" {
+		t.Fatalf("observer refusal = %+v, want resolver_lease_held naming the holder", refused)
+	}
+	if refused.EnvelopeID != "reg-two-tabs" {
+		t.Fatalf("refusal lost the operator's envelope: %+v", refused)
+	}
+	if !rm.HasPending() {
+		t.Fatal("a refused submission terminalized pending work")
+	}
+
+	// An explicit takeover is the way out, and it changes only the lease.
+	driver.claim(t, "second-tab", true)
+	driver.awaitRole(t, "second-tab", "resolver")
+
+	// A response carrying the *other* tab's revision is still rejected, and
+	// the server issues a fresh presentation instead of a silent drop.
 	driver.submitRevision(t, "second-tab", "stale-first-tab", firstPresentation.Revision)
 	resynchronized := driver.receive(t, "second-tab", "reg-two-tabs")
 	if resynchronized.Revision <= secondPresentation.Revision {
@@ -467,6 +542,44 @@ func TestRegression_ProductionTwoBrowserTabsRejectStaleRevision(t *testing.T) {
 	}
 	driver.submit(t, "second-tab", "second-tab")
 	assertRegressionSubmitted(t, receiveRegressionOutcome(t, call), "reg-two-tabs", "second-tab")
+}
+
+// TestRegression_ProductionNavigationLeavesPeerTabConnected is acceptance
+// criterion 1 with a witness: one SPA moving between rooms must not disturb a
+// different tab's connection to the room it left, and the work in that room
+// stays answerable by the tab that stayed.
+func TestRegression_ProductionNavigationLeavesPeerTabConnected(t *testing.T) {
+	rg := newRig(t)
+	defer rg.cleanup()
+	driver := startProductionBrowserDriver(t)
+
+	roomA := rg.mgr.Create(map[string]string{"scenario": "nav-a"})
+	roomB := rg.mgr.Create(map[string]string{"scenario": "nav-b"})
+	driver.openAs(t, "resident", roomA.ID, regressionWSURL(rg), "tab-resident")
+	driver.openAs(t, "wanderer", roomA.ID, regressionWSURL(rg), "tab-wanderer")
+
+	callA := startRegressionTriageCall(rg, roomA.ID, "reg-nav-a")
+	driver.receive(t, "resident", "reg-nav-a")
+	driver.receive(t, "wanderer", "reg-nav-a")
+	awaitRegressionState(t, "both tabs on room A", func() bool { return roomA.ConnectionCount() == 2 })
+
+	// The wandering tab navigates away and back.
+	callB := startRegressionTriageCall(rg, roomB.ID, "reg-nav-b")
+	driver.switchRoom(t, "wanderer", roomB.ID)
+	driver.receive(t, "wanderer", "reg-nav-b")
+	awaitRegressionState(t, "wanderer left room A", func() bool { return roomA.ConnectionCount() == 1 })
+	if roomA.IsClosed() || !roomA.HasPending() {
+		t.Fatalf("navigation disturbed room A: closed=%v pending=%v", roomA.IsClosed(), roomA.HasPending())
+	}
+
+	// The resident tab never lost its connection and answers room A's work.
+	driver.submit(t, "wanderer", "wanderer-b")
+	assertRegressionSubmitted(t, receiveRegressionOutcome(t, callB), "reg-nav-b", "wanderer-b")
+	driver.submit(t, "resident", "resident-a")
+	assertRegressionSubmitted(t, receiveRegressionOutcome(t, callA), "reg-nav-a", "resident-a")
+	if roomA.IsClosed() || roomB.IsClosed() {
+		t.Fatalf("navigation closed rooms: A=%v B=%v", roomA.IsClosed(), roomB.IsClosed())
+	}
 }
 
 func TestRegression_ProductionTwoConcurrentCallersRemainIsolated(t *testing.T) {

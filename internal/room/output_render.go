@@ -121,9 +121,13 @@ func normalizeFinalOutput(view FinalOutputView) (FinalOutputView, error) {
 		return FinalOutputView{}, ErrInvalidFinalOutputFormat
 	}
 	return FinalOutputView{
-		Title:     strings.TrimSpace(view.Title),
-		Markdown:  markdown,
-		Filename:  strings.TrimSpace(view.Filename),
+		Title:    strings.TrimSpace(view.Title),
+		Markdown: markdown,
+		// A caller-declared download name is sanitized rather than trusted:
+		// it reaches `link.download` in the SPA, and until now the caller
+		// chose the name a file landed under in the operator's Downloads
+		// folder, separators and all. See room.SafeExportFilename.
+		Filename:  SafeExportFilename(view.Filename),
 		Format:    format,
 		Summary:   strings.TrimSpace(view.Summary),
 		UpdatedAt: strings.TrimSpace(view.UpdatedAt),

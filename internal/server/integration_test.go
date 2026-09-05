@@ -504,23 +504,35 @@ func getRoomEnvelopeID(t *testing.T, mgr *room.Manager, roomID string) string {
 	return r.MetaCopy()["envelopeID"]
 }
 
-// readFrame reads a single text frame and unmarshals.
+// readFrame reads the next presentation frame and unmarshals it.
+//
+// Connection-lifecycle frames ("connection", "sync") interleave with
+// presentations by design — a client is told who else is attached and which
+// durable revisions it holds independently of any envelope — so they are
+// skipped here.
 func readFrame(t *testing.T, c *websocket.Conn, timeout time.Duration) map[string]any {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	mt, payload, err := c.Read(ctx)
-	if err != nil {
-		t.Fatalf("read: %v", err)
+	for {
+		mt, payload, err := c.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		if mt != websocket.MessageText {
+			t.Fatalf("expected text frame, got %v", mt)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(payload, &m); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		switch m["type"] {
+		case "connection", "sync":
+			continue
+		default:
+			return m
+		}
 	}
-	if mt != websocket.MessageText {
-		t.Fatalf("expected text frame, got %v", mt)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(payload, &m); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	return m
 }
 
 // writeFrame marshals and writes.

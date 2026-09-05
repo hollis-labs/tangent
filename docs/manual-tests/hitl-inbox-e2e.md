@@ -22,9 +22,10 @@ mise --no-config exec node@22.12.0 -- \
   -run '^TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart$' -count=1 -v
 ```
 
-The in-app Browser plugin was unavailable in this acceptance environment
-because its configured trusted worker was not callable. No unapproved
-standalone browser fallback is used. The joined gate instead uses
+This gate runs headless by design: **there is no browser in CI**, and no
+standalone browser fallback is used. That is a standing property of this
+repository's verification, not a fault of one session's environment. The
+joined gate instead uses
 the repository's source-linked happy-dom/vite-node driver, the same class of
 production-module driver used by the room lifecycle regressions. It verifies
 real React behavior, accessibility roles, focus/keyboard handling, live SSE,

@@ -1,31 +1,30 @@
 package extensions
 
 import (
-	_ "embed"
-	"fmt"
-
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
 
+// SynthesisNotesEnvelopeType is the canonical wire name for the synthesis-notes kind. The
+// dotted-namespace form is required by go-envelopes' Registry — un-namespaced
+// names are reserved for core types and rejected with ErrInvalidName.
+//
+// Synthesis-notes envelope: persist private working notes, optionally
+// carry an outline artifact, and expose only the phase-gated preview to
+// the user.
+//
+// ADR 0003 §6 labels it an application package — publisher-owned
+// editorial semantics — bundled only until a writing application exists
+// to own it.
 const SynthesisNotesEnvelopeType = "tangent.synthesis-notes"
 
-var synthesisNotesManifest = []byte(`type: tangent.synthesis-notes
-version: "0.3"
-description: "Synthesis-notes envelope: persist private working notes, optionally carry an outline artifact, and expose only the phase-gated preview to the user."
-responseKind: ack
-ui:
-  component: SynthesisNotesView
-`)
-
-//go:embed synthesis_notes_schema.json
-var synthesisNotesSchema []byte
-
+// RegisterSynthesisNotes registers the synthesis-notes definition from its shipped package. The
+// manifest at packages/tangent.writing/synthesis-notes/manifest.yaml is the
+// single authored source; nothing about this kind is declared here.
+//
+// Registration is not idempotent within a process: go-envelopes rejects a
+// duplicate name, which is the correct behavior for a boot-time call site.
+// Production goes through RegisterAll; this entry point stays exported for
+// tests that deliberately boot a partial registry.
 func RegisterSynthesisNotes(svc *envelope.Service) error {
-	if svc == nil {
-		return fmt.Errorf("extensions: envelope service is nil")
-	}
-	if err := svc.RegisterTypeFromManifest(SynthesisNotesEnvelopeType, synthesisNotesManifest, synthesisNotesSchema, PluginID); err != nil {
-		return fmt.Errorf("extensions: register synthesis-notes: %w", err)
-	}
-	return nil
+	return registerPackagedDefinition(svc, "tangent.writing", SynthesisNotesEnvelopeType)
 }

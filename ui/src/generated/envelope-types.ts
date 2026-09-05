@@ -1,9 +1,370 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
+// @definition-source sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e
 // Generated from go-envelopes v0.1.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Source of truth: github.com/hollis-labs/go-envelopes
+// Coverage: 44 registered kinds — 26 go-envelopes core,
+// 18 Tangent-owned (internal/envelope/extensions).
+//
+// Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)
+// and internal/envelope/extensions (Tangent kinds).
 // Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs
+
+/** Shared type used by "tangent.hitl-item" */
+export interface AdditionalCorrelationV1 {
+  authority: string;
+  id: string;
+  kind: "agent" | "turn" | "workflow_run" | "step" | "conversation" | "business_object" | "other";
+  label?: string;
+  revision?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ApprovalActionLabelsV1 {
+  approve?: string;
+  approve_with_note?: string;
+  deny?: string;
+  deny_with_note?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ApprovalImpactV1 {
+  approve: string;
+  deny: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ApprovalResponseV1 {
+  decision: "approved" | "denied";
+  kind: "approval";
+  note?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ArtifactRefEvidenceV1 {
+  /** Opaque authority-local identifier, not a path or URI. */
+  artifact_id: string;
+  authority: string;
+  digest?: string;
+  expires_at?: string;
+  label: string;
+  logical_kind?: string;
+  media_type?: string;
+  retention_policy?: string;
+  retrieval_capability_id?: string;
+  revision?: string;
+  /** Opaque identifier owned by the same authority, not a path or URI. */
+  safe_preview_artifact_id?: string;
+  sensitivity?: "public" | "internal" | "confidential" | "restricted";
+  size_bytes?: number;
+  type: "artifact_ref";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface AttentionActionLabelsV1 {
+  acknowledge?: string;
+  acknowledge_with_note?: string;
+  reply?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface AttentionResponseV1 {
+  decision: "acknowledged";
+  kind: "attention";
+  note?: string;
+  reply?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface CallerAssertionV1 {
+  application_id: string;
+  principal_ref?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface CanceledTerminalOutcomeV1 {
+  cause: "caller_withdrawn" | "caller_canceled" | "participant_canceled" | "administrator_canceled" | "surface_policy";
+  contract_version: "1.0";
+  interaction_revision: number;
+  item_id: string;
+  reason?: string;
+  state: "canceled";
+  terminated_at: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface CorrelationsV1 {
+  additional?: AdditionalCorrelationV1[];
+  project?: ExternalRefV1;
+  session?: ExternalRefV1;
+  task?: ExternalRefV1;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export type EvidenceV1 = InlineMarkdownEvidenceV1 | InlineTextEvidenceV1 | InlineDiffEvidenceV1 | TangentReferenceEvidenceV1 | ArtifactRefEvidenceV1;
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ExpiredTerminalOutcomeV1 {
+  contract_version: "1.0";
+  interaction_revision: number;
+  item_id: string;
+  policy_ref?: string;
+  state: "expired";
+  terminated_at: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ExternalRefV1 {
+  /** System that owns and interprets the reference. */
+  authority: string;
+  id: string;
+  label?: string;
+  revision?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface FailedTerminalOutcomeV1 {
+  contract_version: "1.0";
+  error_code: string;
+  interaction_revision: number;
+  item_id: string;
+  message: string;
+  state: "failed";
+  terminated_at: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLAwaitCommandV1 {
+  caller: CallerAssertionV1;
+  contract_version: "1.0";
+  item_id: string;
+  /** Bounded below Tangent's 60-second HTTP write timeout; values outside the range are rejected. */
+  wait_ms?: number;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLAwaitTerminalResultV1 {
+  contract_version: "1.0";
+  item: unknown;
+  mode: "await";
+  retrieved_at: string;
+  wait_status: "terminal";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLAwaitTimeoutResultV1 {
+  contract_version: "1.0";
+  item: unknown;
+  mode: "await";
+  retrieved_at: string;
+  wait_status: "timeout";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLGetCommandV1 {
+  caller: CallerAssertionV1;
+  contract_version: "1.0";
+  item_id: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLGetRetrievalResultV1 {
+  contract_version: "1.0";
+  item: HITLItemViewV1;
+  mode: "get";
+  retrieved_at: string;
+  wait_status: "not_waited";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLIdempotencyConflictErrorV1 {
+  code: "idempotency_conflict";
+  contract_version: "1.0";
+  existing_item_id: string;
+  idempotency_key: string;
+  message?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLItemHandleV1 {
+  contract_version: "1.0";
+  inbox_url: string;
+  item_id: string;
+  item_url: string;
+  queue_position: number | null;
+  queue_sequence: number;
+  revision: number;
+  state: "staged" | "presented" | "in_progress" | "resolved" | "canceled" | "expired" | "failed" | "superseded";
+  surface_id: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLItemRequestV1 {
+  action_labels?: unknown;
+  contract_version: "1.0";
+  correlations?: CorrelationsV1;
+  details_markdown?: string;
+  evidence?: EvidenceV1[];
+  expires_at?: string;
+  idempotency_key: string;
+  impact?: unknown;
+  kind: "approval" | "attention";
+  recommendation?: string;
+  request: string;
+  source: SourceAssertionV1;
+  summary: string;
+  title: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLItemViewV1 {
+  contract_version: "1.0";
+  enqueued_at: string;
+  item_id: string;
+  queue_position: number | null;
+  queue_sequence: number;
+  request_snapshot: HITLItemRequestV1;
+  revision: number;
+  state: "submitted" | "validated" | "staged" | "presented" | "in_progress" | "resolved" | "canceled" | "expired" | "failed" | "superseded";
+  surface_id: string;
+  terminal_outcome?: HITLTerminalOutcomeV1;
+  updated_at: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLResolutionCommandV1 {
+  contract_version: "1.0";
+  expected_revision: number;
+  item_id: string;
+  presented_projection_revision: number;
+  response: HITLResponseV1;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLResolveStaleRevisionErrorV1 {
+  actual_revision: number;
+  code: "stale_revision";
+  contract_version: "1.0";
+  current_state: "submitted" | "validated" | "staged" | "presented" | "in_progress" | "resolved" | "canceled" | "expired" | "failed" | "superseded";
+  expected_revision: number;
+  item_id: string;
+  operation: "resolve";
+  revision_kind: "interaction" | "presented_projection";
+  terminal_outcome?: HITLTerminalOutcomeV1;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export type HITLResponseV1 = ApprovalResponseV1 | AttentionResponseV1;
+
+/** Shared type used by "tangent.hitl-item" */
+export type HITLRetrievalResultV1 = HITLGetRetrievalResultV1 | HITLAwaitTerminalResultV1 | HITLAwaitTimeoutResultV1;
+
+/** Shared type used by "tangent.hitl-item" */
+export type HITLStaleRevisionErrorV1 = HITLResolveStaleRevisionErrorV1 | HITLWithdrawStaleRevisionErrorV1;
+
+/** Shared type used by "tangent.hitl-item" */
+export type HITLTerminalOutcomeV1 = ResolvedTerminalOutcomeV1 | CanceledTerminalOutcomeV1 | ExpiredTerminalOutcomeV1 | FailedTerminalOutcomeV1 | SupersededTerminalOutcomeV1;
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLWithdrawCommandV1 {
+  caller: CallerAssertionV1;
+  contract_version: "1.0";
+  expected_revision?: number;
+  item_id: string;
+  reason?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface HITLWithdrawStaleRevisionErrorV1 {
+  actual_revision: number;
+  code: "stale_revision";
+  contract_version: "1.0";
+  current_state: "submitted" | "validated" | "staged" | "presented" | "in_progress" | "resolved" | "canceled" | "expired" | "failed" | "superseded";
+  expected_revision: number;
+  item_id: string;
+  operation: "withdraw";
+  revision_kind: "interaction";
+  terminal_outcome?: HITLTerminalOutcomeV1;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface InlineDiffEvidenceV1 {
+  base_label?: string;
+  content: string;
+  format?: "unified";
+  head_label?: string;
+  label: string;
+  type: "diff";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface InlineMarkdownEvidenceV1 {
+  content: string;
+  label: string;
+  type: "markdown";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface InlineTextEvidenceV1 {
+  content: string;
+  label: string;
+  language?: string;
+  type: "text";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ParticipantCaptureV1 {
+  assurance: "loopback-unverified" | "asserted" | "authenticated";
+  authority: string;
+  principal_ref: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ResolutionRecordV1 {
+  interaction_revision: number;
+  participant: ParticipantCaptureV1;
+  presented_projection_revision: number;
+  resolution_id: string;
+  resolved_at: string;
+  response: HITLResponseV1;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface ResolvedTerminalOutcomeV1 {
+  contract_version: "1.0";
+  interaction_revision: number;
+  item_id: string;
+  resolution: ResolutionRecordV1;
+  state: "resolved";
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface SourceAssertionV1 {
+  agent_id: string;
+  agent_label?: string;
+  application_id: string;
+  application_label?: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface SupersededTerminalOutcomeV1 {
+  contract_version: "1.0";
+  interaction_revision: number;
+  item_id: string;
+  replacement_item_id: string;
+  state: "superseded";
+  terminated_at: string;
+}
+
+/** Shared type used by "tangent.hitl-item" */
+export interface TangentReferenceEvidenceV1 {
+  description?: string;
+  interaction_id?: string;
+  label: string;
+  revision?: number;
+  surface_id: string;
+  type: "tangent_reference";
+}
 
 /** Envelope data for "approval-card" — An approval request with risk level indicator. */
 export interface ApprovalCardData {
@@ -266,6 +627,206 @@ export interface TableCardData {
   title?: string;
 }
 
+/** Envelope data for "tangent.approval-queue" — Approval queue envelope: serialized review of queued items with explicit accept, reject, or defer decisions, evidence panes, and durable audit export metadata. */
+export interface TangentApprovalQueueData {
+  audit_trail?: Record<string, unknown>[];
+  current_index?: number;
+  decisions?: Record<string, unknown>[];
+  export_refs?: Record<string, unknown>[];
+  intent?: string;
+  items: Record<string, unknown>[];
+  notes?: string;
+  queue_id: string;
+  title?: string;
+}
+
+/** Envelope data for "tangent.block-draft" — Block-draft envelope: propose one draft block, capture accept/revise/inline-edit direction, and accumulate accepted blocks on the room. */
+export interface TangentBlockDraftData {
+  block_id: string;
+  content: string;
+  label?: string;
+  mode?: "section" | "paragraph";
+  outline_hint?: string;
+  rationale?: string;
+}
+
+/** Envelope data for "tangent.dashboard" — Dashboard envelope: room-backed tiles, layouts, and explicit refresh or update turns. */
+export interface TangentDashboardData {
+  active_layout_id?: string;
+  dashboard_id: string;
+  layout?: { h: number; tile_id: string; w: number; x: number; y: number }[];
+  query_state?: Record<string, unknown>;
+  saved_layouts?: unknown[];
+  summary?: Record<string, unknown>;
+  tiles: { artifact_ref?: string; kind: string; metadata?: Record<string, unknown>; room_id?: string; status?: string; subtitle?: string; summary?: string; tile_id: string; title: string; unit?: string; value?: string; workflow?: string }[];
+  title?: string;
+  updated_at?: string;
+}
+
+/** Envelope data for "tangent.design-iteration" — Design-iteration envelope: render sandboxed HTML, collect click/input actions, and iterate through multiple variants in one room. */
+export interface TangentDesignIterationData {
+  /** Optional human-facing instruction shown above the preview. */
+  caption?: string;
+  /** Sandboxed HTML rendered into an iframe srcdoc. */
+  html: string;
+  prompts: { id: string; kind: "click-region" | "button" | "text-input"; label?: string; placeholder?: string; selector?: string }[];
+  /** Agent-assigned identifier for this iteration variant. */
+  variant_id: string;
+}
+
+/** Envelope data for "tangent.diff-review" — Diff-review envelope: room-backed before/after review with per-file and per-hunk decisions, comments, durable artifact refs, and explicit submit. */
+export interface TangentDiffReviewData {
+  after_ref?: Record<string, unknown>;
+  before_ref?: Record<string, unknown>;
+  current_file?: string;
+  files: { after?: string; before?: string; hunks?: { after?: string; before?: string; header?: string; id?: string; status?: string }[]; id: string; path?: string; summary?: string }[];
+  filter_state?: Record<string, unknown>;
+  intent?: string;
+  review_id: string;
+  title?: string;
+}
+
+/** Envelope data for "tangent.feedback" — Feedback envelope: ask a human to answer a short structured questionnaire. */
+export interface TangentFeedbackData {
+  layout?: "inline" | "walkthrough" | "auto";
+  /** Optional human-facing instruction shown above the form. */
+  prompt?: string;
+  questions: { allowNote?: boolean; default?: unknown; help?: string; id: string; label: string; options?: { help?: string; label: string; value: string }[]; placeholder?: string; required?: boolean; suggestion?: { rationale?: string; value: unknown }; type: "radio" | "checkbox" | "select" | "multiselect" | "text" | "textarea" }[];
+}
+
+/** Envelope data for "tangent.file-picker" — File-picker envelope: room-backed local artifact selection with allowed roots and explicit submit. */
+export interface TangentFilePickerData {
+  browse_roots: { kind?: string; label?: string; path: string; root_id: string }[];
+  files?: { artifact_id?: string; kind?: string; mime_type?: string; name?: string; relative_path: string; root_id: string; size_bytes?: number; uri?: string }[];
+  picker_id: string;
+  query_state?: Record<string, unknown>;
+  selected_refs?: { artifact_id?: string; kind?: string; mime_type?: string; name?: string; relative_path: string; root_id: string; size_bytes?: number; uri?: string }[];
+}
+
+/** Envelope data for "tangent.form-collect" — Generalized schema-driven form workflow with room-backed persistence. */
+export interface TangentFormCollectData {
+  actions?: unknown[];
+  answers?: Record<string, unknown>;
+  attachment_refs?: unknown[];
+  form_id: string;
+  intent?: string;
+  notes?: string;
+  saved_drafts?: unknown[];
+  schema: Record<string, unknown>;
+  submission_summary?: Record<string, unknown>;
+  templates?: unknown[];
+}
+
+/** Envelope data for "tangent.hitl-item" — Durable HITL inbox item: one operator-owned approval or persistent-attention interaction with typed evidence and an immutable per-item terminal outcome. */
+export type TangentHitlItemData = HITLItemRequestV1;
+
+/** Envelope data for "tangent.interview-question" — Interview-question envelope: ask one long-form question with optional quick-picks and explicit output-shape prompting. */
+export interface TangentInterviewQuestionData {
+  choices?: { description?: string; id: string; label: string }[];
+  helper_text?: string;
+  output_shape?: { help?: string; label: string; placeholder?: string };
+  prompt?: string;
+  prompt_markdown?: string;
+  thread_id?: string;
+  topic_label?: string;
+}
+
+/** Envelope data for "tangent.output-render" — Output-render envelope: present the final markdown artifact with copy/export affordances and preserve the room's canonical final output. */
+export interface TangentOutputRenderData {
+  filename?: string;
+  format?: "markdown";
+  markdown: string;
+  summary?: string;
+  title?: string;
+}
+
+/** Envelope data for "tangent.progress-panel" — Progress-panel envelope: room-backed progress items, summary state, and explicit operator updates. */
+export interface TangentProgressPanelData {
+  items: { completed_at?: string; created_at?: string; detail?: string; item_id: string; label: string; metadata?: Record<string, unknown>; status: string; updated_at?: string }[];
+  panel_id: string;
+  summary?: { completed_at?: string; current_status?: string; detail?: string; headline?: string; last_checkpoint_id?: string; last_update_id?: string };
+  updates?: { checkpoint_id?: string; checkpoint_label?: string; created_at?: string; item_id?: string; kind: "status" | "checkpoint" | "summary"; metadata?: Record<string, unknown>; status?: string; summary?: string; update_id: string }[];
+}
+
+/** Envelope data for "tangent.prose-revision" — Prose-revision envelope: review suggested edits through one unified review/copy/style lens and capture explicit per-suggestion outcomes. */
+export interface TangentProseRevisionData {
+  block_id?: string;
+  label?: string;
+  lens: "review" | "copy" | "style";
+  revision_id?: string;
+  source_text: string;
+  suggestions: { id: string; label?: string; original_text?: string; reason?: string; suggested_text: string }[];
+  summary?: string;
+}
+
+/** Envelope data for "tangent.spreadsheet-review" — Spreadsheet review envelope: render canonical agent-provided rows in a persistent room with explicit submit, saved views, and CSV export metadata. */
+export interface TangentSpreadsheetReviewData {
+  action_id?: string;
+  columns?: { id: string; label?: string; sortable?: boolean }[];
+  export_refs?: { column_count?: number; created_at?: string; kind?: string; mime_type?: string; name: string; row_count?: number; size_bytes?: number }[];
+  intent?: string;
+  notes?: string;
+  query_state?: Record<string, unknown>;
+  row_actions?: { description?: string; id: string; label?: string }[];
+  rows?: Record<string, unknown>[];
+  saved_views?: { name: string; query_state?: Record<string, unknown> }[];
+  selected_row_ids?: string[];
+  selected_rows?: Record<string, unknown>[];
+  table_id: string;
+  title?: string;
+  updated_at?: string;
+}
+
+/** Envelope data for "tangent.synthesis-notes" — Synthesis-notes envelope: persist private working notes, optionally carry an outline artifact, and expose only the phase-gated preview to the user. */
+export interface TangentSynthesisNotesData {
+  has_private_notes?: boolean;
+  outline?: { items?: { description?: string; label?: string }[]; title?: string };
+  outline_state?: "absent" | "present" | "skipped";
+  private_notes?: string;
+  summary?: string;
+  visibility?: "hidden" | "visible";
+}
+
+/** Envelope data for "tangent.triage" — Triage envelope: ask a human to accept, reject, or annotate an item. Tangent v0.1 plugin-registered; planned for go-envelopes core in v0.3. */
+export interface TangentTriageData {
+  /** Free-form context bag (links, metadata) passed through to the frontend. */
+  context?: Record<string, unknown>;
+  /** Items to triage. Strings are rendered as labels; objects pass through to the frontend untouched. */
+  items?: string | Record<string, unknown>[];
+  /** Optional human-facing instruction shown above the items. */
+  prompt?: string;
+}
+
+/** Envelope data for "tangent.whiteboard" — Whiteboard envelope: present a tldraw-backed board with persisted room snapshot hydration and a full-scene submit response. */
+export interface TangentWhiteboardData {
+  assets?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[];
+  board_id: string;
+  export_refs?: { artifact_id?: string; created_at?: string; height?: number; kind?: "png"; mime_type?: string; name?: string; size_bytes?: number; uri?: string; width?: number }[];
+  intent?: string;
+  notes?: string;
+  reference_images?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[];
+  revision_history?: { asset_count?: number; continued_from_revision_id?: string; revision_id: string; scene_size?: number; summary?: string; updated_at?: string }[];
+  revision_id?: string;
+  revisions?: { asset_count?: number; assets?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[]; continued_from_revision_id?: string; export_refs?: { artifact_id?: string; created_at?: string; height?: number; kind?: "png"; mime_type?: string; name?: string; size_bytes?: number; uri?: string; width?: number }[]; notes?: string; reference_images?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[]; revision_id: string; scene?: Record<string, unknown>; scene_size?: number; summary?: string; updated_at?: string }[];
+  scene?: Record<string, unknown>;
+  title?: string;
+  tool_mode?: "select" | "draw" | "text" | "shape" | "arrow" | "note";
+  updated_at?: string;
+}
+
+/** Envelope data for "tangent.wizard" — Step-based wizard workflow with room-backed progress, branching selections, review, and completion. */
+export interface TangentWizardData {
+  branch_selections?: unknown[];
+  current_step_id?: string;
+  description?: string;
+  progress?: unknown[];
+  steps: { branches?: unknown[]; description?: string; fields?: Record<string, unknown>; kind?: string; metadata?: Record<string, unknown>; optional?: boolean; step_id: string; title: string }[];
+  summary?: Record<string, unknown>;
+  title?: string;
+  updated_at?: string;
+  wizard_id: string;
+}
+
 /** Envelope data for "timeline-card" — A vertical timeline of events. */
 export interface TimelineCardData {
   /** Timeline events in order. */
@@ -330,10 +891,28 @@ export type ReportCardEnvelope = EnvelopeBase<"report-card", ReportCardData>;
 export type SessionTaskEnvelope = EnvelopeBase<"session-task", SessionTaskData>;
 export type SubagentSpawnApprovalEnvelope = EnvelopeBase<"subagent-spawn-approval", SubagentSpawnApprovalData>;
 export type TableCardEnvelope = EnvelopeBase<"table-card", TableCardData>;
+export type TangentApprovalQueueEnvelope = EnvelopeBase<"tangent.approval-queue", TangentApprovalQueueData>;
+export type TangentBlockDraftEnvelope = EnvelopeBase<"tangent.block-draft", TangentBlockDraftData>;
+export type TangentDashboardEnvelope = EnvelopeBase<"tangent.dashboard", TangentDashboardData>;
+export type TangentDesignIterationEnvelope = EnvelopeBase<"tangent.design-iteration", TangentDesignIterationData>;
+export type TangentDiffReviewEnvelope = EnvelopeBase<"tangent.diff-review", TangentDiffReviewData>;
+export type TangentFeedbackEnvelope = EnvelopeBase<"tangent.feedback", TangentFeedbackData>;
+export type TangentFilePickerEnvelope = EnvelopeBase<"tangent.file-picker", TangentFilePickerData>;
+export type TangentFormCollectEnvelope = EnvelopeBase<"tangent.form-collect", TangentFormCollectData>;
+export type TangentHitlItemEnvelope = EnvelopeBase<"tangent.hitl-item", TangentHitlItemData>;
+export type TangentInterviewQuestionEnvelope = EnvelopeBase<"tangent.interview-question", TangentInterviewQuestionData>;
+export type TangentOutputRenderEnvelope = EnvelopeBase<"tangent.output-render", TangentOutputRenderData>;
+export type TangentProgressPanelEnvelope = EnvelopeBase<"tangent.progress-panel", TangentProgressPanelData>;
+export type TangentProseRevisionEnvelope = EnvelopeBase<"tangent.prose-revision", TangentProseRevisionData>;
+export type TangentSpreadsheetReviewEnvelope = EnvelopeBase<"tangent.spreadsheet-review", TangentSpreadsheetReviewData>;
+export type TangentSynthesisNotesEnvelope = EnvelopeBase<"tangent.synthesis-notes", TangentSynthesisNotesData>;
+export type TangentTriageEnvelope = EnvelopeBase<"tangent.triage", TangentTriageData>;
+export type TangentWhiteboardEnvelope = EnvelopeBase<"tangent.whiteboard", TangentWhiteboardData>;
+export type TangentWizardEnvelope = EnvelopeBase<"tangent.wizard", TangentWizardData>;
 export type TimelineCardEnvelope = EnvelopeBase<"timeline-card", TimelineCardData>;
 export type TodoListEnvelope = EnvelopeBase<"todo-list", TodoListData>;
 
-/** Discriminated union of every envelope type known to go-envelopes core. */
+/** Discriminated union of every envelope type Tangent has registered. */
 export type Envelope =
   | ApprovalCardEnvelope
   | ArtifactMiniEnvelope
@@ -359,6 +938,24 @@ export type Envelope =
   | SessionTaskEnvelope
   | SubagentSpawnApprovalEnvelope
   | TableCardEnvelope
+  | TangentApprovalQueueEnvelope
+  | TangentBlockDraftEnvelope
+  | TangentDashboardEnvelope
+  | TangentDesignIterationEnvelope
+  | TangentDiffReviewEnvelope
+  | TangentFeedbackEnvelope
+  | TangentFilePickerEnvelope
+  | TangentFormCollectEnvelope
+  | TangentHitlItemEnvelope
+  | TangentInterviewQuestionEnvelope
+  | TangentOutputRenderEnvelope
+  | TangentProgressPanelEnvelope
+  | TangentProseRevisionEnvelope
+  | TangentSpreadsheetReviewEnvelope
+  | TangentSynthesisNotesEnvelope
+  | TangentTriageEnvelope
+  | TangentWhiteboardEnvelope
+  | TangentWizardEnvelope
   | TimelineCardEnvelope
   | TodoListEnvelope;
 
@@ -388,6 +985,24 @@ export type EnvelopeType =
   | "session-task"
   | "subagent-spawn-approval"
   | "table-card"
+  | "tangent.approval-queue"
+  | "tangent.block-draft"
+  | "tangent.dashboard"
+  | "tangent.design-iteration"
+  | "tangent.diff-review"
+  | "tangent.feedback"
+  | "tangent.file-picker"
+  | "tangent.form-collect"
+  | "tangent.hitl-item"
+  | "tangent.interview-question"
+  | "tangent.output-render"
+  | "tangent.progress-panel"
+  | "tangent.prose-revision"
+  | "tangent.spreadsheet-review"
+  | "tangent.synthesis-notes"
+  | "tangent.triage"
+  | "tangent.whiteboard"
+  | "tangent.wizard"
   | "timeline-card"
   | "todo-list";
 
@@ -417,11 +1032,29 @@ export interface EnvelopeDataMap {
   "session-task": SessionTaskData;
   "subagent-spawn-approval": SubagentSpawnApprovalData;
   "table-card": TableCardData;
+  "tangent.approval-queue": TangentApprovalQueueData;
+  "tangent.block-draft": TangentBlockDraftData;
+  "tangent.dashboard": TangentDashboardData;
+  "tangent.design-iteration": TangentDesignIterationData;
+  "tangent.diff-review": TangentDiffReviewData;
+  "tangent.feedback": TangentFeedbackData;
+  "tangent.file-picker": TangentFilePickerData;
+  "tangent.form-collect": TangentFormCollectData;
+  "tangent.hitl-item": TangentHitlItemData;
+  "tangent.interview-question": TangentInterviewQuestionData;
+  "tangent.output-render": TangentOutputRenderData;
+  "tangent.progress-panel": TangentProgressPanelData;
+  "tangent.prose-revision": TangentProseRevisionData;
+  "tangent.spreadsheet-review": TangentSpreadsheetReviewData;
+  "tangent.synthesis-notes": TangentSynthesisNotesData;
+  "tangent.triage": TangentTriageData;
+  "tangent.whiteboard": TangentWhiteboardData;
+  "tangent.wizard": TangentWizardData;
   "timeline-card": TimelineCardData;
   "todo-list": TodoListData;
 }
 
-/** Maps envelope type -> component import slug from the YAML manifest. */
+/** Maps envelope type -> component slug declared in the kind's manifest. */
 /** Empty string means the type has no frontend component yet. */
 export const EnvelopeKindMap = {
   "approval-card": "components/chat/envelopes/ApprovalCard",
@@ -448,6 +1081,24 @@ export const EnvelopeKindMap = {
   "session-task": "",
   "subagent-spawn-approval": "components/chat/envelopes/SubagentSpawnApprovalCard",
   "table-card": "components/chat/envelopes/primitives/TableCard",
+  "tangent.approval-queue": "ApprovalQueueView",
+  "tangent.block-draft": "BlockDraftView",
+  "tangent.dashboard": "DashboardView",
+  "tangent.design-iteration": "DesignIterationView",
+  "tangent.diff-review": "DiffReviewView",
+  "tangent.feedback": "FeedbackView",
+  "tangent.file-picker": "FilePickerView",
+  "tangent.form-collect": "FormCollectView",
+  "tangent.hitl-item": "",
+  "tangent.interview-question": "InterviewQuestionView",
+  "tangent.output-render": "OutputRenderView",
+  "tangent.progress-panel": "ProgressPanelView",
+  "tangent.prose-revision": "ProseRevisionView",
+  "tangent.spreadsheet-review": "SpreadsheetReviewView",
+  "tangent.synthesis-notes": "SynthesisNotesView",
+  "tangent.triage": "TriageView",
+  "tangent.whiteboard": "WhiteboardView",
+  "tangent.wizard": "WizardView",
   "timeline-card": "components/chat/envelopes/primitives/TimelineCard",
   "todo-list": "components/chat/envelopes/TodoListCard",
 } as const satisfies Record<EnvelopeType, string>;
@@ -478,6 +1129,91 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "session-task",
   "subagent-spawn-approval",
   "table-card",
+  "tangent.approval-queue",
+  "tangent.block-draft",
+  "tangent.dashboard",
+  "tangent.design-iteration",
+  "tangent.diff-review",
+  "tangent.feedback",
+  "tangent.file-picker",
+  "tangent.form-collect",
+  "tangent.hitl-item",
+  "tangent.interview-question",
+  "tangent.output-render",
+  "tangent.progress-panel",
+  "tangent.prose-revision",
+  "tangent.spreadsheet-review",
+  "tangent.synthesis-notes",
+  "tangent.triage",
+  "tangent.whiteboard",
+  "tangent.wizard",
   "timeline-card",
   "todo-list",
 ] as const;
+
+/** The @definition-source stamp above, as a value. */
+export const DEFINITION_SOURCE_DIGEST = "sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e";
+
+/** The Tangent release these types were generated against. */
+export const DEFINITION_HOST_VERSION = "v0.12.0";
+
+/** One manifest's contribution to the source digest. */
+export interface DefinitionSourceEntry {
+  kind: string;
+  version: string;
+  revision: number;
+  manifestDigest: string;
+  contractDigest: string;
+}
+
+/** Per-kind manifest identity, so drift can name the kind that moved. */
+export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
+  { kind: "tangent.approval-queue", version: "0.7", revision: 1, manifestDigest: "sha256:f6cc05239c2acf08167587fcb008781bf870c7afeb2a74c46d157e89c6adde01", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
+  { kind: "tangent.block-draft", version: "0.3", revision: 1, manifestDigest: "sha256:d5152653f4dba5f2a67695329cbb5fc4e56116b2d2bde0cb9065991681fd46a5", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
+  { kind: "tangent.dashboard", version: "0.11", revision: 1, manifestDigest: "sha256:0428fe0d6b1118ed2d38059de52b38b172b1b0d46b512c0a72420f16816b6847", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
+  { kind: "tangent.design-iteration", version: "0.2", revision: 1, manifestDigest: "sha256:a92bcfba76f7135c0395204cc1f36a8878b71632c3c7b1f80a92e968046ddd51", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
+  { kind: "tangent.diff-review", version: "0.8", revision: 1, manifestDigest: "sha256:865c9205fb40232aafddaea19c9ecbcea4068599a29e14d55e7e3c87416ecc60", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
+  { kind: "tangent.feedback", version: "0.2", revision: 1, manifestDigest: "sha256:8234446c309f043da6e22a2c5ccdbc330fc3dc02e6816915ac6c7cecc075ca66", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
+  { kind: "tangent.file-picker", version: "0.9", revision: 1, manifestDigest: "sha256:b5a87fd5030dfe3e8a99b4f6a9699975e6da4e3a4d932eacb7eaebcbd02ca52d", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
+  { kind: "tangent.form-collect", version: "0.6", revision: 2, manifestDigest: "sha256:35729fdd024d1e394be6ba255bb2d7fb8683d9d5e9950e4033d890331edd15c8", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
+  { kind: "tangent.hitl-item", version: "1.0", revision: 1, manifestDigest: "sha256:ec83fea418e7cd34789ff33c9e259a1eefc04b30b5dd5e771760de0d7949f8e8", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
+  { kind: "tangent.interview-question", version: "0.3", revision: 1, manifestDigest: "sha256:931b76a8835c34167d9e67bb4cc1dec6006f93dbb6bb5129095bc8ff904a2d7d", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
+  { kind: "tangent.output-render", version: "0.3", revision: 1, manifestDigest: "sha256:e7e10151125ffe1a7610f3856699de5da2d668acc54572e0eb038bd4ea5b6345", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },
+  { kind: "tangent.progress-panel", version: "0.10", revision: 1, manifestDigest: "sha256:eadd6152480cf6376076b23ddc253ce417b1f24cfd2141126e3224b004d0e695", contractDigest: "sha256:6ac28915e72d3eaf60d849e50888c2d3b3f74f3a78f27698d874e2d766296b59" },
+  { kind: "tangent.prose-revision", version: "0.3", revision: 1, manifestDigest: "sha256:cc6e1df5da24bea61c523edcb2844830728a9b81b72444452b328a32d4f84319", contractDigest: "sha256:0a1d37050af23dc3e6e61a6e6aea04dac6720b2644ba4d5f815f015347602f11" },
+  { kind: "tangent.spreadsheet-review", version: "0.5", revision: 1, manifestDigest: "sha256:25f741f14715048aa35e326b1390a8c7f450d3ccf2422b4b96f258a933e41f32", contractDigest: "sha256:16282b257eff5d6c7e9ad27ca178980aa5ee7ddb67f1a2edba22af66b3c8c1d9" },
+  { kind: "tangent.synthesis-notes", version: "0.3", revision: 1, manifestDigest: "sha256:7ef213e865d60689fded40b233b389f64859b3fa4906ad47f358285565908880", contractDigest: "sha256:9884a5ead5775b887689cf468454f8dca1eccc2c2eb0f9633640af85d0381342" },
+  { kind: "tangent.triage", version: "0.1", revision: 1, manifestDigest: "sha256:bed4f9b67f40b88c2dd2546a0d280f4917af663b018c2cea6f7dcc0285c2ff77", contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368" },
+  { kind: "tangent.whiteboard", version: "0.4", revision: 1, manifestDigest: "sha256:6f6297ef0fe1370ea1706f755c384409c465e6f41e888f7ea056be8641e629c1", contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c" },
+  { kind: "tangent.wizard", version: "0.12", revision: 1, manifestDigest: "sha256:793a679e9c9877af09b4e683f4db170249b2f93ca19570f604f3a1b66df15388", contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8" },
+] as const;
+
+/**
+ * Digest of a kind's request-schema `$defs` bundle, for the kinds that ship
+ * one. A hand-written adapter over such a bundle stamps itself with this
+ * value and asserts the match in a test — ADR 0003 §4.7's accepted floor
+ * when full generation of that adapter is out of scope.
+ */
+export const DEFINITION_DEFS_DIGESTS: Readonly<Record<string, string>> = {
+  "tangent.hitl-item": "sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8",
+};
+
+/** Stable `$defs` entry points a kind declares, and what each is for. */
+export const DEFINITION_NAMED_DEFINITIONS: Readonly<
+  Record<string, Readonly<Record<string, string>>>
+> = {
+  "tangent.hitl-item": {
+    "HITLAwaitCommandV1": "Wait for one item's terminal outcome without changing its lifecycle.",
+    "HITLGetCommandV1": "Retrieve one item by durable handle.",
+    "HITLIdempotencyConflictErrorV1": "Typed idempotency conflict for a reused key with different content.",
+    "HITLItemHandleV1": "Durable handle returned at enqueue.",
+    "HITLItemRequestV1": "Enqueue request root: one operator-owned approval or attention item.",
+    "HITLItemViewV1": "Operator-facing projection of one item, including typed evidence.",
+    "HITLResolutionCommandV1": "Operator resolution command, carrying the expected interaction and projection revisions.",
+    "HITLResponseV1": "Resolution response payload: an approval decision or an attention acknowledgement.",
+    "HITLRetrievalResultV1": "Retrieval projection distinguishing terminal delivery from acknowledgement.",
+    "HITLStaleRevisionErrorV1": "Typed stale-revision conflict carrying the current revision.",
+    "HITLTerminalOutcomeV1": "Immutable per-item terminal outcome across resolved, canceled, expired, failed, and superseded.",
+    "HITLWithdrawCommandV1": "Caller withdrawal of an outstanding item.",
+  },
+};

@@ -8,18 +8,39 @@
 //   - The Room only owns the WS transport; envelope-shape decisions
 //     live in the component layer.
 //
+// Two lifecycles, rendered separately. `pending` is the interaction this tab
+// is looking at; `connection`/`sync` are who is attached to the surface and
+// which durable revisions this tab holds. Neither implies the other, so
+// ConnectionStatus is drawn whether or not there is an envelope, and the
+// envelope pane says nothing about sockets.
+//
 // Lifecycle:
 //   1. On mount, open WSClient(roomID).
 //   2. On `onEnvelope`, store the envelope id + payload in state.
 //   3. EnvelopeRouter dispatches by type and fires onSubmit/onCancel.
 //   4. On unmount or onClose, close the WS.
+//
+// `pending` is the presentation whose renderer is *mounted*, which is not the
+// same thing as the answer the server is still waiting for — `submitting` says
+// that. Keeping the two apart is the whole of CW-20260905-0016: the optimistic
+// clear used to be `setPending(null)`, which unmounted the workflow component
+// and destroyed every answer the operator had typed, because that is where the
+// answers live. The lifecycle then restored the envelope on a refusal and the
+// operator got a blank form back.
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
-import { connect } from "../lib/ws-client";
+import { fetchRoomState } from "../lib/rooms-api";
+import {
+  type ConnectionState,
+  connect,
+  type ServerError,
+  type SurfaceSync,
+} from "../lib/ws-client";
 
 type Pending = {
   envelopeId: string;
@@ -28,27 +49,18 @@ type Pending = {
   roomID: string;
 };
 
-type SessionStatePayload = {
-  envelopes_history?: unknown[];
-  wizard?: unknown;
-  dashboard?: unknown;
-  progress_panel?: unknown;
-  file_picker?: unknown;
-  diff_review?: unknown;
-  approval_queue?: unknown;
-  form_collect?: unknown;
-  spreadsheet_review?: unknown;
-  whiteboard?: unknown;
-  synthesis_notes?: unknown;
-  current_draft?: unknown;
-  prose_revision_outcomes?: unknown[];
-  final_output?: unknown;
-};
-
 export default function Room() {
   const { roomID } = useParams<{ roomID: string }>();
   const [pending, setPending] = useState<Pending | null>(null);
-  const [status, setStatus] = useState<string>("connecting...");
+  // True from the moment a response or cancel goes out until the server either
+  // presents something new or refuses it. The renderer stays mounted for the
+  // whole of it; this only decides whether the operator can see and touch it.
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<string>("waiting for envelope...");
+  const [transport, setTransport] = useState<string>("connecting...");
+  const [connection, setConnection] = useState<ConnectionState | null>(null);
+  const [sync, setSync] = useState<SurfaceSync | null>(null);
+  const [serverError, setServerError] = useState<ServerError | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lifecycleRef = useRef<RoomLifecycle | null>(null);
   const initialRoomRef = useRef<string | null>(roomID ?? null);
@@ -75,7 +87,9 @@ export default function Room() {
         return;
       }
       setPending({ envelopeId, envelope: enriched, revision, roomID: targetRoomID });
+      setSubmitting(false);
       setStatus("envelope received");
+      setServerError(null);
     },
   );
 
@@ -86,13 +100,39 @@ export default function Room() {
     }
     const client = connect(initialRoomRef.current, {
       onOpen: () => {
-        setStatus("connected");
+        setTransport("connected");
       },
       onEnvelope: handleEnvelope,
+      onConnectionState: (state) => {
+        lifecycleRef.current?.receiveConnectionState(state);
+        setConnection(state);
+        setServerError(lifecycleRef.current?.lastServerError() ?? null);
+      },
+      onSync: (next) => {
+        lifecycleRef.current?.receiveSync(next);
+        setSync(next);
+      },
+      onServerError: (refused) => {
+        // A refused action did not happen, so the operator goes back to the
+        // form they were looking at — the same component instance, still
+        // holding everything they typed, not a fresh one seeded from
+        // `envelope.data`. The lifecycle restore stays as the backstop for the
+        // paths that genuinely have no mounted renderer left.
+        lifecycleRef.current?.receiveServerError(refused);
+        setServerError(refused);
+        setPending((current) => current ?? restoredPending(lifecycleRef.current));
+        setSubmitting(false);
+        setStatus("submission refused");
+      },
       onClose: (reason) => {
+        // Losing the socket is a connection fact only: the envelope stays
+        // presented server-side, and this tab clears its local view because it
+        // can no longer be sure the view is current.
         lifecycleRef.current?.clearEnvelope();
-        setStatus(`disconnected: ${reason}`);
+        setTransport(`disconnected: ${reason}`);
+        setConnection(null);
         setPending(null);
+        setSubmitting(false);
       },
       onError: (err) => {
         setError(err.message);
@@ -114,44 +154,92 @@ export default function Room() {
       return;
     }
     setPending(null);
-    setStatus("switching rooms...");
+    setSubmitting(false);
+    setConnection(null);
+    setSync(null);
+    setServerError(null);
+    setTransport("switching rooms...");
+    setStatus("waiting for envelope...");
   }, [roomID]);
 
   const handleSubmit = (response: unknown) => {
     if (!lifecycleRef.current?.submit(response)) return;
-    setPending(null);
+    setSubmitting(true);
     setStatus("response submitted");
   };
 
   const handleCancel = () => {
     if (!lifecycleRef.current?.cancel()) return;
-    setPending(null);
+    setSubmitting(true);
     setStatus("cancelled");
   };
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
-      <header className="mb-4 space-y-1">
+      <header className="mb-4 space-y-2">
         <h1 className="text-lg font-medium">Room {roomID}</h1>
+        <ConnectionStatus
+          transport={transport}
+          connection={connection}
+          sync={sync}
+          serverError={serverError}
+          onTakeOver={() => lifecycleRef.current?.claimResolver(true)}
+          onRelease={() => lifecycleRef.current?.releaseResolver()}
+          onResync={() => lifecycleRef.current?.resync()}
+        />
         <p className="text-xs text-zinc-400">status: {status}</p>
         {error ? <p className="text-xs text-red-400">error: {error}</p> : null}
       </header>
 
       {pending ? (
-        <section className="space-y-3">
+        // Hidden while a submission is outstanding, never unmounted. The pane
+        // reads exactly as it did before — an accepted answer leaves "waiting
+        // for envelope..." behind, with nothing stale on screen — but the
+        // component behind it keeps its state, so a refusal is a re-reveal of
+        // the operator's own filled-in form rather than a rebuild from
+        // `envelope.data`. `inert` makes "not on screen" also mean "not
+        // reachable", by keyboard or by an assistive technology.
+        <section className="space-y-3" hidden={submitting} inert={submitting}>
           <div className="text-xs text-zinc-500">envelope: {pending.envelopeId}</div>
           <EnvelopeRouter
+            // Presentation identity, and now the only thing that resets a
+            // workflow's local state. Most renderers seed `useState` from
+            // `envelope.data` once and never re-sync when the prop changes —
+            // safe only while the Room remounted between envelopes, which it no
+            // longer does. Keying on the envelope id keeps that guarantee
+            // without the unmount: a different envelope is a different
+            // component, a replay of the same one is not. So the operator's
+            // answers survive a refusal and can never leak into the next
+            // envelope (CW-20260904-0141 item 5).
+            key={pending.envelopeId}
             envelope={pending.envelope}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
             roomID={roomID}
           />
         </section>
-      ) : (
+      ) : null}
+      {!pending || submitting ? (
         <p className="text-sm text-zinc-500">waiting for envelope...</p>
-      )}
+      ) : null}
     </main>
   );
+}
+
+// restoredPending re-derives the render state from the presentation the
+// lifecycle held back. Enrichment is not re-run: the envelope was already
+// enriched when it was first presented.
+function restoredPending(lifecycle: RoomLifecycle | null): Pending | null {
+  const active = lifecycle?.activeEnvelope();
+  if (!lifecycle || !active) {
+    return null;
+  }
+  return {
+    envelopeId: active.envelopeId,
+    envelope: active.envelope,
+    revision: active.revision,
+    roomID: lifecycle.currentRoomID(),
+  };
 }
 
 async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknown> {
@@ -227,34 +315,6 @@ function readEnvelopeType(envelope: unknown): string | null {
   }
   const type = (envelope as { type?: unknown }).type;
   return typeof type === "string" ? type : null;
-}
-
-async function fetchRoomState(roomID: string): Promise<SessionStatePayload> {
-  const response = await fetch("/mcp", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "tangent.session_get",
-        arguments: { roomID },
-      },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`session_get HTTP ${response.status}`);
-  }
-  const payload = await response.json();
-  const text = payload?.result?.content?.[0]?.text;
-  if (typeof text !== "string") {
-    return {};
-  }
-  return JSON.parse(text) as SessionStatePayload;
 }
 
 function attachPriorVariants(envelope: unknown, history: unknown[]): unknown {
