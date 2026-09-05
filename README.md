@@ -1,6 +1,6 @@
 # Tangent
 
-An agent-summoned, app-sized interactive surface. Tangent is a single installable desktop app that any agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI, or anything else that speaks the Envelope UI Protocol — can summon when chat is the wrong shape for the work.
+An agent-summoned, app-sized interactive surface. Tangent is a single localhost binary — a Go server with an embedded SPA, opened in your browser — that any agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI, or anything else that speaks the Envelope UI Protocol — can summon when chat is the wrong shape for the work.
 
 Use cases the chat window can't carry well:
 
@@ -17,26 +17,58 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest published tag is `v0.12.0`. This release adds
-`tangent.wizard`: a room-backed guided wizard workflow with canonical
-step progress, explicit partial updates, branch selections, local draft
-recovery, review summary, and final completion. It also tightens the
-manual operator surface with repo-local workflow skills under
-`.agents/skills/` plus clearer smoke-test guidance for payload-sensitive
-workflows. Existing `tangent.dashboard` support remains in place for
-workflow-state snapshots and drill-down. Fast-Triage has been migrated
-and archived; if you are moving an existing setup, see
-[`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md).
-See [`CHANGELOG.md`](./CHANGELOG.md) for the detailed release notes.
+The latest **git tag** is `v0.11.0`. `v0.12.0` (`tangent.wizard`) and the
+foundation work described below are documented in
+[`CHANGELOG.md`](./CHANGELOG.md) but are **not yet tagged** — build from source
+to get them.
 
-Tangent today is a Go HTTP server with an embedded Vite SPA, not yet wrapped with Wails. Wails wrapping is deferred until the embedded-SPA pattern proves out elsewhere; the architecture is structured to make that future wrap mechanical (see [`docs/architecture.md`](./docs/architecture.md)).
+Since v0.12.0 Tangent has completed a foundation phase that changed the shape
+of the product rather than adding another workflow:
+
+- **Resumable completion.** A room workflow's wait is no longer the work. A
+  wait answered within 45 seconds returns inline; past that it returns a
+  successful *pending receipt* with a durable handle. Transport loss, caller
+  timeout, browser disconnect, and process restart stop only the waiter.
+- **Multiple connections per room.** One room accepts many tabs and clients.
+  Exactly one holds the resolver lease and can produce a terminal outcome; the
+  rest observe. Rooms are a compatibility projection of a durable *surface* —
+  they are not agent sessions.
+- **A definition registry.** Immutable versioned manifests with retained
+  material and pinned replay, so an interaction stays validatable after a
+  restart and after the catalog moves on.
+- **Scoped authorization.** A room URL is a locator, not a credential. Browser
+  authority is a participant session; caller authority is a host-assigned
+  `<authority>:<partition>` scope over a seven-capability matrix.
+- **Renderer trust classes, CSP, and sandboxing**, plus a host-mediated effect
+  broker.
+- **Operability.** Separate liveness / readiness / capability health, payload-
+  safe correlated telemetry, and backup / restore / repair with six distinct
+  deletion kinds.
+
+Fast-Triage has been migrated and archived; if you are moving an existing
+setup, see
+[`docs/migrating-from-fast-triage.md`](./docs/migrating-from-fast-triage.md).
+
+**Read [Current limitations](#current-limitations) before building on any of
+this.** Several capabilities above are declared or proven-by-construction
+rather than exercised in production, and the list says which.
+
+Tangent today is a Go HTTP server with an embedded Vite SPA served in an
+ordinary browser. **There is no Wails and no desktop shell in the tree.**
+Wails wrapping is deferred until the embedded-SPA pattern proves out
+elsewhere; the architecture is structured to make that future wrap mechanical
+(see [`docs/architecture.md`](./docs/architecture.md)).
 
 ## Quickstart
 
 Install:
 
 ```bash
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.12.0
+# Latest tagged release:
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
+
+# Everything described under Status (untagged) — build from source:
+git clone git@github.com:hollis-labs/tangent.git && cd tangent && make build
 ```
 
 Run:
@@ -73,28 +105,22 @@ resolved session history survives a process bounce.
 
 For Cursor, Codex, the curl verification, and troubleshooting, see [`docs/mcp-integration.md`](./docs/mcp-integration.md).
 
-### What v0.12.0 adds
-
-- Tangent now ships `tangent.wizard`, a room-backed guided wizard workflow with explicit partial updates and final completion.
-- Wizard turns persist canonical step definitions, accepted step progress, branch selections, and summary fields under `session_get.wizard`.
-- The browser host now supports local draft recovery, review summary, forward/back navigation, attachment-style responses, and action outputs without introducing any cloud sync or multi-user state.
-- The repo now includes tight workflow launcher skills under `.agents/skills/` so operators can copy/paste known-good Tangent prompts and payload shapes.
-- Manual smoke-test docs now call out payload-sensitive workflows and the one-tab-per-room constraint for pending submissions.
-
 For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## How it works
 
-**Stack.** Wails (Go backend + React / TypeScript / Tailwind v4 / shadcn frontend), shipping as a single binary with system-tray integration.
+**Stack.** A Go HTTP server (`net/http`) with a React / TypeScript / Tailwind v4 / shadcn SPA embedded into the binary via `go:embed`, served to an ordinary browser on `:7842`. One binary, no desktop shell, no system tray. A Wails wrap is a *future* migration — see [Roadmap](#roadmap).
 
-**Two transports, one envelope schema.** Tangent supports two ways for an agent to drive a window, both speaking the same envelope shape:
+**One transport today, one envelope schema.**
 
-- **MCP (Streamable HTTP + SSE)** — the portable lowest-common-denominator. Any MCP-speaking agent can launch Tangent workflows and receive structured responses.
-- **Nanite-native side-channel** — a premium tier available when Tangent is launched as a managed child of a Nanite session. Adds mid-turn event injection on top of the same envelope schema.
+- **MCP (Streamable HTTP `/mcp` + legacy `/sse`)** — the portable lowest-common-denominator, and the only agent-facing transport that exists. Any MCP-speaking agent can launch Tangent workflows and receive structured responses.
+- **Nanite-native side-channel** — *intended, not implemented.* A premium tier that would add mid-turn event injection on top of the same envelope schema when Tangent runs as a managed child of a Nanite session. Nothing in the tree implements it and no release commits to it.
 
-**Per-session rooms.** Each agent session gets its own window and state. Multi-agent concurrency is the default, not an edge case — several agents can have active Tangent windows at once without bleeding state across them.
+**Rooms are surface projections, not agent sessions.** A room (`/r/<roomID>`) is how the workflow tools project a durable *surface* into a browser; the canonical record is the interaction behind it. Nothing binds a room to one agent, one caller, or one tab. Several callers can hold live rooms at once without bleeding state, and one room accepts many simultaneous connections — exactly one holds the resolver lease and may produce a terminal outcome, the rest observe.
 
-**Envelope renderer.** A React component registry maps each envelope `type` to a component. The registry is shared with Nanite rather than re-implemented, so Tangent inherits its existing envelope kinds.
+**Authority is a session, not a URL.** Room URLs appear in tool output, transcripts, and browser history and carry no authority. Browser access is an `HttpOnly` participant session; caller access is a host-assigned `<authority>:<partition>` scope over a seven-capability matrix.
+
+**Envelope renderer.** A React component registry maps each envelope `type` to a component. The registry is shared with Nanite rather than re-implemented, so Tangent inherits its existing envelope kinds. Each definition carries a renderer *trust class* that decides where its code runs and what it may ask the host to do; untrusted presentation is drawn in an opaque-origin sandboxed frame. See [`docs/renderer-trust-classes.md`](./docs/renderer-trust-classes.md).
 
 **Persistence.** Configurable per envelope kind (markdown, diffs, screenshots, design comps, etc.). The defaults are config-overridable, and users can flip persistence per instance.
 
@@ -104,7 +130,7 @@ The phases below are illustrative — they sketch the intended shape of releases
 
 ### v0.1 — Prove the shape
 
-Wails shell, MCP server, one bundled workflow (triage). The goal is end-to-end: any MCP-speaking agent can launch a rich workflow in Tangent and receive a structured response back.
+Shipped. HTTP server with an embedded SPA, MCP server, one bundled workflow (triage). The goal was end-to-end: any MCP-speaking agent can launch a rich workflow in Tangent and receive a structured response back. (The original sketch said "Wails shell"; v0.1 shipped the localhost binary instead, and the desktop wrap moved to the deferred item below.)
 
 ### v0.4 — Shared whiteboard
 
@@ -140,11 +166,34 @@ Shipped. Tangent adds a room-backed dashboard workflow that summarizes Tangent r
 
 ### v0.12 — Wizard
 
-Current branch. Tangent adds a room-backed guided wizard workflow for bounded step progression, branch selections, explicit partial saves, local draft recovery, and final review/completion.
+Shipped (untagged). Tangent adds a room-backed guided wizard workflow for bounded step progression, branch selections, explicit partial saves, local draft recovery, and final review/completion.
 
-### v0.8+ — Distribution and trust
+### Foundation phase — durability, identity, and trust
 
-Installation, capability gating, isolation, and the trust model for third-party workflow plugins.
+Shipped (untagged), and not a workflow release. Resumable canonical completion,
+multi-connection rooms, an immutable definition registry, scoped authorization,
+interaction packages, a host-mediated effect broker, renderer trust classes with
+CSP and sandboxing, split liveness/readiness/capability health, correlated
+payload-safe telemetry, and database backup/restore/repair. The decisions behind
+it are [ADRs 0001–0005](./docs/adr/). What it does *not* yet do is
+[Current limitations](#current-limitations).
+
+### Deferred — desktop shell
+
+A Wails wrap of the same Go server and the same SPA build. Deliberately not
+started; the HTTP layer is kept separate from app logic so it stays mechanical.
+
+### Deferred — distribution and third-party workflows
+
+Installation, capability gating for externally authored definitions, and the
+trust model for third-party workflow packages. Renderer trust classes are the
+shipped half of this; publisher distribution is not started.
+
+### Not committed — Nanite-native channel
+
+A second transport adding mid-turn event injection over the same envelope
+schema. Intended direction only: nothing in the tree implements it, and no
+release commits to it.
 
 ## Composition
 
@@ -157,7 +206,7 @@ Tangent is built to compose with the rest of the `hollis-labs` Go ecosystem rath
 
 **Reuses:**
 
-- Nanite's React envelope component registry. Because the registry is shared, Tangent inherits roughly 26 envelope kinds for free at v0.1 — approval-card, diff-card, document-viewer, question-form, table-card, and the rest.
+- Nanite's React envelope component registry. Because the registry is shared, Tangent inherits the go-envelopes core catalog for free — approval-card, diff-card, document-viewer, question-form, table-card, and the rest — and registers its own kinds beside them through the plugin-extension API. The exact split is printed by the running binary (`loaded envelope types` / `registered tangent envelope extensions`) and stamped into the generated header of `ui/src/generated/envelope-types.ts`; it is deliberately not written as a number here, because that number has been wrong in this repository more often than right.
 
 **Likely to compose with:**
 
@@ -174,7 +223,7 @@ A few things Tangent deliberately is not, to keep scope honest:
 
 - **Not a chat runtime.** That's Nanite. Tangent is the separate-window surface — same envelope schema, complementary host.
 - **Not a build-time codegen tool.** That's Sigil. Tangent renders envelopes at runtime through the React registry.
-- **No central registry, cloud service, or auth in v1.** Single-user, localhost only.
+- **No central registry, cloud service, or remote access.** Single-user, localhost only. Tangent *does* now have object-scoped authorization (participant sessions and a caller capability matrix), but loopback admission is not authentication — see [Current limitations](#current-limitations).
 
 ## Development
 
@@ -220,9 +269,57 @@ Anything that removes content or replaces the database requires `--confirm`,
 and refuses while a Tangent is serving. See
 [`docs/database-operations.md`](./docs/database-operations.md).
 
+## Current limitations
+
+Tangent's foundation phase shipped a lot of mechanism. Some of it is enforced,
+some is declared, and some is proven by construction rather than observed. The
+canonical list with full context is
+[`docs/architecture.md`](./docs/architecture.md#current-limitations); these are
+the ones that will mislead you if you skip them.
+
+- **Localhost only, single-user.** Object access is scoped (ADR 0004), but
+  loopback admission is not authentication: a hostile local process running as
+  the same user can still mint a participant session.
+- **`standalone-local` caller partitions are advisory, not a security
+  boundary.** Any local caller can assert any partition; nothing verifies it.
+  Enforcement exists only *across* authorities, where the prefix is
+  host-assigned. **Do not present a partition as isolation downstream.**
+- **No definition declares a host-mediated effect capability**, so every
+  request through the effect broker refuses `effect_capability_undeclared`.
+  That is the designed posture, not a fault — but it means the broker has zero
+  production traffic (`CW-20260905-0010`).
+- **`clipboard.write` and `export.download` are enforced only inside a
+  sandboxed frame.** On the main origin they remain declared-not-enforced; no
+  CSP directive covers either. `network.fetch` *is* genuinely enforced, by the
+  document CSP's `connect-src`.
+- **There is no browser in CI.** The CSP and the sandbox are proven by
+  construction and by unit tests over the emitted policy, not by observing a
+  real browser refuse anything.
+  [`docs/manual-tests/renderer-sandbox-e2e.md`](./docs/manual-tests/renderer-sandbox-e2e.md)
+  is the actual verification, and it is manual (`CW-20260904-0171`).
+- **The OpenTelemetry bridge has never been observed against a collector.**
+  It is API-only, off by default, and gated behind `TANGENT_OTEL`
+  (`CW-20260905-0011`).
+- **`SaveDraft` has no production caller.** Browser `localStorage` is the only
+  draft custody actually running, which means drafts are per-browser and are
+  not covered by the durable retention model (`CW-20260905-0001`).
+- **`renderer.entry` loads nothing.** A manifest's renderer entry is recorded
+  and digested but never used to load code; `ui/src/main.tsx` registers
+  renderers by string literal (`CW-20260905-0004`).
+- **The ADR 0002 §3 custody-precedence engine is not implemented.** Retention
+  uses host windows only (`CW-20260905-0008`).
+- **One active pending envelope per room.** History persists, but a room holds
+  one envelope awaiting submission at a time; an overlapping advance is
+  refused with `SESSION_BUSY` rather than queued.
+
+Open work is tracked in Torque under project `PRJ-20260825-0002`. Anything in
+this README that is not shipped is labelled *deferred* or *not committed*
+above.
+
 More docs:
 
-- [`docs/architecture.md`](./docs/architecture.md) — system shape and layers
+- [`docs/architecture.md`](./docs/architecture.md) — system shape, layers, and the canonical limitations list
+- [`docs/adr/`](./docs/adr/) — the five accepted decision records (0001 lifecycle boundaries, 0002 retention and draft custody, 0003 definition and package ownership, 0004 access authority, 0005 product boundary)
 - [`docs/database-operations.md`](./docs/database-operations.md) — single-writer ownership, backup and restore modes, repair, and the six deletion kinds
 - [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
@@ -242,6 +339,10 @@ More docs:
 - [`docs/manual-tests/progress-panel-e2e.md`](./docs/manual-tests/progress-panel-e2e.md) — full progress-panel workflow with update/reopen, checkpoint inspection, and export snapshot verification
 - [`docs/manual-tests/dashboard-e2e.md`](./docs/manual-tests/dashboard-e2e.md) — full dashboard workflow with saved layouts, drill-down, and export/share snapshot verification
 - [`docs/manual-tests/wizard-e2e.md`](./docs/manual-tests/wizard-e2e.md) — full wizard workflow with partial saves, recovery, and final completion
+- [`docs/manual-tests/room-workflow-completion-e2e.md`](./docs/manual-tests/room-workflow-completion-e2e.md) — resumable completion: pending receipts, reconnect, restart, and recovery
+- [`docs/manual-tests/renderer-sandbox-e2e.md`](./docs/manual-tests/renderer-sandbox-e2e.md) — **the only real verification of CSP and renderer sandboxing**; there is no browser in CI
+- [`docs/manual-tests/multi-agent-e2e.md`](./docs/manual-tests/multi-agent-e2e.md) — concurrent callers across independent rooms
+- [`docs/manual-tests/multi-envelope-session-e2e.md`](./docs/manual-tests/multi-envelope-session-e2e.md) — many envelopes across one room's lifetime
 
 ## License
 

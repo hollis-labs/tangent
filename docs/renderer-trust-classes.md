@@ -86,7 +86,11 @@ effect to. Their ceilings are empty rather than small.
 
 `readSandboxMessage` in `ui/src/lib/sandbox-frame.ts` is the only place in the
 SPA that decides whether a message from a frame is real, and it requires **all
-four** of the direction document's checks:
+four** checks below. (These originated in the retired
+`docs/interactive-collaboration-direction.md`; that file is deleted and its
+durable content is now
+[ADR 0005](adr/0005-product-boundary-and-portfolio-composition.md). The checks
+themselves are normative here, not there.)
 
 | Check | Requirement |
 |---|---|
@@ -174,6 +178,14 @@ rather than the browser's socket. A `case` for a code that cannot arrive is
 untestable dead TypeScript.
 
 ## What is not enforced
+
+> **Reading these entries.** An entry naming a `CW-…` id is tracked work. An
+> entry without one is **non-committed direction**: a constraint recorded so the
+> next implementer does not have to rediscover it, not a promise that anyone
+> will act on it. Nothing here is scheduled by virtue of being written down —
+> the canonical limitation list is
+> [`architecture.md`](architecture.md#current-limitations), and open work lives in Torque under
+> project `PRJ-20260825-0002`.
 
 Stated plainly, because a sandbox that looks enforced and is not is worse than
 an honestly labelled declarative one — which is exactly why `CW-20260825-0077`

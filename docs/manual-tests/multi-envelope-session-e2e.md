@@ -12,7 +12,7 @@ workflows without involving an LLM.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 
@@ -74,14 +74,20 @@ curl -fsS -X POST http://127.0.0.1:7842/mcp \
   | jq -r '.result.content[0].text | fromjson'
 ```
 
-Inspect the database directly:
+Inspect the database directly. **These two tables are compatibility
+projections, not the authority** — the canonical record is the interaction, and
+`rooms`/`envelopes` never decide an outcome (see
+[`../room-workflow-completion.md`](../room-workflow-completion.md)). Read them
+to confirm the projection was rebuilt, and read `tangent.session_get` or
+`tangent.interaction_get` to confirm what actually happened:
 
 ```bash
 sqlite3 ~/.tangent/tangent.db "select id,status from rooms order by created_at desc limit 5;"
 sqlite3 ~/.tangent/tangent.db "select room_id,envelope_id,status from envelopes order by created_at desc limit 10;"
 ```
 
-You should see the room row plus three resolved envelope rows.
+You should see the room row plus one resolved envelope row per envelope you
+drove through it.
 
 ## 7. Restart and confirm history survives
 

@@ -92,7 +92,36 @@ nothing was re-asked.
 
 Issue a second triage call with a new envelope id and no `completion` object,
 answer it in the browser within a few seconds, and confirm the tool returns the
-ordinary triage response — not a receipt. This is the v0.12 fast path.
+ordinary triage response — not a receipt. This is the inline fast path, and it
+is the behaviour every pre-existing caller depends on.
+
+## 6b. Wait mode converts to a pending receipt, it does not fail
+
+This is the step that proves the resumable contract, and it is the one most
+worth actually running.
+
+Issue a third triage call with a new envelope id and no `completion` object,
+and then **do not answer it**. Leave the browser alone.
+
+`internal/roomflow.CompatibilityWindow` bounds the inline wait. Past that
+window the call must return a **successful pending receipt** carrying the
+durable handle and the room URL — not an error, not a timeout, not a
+cancellation. Confirm:
+
+- the result is a success, not an error result;
+- it carries an `interaction_id` and a room URL;
+- the browser still shows the envelope waiting, untouched;
+- answering it afterwards still produces a terminal outcome, retrievable with
+  `tangent.interaction_get`.
+
+Then confirm the same interaction can be waited on again with
+`tangent.interaction_await`, and that re-issuing the identical original
+invocation returns the same durable handle rather than creating a second
+interaction.
+
+The window is a constant in the source rather than a number to memorize; read
+it from `internal/roomflow/roomflow.go` if you need the exact value while
+timing the step.
 
 ## 7. Acknowledgement is separate and idempotent
 
@@ -117,7 +146,7 @@ sqlite3 /tmp/tangent-completion-e2e.db \
 ## 8. Legacy SSE behaves identically
 
 Repeat steps 1 and 4 against `http://127.0.0.1:7843/sse` with an MCP client
-that speaks the 2024-11-05 SSE transport. Confirm the session survives well past
-30 seconds of idle time — the server-wide read deadline is cleared for MCP
+that speaks the 2024-11-05 SSE transport. Confirm the session survives idling
+well past the server-wide read timeout — the server-wide read deadline is cleared for MCP
 routes, and a dropped SSE session is what used to make catalog refresh hang and
 the next call answer "session not found".

@@ -15,7 +15,7 @@ import (
 // suite. Failure here means a go-envelopes upgrade has broken Tangent's
 // integration assumptions — investigate before bumping the dep.
 //
-// Per the migration recipe (~/Projects-apps/go-envelopes/docs/migration-from-nanite.md
+// Per the migration recipe (go-envelopes docs/migration-from-nanite.md
 // §"Tangent (next consumer)"), every consumer should run this test.
 func TestEnvelopesContract(t *testing.T) {
 	svc, err := envelope.New(context.Background())

@@ -5,7 +5,9 @@ Tangent is the successor: same basic envelope-driven UX, but generalized
 into a persistent multi-room host with more than one bundled workflow.
 
 If you have an existing Fast-Triage setup, this guide is the shortest path
-to move it onto Tangent v0.2.
+to move it onto Tangent. Fast-Triage is archived; this document is kept for
+people still holding an old config, not as a description of current Tangent.
+For that, start with [`mcp-integration.md`](./mcp-integration.md).
 
 ## Why We Did This
 
@@ -57,8 +59,14 @@ workflow starts.
 | _(none)_ | `tangent.session_list` |
 | _(none)_ | `tangent.session_close` |
 
-The compatibility promise for v0.2 is at the workflow level, not the old
-Fast-Triage server surface. Update your MCP config and tool calls.
+Tangent's surface has grown well past this table — bundled workflows, the
+durable HITL inbox, the generic interaction substrate, definition-registry
+diagnostics, and the operability probes. Ask the running build with
+`tools/list` (or `make smoke`) for the current set; the table above only maps
+the two Fast-Triage names.
+
+The compatibility promise is at the workflow level, not the old Fast-Triage
+server surface. Update your MCP config and tool calls.
 
 ## Behavioral Diffs
 
@@ -69,16 +77,25 @@ Fast-Triage server surface. Update your MCP config and tool calls.
 - Tangent owns and returns the room URL for each call; Fast-Triage generated
   its own browser session flow.
 - Tangent's SPA has a tab strip for switching active rooms; Fast-Triage
-  assumed a single active tab.
+  assumed a single active tab. Tangent goes further: one room accepts several
+  simultaneous connections, with one resolver lease deciding which may answer.
 - Tangent rejects overlapping work on the same room with `SESSION_BUSY`
-  instead of queueing it.
+  instead of queueing it — one active pending envelope per room.
+- Tangent's wait is not the work. A call whose inline wait elapses returns a
+  successful **pending receipt** with a durable handle, not an error; the
+  operator can answer later and the caller retrieves the outcome. Fast-Triage
+  had no equivalent — a lost connection was a lost interaction. See
+  [`room-workflow-completion.md`](./room-workflow-completion.md).
+- A Tangent room URL is a locator, not a credential. The browser needs a
+  participant session; a pasted link carries no authority.
 
 ## Skill Upgrade
 
-If you have the old Nanite skill installed, it now upgrades to `tangent`.
-For v0.2, the `fast-triage` skill name can remain as a thin redirect stub so
-existing slash-command habits keep working while users migrate. The actual
-skill body should point at Tangent's tools:
+If you have the old Nanite skill installed, it now upgrades to `tangent`. A
+`fast-triage` skill name may remain as a thin redirect stub so existing
+slash-command habits keep working while users migrate; the actual skill body
+should point at Tangent's tools. Repo-local launcher skills for every bundled
+workflow live under [`.agents/skills/`](../.agents/skills/):
 
 - `tangent.triage`
 - `tangent.feedback`

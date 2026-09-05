@@ -29,17 +29,22 @@ already runs it.
 ## The tool count is never written down
 
 The expected surface is derived by running the binary and asking it. There is
-no literal anywhere in the check, and there should not be one here either: the
-number has moved from 25 to 46 inside a single day of work, and every document
-that pinned it has been wrong within a week.
+no literal anywhere in the check, and there is none here either: the number
+moved six times inside a single day of work, and every document that pinned it
+has been wrong within a week.
 
 To see the current count, ask the build:
 
 ```bash
 make smoke 2>&1 | grep 'shipped build advertises'
-# example output, correct only for the commit that produced it:
-# shipped build advertises 46 tools (digest 5d1fa6fdd8ba) over /mcp and 46 tools (digest 5d1fa6fdd8ba) over /sse
+# shipped build advertises N tools (digest <short-sha256>) over /mcp
+#   and N tools (digest <short-sha256>) over /sse
 ```
+
+The output above is deliberately written with placeholders. A worked example
+with real numbers in it would be a literal, and it would be wrong by the next
+task that adds a tool — which is exactly the failure this whole section
+exists to prevent.
 
 The digest is a short sha256 over the sorted tool names. Two hops with the same
 digest are serving the same surface; that is the only comparison the check
@@ -63,14 +68,20 @@ beneath it. Example, from a real run against a deployment two commits behind
 the working tree:
 
 ```
-FAIL [CATALOG_STALE] deployed /mcp tool surface: shipped build advertises 46 tools
-  (digest 5d1fa6fdd8ba), deployed /mcp advertises 44 tools (digest 03181102fb32);
+FAIL [CATALOG_STALE] deployed /mcp tool surface: shipped build advertises N tools
+  (digest <a>), deployed /mcp advertises M tools (digest <b>);
   absent there: tangent.retention_status, tangent.telemetry_query
   operator action: Redeploy Tangent so the serving process is the build on disk
   (`tangent --migrate-only` first when the schema moved), then refresh the
   gateway's catalog so it re-lists tools.
 2 finding(s); modes: CATALOG_STALE
 ```
+
+The counts and digests are placeholders for the same reason. What matters in a
+real finding is the *names* it lists under `absent there`: those are the tools
+the deployment is missing, and they say how far behind it is. **This shape is
+not hypothetical — the live deployment has been observed advertising a smaller
+surface than the build on disk while this document was being written.**
 
 ### Why `PROCESS_DOWN` is not the same question as "is the resource running"
 

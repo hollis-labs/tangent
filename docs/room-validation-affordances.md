@@ -177,9 +177,12 @@ These are deliberate. Do not "fix" them into uniformity.
 - **Response payloads are frozen.** Affordance work never changes a submitted
   key, shape, trimming rule, or `|| undefined` behaviour. If a fix seems to
   require one, it is not an affordance fix.
-- **Draft keys are ADR 0002's.** Nine localStorage families across two
-  incompatible shapes, two of them missing `encodeURIComponent`. Record what you
-  find; migrate nothing here.
+- **Draft keys are ADR 0002's.** Several localStorage families across two
+  incompatible shapes, some missing `encodeURIComponent`. Record what you
+  find; migrate nothing here. A key migration is **non-committed direction** —
+  ADR 0002's review questions contemplate a v2 draft-key shape, and no task in
+  this repository has been opened for it. Browser `localStorage` is currently
+  the *only* running draft custody (`CW-20260905-0001`).
 
 ## Testing
 

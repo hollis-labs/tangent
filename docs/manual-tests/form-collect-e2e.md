@@ -10,7 +10,7 @@ End-to-end smoke for `tangent.form-collect`.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 

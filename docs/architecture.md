@@ -1,4 +1,8 @@
-# Tangent architecture (v0.6 form-collect release)
+# Tangent architecture
+
+Stamped against `ce4aca8`. A claim in this document that is not true of that
+commit is a defect; the **Current limitations** section at the end says what
+is declared or intended rather than shipped.
 
 A one-pager. For the user-facing setup recipe, see
 [`mcp-integration.md`](./mcp-integration.md). For contributor onboarding,
@@ -95,14 +99,21 @@ which uses React Router to pick up the ID and connect over WS.
 `internal/mcp/` — built on the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable
 HTTP) and `/sse` (legacy SSE) on the same port as the SPA. Runs in
-**stateless + JSONResponse** mode for v0.1: one-shot `tools/list` and
+**stateless + JSONResponse** mode: one-shot `tools/list` and
 `tools/call` calls succeed without a prior `initialize`, which keeps
 the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
-workflow needs it.
+workflow needs it. Both transports clear the server-wide read *and* write
+deadlines (`longLivedMCPHandler`), which is what keeps a legacy `/sse`
+subscription from being torn down mid-session by the 30s `ReadTimeout`.
 
-The production build advertises 40 tools. Its compatibility surface contains
-these 25 room/workflow and session tools:
+The tool surface is **derived, never written down**. It has been recorded
+incorrectly in this repository more times than correctly, so no count appears
+in this document: `make smoke` asks the shipped binary and prints the surface
+with a digest, and `internal/smoke/docs_test.go` fails when the names listed
+below no longer match what the binary advertises.
+
+The compatibility surface contains these room/workflow and session tools:
 
 - `tangent.list_workflows` — discovery.
 - `tangent.triage` — the bundled triage workflow.
@@ -130,7 +141,7 @@ these 25 room/workflow and session tools:
 - `tangent.session_close`
 - `tangent.session_list`
 
-The generic durable substrate adds 11 handle-based tools:
+The generic durable substrate adds these handle-based tools:
 
 - `tangent.interaction_list_kinds`
 - `tangent.interaction_resolve_definition`
@@ -144,6 +155,18 @@ The generic durable substrate adds 11 handle-based tools:
 - `tangent.interaction_supersede`
 - `tangent.interaction_acknowledge`
 
+The definition registry adds three payload-bounded diagnostics:
+
+- `tangent.definition_registry_list`
+- `tangent.definition_get`
+- `tangent.definition_registry_diagnostics`
+
+And operability adds three read-only probes:
+
+- `tangent.health_report`
+- `tangent.telemetry_query`
+- `tangent.retention_status`
+
 Every tool in the first list except `tangent.list_workflows` and the phase,
 close, create, get, and list session operations is room-backed, and each of
 those accepts the shared optional `completion` selector described next.
@@ -152,12 +175,12 @@ those accepts the shared optional `completion` selector described next.
 
 `internal/roomflow/` — every named room workflow and `tangent.session_advance`
 routes through one shared compatibility adapter onto the canonical durable
-substrate. The adapter separates three facts the v0.12 blocking path conflated:
+substrate. The adapter separates three facts the pre-foundation blocking path conflated:
 that the request exists, that the human answered, and that the caller is still
 listening.
 
 A durable interaction is created before any wait can lose it, keyed by caller
-scope + workflow kind + envelope id. Wait mode preserves the exact v0.12
+scope + workflow kind + envelope id. Wait mode preserves the exact pre-foundation
 response for interactions answered within 45 seconds; past that it returns a
 successful pending receipt carrying the durable handle and room URL, never an
 error and never a cancellation. `completion.mode: "async"` returns that receipt
@@ -168,7 +191,7 @@ Transport loss, caller timeout, browser disconnect, and process restart stop
 only the active waiter. Only a participant submission, a participant
 cancellation, an authorized caller cancellation, or an authorized room close
 produces a terminal outcome. Room presentation and history are rebuilt from
-canonical records at startup; the in-memory pending map and the v0.12 `rooms` /
+canonical records at startup; the in-memory pending map and the legacy `rooms` /
 `envelopes` tables are compatibility projections, never a terminal-state
 authority. See `docs/room-workflow-completion.md`.
 
@@ -509,14 +532,17 @@ and its response and error schemas are drift-tested projections of the same
 `$defs`. The dedicated `/hitl` client types live with `ui/src/lib/hitl-api.ts`
 and the evidence component.
 
-## Wails note
+## Wails note (future, not shipped)
 
-Today Tangent is a Go HTTP server + embedded Vite SPA, not a Wails
-desktop app. Wails wrapping is a future migration: the embedded-SPA
-shape is deliberately chosen so the eventual Wails wrap is mechanical
-— the same Go server can run inside a Wails shell, and the same SPA
-build is what the shell loads. v0.1 ships as the localhost binary so
-the shape can be proven before a desktop wrapper is added.
+Today Tangent is a Go HTTP server + embedded Vite SPA served to an ordinary
+browser. **There is no Wails dependency, no desktop shell, and no system tray
+in the tree.** Wails wrapping is a future migration and has not been started:
+the embedded-SPA shape is deliberately chosen so the eventual wrap stays
+mechanical — the same Go server can run inside a Wails shell, and the same SPA
+build is what the shell would load. Tangent ships as the localhost binary so
+the shape can be proven before a desktop wrapper is added. The same applies to
+the Nanite-native side channel drawn in the sketch above: intended direction,
+no implementation, no committed release.
 
 ## Room access and caller scope
 
@@ -767,31 +793,104 @@ the trace its history is filed under and `tangent.telemetry_query` as the
 reader. Readiness observations are emitted on *transitions* only, so a
 supervisor polling on a timer does not bury the moment something changed.
 
-## Limits (v0.5)
+## Current limitations
 
-- **Localhost only.** No remote access. Authorization is object-scoped (ADR
-  0004) but loopback admission is not authentication: a hostile local process
-  running as the same user can still mint a participant session. Tangent moves
-  authority off the URL; it does not defend against that.
-- **`standalone-local` partitions are advisory.** See "Room access and caller
-  scope" above. They prevent accident, not intent.
-- **Clipboard, ad-hoc download, and renderer-initiated fetch are declared, not
-  enforced.** The browser hands a same-origin renderer those powers directly,
-  and there is no document CSP. `effect.Mediation` records the difference on
-  every receipt; closing it needs the renderer trust classes and the CSP that
-  `CW-20260825-0073` owns.
-- **Single-user.** Multiple concurrent agent sessions are supported
-  (multi-room), but they share one machine, one process, one user.
-- **One active pending envelope per room.** History persists, but only one
-  envelope at a time can be awaiting submission in a given room.
-- **Whiteboard is single-user localhost first.** The board is shared
-  between one user and one agent through one persistent room, but there
-  is no live multiplayer presence or conflict resolution yet.
+Stamped against `ce4aca8`. This is the canonical list — `README.md`,
+`AGENTS.md`, and `developing.md` point here rather than keeping their own
+copies. Every entry is either a permanent scope decision or names the Torque
+task that closes it. **An entry that omits a limitation is worse than an
+entry that admits one:** the direction document this repository just retired
+was deleted precisely because its status half rotted while its readers kept
+trusting it.
+
+### Scope decisions (not defects)
+
+- **Localhost only, single-user.** No remote access. Authorization is
+  object-scoped (ADR 0004) but loopback admission is not authentication: a
+  hostile local process running as the same user can still mint a participant
+  session. Tangent moves authority off the URL; it does not defend against
+  that.
+- **One active pending envelope per room.** History persists, but a room holds
+  one envelope awaiting submission at a time. An overlapping
+  `tangent.session_advance` is refused with `SESSION_BUSY` rather than queued.
+  This is a property of the compatibility room projection, not of the durable
+  substrate beneath it.
+- **Whiteboard is single-user localhost first.** The board is shared between
+  one user and one agent through one persistent room; there is no live
+  multiplayer presence or conflict resolution.
 - **Spreadsheet review is review-only, not a spreadsheet editor.**
-  Agent-provided rows are canonical; there are no formulas, workbook
-  semantics, arbitrary cell editing, or remote spreadsheet connectors.
-- **Two transports, one envelope schema.** MCP today; the
-  Nanite-native side-channel (mid-turn event injection) is v0.6+.
+  Agent-provided rows are canonical; no formulas, workbook semantics, arbitrary
+  cell editing, or remote spreadsheet connectors.
+- **No desktop shell and no Nanite-native channel.** MCP is the only
+  agent-facing transport. See the Wails note above.
+
+### `standalone-local` partitions are advisory, not a security boundary
+
+Any local caller can assert any partition, because the partition is the
+caller's own declared application id and nothing verifies it. Partitions are
+enforced **only across authorities**, where the authority prefix is
+host-assigned. A `standalone-local:a` caller is prevented from *colliding*
+with `standalone-local:b` by accident; it is not prevented from *claiming* to
+be `standalone-local:b`.
+
+**Nothing downstream may present a `standalone-local` partition as isolation.**
+ADR 0002 §6 carries the same limitation into retention: a per-partition
+deletion filter is a convenience for the local user, never a guarantee that one
+application's content has been isolated from another's. See "Room access and
+caller scope" above.
+
+### Declared but not exercised
+
+- **No definition declares a host-mediated effect capability.** Every request
+  through `POST /api/effects` is refused with `effect_capability_undeclared`,
+  and `/healthz/capability` reports that posture explicitly rather than
+  silently. The broker, its handle minting, its receipts, and its refusal
+  paths are covered by tests, and have **zero production traffic**. The
+  designed posture is not the same as a proven one (`CW-20260905-0010`).
+- **`clipboard.write` and `export.download` are enforced only inside a
+  sandboxed frame.** No CSP directive covers either, so on the main origin they
+  remain *declared, not enforced* — which is why `effect.Mediation` is a
+  function of the capability **and** the isolation, and why every receipt
+  records both. `network.fetch` is the one that became genuinely enforced,
+  by the document CSP's `connect-src`.
+- **`renderer.entry` loads nothing.** A manifest's renderer entry is recorded,
+  digested, and pinned, but no loader consumes it; `ui/src/main.tsx` registers
+  renderers by string literal. The trust class therefore constrains a renderer
+  the host already shipped, not one a publisher delivered
+  (`CW-20260905-0004`).
+- **`SaveDraft` has no production caller.** Browser `localStorage` is the only
+  draft custody actually running. Drafts are therefore per-browser, invisible
+  to the durable retention model, and not covered by the custody guarantees
+  ADR 0002 describes (`CW-20260905-0001`).
+- **The ADR 0002 §3 custody-precedence engine is not implemented.** Retention
+  operates on host windows only; the precedence rules that would let a
+  publisher or a caller override a host window are specified and unbuilt
+  (`CW-20260905-0008`).
+
+### Proven by construction, not observed
+
+- **There is no browser in CI.** The CSP, the frame sandbox, the opaque origin,
+  and the `postMessage` checks are verified by unit tests over the emitted
+  policy strings and by code inspection — not by watching a real browser refuse
+  anything. [`manual-tests/renderer-sandbox-e2e.md`](manual-tests/renderer-sandbox-e2e.md)
+  is the actual verification and it is manual. Treat a passing CI run as
+  evidence the policy is *emitted*, never as evidence it is *enforced*
+  (`CW-20260904-0171`).
+- **The OpenTelemetry path has never been observed against a collector.**
+  Tangent depends on the OTel API only — no SDK, no exporter — so with no SDK
+  installed the global providers are no-ops and nothing is emitted. The bridge
+  is additionally gated behind `TANGENT_OTEL`. Nobody has yet run it with an
+  SDK installed and watched spans arrive somewhere (`CW-20260905-0011`).
+
+### Open work
+
+Everything above that is not a scope decision has a Torque task. Further open
+direction lives in the twelve `CW-20260905-*` tasks that
+[ADR 0005](adr/0005-product-boundary-and-portfolio-composition.md) opened when
+it retired `docs/interactive-collaboration-direction.md`. That document is
+**deleted**; its durable half is ADR 0005 and its status half was not
+preserved. Do not re-create it — an idea that is worth keeping goes to a Torque
+task or into an ADR, not into a file that mixes decisions with observations.
 
 ## Sandboxing for design-iteration
 

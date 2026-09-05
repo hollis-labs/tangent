@@ -38,7 +38,8 @@ Every named room workflow accepts an optional `completion` object:
 
 In `wait` mode, if the operator answers within **45 seconds**, the tool returns
 the exact same response body it always did. Nothing about an integration
-written against v0.12 changes for interactions a human answers quickly.
+written before the foundation phase changes for interactions a human answers
+quickly.
 
 ### The 45-second boundary
 
@@ -140,13 +141,13 @@ exactly as answerable as it was:
 These are the only things that produce a terminal outcome:
 
 - the participant submitting a response,
-- the participant cancelling (returns the v0.12 `ack` / `cancelled` shape),
+- the participant cancelling (returns the pre-foundation `ack` / `cancelled` shape),
 - an authorized caller cancelling via `tangent.interaction_cancel`,
 - an authorized caller closing the room via `tangent.session_close`, which
   dispositions everything outstanding under a named surface policy.
 
 After a restart, room presentation and history are rebuilt from canonical
-interaction records. The in-memory pending map and the v0.12 `rooms` /
+interaction records. The in-memory pending map and the legacy `rooms` /
 `envelopes` tables are compatibility projections; they never decide an
 outcome. A legacy row can read `pending` long after the canonical interaction
 resolved — the `legacy_room_history_v12` view reports both, and the canonical

@@ -15,7 +15,9 @@ Use `tangent.whiteboard` to open a board called `board-1` so I can sketch a simp
 
 ## Notes
 
-- Keep the browser tab on the same room until submit resolves.
+- Several tabs may watch one room; exactly one holds the resolver lease and
+  can submit. Closing or refreshing a tab does not lose the work — the
+  interaction is durable and the wait resumes.
 - For reproducible runs, prefer the exact payload from the manual recipe.
 
 ## Completion and recovery
@@ -27,7 +29,7 @@ Prefer async so the call returns as soon as the request is durable:
 ```
 
 It returns a successful receipt with `"status": "pending"`, a durable handle,
-and the room URL to hand a human. Omitting `completion` keeps the v0.12
+and the room URL to hand a human. Omitting `completion` keeps the inline
 default: wait up to 45 seconds, return the normal response if the operator
 answers in time, and otherwise return that same pending receipt — never an
 error, and never a cancellation.

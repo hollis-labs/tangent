@@ -33,7 +33,9 @@ Confirm:
 
 - `script-src` names `'self'` and one `'sha256-…'` source, and does **not**
   contain `'unsafe-inline'` or `'unsafe-eval'`.
-- `connect-src` names `'self'`, `ws://127.0.0.1:7842`, `wss://127.0.0.1:7842`
+- `connect-src` names `'self'` plus this origin's own WebSocket schemes
+  (`ws://` and `wss://` at the host you connected to — the policy is built
+  per-request from the `Host` header, so it names your port, not a fixed one)
   and nothing else — **no external origin at all**, which is what makes
   `network.fetch` enforced.
 - `img-src` and `font-src` name `https://cdn.tldraw.com`, and nothing else
@@ -119,9 +121,11 @@ shim silently and leaves the preview inert but visible.
 
 ## 6. Payload ceiling
 
-Ask the agent to send a variant with more than 256 KB of HTML. Confirm the frame
-is not rendered and a red `role="alert"` line reads
-`Not submitted: this preview is … KB and the limit for sandboxed content is 256 KB. Ask the agent to send a smaller variant.`
+Ask the agent to send a variant larger than the sandbox payload ceiling in
+`ui/src/lib/sandbox-frame.ts` (read the constant there rather than trusting a
+number here). Confirm the frame is not rendered and a red `role="alert"` line
+reads `Not submitted: this preview is … KB and the limit for sandboxed content
+is … KB. Ask the agent to send a smaller variant.`
 
 ## 7. Unclassified renderer
 

@@ -229,13 +229,15 @@ every row and every trigger; the fingerprint is asserted unchanged across it.
 ## 6. The immutability guards, and how they are suspended
 
 Derived from the schema at migration 0012, not from the count ADR 0002 recorded
-at `0a45caa`: **41 triggers, 12 of them `BEFORE DELETE`.** The ADR counted nine;
-migrations 0006, 0007, and 0012 added
-`terminal_outcome_acknowledgements_immutable_delete`,
+at `0a45caa`: **12 `BEFORE DELETE` guards**, out of a larger set of
+immutability triggers. The ADR counted nine; migrations 0006, 0007, and 0012
+added `terminal_outcome_acknowledgements_immutable_delete`,
 `definition_manifests_immutable_delete`, and
-`retention_operations_immutable_delete`. The test that asserts these numbers
-fails when a migration adds an immutable table without telling the retention
-path about it.
+`retention_operations_immutable_delete`. `internal/db/retention_test.go`
+asserts the **12**, so a migration that adds an immutable table without telling
+the retention path about it fails the build. The total trigger count is *not*
+asserted anywhere and is deliberately not written here — an unguarded number in
+prose is the drift this repository keeps paying for.
 
 `DELETE` is aborted on: `definition_bindings`, `definition_manifests`,
 `delivery_attempts`, `delivery_events`, `draft_revisions`, `interaction_events`,
@@ -285,6 +287,13 @@ operator who cannot tell them apart will reach for the wrong one.
 |---|---|---|---|---|
 | **capability expiry** | `--expire-capabilities` | host policy or local user | `effect_handles` rows — live grants, never content | `capability-expiry` row, `guards_restored: false` because no guard was suspended: `effect_handles` was designed deletable in migration 0009 |
 | **draft deletion** | `--erase-drafts <interaction>` | the participant, or the local user | `draft_revisions.payload`, replaced by a tombstone; the row survives because the resolution names it as its source | `draft-deletion` row, plus the first rows this schema has ever put in `draft_revision_tombstones` |
+
+> **`draft_revisions` is empty in production.** `interaction.Service.SaveDraft`
+> has no production caller, so nothing writes server-side drafts today; browser
+> `localStorage` is the only running draft custody (`CW-20260905-0001`). The
+> draft-deletion path above is implemented and tested, and it currently has
+> nothing to delete. Do not read it as evidence that participant drafts are
+> under durable custody — §9 covers what actually holds them.
 | **payload redaction** | `--erase-interaction <id>`, `--erase-surface <id>`, `--retention-apply` | local user for an erasure; host policy for a window | caller payload, participant drafts, participant resolution, and adapter freeform text — replaced by the typed tombstone of §2 below | `payload-redaction` row carrying one digest per removed column |
 | **surface close** | `--close-surface <id>` | local user or administrator | **nothing** | `surface-close` row with `affected_rows: 0` and a note saying every payload is still present — recorded precisely so a close cannot be mistaken for an erasure |
 | **surface purge** | `--purge-surface <id>` | local user only, never automatic, never a window | the surface and everything that cascades: interactions, events, bindings, drafts, resolutions, deliveries, notifications, attempts, retrievals, acknowledgements, the open request, the legacy room and its envelopes, and the interactions' effect handles | `surface-purge` row that **outlives its own subject** — `retention_operations` has no foreign keys for exactly this reason |
@@ -351,7 +360,9 @@ fact worth keeping.
 
 ## 8. MCP surface
 
-One tool, read-only: **`tangent.retention_status`** (live `tools/list` = 46).
+One tool, read-only: **`tangent.retention_status`**. The size of the surrounding
+tool surface is derived by `make smoke`, never written down here — see
+[mcp-smoketest.md](mcp-smoketest.md).
 
 It reports whether the guards are intact, the schema and storage state, whether
 a process holds the lock and in what role, the windows in force, how many
@@ -415,6 +426,14 @@ Stated plainly rather than implied away, and returned with every
   nothing here has ever been run there.
 
 ## 10. Not implemented by this work
+
+> **Reading these entries.** An entry naming a `CW-…` id is tracked work. An
+> entry without one is **non-committed direction**: a constraint recorded so the
+> next implementer does not have to rediscover it, not a promise that anyone
+> will act on it. Nothing here is scheduled by virtue of being written down —
+> the canonical limitation list is
+> [`architecture.md`](architecture.md#current-limitations), and open work lives in Torque under
+> project `PRJ-20260825-0002`.
 
 - **The custody precedence engine** of ADR 0002 §3. Nothing writes a `custody`
   object into `interactions.policy`, so eligibility is computed from the host

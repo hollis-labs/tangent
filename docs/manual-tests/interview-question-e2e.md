@@ -13,7 +13,7 @@ history for agent resume.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 
@@ -25,7 +25,10 @@ curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.interview_question","arguments":{"envelope":{"v":1,"id":"iq-1","type":"tangent.interview-question","title":"Question 1","data":{"prompt":"What is the main goal for this workflow?","helper_text":"Answer in full sentences.","thread_id":"goals","topic_label":"Workflow goals","choices":[{"id":"quality","label":"Quality"},{"id":"speed","label":"Speed"}],"output_shape":{"label":"Preferred output shape","help":"If you want a specific format, say it explicitly."}}}}}}'
 ```
 
-Capture the room URL from Tangent's stderr log and open it in the browser.
+Read the room URL from the tool response and open it in the browser. (The
+server log carries only the room id — per ADR 0002 §8 it never assembles a
+URL — so `http://127.0.0.1:7842/r/<roomID>` is the form to construct if you
+are watching stderr instead.)
 Submit a long-form answer.
 
 ## 3. Ask two follow-up questions in the same room

@@ -13,7 +13,7 @@ blocks persist and `session_get` reconstructs the current draft.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 

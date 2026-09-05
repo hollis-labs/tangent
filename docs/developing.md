@@ -45,10 +45,24 @@ make build              # frontend build → embedded into Go binary → ./tange
 ## Tests
 
 ```bash
+make verify-supported   # test + lint + check-envelopes under the pinned Node runtime
 make test               # Go (-race) + vitest
 make test-go            # Go only
 make test-frontend      # vitest only
+make smoke              # boot the shipped binary; derive and check the MCP surface
 ```
+
+`make verify-supported` is the gate to trust: it runs everything through
+`mise --no-config exec node@22.12.0` rather than whatever Node the shell
+happens to have.
+
+`make smoke` builds `./cmd/tangent`, boots it on a reserved port against a
+database in a temp directory, and checks direct `/mcp`, legacy `/sse`, one
+read-only tool call, and the three health probes. It touches no live instance
+and no shared catalog, and because `internal/smoke` carries no build tag,
+`go test ./...` runs it too. `TANGENT_SMOKE_ENV=1 make smoke` adds the live
+deployment, its Cerberus resource, and the Tether gateway — see
+[`mcp-smoketest.md`](./mcp-smoketest.md).
 
 Notable suites:
 
@@ -68,6 +82,10 @@ Notable suites:
   submit -> reopen -> cancel verification, including audit export refs.
 - `scripts/form-collect-mock-call.mjs` — end-to-end form-collect submit
   verification, including attachment refs and explicit action capture.
+- `internal/smoke/` — boots the *shipped binary* and derives its MCP surface,
+  so no expected tool count is ever written down. `docs_test.go` in the same
+  package is the documentation gate: it fails when a document names a tool the
+  build does not serve, omits one it does, or writes a count that has drifted.
 
 ## Lint
 
@@ -141,16 +159,22 @@ Go-specific conventions follow the broader Hollis Labs engineering direction:
 ## Architecture pointer
 
 For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
-go-envelopes registry) and the Wails-deferral note, see
-[`architecture.md`](./architecture.md).
+go-envelopes registry, definition registry, connection lifecycle,
+authorization, renderer trust classes, health, and telemetry) and the
+Wails-deferral note, see [`architecture.md`](./architecture.md). The five
+accepted decision records are in [`adr/`](./adr/).
 
 For how a room workflow states what it still needs, and how it reports a
 submission the server refused, see
 [`room-validation-affordances.md`](./room-validation-affordances.md).
 
-## Known limitations (v0.6)
+## Known limitations
 
-See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
+**The canonical list is
+[`architecture.md`](./architecture.md#current-limitations).** It is kept in one
+place on purpose: a limitation copied into four documents rots in three of
+them, which is precisely how the direction document this repository retired
+came to mislead its readers. What follows is the contributor-facing subset.
 
 - Localhost only, single-user. Object access is scoped (ADR 0004), but loopback
   admission is not authentication: a hostile local process running as the same
@@ -158,10 +182,33 @@ See [`CHANGELOG.md`](../CHANGELOG.md) Security section. Headlines:
 - `standalone-local` caller partitions are advisory, not a security boundary.
   Any local caller can assert any partition; isolation is enforced only across
   authorities. See
-  [`architecture.md`](./architecture.md#room-access-and-caller-scope).
-- One active pending envelope per room.
+  [`architecture.md`](./architecture.md#room-access-and-caller-scope). **Do not
+  build a trust assumption on one, and do not let a downstream product present
+  one as isolation.**
+- One active pending envelope per room. An overlapping `session_advance` is
+  refused with `SESSION_BUSY` rather than queued.
+- **No definition declares a host-mediated effect capability.** Every request
+  through `POST /api/effects` refuses `effect_capability_undeclared`, so
+  `internal/effect` is covered by tests and has zero production traffic. If you
+  are changing it, you are the first caller (`CW-20260905-0010`).
+- **`clipboard.write` and `export.download` are enforced only inside a
+  sandboxed frame**; on the main origin they remain declared-not-enforced.
+  `network.fetch` is genuinely enforced by the document CSP.
+- **There is no browser in CI.** The CSP and the frame sandbox are verified by
+  unit tests over the emitted policy and by construction, never by observing a
+  browser refuse anything. A green CI run is not evidence of enforcement —
+  [`manual-tests/renderer-sandbox-e2e.md`](./manual-tests/renderer-sandbox-e2e.md)
+  is (`CW-20260904-0171`).
+- **The OpenTelemetry bridge has never been run against a collector**
+  (`CW-20260905-0011`).
+- **`SaveDraft` has no production caller**; browser `localStorage` is the only
+  running draft custody (`CW-20260905-0001`).
+- **`renderer.entry` loads nothing**; `ui/src/main.tsx` registers renderers by
+  string literal (`CW-20260905-0004`).
+- **The ADR 0002 §3 custody-precedence engine is not implemented**; retention
+  uses host windows only (`CW-20260905-0008`).
 - The production server's tool surface is room/workflow compatibility tools,
-  generic durable interaction tools, 4 strict HITL inbox operations, the
+  generic durable interaction tools, the strict HITL inbox operations, the
   definition-registry diagnostics, and the operability probes. The count is
   deliberately not recorded here — it has been wrong in this repository's docs
   more often than right. `make smoke` derives it from the build and reports any
@@ -209,6 +256,12 @@ shape fits every kind.
    That table is the only registration list: `extensions.RegisterAll`
    backs both `cmd/tangent` and `cmd/tangent-dump-types`, so the kind
    reaches the server and the TypeScript codegen from a single edit.
+   The authored **definition manifest** and its schema files live beside the
+   kind at `internal/envelope/extensions/packages/<package-id>/<kind>/`
+   (`manifest.yaml` plus the schemas it names, embedded as one tree). The
+   package id is the ADR 0003 §6 ownership assignment made mechanical; see
+   [ADR 0003](./adr/0003-definition-and-package-ownership.md) before inventing
+   a new package.
 2. If the kind drives an MCP tool, add the tool wiring under
    `internal/mcp/` — see `triage_handler.go` and `triage_schema.go`
    for the hand-rolled JSON Schema pattern. The handler either creates a
@@ -236,9 +289,11 @@ shape fits every kind.
 A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent.triage`,
 `tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`,
-tangent.whiteboard`, `tangent.spreadsheet-review`,
-`tangent.approval-queue`, and the writing
-workflow kinds are the worked examples. If the workflow
+`tangent.whiteboard`, `tangent.spreadsheet-review`,
+`tangent.approval-queue`, `tangent.wizard`, and the writing
+workflow kinds are the worked examples. Every named room workflow routes
+through the shared completion adapter in `internal/roomflow`; do not add a
+parallel wait path. If the workflow
 is multi-step,
 prefer reusing the `tangent.session_*` substrate and the room phase
 state rather than inventing a parallel room lifecycle.

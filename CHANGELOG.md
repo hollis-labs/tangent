@@ -64,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `guards_restored` and a backup survey that says `not-surveyed` when nobody
     looked.
   - **`tangent.retention_status`** reports the custody posture over MCP,
-    read-only; production `tools/list` is now 46. The operations themselves are
+    read-only. The operations themselves are
     CLI commands, because erasure authority belongs to the local user and MCP has
     no authenticated caller identity to hold it.
   - See [docs/database-operations.md](docs/database-operations.md), including
@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `internal/definition`'s existing `available`/`incompatible`/`quarantined`/
   `unavailable` vocabulary rather than a second one). `tangent.health_report`
   exposes all three over MCP for a Tether-connected client with no HTTP path to
-  the host; production `tools/list` is now 44. Every non-passing check carries
+  the host. Every non-passing check carries
   an operator action, and no report carries a payload, participant text,
   filesystem path, session, or capability material.
 - **Versioned interaction-definition registry.** Every Tangent-owned kind now
@@ -179,17 +179,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   already had. It permits header-less non-browser clients, so MCP clients and
   the documented `curl` recipes are unaffected.
 
-**`standalone-local` partitions are advisory, not a security boundary.** Any
-local caller can assert any partition; isolation is enforced only across
-authorities, where the prefix is host-assigned. Loopback admission is not
-authentication: a hostile local process running as the same user can still mint
-a participant session.
-
 No wire name, version, request schema, response payload, MCP tool name, room
 id, or phase projection changed. Two routes were added (`/api/rooms`,
 `/api/rooms/{roomID}`); none was removed.
 
-## [v0.12.0] - 2026-05-10
+### Security
+
+- **`standalone-local` partitions are advisory, not a security boundary.** Any
+  local caller can assert any partition; isolation is enforced only across
+  authorities, where the prefix is host-assigned. Loopback admission is not
+  authentication: a hostile local process running as the same user can still
+  mint a participant session. Nothing downstream may present a partition as
+  isolation.
+- **`clipboard.write` and `export.download` are enforced only inside a
+  sandboxed frame.** On the main origin they remain declared-not-enforced.
+  `network.fetch` is genuinely enforced by the document CSP's `connect-src`.
+- **No definition declares a host-mediated effect capability**, so every
+  request through `POST /api/effects` refuses `effect_capability_undeclared`.
+  The broker has zero production traffic (`CW-20260905-0010`).
+- **There is no browser in CI.** CSP and sandboxing are proven by construction
+  and by unit tests over the emitted policy, never by observing a browser
+  refuse anything; `docs/manual-tests/renderer-sandbox-e2e.md` is the real
+  verification and it is manual (`CW-20260904-0171`).
+- **The OpenTelemetry bridge has never been observed against a collector**
+  (`CW-20260905-0011`).
+- **`SaveDraft` has no production caller**; browser `localStorage` is the only
+  running draft custody, so server-side draft tables are empty in production
+  (`CW-20260905-0001`).
+- **`renderer.entry` loads nothing**; `ui/src/main.tsx` registers renderers by
+  string literal (`CW-20260905-0004`).
+- **The ADR 0002 §3 custody-precedence engine is not implemented**; retention
+  uses host windows only (`CW-20260905-0008`).
+
+The full, canonical list is
+[docs/architecture.md](docs/architecture.md#current-limitations).
+
+## [v0.12.0] - 2026-05-10 — documented, not tagged
 
 Wizard. Tangent now ships a persistent room-backed guided wizard
 workflow with explicit partial updates, canonical branch-aware step
@@ -736,8 +761,7 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.12.0...HEAD
-[v0.12.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.12.0
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.11.0...HEAD
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
 [v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.9.0

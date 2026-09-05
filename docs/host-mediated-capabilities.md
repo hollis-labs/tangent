@@ -110,7 +110,12 @@ Not every effect class can be made real in a browser that runs the renderer
 same-origin with the host. `effect.Mediation` records which is which, per
 capability, in the type system rather than in a comment:
 
-| Mediation | Meaning | Capabilities |
+> **Read the note below the table before using it.** The table is the
+> `main-origin` column only. Since `CW-20260825-0073`, mediation is a function
+> of the capability *and* the renderer's isolation, so a `declared` row here can
+> be `host` inside a sandboxed frame.
+
+| Mediation | Meaning | Capabilities (main origin) |
 |---|---|---|
 | `host` | The host is the only possible actor. Refusing the request refuses the effect. **Genuinely enforced.** | `file.read_scoped`, `file.write_scoped`, `evidence.preview`, `network.fetch` |
 | `declared` | The browser hands a *main-origin* renderer the same power directly — `navigator.clipboard`, an `<a download>` over a Blob. The grant is a declaration, an audit trail, and a scoped path for renderers that cooperate. **Not a barrier against one that does not.** | `export.download`, `clipboard.write` |
@@ -178,7 +183,9 @@ digest is an identity, not a payload (ADR 0002 §8). `effect_receipts` has no
 column whose name contains `path` or `root`, and a test asserts that.
 
 Refusal codes are fixed and none of them names what it refused, for the same
-reason ADR 0004 §6.5 fixes the text of an authorization failure. Every
+reason [ADR 0004](adr/0004-caller-participant-and-room-access-authority.md)
+fixes the text of an authorization failure — a refusal that explains itself is a
+probe. Every
 filesystem refusal collapses to `effect_path_refused`, so a refusal cannot be
 used as an existence oracle for paths outside the root.
 
@@ -250,6 +257,14 @@ implementer extends that function rather than inventing a second pattern.
 | HITL evidence preview | `ArtifactPreviewCapability{Authority, CapabilityID}`, an undocumented third capability namespace. | Mapped onto `effect.EvidencePreview`; the registry itself is unchanged pending the ADR 0003 amendment below. |
 
 ## What could not be made real
+
+> **Reading these entries.** An entry naming a `CW-…` id is tracked work. An
+> entry without one is **non-committed direction**: a constraint recorded so the
+> next implementer does not have to rediscover it, not a promise that anyone
+> will act on it. Nothing here is scheduled by virtue of being written down —
+> the canonical limitation list is
+> [`architecture.md`](architecture.md#current-limitations), and open work lives in Torque under
+> project `PRJ-20260825-0002`.
 
 Stated plainly, because a stub that looks enforced is worse than an honest gap.
 

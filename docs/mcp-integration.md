@@ -30,17 +30,24 @@ for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 ## Install
 
+The latest **git tag** is `v0.11.0`. Everything the foundation phase added —
+resumable completion, multi-connection rooms, the definition registry, scoped
+authorization, renderer trust classes, health, telemetry, and the database
+operations — is **untagged**, so build from source to get it.
+
 ```bash
+# Latest tagged release:
 go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
-```
 
-Or build from source:
-
-```bash
+# Current behaviour (untagged):
 git clone git@github.com:hollis-labs/tangent.git
 cd tangent
 make build         # produces ./tangent
 ```
+
+Pin a tag when you want a stable surface; build from source when you need the
+behaviour this document describes. Do not mix the two on one machine — see
+"Managed runtime" below.
 
 ## Run
 
@@ -52,8 +59,8 @@ Default port is `7842`; override with `TANGENT_HTTP_PORT=7900` if it
 collides. Expected startup logs:
 
 ```
-level=INFO msg="loaded envelope types" count=26
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=44
+level=INFO msg="loaded envelope types" count=<go-envelopes core catalog>
+level=INFO msg="registered tangent envelope extensions" plugin=tangent count=<total registered kinds>
 level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
 level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
@@ -91,6 +98,70 @@ and `build.resource`; `deployment.type` says how the process is supervised.
 Treat that file as the answer to "who starts Tangent here?" — and if a
 skill, runbook, or agent prompt tells you to `cd` into the repo and run
 `./tangent` while a supervisor owns it, that instruction is stale.
+
+### Managed: Cerberus owns the process, Tether fronts the surface
+
+This is how Tangent runs on the machine this repository is developed on, and
+it is two separate things that fail separately.
+
+**Cerberus owns the lifecycle.** The resource is `tangent-dev` (mode
+`dev_session`, run from the workspace, port 7842), defined in
+`~/.cerberus/projects/tangent.cerberus.yaml`:
+
+```bash
+cerberus resource status tangent-dev    # what the supervisor believes
+cerberus resource deploy tangent-dev    # rebuild and restart — the way to restart
+cerberus resource doctor  tangent-dev   # reads /readyz, not just supervisor state
+```
+
+Do not run `./tangent` by hand while this resource is running: you get two
+launch authorities racing for `:7842` and a split room store. And remember that
+`status: running` is supervisor bookkeeping, not a probe — reconcile it against
+`/healthz` (see "Cold-start check" above).
+
+**Tether fronts the tool surface.** The MCP upstream is declared in
+`~/.tether/catalog/mcp-servers/tangent.yaml` (`transport: sse`, pointing at
+`<base>/sse`, `enabled: true`); there is deliberately no Tether *launch-project*
+entry, because Cerberus owns launching. An agent behind the gateway reaches
+Tangent through `mux`:
+
+```bash
+mux mcp --proxy --only tangent   # native-flat proxy: the supported gateway path
+```
+
+Discovery is dynamic — the gateway lists whatever the upstream advertises — so
+a gateway serving a cached list is the single most common way Tangent "loses"
+tools. That is the `CATALOG_STALE` and `UPSTREAM_ABSENT` half of
+[`mcp-smoketest.md`](./mcp-smoketest.md), and it is what the gated smoke run
+checks:
+
+```bash
+TANGENT_SMOKE_ENV=1 make smoke
+```
+
+Four hops means four different fixes. Restart the process, restart the gateway,
+refresh the catalog, or investigate one capability — the finding's leading mode
+token says which.
+
+### Direct local: no supervisor, no gateway
+
+If none of the above is installed on your machine — which is the normal case
+for anyone who just cloned the repo — Tangent is a plain binary and this is the
+whole story:
+
+```bash
+make build && ./tangent          # serves http://localhost:7842/
+claude mcp add --transport http tangent http://localhost:7842/mcp
+```
+
+Nothing else may start it. Override the port with `TANGENT_HTTP_PORT` if 7842
+is taken, and point your agent's MCP URL at the same port. `make smoke` (with
+no `TANGENT_SMOKE_ENV`) works here too: it boots its own copy on a reserved
+port against a temp database and never touches your running instance.
+
+The managed and direct paths are mutually exclusive per machine. Pick one,
+record it, and do not let a `go install`ed binary and a workspace build both
+claim the port.
 
 ### Cold-start check
 
@@ -142,16 +213,16 @@ failures, and capability denials. It carries no payload, participant text,
 path, session, effect handle, or URL — by construction rather than by
 filtering.
 
-> **Known issue — legacy `/sse` sessions go stale.** The server sets a
-> 30s `ReadTimeout`, and the long-lived MCP wrapper clears only the
-> *write* deadline, so a `GET /sse` stream is torn down after ~30s of
-> quiet and its MCP session is dropped. A client that connected
-> successfully will then get `404 session not found` on every later
-> call, and a gateway that pools the connection will keep serving a
-> dead session id until it is restarted. Prefer `/mcp` (Streamable
-> HTTP) for anything long-lived. If you must use `/sse` through a
-> pooling gateway, restart the gateway after any Tangent restart, and
-> treat a `404 session not found` as "reconnect", not "server down".
+> **Fixed — legacy `/sse` sessions no longer go stale.** The server's 30s
+> `ReadTimeout` used to tear down a quiet `GET /sse` stream and drop its MCP
+> session, after which every later call answered `404 session not found` and a
+> pooling gateway kept serving a dead session id. `longLivedMCPHandler` now
+> clears the read deadline as well as the write one for `/mcp` and `/sse`, so
+> an idle SSE subscription survives. `/mcp` (Streamable HTTP) is still the
+> better choice for anything long-lived, and a `404 session not found` from an
+> older deployment still means "reconnect", not "server down" — check that the
+> serving process is the build on disk with `TANGENT_SMOKE_ENV=1 make smoke`
+> before chasing it further.
 
 ## Claude Code
 
@@ -345,11 +416,13 @@ curl -fsS -X POST http://localhost:17842/mcp \
   | jq -r '.result.tools[].name' | sort
 ```
 
-`tangent.list_workflows` currently returns 17 dispatcher-backed room workflow
+`tangent.list_workflows` returns the dispatcher-backed room workflow
 definitions. It intentionally excludes the non-renderer `tangent.hitl-item`
 interaction definition; clients discover the four HITL operations in the MCP
-tool catalog and their 40 named request/result/evidence definitions in the
-strict schema bundle.
+tool catalog and their named request/result/evidence definitions in the strict
+schema bundle. Ask the build for both counts rather than trusting a number
+here — `internal/smoke/docs_test.go` asserts that this document and the shipped
+binary still agree.
 
 One-shot probes for the new surfaces:
 
@@ -549,10 +622,12 @@ lifetime; every browser mints a fresh one on its next page load.
 - **`claude mcp add` rejects `--transport http`.** Use
   `--transport sse` and the `/sse` URL. The two transports are
   equivalent for the current tool surface.
-- **`go install` vs fresh-clone build.** `go install` is the simplest
-  path for a stable v0.10.0 binary; build-from-source is required if you
-  want unreleased fixes from `main`. The two are not API-compatible
-  across releases — pin via `@v0.10.0` until you have a reason not to.
+- **`go install` vs fresh-clone build.** `go install` is the simplest path to
+  the latest tagged binary (`@v0.11.0`); build-from-source is required for the
+  untagged foundation behaviour this document describes. The two are not
+  API-compatible across releases — pin a tag until you have a reason not to,
+  and never let both a `go install`ed binary and a workspace build supervise
+  the same port.
 - **Browser shows "No component registered for ..."** The envelope
   `type` on the wire is not one of Tangent's registered workflow kinds.
   The bundled tools pin the type for you; if you're calling the session
@@ -560,10 +635,19 @@ lifetime; every browser mints a fresh one on its next page load.
   kind such as `tangent.triage`, `tangent.feedback`,
   `tangent.form-collect`, or
   `tangent.design-iteration`.
-- **Room URL hangs at "waiting for envelope..."** Each MCP call gets a
-  fresh room unless you deliberately reuse one through
-  `tangent.session_*`; stale URLs from a prior call will sit idle until
-  a new envelope is advanced into that room.
+- **Room URL shows "waiting for envelope..."** A call carrying no
+  `meta.roomID` gets a fresh room; a call naming an existing room reuses it. A
+  room with no active envelope idles at that message until one is advanced into
+  it — that is the room waiting, not a hang and not a lost call. If you were
+  expecting an answer, the interaction is still durable: retrieve it with
+  `tangent.interaction_get` or wait again with `tangent.interaction_await`.
+- **A tool returned `"status":"pending"` instead of an answer.** That is a
+  success, not a failure. The inline wait window elapsed with nobody at the
+  browser, so the call returned a durable handle rather than erroring. Resolve
+  the room, then retrieve the outcome — or re-issue the identical original
+  invocation, which returns the same handle rather than creating a second
+  interaction. See
+  [`room-workflow-completion.md`](./room-workflow-completion.md).
 - **Two Tangent processes point at the same DB.** SQLite WAL mode
   tolerates concurrent readers and writers, but sharing one
   `~/.tangent/tangent.db` between multiple long-lived Tangent processes

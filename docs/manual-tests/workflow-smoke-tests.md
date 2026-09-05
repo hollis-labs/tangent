@@ -17,8 +17,31 @@ make build
 
 2. Confirm the server starts cleanly and exposes MCP on
    `http://127.0.0.1:7842/mcp`.
-3. Connect one MCP-speaking agent to Tangent.
-4. Keep one browser tab ready to open room URLs printed by Tangent.
+3. Check the three health probes before blaming a workflow for anything:
+
+```bash
+curl -fsS http://127.0.0.1:7842/healthz              # liveness — touches nothing
+curl -fsS http://127.0.0.1:7842/readyz | jq .        # readiness — must be "ok"
+curl -fsS http://127.0.0.1:7842/healthz/capability   # which kinds can be served
+```
+
+   A 200 from `/healthz` is **not** evidence Tangent can serve. `/readyz` is.
+   `/healthz/capability/{kind}` answers for one kind.
+
+4. Confirm the process is serving the build you think it is:
+
+```bash
+make smoke                       # transports, parity, one read-only tool call
+TANGENT_SMOKE_ENV=1 make smoke   # …plus the live deployment, Cerberus, and Tether
+```
+
+   A `CATALOG_STALE` finding here means the deployment is behind the artifact on
+   disk, and every workflow below will then smoke against the wrong surface.
+   See [`../mcp-smoketest.md`](../mcp-smoketest.md).
+
+5. Connect one MCP-speaking agent to Tangent.
+6. Keep a browser ready. Tangent logs the room **id**; the tool response
+   carries the room URL, or construct `http://127.0.0.1:7842/r/<roomID>`.
 
 The durable HITL inbox is the exception: open `/hitl` directly and retain the
 handle returned by `tangent.hitl_enqueue`; it does not create a room.
@@ -31,7 +54,9 @@ handle returned by `tangent.hitl_enqueue`; it does not create a room.
 - Run bundled workflows in fresh rooms unless the linked doc explicitly
   says to reuse one room across multiple phases.
 - Browser tabs are replaceable attachments. Navigating away or closing a tab
-  leaves pending work unresolved; reopening the room URL resumes it. Use the
+  leaves pending work unresolved; reopening the room URL resumes it. A caller
+  whose inline wait elapses receives a **successful pending receipt**, not an
+  error — resolving the room afterwards still produces the outcome. Use the
   workflow's explicit Cancel control when cancellation is intended.
 - Several tabs may watch one room at once. The connection strip above the
   envelope shows how many clients are attached and which one holds the
@@ -130,6 +155,23 @@ workflow with the full seeded example from the linked doc.
 | `tangent.progress-panel` | [`progress-panel-e2e.md`](./progress-panel-e2e.md) | Add one update, checkpoint, or log entry, then submit. | Agent receives the appended progress state and reopening shows the accepted timeline. |
 | `tangent.dashboard` | [`dashboard-e2e.md`](./dashboard-e2e.md) | Open the dashboard, trigger one refresh or update action, then submit. | Agent receives the updated dashboard payload and reopening shows the accepted layout/state. |
 | `tangent.wizard` | [`wizard-e2e.md`](./wizard-e2e.md) | Fill the first step, choose any branch if present, save once, then complete the final step. | Agent sees partial progress first, then a submitted completion response; reopening shows accepted wizard progress. |
+
+This table lists the bundled room workflows. It is a runbook, not the registry:
+ask `tangent.list_workflows` for what the build actually dispatches, and
+`make smoke` for the whole tool surface. `internal/smoke/docs_test.go` fails if
+this table and the shipped build disagree.
+
+## Beyond the workflow table
+
+Two recipes are not workflow smoke and are easy to skip. Do not skip them.
+
+- [`room-workflow-completion-e2e.md`](./room-workflow-completion-e2e.md) —
+  resumable completion: the pending receipt, reconnect, restart, and recovery.
+  This is the contract every workflow above now depends on.
+- [`renderer-sandbox-e2e.md`](./renderer-sandbox-e2e.md) — CSP and renderer
+  sandboxing. **There is no browser in CI**, so this manual recipe is the only
+  place any of it is actually observed being enforced. A green `make test` is
+  evidence the policy is *emitted*, never that a browser honoured it.
 
 ## Durable HITL inbox
 

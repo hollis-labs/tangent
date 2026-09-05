@@ -1,6 +1,6 @@
 # Whiteboard e2e
 
-Manual smoke for the v0.4 whiteboard submit loop. This validates:
+Manual smoke for the whiteboard submit loop. This validates:
 
 - host-local autosave for in-progress edits while the envelope is open
 - refresh recovery scoped to the active room + board
@@ -15,15 +15,20 @@ Manual smoke for the v0.4 whiteboard submit loop. This validates:
 ## 1. Boot Tangent
 
 ```bash
-cd ~/Projects-apps/tangent
+cd ~/dev/hollis-labs/apps/tangent
 ./tangent
 ```
 
 Watch for a log line like:
 
 ```text
-level=INFO msg="whiteboard room created" room=<roomID> url=http://127.0.0.1:7842/r/<roomID> envelope=<id>
+level=INFO msg="whiteboard room created" room=<roomID> envelope=<id>
 ```
+
+The room **URL is not logged** — the tool logs only the room id (ADR 0002 §8:
+an assembled URL in a log line is a locator that outlives the log). Build it
+yourself as `http://127.0.0.1:7842/r/<roomID>`, or read it from the tool
+response, which carries the room URL back to the caller.
 
 ## 2. Register Tangent in Claude Code
 

@@ -1,6 +1,6 @@
 # Dashboard e2e
 
-Manual smoke for the v0.11 dashboard workflow. This validates:
+Manual smoke for the dashboard workflow. This validates:
 
 - room-backed dashboard reopen and explicit refresh/update submits
 - saved layout selection, rename, and local browser recovery
@@ -79,5 +79,5 @@ In the room UI:
 
 ## Constraints
 
-- Dashboard drill-down stays inside existing Tangent room routes and artifact refs. There are no external share links in v0.11.
+- Dashboard drill-down stays inside existing Tangent room routes and artifact refs. Tangent publishes no external share links.
 - Saved layouts are room-scoped and local-browser draft recovery is single-user, localhost only.

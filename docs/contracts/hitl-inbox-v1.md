@@ -372,6 +372,15 @@ cannot alter the human result.
 
 ## Versioning and compatibility
 
+> **Forward-looking language in this contract is non-committed direction.**
+> Sentences about a later slice, a verified gateway binding, a typed
+> downstream receipt, or an authenticated adapter describe shapes the v1
+> contract is designed to accommodate — not behaviour this build has. The
+> shipped authority model is
+> [ADR 0004](../adr/0004-caller-participant-and-room-access-authority.md),
+> under which every direct loopback caller is `standalone-local:<app>` and
+> its partition is advisory.
+
 - Additive optional fields require a compatible minor contract/definition
   version and an exact persisted DefinitionBinding.
 - Removing, renaming, changing meaning, widening authority, or adding a terminal

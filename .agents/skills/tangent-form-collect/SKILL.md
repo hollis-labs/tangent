@@ -27,7 +27,7 @@ Prefer async so the call returns as soon as the request is durable:
 ```
 
 It returns a successful receipt with `"status": "pending"`, a durable handle,
-and the room URL to hand a human. Omitting `completion` keeps the v0.12
+and the room URL to hand a human. Omitting `completion` keeps the inline
 default: wait up to 45 seconds, return the normal response if the operator
 answers in time, and otherwise return that same pending receipt — never an
 error, and never a cancellation.
@@ -48,5 +48,5 @@ Full contract: `docs/room-workflow-completion.md`
 - Smoke runbook: `docs/manual-tests/workflow-smoke-tests.md`
 - Integration guide: `docs/mcp-integration.md`
 - Tool schema: `internal/mcp/form_collect_schema.go`
-- Handler: `internal/mcp/form_collect_handler.go`
+- Handler: registered on the dispatcher by `RegisterFormCollectOnDispatcher` in `internal/mcp/triage_handler.go`
 - Completion contract: `docs/room-workflow-completion.md`
