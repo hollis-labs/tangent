@@ -80,14 +80,29 @@ const backupManifestSuffix = ".manifest.json"
 
 // BackupManifest is what a backup knows about itself.
 type BackupManifest struct {
-	ID            string      `json:"id"`
-	Mode          BackupMode  `json:"mode"`
-	TakenAt       time.Time   `json:"taken_at"`
-	SchemaVersion int64       `json:"schema_version"`
-	SizeBytes     int64       `json:"size_bytes"`
-	SHA256        string      `json:"sha256"`
-	IntegrityOK   bool        `json:"integrity_ok"`
-	Fingerprint   Fingerprint `json:"fingerprint"`
+	ID            string     `json:"id"`
+	Mode          BackupMode `json:"mode"`
+	TakenAt       time.Time  `json:"taken_at"`
+	SchemaVersion int64      `json:"schema_version"`
+	SizeBytes     int64      `json:"size_bytes"`
+	SHA256        string     `json:"sha256"`
+	// IntegrityOK reports that the copy is undamaged: pages, foreign keys, and
+	// the immutability guards its own schema defines. It deliberately does not
+	// mean "at this binary's schema" — a backup taken before an upgrade is
+	// behind by design, and reporting that as an integrity failure is
+	// CW-20260905-0014.
+	IntegrityOK bool `json:"integrity_ok"`
+	// SchemaState is that second, separate question: current, behind, ahead,
+	// dirty, or uninitialized.
+	SchemaState SchemaState `json:"schema_state"`
+	// SchemaAdvice is what to do about the state, empty when it is current.
+	SchemaAdvice string `json:"schema_advice,omitempty"`
+	// Damage is why IntegrityOK is false, empty when it is true. It is
+	// recorded in the manifest so a backup that was written and is not
+	// trustworthy says so on disk rather than only on the terminal that took
+	// it.
+	Damage      []string    `json:"damage,omitempty"`
+	Fingerprint Fingerprint `json:"fingerprint"`
 	// SourceLabel is the base name of the database that was copied. The full
 	// path is deliberately absent: a manifest travels with the backup and there
 	// is no reason for it to carry the layout of the machine it came from.
@@ -145,39 +160,82 @@ type Fingerprint struct {
 
 // Property is one measured preservation property.
 type Property struct {
+	// Applicable is false when the source schema predates the tables this
+	// property is measured over. It is not a failure and not a zero
+	// measurement: it is the statement that this schema has nothing to measure
+	// here. A reader that cannot tell those apart is how CW-20260905-0014
+	// wrote a fingerprint of zeros into a manifest and then refused the
+	// restore that compared against it.
+	Applicable bool `json:"applicable"`
+
 	Rows   int64  `json:"rows"`
 	SHA256 string `json:"sha256"`
 }
 
-// Equal compares two properties.
+// Equal compares two properties. Applicability is part of the comparison: a
+// property that was measurable before a copy and is not measurable after it
+// has changed, whatever the digests say.
 func (p Property) Equal(other Property) bool {
-	return p.Rows == other.Rows && p.SHA256 == other.SHA256
+	return p.Applicable == other.Applicable && p.Rows == other.Rows && p.SHA256 == other.SHA256
 }
 
-// fingerprintQueries are the five properties, each as a query returning one
+// fingerprintSection is one preservation property: the tables it is measured
+// over, and the query that canonicalizes them.
+//
+// The tables are declared rather than inferred from the query, because they
+// are what makes the fingerprint schema-aware. Fingerprinting a database older
+// than this binary is the *normal* case — a pre-upgrade backup is taken
+// precisely because a migration is about to run — and a section whose tables
+// that schema predates is inapplicable, not broken.
+type fingerprintSection struct {
+	name   string
+	tables []string
+	query  string
+	// target is where the measurement lands, so the sections stay an ordered
+	// list rather than a map iterated in random order.
+	target func(*Fingerprint) *Property
+}
+
+// fingerprintSections are the five properties, each as a query returning one
 // text column per row. Ordering is applied after the fact in Go over the
 // collected strings, so a difference in SQLite's collation cannot change the
 // digest.
-var fingerprintQueries = map[string]string{
-	"definition_digests": `
+var fingerprintSections = []fingerprintSection{{
+	name:   "definition_digests",
+	tables: []string{"definition_bindings"},
+	target: func(f *Fingerprint) *Property { return &f.DefinitionDigests },
+	query: `
 SELECT interaction_id || '|' || publisher || '|' || kind || '|' || version || '|' || revision ||
        '|' || COALESCE(digest, '') || '|' || source || '|' || COALESCE(schema_identity, '') ||
        '|' || COALESCE(schema_digest, '') || '|' || assurance
 FROM definition_bindings`,
-
-	"interaction_identities": `
+}, {
+	name:   "interaction_identities",
+	tables: []string{"interactions"},
+	target: func(f *Fingerprint) *Property { return &f.InteractionIdentities },
+	query: `
 SELECT id || '|' || surface_id || '|' || caller_scope || '|' || idempotency_key || '|' ||
        surface_sequence || '|' || lifecycle_state || '|' || revision || '|' ||
        COALESCE(terminal_cause, '') || '|' || COALESCE(participant_ref, '')
 FROM interactions`,
-
-	"resolutions": `
+}, {
+	name:   "resolutions",
+	tables: []string{"resolutions"},
+	target: func(f *Fingerprint) *Property { return &f.Resolutions },
+	query: `
 SELECT id || '|' || interaction_id || '|' || participant_ref || '|' || participant_authority ||
        '|' || participant_assurance || '|' || response_kind || '|' || integrity_digest ||
        '|' || expected_interaction_revision || '|' || presented_projection_revision
 FROM resolutions`,
-
-	"audit_history": `
+}, {
+	name: "audit_history",
+	// Three journals, measured as one property. A schema that has any two of
+	// them and not the third cannot be measured here at all — the property is
+	// the union, and a union missing a term is a different measurement wearing
+	// the same name.
+	tables: []string{"surface_events", "interaction_events", "delivery_events"},
+	target: func(f *Fingerprint) *Property { return &f.AuditHistory },
+	query: `
 SELECT 'surface|' || event_id || '|' || surface_id || '|' || event_type || '|' ||
        COALESCE(actor_ref, '') || '|' || COALESCE(authority, '') || '|' ||
        COALESCE(from_revision, -1) || '|' || to_revision
@@ -192,8 +250,11 @@ SELECT 'delivery|' || event_id || '|' || COALESCE(resolution_delivery_id, '') ||
        COALESCE(terminal_notification_id, '') || '|' || event_type || '|' ||
        from_revision || '|' || to_revision || '|' || COALESCE(attempt_number, -1)
 FROM delivery_events`,
-
-	"delivery_obligations": `
+}, {
+	name:   "delivery_obligations",
+	tables: []string{"resolution_deliveries", "terminal_notifications"},
+	target: func(f *Fingerprint) *Property { return &f.DeliveryObligations },
+	query: `
 SELECT 'resolution|' || id || '|' || resolution_id || '|' || idempotency_key || '|' ||
        lifecycle_state || '|' || revision
 FROM resolution_deliveries
@@ -201,44 +262,108 @@ UNION ALL
 SELECT 'terminal|' || id || '|' || interaction_id || '|' || idempotency_key || '|' ||
        lifecycle_state || '|' || revision
 FROM terminal_notifications`,
+}}
+
+// Skipped names the properties this database's schema is too old to carry, in
+// section order. An empty result means the fingerprint measured everything.
+func (f Fingerprint) Skipped() []string {
+	skipped := []string{}
+	for _, section := range fingerprintSections {
+		if !section.target(&f).Applicable {
+			skipped = append(skipped, section.name)
+		}
+	}
+	return skipped
 }
 
-// TakeFingerprint measures the five preservation properties.
+// Complete reports whether every property was measurable at this schema.
+func (f Fingerprint) Complete() bool {
+	return len(f.Skipped()) == 0
+}
+
+// TakeFingerprint measures the preservation properties this database's schema
+// can carry, and says which ones those were.
+//
+// It probes the table catalog first rather than querying unconditionally. A
+// table that is absent because the schema predates it is an expected answer,
+// and an error is the wrong way to give it: the caller asked what this
+// database holds, not whether it looks like the current one.
 func TakeFingerprint(ctx context.Context, database *sql.DB) (Fingerprint, error) {
 	status, err := InspectMigrations(ctx, database)
 	if err != nil {
 		return Fingerprint{}, err
 	}
+	present, err := existingTables(ctx, database)
+	if err != nil {
+		return Fingerprint{}, err
+	}
 	fingerprint := Fingerprint{SchemaVersion: status.Applied}
 
-	properties := map[string]*Property{
-		"definition_digests":     &fingerprint.DefinitionDigests,
-		"interaction_identities": &fingerprint.InteractionIdentities,
-		"resolutions":            &fingerprint.Resolutions,
-		"audit_history":          &fingerprint.AuditHistory,
-		"delivery_obligations":   &fingerprint.DeliveryObligations,
-	}
-	for name, target := range properties {
-		property, propertyErr := measureProperty(ctx, database, fingerprintQueries[name])
-		if propertyErr != nil {
-			return Fingerprint{}, fmt.Errorf("fingerprint %s: %w", name, propertyErr)
+	for _, section := range fingerprintSections {
+		if !hasAllTables(present, section.tables) {
+			continue
 		}
-		*target = property
+		property, propertyErr := measureProperty(ctx, database, section.query)
+		if propertyErr != nil {
+			return Fingerprint{}, fmt.Errorf("fingerprint %s: %w", section.name, propertyErr)
+		}
+		property.Applicable = true
+		*section.target(&fingerprint) = property
 	}
 
-	if err := database.QueryRowContext(ctx, `
+	// The pending counts share the delivery_obligations tables, so they are
+	// measurable exactly when that property is. A zero here on a schema that
+	// has neither table reads correctly only alongside
+	// `delivery_obligations.applicable: false`.
+	if fingerprint.DeliveryObligations.Applicable {
+		if err := database.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM resolution_deliveries
 WHERE lifecycle_state NOT IN ('acknowledged', 'terminal_failure')`).
-		Scan(&fingerprint.PendingDeliveries); err != nil {
-		return Fingerprint{}, fmt.Errorf("count pending deliveries: %w", err)
-	}
-	if err := database.QueryRowContext(ctx, `
+			Scan(&fingerprint.PendingDeliveries); err != nil {
+			return Fingerprint{}, fmt.Errorf("count pending deliveries: %w", err)
+		}
+		if err := database.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM terminal_notifications
 WHERE lifecycle_state NOT IN ('acknowledged', 'terminal_failure')`).
-		Scan(&fingerprint.PendingTerminalNotifications); err != nil {
-		return Fingerprint{}, fmt.Errorf("count pending terminal notifications: %w", err)
+			Scan(&fingerprint.PendingTerminalNotifications); err != nil {
+			return Fingerprint{}, fmt.Errorf("count pending terminal notifications: %w", err)
+		}
 	}
 	return fingerprint, nil
+}
+
+// existingTables reads the table catalog. It is one query rather than one per
+// table so that a fingerprint of a database with a dozen sections still costs
+// a single round trip.
+func existingTables(ctx context.Context, database *sql.DB) (map[string]struct{}, error) {
+	rows, err := database.QueryContext(ctx,
+		`SELECT name FROM sqlite_master WHERE type = 'table';`)
+	if err != nil {
+		return nil, fmt.Errorf("read table catalog: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	present := map[string]struct{}{}
+	for rows.Next() {
+		var name string
+		if scanErr := rows.Scan(&name); scanErr != nil {
+			return nil, fmt.Errorf("scan table catalog: %w", scanErr)
+		}
+		present[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate table catalog: %w", err)
+	}
+	return present, nil
+}
+
+func hasAllTables(present map[string]struct{}, wanted []string) bool {
+	for _, table := range wanted {
+		if _, ok := present[table]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func measureProperty(ctx context.Context, database *sql.DB, query string) (Property, error) {
@@ -269,29 +394,31 @@ type PropertyDifference struct {
 	Property string   `json:"property"`
 	Before   Property `json:"before"`
 	After    Property `json:"after"`
+	// Reason distinguishes content that changed from a schema that did. They
+	// look identical in the digests and mean entirely different things.
+	Reason string `json:"reason"`
 }
 
 // Compare reports which of the five properties differ. An empty result is the
 // proof criterion 2 asks for, property by property.
+//
+// Two properties that were both inapplicable compare equal: a schema too old
+// to carry a section is not a section that was lost, and a copy of that
+// database has preserved exactly as much of it as existed.
 func (f Fingerprint) Compare(other Fingerprint) []PropertyDifference {
 	differences := []PropertyDifference{}
-	pairs := []struct {
-		name   string
-		before Property
-		after  Property
-	}{
-		{"definition_digests", f.DefinitionDigests, other.DefinitionDigests},
-		{"interaction_identities", f.InteractionIdentities, other.InteractionIdentities},
-		{"resolutions", f.Resolutions, other.Resolutions},
-		{"audit_history", f.AuditHistory, other.AuditHistory},
-		{"delivery_obligations", f.DeliveryObligations, other.DeliveryObligations},
-	}
-	for _, pair := range pairs {
-		if !pair.before.Equal(pair.after) {
-			differences = append(differences, PropertyDifference{
-				Property: pair.name, Before: pair.before, After: pair.after,
-			})
+	for _, section := range fingerprintSections {
+		before, after := *section.target(&f), *section.target(&other)
+		if before.Equal(after) {
+			continue
 		}
+		reason := "the measured rows differ"
+		if before.Applicable != after.Applicable {
+			reason = "the schemas differ: this property is measurable on one side and not the other"
+		}
+		differences = append(differences, PropertyDifference{
+			Property: section.name, Before: before, After: after, Reason: reason,
+		})
 	}
 	return differences
 }
@@ -351,6 +478,26 @@ func Backup(
 		manifest.SourceLabel = defaultDatabaseName
 	}
 
+	// Verify the copy by opening it, not by trusting that VACUUM INTO worked.
+	// A backup nobody has read is a backup nobody knows they have.
+	verified, err := VerifyDatabaseFile(ctx, absolute)
+	if err != nil {
+		return BackupResult{}, err
+	}
+	manifest.IntegrityOK = verified.Intact()
+	manifest.SchemaVersion = verified.Migrations.Applied
+	manifest.SchemaState = verified.SchemaState
+	manifest.SchemaAdvice = verified.SchemaAdvice
+	manifest.Damage = verified.Damage()
+	manifest.Fingerprint = verified.Fingerprint
+
+	// The digest is taken *after* verification, and the order is load-bearing.
+	// `VACUUM INTO` writes a rollback-journal database; opening it to verify it
+	// applies `PRAGMA journal_mode = WAL`, which rewrites the file header. A
+	// digest taken before that describes a file that no longer exists, so an
+	// operator checking their backup against the manifest would find every
+	// backup corrupt. Found re-verifying §2 of docs/database-operations.md
+	// against the real artifact in CW-20260905-0014.
 	info, err := os.Stat(absolute)
 	if err != nil {
 		return BackupResult{}, fmt.Errorf("stat backup: %w", err)
@@ -360,16 +507,6 @@ func Backup(
 	if err != nil {
 		return BackupResult{}, err
 	}
-
-	// Verify the copy by opening it, not by trusting that VACUUM INTO worked.
-	// A backup nobody has read is a backup nobody knows they have.
-	verified, err := VerifyDatabaseFile(ctx, absolute)
-	if err != nil {
-		return BackupResult{}, err
-	}
-	manifest.IntegrityOK = verified.Healthy()
-	manifest.SchemaVersion = verified.Migrations.Applied
-	manifest.Fingerprint = verified.Fingerprint
 
 	manifestPath := absolute + backupManifestSuffix
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -421,21 +558,94 @@ func SurveyBackups(directory string, before time.Time) (BackupSurvey, error) {
 }
 
 // VerificationReport is what opening a database file tells you about it.
+//
+// It answers two questions separately, and keeping them separate is the point
+// of CW-20260905-0014. `Intact` is "is this database damaged" — pages, foreign
+// keys, immutability guards, a half-applied migration. `SchemaState` is "is
+// this database the one this binary was built for". A pre-upgrade backup is
+// intact and behind, and collapsing those into one boolean is what made the
+// documented upgrade procedure fail at the first step.
 type VerificationReport struct {
-	Path                 string          `json:"-"`
-	Migrations           MigrationStatus `json:"migrations"`
-	IntegrityProblems    []string        `json:"integrity_problems"`
-	ForeignKeyViolations int64           `json:"foreign_key_violations"`
-	GuardDrift           GuardDrift      `json:"guard_drift"`
-	Fingerprint          Fingerprint     `json:"fingerprint"`
+	Path        string          `json:"-"`
+	Migrations  MigrationStatus `json:"migrations"`
+	SchemaState SchemaState     `json:"schema_state"`
+	// SchemaAdvice is the action the state calls for, in the operator's terms.
+	// Empty when the schema is current.
+	SchemaAdvice         string     `json:"schema_advice,omitempty"`
+	IntegrityProblems    []string   `json:"integrity_problems"`
+	ForeignKeyViolations int64      `json:"foreign_key_violations"`
+	GuardDrift           GuardDrift `json:"guard_drift"`
+	// GuardsEvaluated reports whether the guard inventory could be compared at
+	// all. It is false only for a schema this binary cannot build a reference
+	// for — one ahead of it — where "no drift" would be an unearned claim
+	// rather than a measurement.
+	GuardsEvaluated bool `json:"guards_evaluated"`
+	// GuardReferenceVersion is the schema version the inventory was compared
+	// against, which is the database's own version rather than this binary's.
+	// A guard a schema never had is not a guard that went away.
+	GuardReferenceVersion int64       `json:"guard_reference_version"`
+	Fingerprint           Fingerprint `json:"fingerprint"`
 }
 
-// Healthy reports whether the file is usable as-is.
+// Intact reports whether the file is undamaged: no page-level corruption, no
+// foreign key violations, no half-applied migration, and every immutability
+// guard its own schema defines still present.
+//
+// It says nothing about whether the schema is current. Being older than this
+// binary is not damage, and a backup is taken from an older database by
+// design. Damage is the enumeration; this is the question asked of it, so the
+// two can never drift apart.
+func (r VerificationReport) Intact() bool {
+	return len(r.Damage()) == 0
+}
+
+// Healthy reports whether the file is undamaged *and* at a schema this binary
+// can work with — current, or behind and migratable forward.
 func (r VerificationReport) Healthy() bool {
-	return len(r.IntegrityProblems) == 0 &&
-		r.ForeignKeyViolations == 0 &&
-		r.GuardDrift.Intact() &&
-		r.Migrations.UpToDate()
+	return r.Intact() && (r.SchemaState == SchemaCurrent || r.SchemaState == SchemaBehind)
+}
+
+// Damage names what is wrong with this database, in the operator's terms, and
+// is empty when nothing is.
+//
+// Every entry here calls for a restore. None of them is fixed by a migration,
+// which is exactly what separates them from SchemaAdvice: an operator reading
+// a refusal has to be able to tell "this file is broken" from "this file is
+// older than the binary", and before CW-20260905-0014 both arrived as the same
+// sentence.
+func (r VerificationReport) Damage() []string {
+	damage := []string{}
+	if len(r.IntegrityProblems) > 0 {
+		damage = append(damage,
+			"page-level corruption: "+strings.Join(r.IntegrityProblems, "; "))
+	}
+	if r.ForeignKeyViolations > 0 {
+		damage = append(damage,
+			fmt.Sprintf("%d foreign key violations", r.ForeignKeyViolations))
+	}
+	if r.Migrations.Dirty {
+		damage = append(damage, fmt.Sprintf(
+			"the schema is dirty at version %d: a migration failed part-way", r.Migrations.Applied))
+	}
+	switch {
+	case !r.GuardsEvaluated && r.SchemaState != SchemaAhead:
+		// A schema *ahead* of this binary has guards this binary has no
+		// reference for, and that is a statement about the binary rather than
+		// about the file. Anything else that stops the inventory being read is
+		// the file, and an unread inventory must never pass for a clean one.
+		damage = append(damage,
+			"the immutability guards could not be read, so this file cannot be shown to be sound")
+	case len(r.GuardDrift.Missing) > 0:
+		damage = append(damage, fmt.Sprintf(
+			"immutability guards %v that schema %d defines are missing",
+			r.GuardDrift.Missing, r.GuardReferenceVersion))
+	}
+	if len(r.GuardDrift.Unexpected) > 0 {
+		damage = append(damage, fmt.Sprintf(
+			"triggers %v are present that schema %d does not define",
+			r.GuardDrift.Unexpected, r.GuardReferenceVersion))
+	}
+	return damage
 }
 
 // VerifyDatabaseFile opens a database file and reports on it without changing
@@ -452,44 +662,90 @@ func VerifyDatabaseFile(ctx context.Context, path string) (VerificationReport, e
 }
 
 // VerifyDatabase runs the same checks against an open handle.
+//
+// Once integrity_check has found page-level corruption, the later steps are
+// allowed to fail without failing the verification. A corrupt page makes the
+// foreign key check, the schema read, and the fingerprint unrunnable, and
+// those are consequences of the damage rather than separate faults — returning
+// the driver's "database disk image is malformed" as an error would replace a
+// report that says "this database is damaged, restore it" with one that says
+// less. Against a sound database the same failures are still errors.
 func VerifyDatabase(ctx context.Context, database *sql.DB) (VerificationReport, error) {
 	report := VerificationReport{IntegrityProblems: []string{}}
 
 	problems, err := integrityProblems(ctx, database)
 	if err != nil {
-		return report, err
+		// An integrity check that cannot finish is itself an integrity
+		// finding: the pages it was reading are unreadable. Recording it as
+		// one is what lets a refusal say "this backup fails its integrity
+		// check" rather than handing the operator a driver message.
+		problems = append(problems, "the integrity check could not finish: "+err.Error())
 	}
 	report.IntegrityProblems = problems
+	damaged := len(problems) > 0
+
+	// note records a step that could not run against an already-damaged file,
+	// and returns the error to propagate against a sound one.
+	note := func(step string, stepErr error) error {
+		if !damaged {
+			return fmt.Errorf("%s: %w", step, stepErr)
+		}
+		report.IntegrityProblems = append(report.IntegrityProblems,
+			step+" could not run: "+stepErr.Error())
+		return nil
+	}
 
 	if fkErr := database.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pragma_foreign_key_check;`).Scan(&report.ForeignKeyViolations); fkErr != nil {
-		return report, fmt.Errorf("foreign key check: %w", fkErr)
+		if noteErr := note("foreign key check", fkErr); noteErr != nil {
+			return report, noteErr
+		}
 	}
 
-	status, err := InspectMigrations(ctx, database)
-	if err != nil {
-		return report, err
+	status, statusErr := InspectMigrations(ctx, database)
+	if statusErr != nil {
+		if noteErr := note("schema version read", statusErr); noteErr != nil {
+			return report, noteErr
+		}
 	}
 	report.Migrations = status
+	report.SchemaState = status.State()
+	report.SchemaAdvice = status.Advice()
 
-	installed, err := ReadGuards(ctx, database)
-	if err != nil {
-		return report, err
-	}
-	reference, err := ReferenceGuards(ctx)
-	if err != nil {
-		return report, err
-	}
-	report.GuardDrift = CompareGuards(installed, reference)
-
-	// A fingerprint of a schema that is not the one this binary knows would be
-	// a fingerprint of columns that may not exist. Skip it and let the caller
-	// read the migration status instead of a spurious error.
-	if status.UpToDate() {
-		fingerprint, fingerprintErr := TakeFingerprint(ctx, database)
-		if fingerprintErr != nil {
-			return report, fingerprintErr
+	installed, guardErr := ReadGuards(ctx, database)
+	if guardErr != nil {
+		if noteErr := note("trigger catalog read", guardErr); noteErr != nil {
+			return report, noteErr
 		}
+	}
+	// The reference is built at the database's own schema version, not this
+	// binary's. Against a schema-10 database the inventory at migration 12
+	// would report the guards migrations 0011 and 0012 create as missing, and
+	// "missing" is the word for a guard that was removed — not for one that
+	// was never created.
+	//
+	// Neither a corrupt file nor a schema ahead of this binary can be compared
+	// at all, and GuardsEvaluated says so rather than reporting no drift.
+	if !damaged && guardErr == nil && status.State() != SchemaAhead {
+		reference, referenceErr := ReferenceGuardsAt(ctx, status.Applied)
+		if referenceErr != nil {
+			return report, referenceErr
+		}
+		report.GuardDrift = CompareGuards(installed, reference)
+		report.GuardsEvaluated = true
+		report.GuardReferenceVersion = status.Applied
+	}
+
+	// The fingerprint is taken at every readable schema. It measures the
+	// properties the schema can carry and records which those were, so a
+	// backup of an older database gets a real fingerprint rather than the
+	// zeros CW-20260905-0014 wrote into its manifest.
+	fingerprint, fingerprintErr := TakeFingerprint(ctx, database)
+	if fingerprintErr != nil {
+		if noteErr := note("fingerprint", fingerprintErr); noteErr != nil {
+			return report, noteErr
+		}
+	} else {
 		report.Fingerprint = fingerprint
 	}
 	return report, nil
@@ -503,6 +759,18 @@ type RestoreResult struct {
 	// never deleted: a restore that destroys the thing it is recovering from is
 	// how a bad backup becomes total data loss.
 	SupersededPath string `json:"superseded_path,omitempty"`
+
+	// SchemaVersion is what the restored database is now at, and
+	// BinarySchemaVersion is what this binary expects. They differ whenever a
+	// pre-upgrade backup is restored, which is the ordinary rollback: you took
+	// the backup before migrating, so restoring it puts you back before the
+	// migration.
+	SchemaVersion       int64       `json:"schema_version"`
+	BinarySchemaVersion int64       `json:"binary_schema_version"`
+	SchemaState         SchemaState `json:"schema_state"`
+	// NextStep is what the operator has to do before serving, empty when the
+	// restored schema is already this binary's.
+	NextStep string `json:"next_step,omitempty"`
 
 	Source Fingerprint `json:"source_fingerprint"`
 	Target Fingerprint `json:"restored_fingerprint"`
@@ -528,6 +796,15 @@ type RestoreResult struct {
 // nothing is serving. This function verifies the source before it touches the
 // target, moves the existing database aside rather than deleting it, and puts
 // it back if anything after that point fails.
+//
+// A backup at an *older* schema is accepted, and that is the decision
+// CW-20260905-0014 forced into the open. Restoring a pre-upgrade backup and
+// re-migrating is the normal rollback: refusing it would mean the recovery
+// path the upgrade procedure tells an operator to prepare does not work at the
+// moment they need it. The result says which schema they landed on and what to
+// run next. A backup at a *newer* schema is still refused — this binary's
+// queries were written for a different shape — and so is a dirty one, because
+// a half-applied migration is damage rather than age.
 func Restore(ctx context.Context, targetPath, sourcePath string) (RestoreResult, error) {
 	resolvedTarget, err := resolvePath(targetPath)
 	if err != nil {
@@ -562,20 +839,37 @@ func Restore(ctx context.Context, targetPath, sourcePath string) (RestoreResult,
 			"restore: backup %q has a dirty schema at version %d; it was taken during a failed migration",
 			absoluteSource, verification.Migrations.Applied)
 	}
-	if verification.Migrations.Applied > verification.Migrations.Expected {
+	if verification.SchemaState == SchemaAhead {
 		return RestoreResult{}, fmt.Errorf(
 			"restore: backup %q is at schema %d and this binary knows %d; restore with the newer binary",
 			absoluteSource, verification.Migrations.Applied, verification.Migrations.Expected)
 	}
-	if !verification.GuardDrift.Intact() && verification.Migrations.UpToDate() {
+	if verification.SchemaState == SchemaUninitialized {
 		return RestoreResult{}, fmt.Errorf(
-			"restore: backup %q is missing immutability guards %v; repair it before restoring",
-			absoluteSource, verification.GuardDrift.Missing)
+			"restore: backup %q has no schema at all; it is not a Tangent database", absoluteSource)
+	}
+	// The guard inventory is compared against the backup's own schema version,
+	// so a missing guard here is a guard that was dropped rather than one the
+	// schema predates.
+	if !verification.GuardDrift.Intact() {
+		return RestoreResult{}, fmt.Errorf(
+			"restore: backup %q is missing immutability guards %v that schema %d defines; "+
+				"repair it before restoring",
+			absoluteSource, verification.GuardDrift.Missing, verification.Migrations.Applied)
 	}
 
 	result := RestoreResult{
 		SourcePath: absoluteSource, TargetPath: resolvedTarget,
-		Source: verification.Fingerprint, Differences: []PropertyDifference{},
+		SchemaVersion:       verification.Migrations.Applied,
+		BinarySchemaVersion: verification.Migrations.Expected,
+		SchemaState:         verification.SchemaState,
+		Source:              verification.Fingerprint, Differences: []PropertyDifference{},
+	}
+	if verification.SchemaState == SchemaBehind {
+		result.NextStep = fmt.Sprintf(
+			"the restored database is at schema %d and this binary expects %d. Run `tangent "+
+				"--migrate-only` before serving, or start the server, which migrates on boot.",
+			verification.Migrations.Applied, verification.Migrations.Expected)
 	}
 
 	stamp := time.Now().UTC().Format("20060102T150405Z")
@@ -605,12 +899,24 @@ func Restore(ctx context.Context, targetPath, sourcePath string) (RestoreResult,
 		result.Target = fingerprint
 		result.Differences = verification.Fingerprint.Compare(fingerprint)
 		if len(result.Differences) > 0 {
-			return fmt.Errorf("restore: %d preservation propert(ies) did not survive the copy",
-				len(result.Differences))
+			names := make([]string, 0, len(result.Differences))
+			for _, difference := range result.Differences {
+				names = append(names, difference.Property)
+			}
+			return fmt.Errorf(
+				"restore: %d preservation propert(ies) did not survive the copy (%s); the copy "+
+					"differs from the backup it was made from, which is damage rather than age",
+				len(result.Differences), strings.Join(names, ", "))
 		}
 		result.PendingDeliveries = fingerprint.PendingDeliveries
 		result.PendingTerminalNotifications = fingerprint.PendingTerminalNotifications
 
+		if !fingerprint.DeliveryObligations.Applicable {
+			// A schema without the delivery tables has no obligations to hand
+			// to restart recovery, and counting them would mean querying
+			// tables it does not have.
+			return nil
+		}
 		return restored.QueryRowContext(ctx, `
 SELECT (SELECT COUNT(*) FROM resolution_deliveries WHERE lease_owner IS NOT NULL) +
        (SELECT COUNT(*) FROM terminal_notifications WHERE lease_owner IS NOT NULL)`).

@@ -1088,6 +1088,22 @@ func RetentionHistory(ctx context.Context, database *sql.DB, limit int) ([]Reten
 	if limit <= 0 || limit > 500 {
 		limit = 50
 	}
+	// The erasure log arrives with migration 0012. A database older than that
+	// has no log rather than a broken one, and saying so is the difference
+	// between an answer an operator can act on and SQLite's "no such table".
+	present, err := existingTables(ctx, database)
+	if err != nil {
+		return nil, err
+	}
+	if !hasAllTables(present, []string{"retention_operations"}) {
+		status, statusErr := InspectMigrations(ctx, database)
+		if statusErr != nil {
+			return nil, statusErr
+		}
+		return nil, fmt.Errorf(
+			"read retention history: the erasure log arrives with migration 0012, so this "+
+				"database has no log rather than a damaged one. %s", status.Advice())
+	}
 	rows, err := database.QueryContext(ctx, `
 SELECT operation_id, kind, target_surface_id, target_interaction_id, actor_ref, authority,
        policy_ref, requested_at, outcome, code, affected_rows, removed_digests,

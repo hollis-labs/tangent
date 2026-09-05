@@ -311,11 +311,15 @@ func integrityProblems(ctx context.Context, database *sql.DB) ([]string, error) 
 	}
 	defer func() { _ = rows.Close() }()
 
+	// The rows read before a failure are kept and returned alongside it. A
+	// database damaged badly enough that integrity_check cannot finish still
+	// names some of what is wrong before it stops, and that is the most
+	// specific thing anyone is going to get.
 	problems := []string{}
 	for rows.Next() {
 		var line string
 		if scanErr := rows.Scan(&line); scanErr != nil {
-			return nil, fmt.Errorf("scan integrity check: %w", scanErr)
+			return problems, fmt.Errorf("scan integrity check: %w", scanErr)
 		}
 		if strings.EqualFold(strings.TrimSpace(line), "ok") {
 			continue
@@ -323,7 +327,7 @@ func integrityProblems(ctx context.Context, database *sql.DB) ([]string, error) 
 		problems = append(problems, line)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate integrity check: %w", err)
+		return problems, fmt.Errorf("iterate integrity check: %w", err)
 	}
 	return problems, nil
 }

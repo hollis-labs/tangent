@@ -125,3 +125,73 @@ func InspectMigrations(ctx context.Context, db *sql.DB) (MigrationStatus, error)
 	}
 	return status, nil
 }
+
+// SchemaState classifies an applied schema against the one this binary embeds.
+//
+// It exists because "this database is older than me" and "this database is
+// damaged" were the same answer until CW-20260905-0014, and they call for
+// opposite actions: the first is a migration, the second is a restore. A
+// pre-upgrade backup is behind by construction — you take the backup because
+// you are about to migrate — so reporting it as a failure makes the documented
+// upgrade procedure impossible to follow.
+type SchemaState string
+
+const (
+	// SchemaCurrent is exactly the schema this binary was built for.
+	SchemaCurrent SchemaState = "current"
+	// SchemaBehind is an older schema. Not a defect: `--migrate-only` brings
+	// it forward, and every row it holds is readable meanwhile.
+	SchemaBehind SchemaState = "behind"
+	// SchemaAhead is a newer schema. This binary's queries were written for a
+	// different shape, so it reports what it can and changes nothing.
+	SchemaAhead SchemaState = "ahead"
+	// SchemaDirty is a migration that failed part-way. The tables are in a
+	// state no migration describes, which is damage rather than age.
+	SchemaDirty SchemaState = "dirty"
+	// SchemaUninitialized is a database that has never been migrated.
+	SchemaUninitialized SchemaState = "uninitialized"
+)
+
+// State classifies the applied schema. Dirty is checked first: a half-applied
+// migration says nothing reliable about which version is in force.
+func (s MigrationStatus) State() SchemaState {
+	switch {
+	case s.Dirty:
+		return SchemaDirty
+	case !s.Initialized:
+		return SchemaUninitialized
+	case s.Applied < s.Expected:
+		return SchemaBehind
+	case s.Applied > s.Expected:
+		return SchemaAhead
+	default:
+		return SchemaCurrent
+	}
+}
+
+// Advice is the action a schema state calls for, phrased for the operator who
+// is reading it. It is empty when the schema is current, because there is
+// nothing to do.
+func (s MigrationStatus) Advice() string {
+	switch s.State() {
+	case SchemaBehind:
+		return fmt.Sprintf(
+			"the schema is at version %d and this binary expects %d. This is not damage: a "+
+				"database taken before an upgrade is behind by design. Run `tangent "+
+				"--migrate-only` to bring it forward.", s.Applied, s.Expected)
+	case SchemaAhead:
+		return fmt.Sprintf(
+			"the schema is at version %d and this binary knows %d. A newer Tangent wrote it; "+
+				"use that binary rather than this one.", s.Applied, s.Expected)
+	case SchemaDirty:
+		return fmt.Sprintf(
+			"the schema is dirty at version %d: a migration failed part-way and the tables are "+
+				"in a state no migration describes. Restore from a backup taken before the "+
+				"upgrade.", s.Applied)
+	case SchemaUninitialized:
+		return "the database has never been migrated. Run `tangent --migrate-only` to create the schema."
+	case SchemaCurrent:
+		return ""
+	}
+	return ""
+}

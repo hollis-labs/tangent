@@ -30,6 +30,30 @@ type fixture struct {
 // pointed at a real installation: every caller passes t.TempDir().
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureAt(t, 0)
+}
+
+// newFixtureAtSchema builds the same populated database at an older schema.
+//
+// It exists because every fixture in CW-20260825-0072 was migrated to HEAD
+// before anything was measured, so every source in every backup and restore
+// test was already at the binary's schema — and the cross-schema case is the
+// only one that matters for an upgrade. You take a backup *because* you are
+// about to migrate, so the source is always behind. CW-20260905-0014 is what
+// went unnoticed for want of this.
+//
+// It migrates *to* the version rather than migrating to HEAD and rolling back,
+// because those are different databases: a rollback leaves a schema that once
+// held the newer tables. Every table the seed writes exists from migration
+// 0009 onward, so 9 is the oldest version the whole fixture fits in.
+func newFixtureAtSchema(t *testing.T, version int64) *fixture {
+	t.Helper()
+	return newFixtureAt(t, version)
+}
+
+// newFixtureAt migrates to `version`, or to HEAD when it is zero.
+func newFixtureAt(t *testing.T, version int64) *fixture {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "fixture.db")
 	database, err := Open(path)
@@ -37,8 +61,12 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatalf("open fixture: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if err := RunMigrations(database); err != nil {
-		t.Fatalf("migrate fixture: %v", err)
+	if version <= 0 {
+		if err := RunMigrations(database); err != nil {
+			t.Fatalf("migrate fixture: %v", err)
+		}
+	} else if err := migrateTo(database, version); err != nil {
+		t.Fatalf("migrate fixture to %d: %v", version, err)
 	}
 
 	f := &fixture{

@@ -65,6 +65,23 @@ func RunMigrations(db *sql.DB) error {
 	})
 }
 
+// migrateTo applies or rolls back the schema to exactly one version.
+//
+// It is how a reference inventory is built at the version a database actually
+// carries, rather than at the version this binary happens to embed. The caller
+// validates the version; a zero or negative one is not expressible here
+// because golang-migrate reads 0 as "no target" rather than "no migrations".
+func migrateTo(db *sql.DB, version int64) error {
+	return withMigrator(db, func(m *migrate.Migrate) error {
+		//nolint:gosec // callers bound version to 1..ExpectedMigrationVersion
+		err := m.Migrate(uint(version))
+		if err == nil || errors.Is(err, migrate.ErrNoChange) {
+			return nil
+		}
+		return fmt.Errorf("migrate to version %d: %w", version, err)
+	})
+}
+
 // RollbackOne rolls back the most recent migration.
 func RollbackOne(db *sql.DB) error {
 	return withMigrator(db, func(m *migrate.Migrate) error {

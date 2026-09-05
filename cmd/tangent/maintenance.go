@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -207,8 +208,16 @@ func runMaintenance(
 			return fail("db-check: %v", err)
 		}
 		emit(report)
+		// Damage and age are reported separately, because the actions are
+		// opposite: one is a restore, the other is a migration.
+		if damage := report.Verification.Damage(); len(damage) > 0 {
+			return fail("db-check: this database is damaged: %s", strings.Join(damage, "; "))
+		}
 		if !report.Verification.Healthy() {
-			return 1
+			return fail("db-check: %s", report.Verification.SchemaAdvice)
+		}
+		if report.Verification.SchemaAdvice != "" {
+			fmt.Fprintf(os.Stderr, "tangent: db-check: %s\n", report.Verification.SchemaAdvice)
 		}
 		return 0
 
@@ -223,7 +232,14 @@ func runMaintenance(
 		}
 		emit(result)
 		if !result.IntegrityOK {
-			return fail("db-backup: the backup was written but failed its own integrity check")
+			return fail("db-backup: the backup was written to %s but is damaged: %s. "+
+				"Do not rely on it.", result.Path, strings.Join(result.Damage, "; "))
+		}
+		// A source older than this binary is the ordinary pre-upgrade case, so
+		// it is a note rather than a failure: the copy is sound, and the
+		// schema it carries is the one you had when you took it.
+		if result.SchemaAdvice != "" {
+			fmt.Fprintf(os.Stderr, "tangent: db-backup: the backup is sound. %s\n", result.SchemaAdvice)
 		}
 		return 0
 
@@ -244,6 +260,13 @@ func runMaintenance(
 			return fail("db-restore: %v", err)
 		}
 		emit(result)
+		// Restoring a pre-upgrade backup leaves the database behind this
+		// binary on purpose — that is what rolling back a migration means. The
+		// operator is told what to run next rather than left to discover it
+		// when the server refuses to boot.
+		if result.NextStep != "" {
+			fmt.Fprintf(os.Stderr, "tangent: db-restore: %s\n", result.NextStep)
+		}
 		return 0
 
 	case *flags.compact:
@@ -426,26 +449,35 @@ WHERE surface_id = ?
 	return 0
 }
 
-// refuseIfServing is criterion 4's refusal, and it is two checks rather than
-// one because either alone has a hole.
+// refuseIfServing is criterion 4's refusal, keyed on the database the command
+// is about to touch.
 //
-// The ownership lock is authoritative for any process that takes it, but a
-// Tangent deployed before the lock existed takes none. The readiness probe
-// catches that one — and catches an operator who is about to run a purge
-// against the installation they are currently using in a browser tab.
+// It used to be two refusals — the single-writer lock, and a /readyz probe on
+// the configured HTTP port — and the port half was answering a different
+// question than the one that matters. A port is not a database.
+// CW-20260905-0014 hit the false positive that follows: a restore into an
+// unrelated temporary database was refused because the live installation was
+// serving on 7842, and the only way past it was to misstate the port with
+// TANGENT_HTTP_PORT.
+//
+// So the lock is the refusal now, and it is taken first. Every Tangent since
+// CW-20260825-0072 claims `<database>.owner` before it opens the database,
+// serving processes included, so a conflict names the process that holds
+// *this* database — pid, role, host, since when — rather than describing a
+// socket that may belong to something else entirely.
+//
+// The probe survives as a note rather than a refusal, because it still catches
+// the one case the lock cannot: a Tangent old enough to take no lock. It
+// cannot be more than a note, because nothing in an HTTP readiness answer says
+// which database the answering process has open, and a refusal that cannot
+// tell will sooner or later refuse the wrong thing. §1 of
+// docs/database-operations.md records the residual gap.
 func refuseIfServing(databasePath string, port int, requireExclusive bool) (*tangentdb.Ownership, error) {
 	if !requireExclusive {
 		// Readers run against a live installation on purpose. An online backup
 		// is criterion 1's first half — consistent while the service runs — and
 		// --db-check exists to be run during an incident, not after one.
 		return nil, nil //nolint:nilnil // a reader needs no claim; nil ownership is the answer
-	}
-	if serving, detail := probeServing(port); serving {
-		return nil, fmt.Errorf(
-			"a Tangent is serving on port %d (%s); stop it before running a maintenance command. "+
-				"If that port belongs to a different installation, set %s to the one this command "+
-				"should check",
-			port, detail, envPort)
 	}
 	ownership, err := tangentdb.AcquireOwnership(databasePath, tangentdb.RoleMaintenance, commandLabel())
 	if err != nil {
@@ -454,6 +486,14 @@ func refuseIfServing(databasePath string, port int, requireExclusive bool) (*tan
 			return nil, fmt.Errorf("%w; stop it, or wait for it to finish", conflict)
 		}
 		return nil, err
+	}
+	if serving, detail := probeServing(port); serving {
+		fmt.Fprintf(os.Stderr,
+			"tangent: note: something answers /readyz on port %d (%s). This command holds the "+
+				"single-writer lock on %s, so that process is not writing the database this "+
+				"command will touch — unless it is a Tangent old enough to take no lock, in "+
+				"which case stop it first.\n",
+			port, detail, databasePath)
 	}
 	return ownership, nil
 }

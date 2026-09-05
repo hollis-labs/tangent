@@ -104,13 +104,46 @@ func ReadGuards(ctx context.Context, q queryer) (GuardInventory, error) {
 // migrating a throwaway in-memory database. It is what "the guards are intact"
 // is measured against, and it costs one in-memory migration run.
 func ReferenceGuards(ctx context.Context) (GuardInventory, error) {
+	expected, err := ExpectedMigrationVersion()
+	if err != nil {
+		return GuardInventory{}, err
+	}
+	return ReferenceGuardsAt(ctx, expected)
+}
+
+// ReferenceGuardsAt is the inventory this binary's migrations produce at one
+// schema version, built by migrating a throwaway in-memory database to exactly
+// that version.
+//
+// The version is the whole point. Comparing a schema-10 database against the
+// inventory at migration 12 reports the guards migrations 0011 and 0012 create
+// as *missing*, which reads as "this database has lost its immutability
+// guards" when the truth is "this database predates them". That mistake is
+// what CW-20260905-0014 cost: a sound pre-upgrade backup declared damaged. A
+// guard a schema never had is not a guard that went away.
+//
+// Version 0 is a database that has never been migrated: it defines no guards,
+// and saying so is not the same as failing.
+func ReferenceGuardsAt(ctx context.Context, version int64) (GuardInventory, error) {
+	if version <= 0 {
+		return GuardInventory{}, nil
+	}
+	expected, err := ExpectedMigrationVersion()
+	if err != nil {
+		return GuardInventory{}, err
+	}
+	if version > expected {
+		return GuardInventory{}, fmt.Errorf(
+			"no reference schema for version %d: this binary embeds %d migrations",
+			version, expected)
+	}
 	reference, err := Open(":memory:")
 	if err != nil {
 		return GuardInventory{}, fmt.Errorf("open reference schema: %w", err)
 	}
 	defer func() { _ = reference.Close() }()
-	if err := RunMigrations(reference); err != nil {
-		return GuardInventory{}, fmt.Errorf("migrate reference schema: %w", err)
+	if err := migrateTo(reference, version); err != nil {
+		return GuardInventory{}, fmt.Errorf("migrate reference schema to %d: %w", version, err)
 	}
 	return ReadGuards(ctx, reference)
 }

@@ -17,6 +17,11 @@ import (
 // identifier, an enumerated state, a count, or a duration.
 type RetentionStatus struct {
 	Migrations MigrationStatus `json:"migrations"`
+	// SchemaState is whether that schema is this binary's, older, newer,
+	// dirty, or absent. It is separate from the integrity counts below because
+	// "older than the binary" is not a defect and the two were indistinguishable
+	// until CW-20260905-0014.
+	SchemaState SchemaState `json:"schema_state"`
 
 	// GuardsIntact is the single most important bit in this report. False means
 	// this database is missing an immutability trigger, which means something
@@ -94,9 +99,13 @@ func Status(
 		return status, err
 	}
 	status.Migrations = verification.Migrations
+	status.SchemaState = verification.SchemaState
 	status.IntegrityProblems = len(verification.IntegrityProblems)
 	status.ForeignKeyViolations = int(verification.ForeignKeyViolations)
-	status.GuardsIntact = verification.GuardDrift.Intact()
+	// GuardsEvaluated is part of the claim: an inventory that could not be
+	// compared — a schema ahead of this binary, a file too damaged to read the
+	// catalog — must not report as one that compared clean.
+	status.GuardsIntact = verification.GuardsEvaluated && verification.GuardDrift.Intact()
 	if verification.GuardDrift.Missing != nil {
 		status.MissingGuards = verification.GuardDrift.Missing
 	}
