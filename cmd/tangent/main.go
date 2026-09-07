@@ -21,6 +21,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/boot"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/participant"
 )
 
@@ -67,6 +68,12 @@ const (
 
 func main() {
 	flagSet := flag.NewFlagSet("tangent", flag.ExitOnError)
+	// --version prints the release this binary is and exits. It is the same
+	// string the MCP server advertises as serverInfo.version and definitions
+	// declare compatibility against (internal/envelope.HostVersion), which the
+	// version gate keeps equal to ui/package.json. The install script compares
+	// it before and after an upgrade.
+	showVersion := flagSet.Bool("version", false, "print the release version and exit")
 	port := flagSet.Int("port", resolvePort(), "HTTP listen port (overrides "+envPort+")")
 	migrateOnly := flagSet.Bool("migrate-only", false, "apply DB migrations and exit")
 	rollbackOne := flagSet.Bool("rollback-one", false, "roll back the most recent DB migration and exit")
@@ -83,6 +90,10 @@ func main() {
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
 		os.Exit(2)
+	}
+	if *showVersion {
+		fmt.Println("tangent " + envelope.HostVersion)
+		return
 	}
 	maintenanceModes := maintenance.requested()
 	if maintenanceModes > 1 {

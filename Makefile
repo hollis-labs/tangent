@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status
+.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status install-macos install-macos-dry-run uninstall-macos
 
 # The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
 # (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
@@ -155,6 +155,24 @@ launch-agent-uninstall: ## Boot out and remove the LaunchAgent (macOS; idempoten
 
 launch-agent-status: ## Report the LaunchAgent and re-validate the binary path it hardcodes
 	go run ./cmd/tangent-launchagent status
+
+# ── Stable install (macOS) ────────────────────────────────────────────
+#
+# Places ./tangent and ./Tangent.app (from `make build` and `make build-app`
+# on a tagged tree) under ~/.local/bin and ~/Applications and runs the daemon
+# under the LaunchAgent. install is also the upgrade. INSTALL_FLAGS passes
+# through to cmd/tangent-install (e.g. --artifacts DIR --port 7842).
+
+INSTALL_FLAGS ?=
+
+install-macos-dry-run: ## Show what install-macos would do; probes only, changes nothing
+	./scripts/install-macos.sh install --dry-run $(INSTALL_FLAGS)
+
+install-macos: ## Install or upgrade the stable Tangent (daemon + app + LaunchAgent); refuses on any pre-check
+	./scripts/install-macos.sh install $(INSTALL_FLAGS)
+
+uninstall-macos: ## Remove the stable Tangent's daemon, app and LaunchAgent; keeps the database
+	./scripts/install-macos.sh uninstall $(INSTALL_FLAGS)
 
 # ── Maintenance ────────────────────────────────────────────────────────
 
