@@ -46,7 +46,7 @@ Vite when `TANGENT_DEV_FRONTEND_URL` is set; `make dev` sets it for you.
 - `scripts/` — Node helpers, including the envelope type codegen.
 
 [`docs/architecture.md`](./docs/architecture.md) is the full document, and
-[`docs/adr/`](./docs/adr/) carries the five accepted decision records.
+[`docs/adr/`](./docs/adr/) carries the six accepted decision records.
 
 ## Conventions
 

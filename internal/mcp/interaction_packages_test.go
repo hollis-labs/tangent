@@ -52,7 +52,7 @@ const prePackageFormCollectResponse = `{
 
 func TestPackagedWorkflowResponseIsWireIdenticalToPrePackage(t *testing.T) {
 	fixture := formCollectFixture(t)
-	got := runFixtureToCompletion(t, newDurableRig(t), fixture, nil)
+	got := runFixtureToCompletion(t, newFastPathRig(t), fixture, nil)
 
 	var want any
 	if err := json.Unmarshal([]byte(prePackageFormCollectResponse), &want); err != nil {

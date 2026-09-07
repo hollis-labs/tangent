@@ -10,9 +10,13 @@ annotation, persistent forms, spreadsheet review, brainstorm iteration, guided
 wizards — workflows that don't fit a chat transcript get their own browser
 window. Tangent is "Mode 1" of the parent interactive-collaboration-system idea:
 the *separate-window app surface*. It deliberately does not cover inline modals,
-fast-triage popovers, spatial canvases, or chat-multiplexing — those are
-handled elsewhere (Nanite). Tangent absorbed and superseded the earlier
-Fast-Triage project, which is now archived.
+fast-triage popovers, or spatial canvases — those are handled elsewhere
+(Nanite). Chat-multiplexing was excluded on the same terms until
+[ADR 0006](docs/adr/0006-collaboration-surface-and-relay-boundary.md), which
+makes an addressed multi-agent collaboration surface Tangent's target; that
+ADR is a decision about direction, and no channel or relay capability exists in
+the tree today. Tangent absorbed and superseded the earlier Fast-Triage
+project, which is now archived.
 
 Today Tangent runs as a Go HTTP server with an embedded Vite/React SPA served
 in an ordinary browser. **There is no Wails, no desktop shell, and no
@@ -190,10 +194,12 @@ batch workflow.
   connection lifecycle, authorization, renderer trust classes, host-mediated
   capabilities, health, telemetry, the Wails deferral, and the canonical
   **Current limitations** list.
-- `docs/adr/` — five accepted decision records: `0001` lifecycle boundaries,
+- `docs/adr/` — six accepted decision records: `0001` lifecycle boundaries,
   `0002` retention and draft custody, `0003` definition and package ownership,
   `0004` caller/participant/room access authority, `0005` product boundary and
-  portfolio composition. `0005` retired `docs/interactive-collaboration-direction.md`;
+  portfolio composition, and `0006` collaboration surface and relay boundary,
+  which supersedes `0005` in part and describes a target, not the shipped
+  build. `0005` retired `docs/interactive-collaboration-direction.md`;
   that file is deleted and must not be re-created.
 - `docs/database-operations.md` — ownership, backup/restore/repair, and the six
   deletion kinds.
