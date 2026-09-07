@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
+.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -110,6 +110,31 @@ lint-go: ## golangci-lint + go vet + gofmt check
 
 lint-frontend: check-node ## biome check
 	cd ui && npm run lint
+
+# ── Launch at login (macOS LaunchAgent) ────────────────────────────────
+#
+# The agent runs the headless daemon at login (RunAtLoad true, KeepAlive
+# false) from ~/Library/LaunchAgents/com.hollislabs.tangent.plist. The binary
+# path is hardcoded into the plist, so LAUNCH_AGENT_BINARY must be the
+# daemon's *installed* location; the workspace build below is the default
+# only so `make launch-agent-render` has something to show. The real install
+# is performed by the stable install script (CW-20260907-0020), not by hand.
+
+LAUNCH_AGENT_BINARY ?= $(CURDIR)/tangent
+LAUNCH_AGENT_PORT ?= 7842
+LAUNCH_AGENT_FLAGS = --binary "$(LAUNCH_AGENT_BINARY)" --port $(LAUNCH_AGENT_PORT) $(if $(LAUNCH_AGENT_DB),--db "$(LAUNCH_AGENT_DB)",)
+
+launch-agent-render: ## Print the LaunchAgent plist for LAUNCH_AGENT_BINARY; touches nothing
+	go run ./cmd/tangent-launchagent render $(LAUNCH_AGENT_FLAGS)
+
+launch-agent-install: ## Write and load the LaunchAgent (macOS; refuses if LAUNCH_AGENT_BINARY is missing)
+	go run ./cmd/tangent-launchagent install $(LAUNCH_AGENT_FLAGS)
+
+launch-agent-uninstall: ## Boot out and remove the LaunchAgent (macOS; idempotent)
+	go run ./cmd/tangent-launchagent uninstall
+
+launch-agent-status: ## Report the LaunchAgent and re-validate the binary path it hardcodes
+	go run ./cmd/tangent-launchagent status
 
 # ── Maintenance ────────────────────────────────────────────────────────
 
