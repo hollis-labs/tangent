@@ -55,7 +55,11 @@ jobs:
           # desktop-shell packages fail to even compile here, independent of
           # this job's own correctness, so every step below is scoped to
           # everything except them. The desktop shell gets its own macOS job.
-          packages=$(go list ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$' | tr '\n' ' ')
+          #
+          # Emitted as ./relative paths, not import paths: go vet/build/test
+          # accept either, but golangci-lint resolves its arguments as
+          # directories and fails with "directory not found" on an import path.
+          packages=$(go list -f '{{.Dir}}' ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$' | sed "s#^$PWD#.#" | tr '\n' ' ')
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
 
       - name: Install golangci-lint
