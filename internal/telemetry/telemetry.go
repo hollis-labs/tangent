@@ -235,6 +235,11 @@ func (r *Recorder) Emit(ctx context.Context, event Event) {
 	if !event.Correlation.Span.Valid() {
 		event.Correlation.Span = NewSpanID()
 	}
+	if !event.Correlation.Upstream.Valid() {
+		if upstream, ok := UpstreamTraceFromContext(ctx); ok {
+			event.Correlation.Upstream = upstream
+		}
+	}
 
 	attrs, dropped := sanitizeAttrs(event.Attrs)
 	event.Attrs = attrs
@@ -356,6 +361,16 @@ func recordFor(event Event) Record {
 				record.Attributes[attr.Key] = attr.flag
 			}
 		}
+	}
+	if correlation.Upstream.Valid() {
+		// Record-only: these keys are not in the attribute allowlist, so
+		// they cannot arrive through event.Attrs and never become metric
+		// dimensions. Both values are fixed-width lowercase hex.
+		if record.Attributes == nil {
+			record.Attributes = make(map[string]any, 2)
+		}
+		record.Attributes[AttrUpstreamTraceID] = correlation.Upstream.Trace.String()
+		record.Attributes[AttrUpstreamSpanID] = correlation.Upstream.Span.String()
 	}
 	return record
 }

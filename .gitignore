@@ -1,5 +1,8 @@
 # Go binary (top-level build output)
 /tangent
+/tangent-app
+/Tangent.app
+/Tangent.app-bin
 
 # Go build / test artifacts
 *.test
