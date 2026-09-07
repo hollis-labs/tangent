@@ -54,6 +54,7 @@ export function TabStrip() {
 
   const activeRoomID = location.pathname.startsWith("/r/") ? location.pathname.slice(3) : "";
   const hitlActive = location.pathname === "/hitl" || location.pathname.startsWith("/hitl/items/");
+  const channelsActive = location.pathname.startsWith("/channels");
 
   const closeRoom = async (roomID: string) => {
     try {
@@ -91,6 +92,17 @@ export function TabStrip() {
           )}
         >
           Human input
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/channels")}
+          aria-current={channelsActive ? "page" : undefined}
+          className={cn(
+            "shrink-0 border-l border-zinc-800 px-3 py-1 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+            channelsActive ? "text-amber-300" : "text-zinc-400 hover:text-zinc-100",
+          )}
+        >
+          Channels
         </button>
         <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto" data-testid="tab-strip">
           {rooms.length === 0 ? (

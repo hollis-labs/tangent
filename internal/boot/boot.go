@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/channel"
+	"github.com/hollis-labs/tangent/internal/channelpane"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
@@ -418,6 +419,16 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		return release(fmt.Errorf("construct relay store: %w", err))
 	}
 
+	// The minimal channel pane (CW-20260907-0017): the operator's own
+	// send/read path over the same two stores, never the tangent.relay_*
+	// MCP surface. hitlService correlates HITL items to the channel's
+	// agent by reading its already-public Inbox(), with no change to
+	// internal/hitl's own contract.
+	channelPaneService, err := channelpane.New(channelStore, relayStore, hitlService)
+	if err != nil {
+		return release(fmt.Errorf("construct channel pane service: %w", err))
+	}
+
 	mcpSrv, err := mcp.New(
 		envSvc,
 		dispatcher,
@@ -495,6 +506,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		RoomManager:    roomMgr,
 		HITL:           hitlService,
 		Rooms:          mcpSrv,
+		Channels:       channelPaneService,
 		Participants:   participantGate,
 		Effects:        effectBroker,
 		EffectContext:  interactionService,

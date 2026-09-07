@@ -73,6 +73,12 @@ type Config struct {
 	// same reason MCP and HITL are; production main always passes it.
 	Rooms RoomService
 
+	// Channels is the channel pane's application service (CW-20260907-0017).
+	// When set, the server mounts /api/channels — the operator's send/read
+	// path over channel.Store and relay.Store. Optional in Config for the
+	// same reason MCP, HITL, and Rooms are.
+	Channels ChannelService
+
 	// Effects is the host-mediated effect broker (ADR 0003 §2.5,
 	// CW-20260825-0077). When set together with EffectContext the server
 	// mounts POST /api/effects, the single channel a renderer uses to ask the
@@ -232,6 +238,24 @@ func New(cfg Config) (*Server, error) {
 			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.inspect))))
 		mux.Handle("POST /api/rooms/{roomID}/close", hitlSameOrigin(requireParticipant(
 			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.close))))
+	}
+
+	if cfg.Channels != nil {
+		// The channel pane's browser API (CW-20260907-0017). Listing and
+		// reading need `view`; sending a message creates a new exchange —
+		// `submit`, the same capability that creates an interaction on a
+		// surface — and marking read is an acknowledgment over
+		// already-viewed content, closer to `draft`'s "acknowledges a
+		// presented projection" than to creating anything new.
+		channelHandler := newChannelHTTPHandler(cfg.Channels)
+		channelGuard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
+			return hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler))
+		}
+		mux.Handle("GET /api/channels", channelGuard(authz.View, channelHandler.list))
+		mux.Handle("GET /api/channels/events", channelGuard(authz.View, channelHandler.events))
+		mux.Handle("GET /api/channels/{channelID}", channelGuard(authz.View, channelHandler.get))
+		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Submit, channelHandler.send))
+		mux.Handle("POST /api/channels/{channelID}/read", channelGuard(authz.Draft, channelHandler.markRead))
 	}
 
 	if cfg.Effects != nil && cfg.EffectContext != nil {
