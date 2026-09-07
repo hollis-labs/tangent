@@ -104,6 +104,24 @@ func (b *otelBridge) span(ctx context.Context, event Event, attrs []Attr) {
 		trace.WithTimestamp(start),
 		trace.WithAttributes(keyValues(event, attrs)...),
 	}
+	if upstream := event.Correlation.Upstream; upstream.Valid() {
+		// A link, not a parent: the observation is filed under Tangent's
+		// derived trace, and the caller's trace is joined to it without
+		// either one adopting the other's identity.
+		flags := trace.TraceFlags(0)
+		if upstream.Sampled {
+			flags = trace.FlagsSampled
+		}
+		options = append(options, trace.WithLinks(trace.Link{
+			SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID:    trace.TraceID(upstream.Trace),
+				SpanID:     trace.SpanID(upstream.Span),
+				TraceFlags: flags,
+				Remote:     true,
+			}),
+			Attributes: []attribute.KeyValue{attribute.String("tangent.link", "upstream_gateway")},
+		}))
+	}
 	_, span := b.trace.Start(trace.ContextWithSpanContext(ctx, parent), event.Name, options...)
 	switch event.Outcome {
 	case OutcomeFailed:
@@ -194,6 +212,12 @@ func keyValues(event Event, attrs []Attr) []attribute.KeyValue {
 		if value != "" {
 			values = append(values, attribute.String(key, value))
 		}
+	}
+	if correlation.Upstream.Valid() {
+		values = append(values,
+			attribute.String("tangent."+AttrUpstreamTraceID, correlation.Upstream.Trace.String()),
+			attribute.String("tangent."+AttrUpstreamSpanID, correlation.Upstream.Span.String()),
+		)
 	}
 	return append(values, attributeSet(attrs)...)
 }

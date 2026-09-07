@@ -171,6 +171,13 @@ type Correlation struct {
 	Span   SpanID
 	Parent SpanID
 
+	// Upstream is the caller's own W3C trace context, when a gateway carried
+	// one on the request (see upstream.go). It is a link beside the derived
+	// identity, never the identity: Trace stays derived from durable columns.
+	// Emit fills it from the request context when the call site leaves it
+	// zero.
+	Upstream UpstreamTrace
+
 	SurfaceID     string
 	InteractionID string
 	RoomID        string
