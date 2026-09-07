@@ -357,6 +357,52 @@ history. The corollary: anything received but never acknowledged via
 forever — a caller must ack what it actually handles, including a message
 it decides needs no reply, or that message is never done being delivered.
 
+### Channel pane
+
+`internal/channelpane/` + `/api/channels` (CW-20260907-0017) is the
+operator's own send/read path over `internal/channel` and `internal/relay`
+— a REST surface, not an MCP tool, since an operator has no MCP client. It
+mirrors `/api/hitl`'s shape (same participant-session guard, same
+same-origin check, a revision-hint SSE stream at `/api/channels/events`
+that a client always follows with a refetch, never trusting the event as
+state) and is deliberately the minimal pane: a channel list with unread
+and needs-input counts, one addressed chat view per channel, HITL items
+raised by that channel's agent shown inline via a read-only parse of
+`hitl.Service.Inbox()`'s already-exported `RequestSnapshot` (no change to
+`internal/hitl`'s own contract), a browser-`localStorage` draft per
+channel, and enter to send.
+
+Every read is pure: `ListChannels` and `GetChannel` call only
+`relay.Store.ListForDestination`, the new `relay.Store.ListForChannel`
+(both directions of one channel, ordered by `created_at` — `sequence` is
+monotonic per recipient only, so it cannot interleave an operator-sent and
+an agent-sent exchange chronologically), `GetRead`, and `Presence`, never
+`Receive`. Only an explicit `POST /api/channels/{id}/read` writes
+(`RecordRead`), and only when a caller asks for it — never as a side
+effect of a GET, which is the one property this task could not ship
+without.
+
+A sent operator message reports exactly three delivery states, matching
+the three facts the pull model actually produces: `queued` (the agent's
+own receive is open right now — delivery is imminent), `awaiting-peer`
+(the agent is idle or gone; `last_seen_at`, if any, is the only evidence
+of life), and `accepted-by-peer` (a row in `exchange_reads`). A fourth,
+`failed`, does not exist: nothing in the dormant-outbox pull model ever
+produces a delivery failure, so rendering one would be a state the system
+can never actually enter. `recipient_binding_current` is not surfaced at
+all — a reconnect and an explicit rebind are the same code path
+(`channel.Store.Rebind`), so a channel's entire history reads
+binding-not-current after any ordinary agent relaunch; that is provenance,
+not a delivery outcome, and omitting it is the simplest way to guarantee
+this pane never paints a healthy relaunch as a wall of red.
+
+There is no create-channel action in the pane. `internal/channel` ships
+only the agent-facing `tangent.relay_open_channel`; the operator's channel
+list is exactly the channels an agent has already opened, and the primary
+flow runs agent-first (an agent needing input opens a channel and messages
+the operator, who replies here). An operator cannot start a conversation
+from this pane today — a known, recorded limitation, not an oversight.
+
 ### Persistence layer
 
 `internal/db/` + `internal/room/` — Tangent persists room rows and

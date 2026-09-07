@@ -323,6 +323,46 @@ func (s *Store) ListForDestination(ctx context.Context, channelID, recipientPart
 	return exchanges, nil
 }
 
+// ListForChannel returns every exchange in a channel, both directions,
+// newest first — the pure-read whole-channel history CW-20260907-0017's
+// operator pane displays. It exists apart from ListForDestination because
+// that method's ordering (sequence) is monotonic per RECIPIENT only: an
+// operator-sent and an agent-sent exchange in the same channel can carry
+// the same sequence number under different recipients, so sequence cannot
+// interleave both directions chronologically. This orders by
+// (created_at, id) instead, using the channel_id+created_at index
+// migration 0014 already declares.
+//
+// Newest first matches internal/hitl's OperatorInbox.History convention.
+// A pure read: advances no cursor, marks nothing read, never touches
+// presence — the same guarantee ListForDestination carries, for the same
+// reason (a UI-facing list must never be confused with the agent's
+// consuming, ack-driven receive path).
+func (s *Store) ListForChannel(ctx context.Context, channelID string, limit int) ([]Exchange, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	query := exchangeSelectColumns + ` FROM exchanges WHERE channel_id = ? ORDER BY created_at DESC, id DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, channelID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("relay store: list for channel: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var exchanges []Exchange
+	for rows.Next() {
+		exchange, scanErr := scanExchange(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("relay store: scan exchange: %w", scanErr)
+		}
+		exchanges = append(exchanges, exchange)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("relay store: iterate channel exchanges: %w", err)
+	}
+	return exchanges, nil
+}
+
 const exchangeSelectColumns = `SELECT id, idempotency_key, channel_id, subject_id, sender_participant_id,
        recipient_participant_id, recipient_binding_id, reply_to_exchange_id, body, sequence, created_at`
 

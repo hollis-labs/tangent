@@ -893,3 +893,78 @@ func TestReceiveRejectsAWaitOutsideZeroToMaximum(t *testing.T) {
 		t.Fatalf("Receive with a negative wait = %v, want ErrInvalidRecord", err)
 	}
 }
+
+// TestListForChannelReturnsBothDirectionsNewestFirst is CW-20260907-0017's
+// whole-channel history read: an operator-sent and an agent-sent exchange
+// in the same channel, both surfaced in one call, ordered newest first —
+// the shape ListForDestination cannot produce, since its ordering
+// (sequence) is monotonic per recipient only.
+func TestListForChannelReturnsBothDirectionsNewestFirst(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	toAgent, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "op-to-agent", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "from the operator",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (operator to agent): %v", err)
+	}
+	toOperator, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "agent-to-op", ChannelID: channelID,
+		SenderParticipantID: agentID, RecipientParticipantID: operatorID, Body: "from the agent",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (agent to operator): %v", err)
+	}
+
+	items, err := h.relay.ListForChannel(ctx, channelID, 0)
+	if err != nil {
+		t.Fatalf("ListForChannel: %v", err)
+	}
+	if len(items) != 2 || items[0].ID != toOperator.ID || items[1].ID != toAgent.ID {
+		t.Fatalf("ListForChannel = %+v, want [toOperator, toAgent] newest first", items)
+	}
+}
+
+// TestListForChannelNeverTouchesPresenceOrCursor pins the same pure-read
+// guarantee ListForDestination carries (TestListForDestinationNeverTouchesPresenceOrCursor):
+// a channel pane's whole-history view must never be confused with the
+// agent's consuming, ack-driven receive path.
+func TestListForChannelNeverTouchesPresenceOrCursor(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	exchange, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-pane-read", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "a pane would show this too",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange: %v", err)
+	}
+
+	for i := range 3 {
+		items, listErr := h.relay.ListForChannel(ctx, channelID, 0)
+		if listErr != nil {
+			t.Fatalf("ListForChannel (%d): %v", i, listErr)
+		}
+		if len(items) != 1 || items[0].ID != exchange.ID {
+			t.Fatalf("ListForChannel (%d) = %+v, want the one exchange, unconsumed", i, items)
+		}
+	}
+
+	presence, err := h.relay.Presence(ctx, agentID)
+	if err != nil {
+		t.Fatalf("Presence: %v", err)
+	}
+	if presence.Open || presence.LastSeenAt != nil {
+		t.Fatalf("presence after ListForChannel reads = %+v, want still closed and never seen", presence)
+	}
+	if _, err := h.relay.GetRead(ctx, exchange.ID, agentID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRead after ListForChannel reads = %v, want ErrNotFound — a pane read must not consume", err)
+	}
+}
