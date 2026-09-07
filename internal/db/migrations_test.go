@@ -734,8 +734,13 @@ VALUES ('subject-1', 'channel-1', 'interaction', 'interaction-existing', ?, ?)`,
 	if interactionState != "submitted" {
 		t.Fatalf("interaction lifecycle_state after rollback = %q, want submitted", interactionState)
 	}
-	if _, err := database.Exec(`SELECT 1 FROM surfaces WHERE id = 'surface-existing'`); err != nil {
-		t.Fatalf("surface should remain after rolling back only the channel substrate: %v", err)
+	var survivingSurfaces int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM surfaces WHERE id = 'surface-existing'`).
+		Scan(&survivingSurfaces); err != nil {
+		t.Fatalf("count surviving surface: %v", err)
+	}
+	if survivingSurfaces != 1 {
+		t.Fatalf("surface row count after rolling back only the channel substrate = %d, want 1 (the row itself, not just the table)", survivingSurfaces)
 	}
 
 	// Re-applying brings the schema back to current, proving up is idempotent
@@ -823,12 +828,21 @@ INSERT INTO exchange_outbox (exchange_id, created_at, updated_at) VALUES ('ex1',
 	}
 
 	// The rollback removed the relay substrate but left the channel and
-	// participant rows exactly as 0064 left them.
-	if _, err := database.Exec(`SELECT 1 FROM channels WHERE id = 'ch1'`); err != nil {
-		t.Fatalf("channel should remain after rolling back only the relay substrate: %v", err)
+	// participant rows exactly as 0064 left them. Counting the matching row,
+	// not just running the SELECT: Exec succeeds on zero rows too, so it
+	// would prove the table still exists, never that this row survived.
+	var survivingChannels, survivingParticipants int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM channels WHERE id = 'ch1'`).Scan(&survivingChannels); err != nil {
+		t.Fatalf("count surviving channel: %v", err)
 	}
-	if _, err := database.Exec(`SELECT 1 FROM participants WHERE id = 'p_sender'`); err != nil {
-		t.Fatalf("participant should remain after rolling back only the relay substrate: %v", err)
+	if survivingChannels != 1 {
+		t.Fatalf("channel row count after rolling back only the relay substrate = %d, want 1", survivingChannels)
+	}
+	if err := database.QueryRow(`SELECT COUNT(*) FROM participants WHERE id = 'p_sender'`).Scan(&survivingParticipants); err != nil {
+		t.Fatalf("count surviving participant: %v", err)
+	}
+	if survivingParticipants != 1 {
+		t.Fatalf("participant row count after rolling back only the relay substrate = %d, want 1", survivingParticipants)
 	}
 
 	if err := RunMigrations(database); err != nil {

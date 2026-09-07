@@ -148,6 +148,16 @@ func (s *Store) AcceptExchange(ctx context.Context, params AcceptExchangeParams)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// This read-then-insert is correct only because internal/db.Open pins
+	// SetMaxOpenConns(1): every statement on this *sql.DB, across every
+	// goroutine and every Store, serializes onto the same one connection, so
+	// no other transaction can insert a row between this SELECT and the
+	// INSERT below it. Measured directly (director review of PR #33):
+	// 12 concurrent AcceptExchange calls to one recipient over this single
+	// pool give 12 distinct sequences; the same load spread across two
+	// separate connections to the same file fails most of them with
+	// SQLITE_BUSY. If that pool size ever changes, this needs a real
+	// counter row (the surfaces.next_interaction_sequence pattern) instead.
 	var nextSequence int64
 	err = tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(sequence), 0) + 1 FROM exchanges WHERE recipient_participant_id = ?`,
