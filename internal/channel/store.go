@@ -524,6 +524,22 @@ FROM channel_participants WHERE channel_id = ? AND participant_id = ?`, channelI
 	return membership, nil
 }
 
+// IsMember reports whether a participant currently holds live membership
+// (left_at IS NULL) in a channel. It exists for callers one layer up — the
+// relay journal validates sender/recipient membership before accepting an
+// exchange — that need the yes/no answer without loading the full
+// Membership record.
+func (s *Store) IsMember(ctx context.Context, channelID, participantID string) (bool, error) {
+	_, err := s.getMembership(ctx, channelID, participantID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ListChannelParticipants returns every participant currently bound to a
 // channel (left_at IS NULL), in join order.
 func (s *Store) ListChannelParticipants(ctx context.Context, channelID string) ([]Participant, error) {
