@@ -39,7 +39,11 @@ reachable on `:7843` during dev.
 
 The daemon's own defaults (`:7842`, `~/.tangent/tangent.db`) belong to the
 **stable** install the operator uses every day. Nothing agent-facing rewires
-for the split: the Tether catalog entry `tangent` still points at 7842.
+for the split: the Tether catalog entry `tangent` still points at 7842, and the
+`tangent-dev` entry stays **disabled** in the shared catalog. Enabling both
+makes mux rename one side's identical tool names and route the bare `tangent.*`
+names to the other (`CW-20260907-0037`); point a session at dev with a scratch
+catalog copy or `mux mcp --proxy --only tangent-dev` instead.
 
 Every dev-facing `make` target (`dev`, `dev-go`, `db-migrate`, `db-rollback`,
 and the environment-coupled arm of `smoke`) runs the **dev** instance instead,

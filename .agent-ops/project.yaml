@@ -28,16 +28,20 @@ build:
   command: 'make build'            # cerberus drives this via build_strategy: make_standard
 deployment:
   # Two instances by design (CW-20260907-0018, plan CW-20260907-0014 decision 1).
-  # `current` says what is true on this machine right now; `target` is what
-  # the split produces once Chrispian gives the redeploy its go. Agents reach
-  # `tangent` (7842) by default through the Tether catalog; `tangent-dev` is
-  # the opt-in upstream for relay testing against the dev build.
+  # `current` says what is true on this machine as of the 2026-09-07 cutover
+  # (CW-20260907-0020). Agents reach `tangent` (7842, stable) through the
+  # shared Tether catalog. `tangent-dev` (7843) exists in the catalog but
+  # MUST stay `enabled: false` there: two upstreams with identical tool names
+  # make mux hand the bare `tangent.*` names to one and rename the other's
+  # (CW-20260907-0037), which routed a default-config session's HITL item to
+  # dev. Reach dev through a scratch catalog copy or `mux mcp --proxy --only
+  # tangent-dev`, never the shared catalog, until Tether namespaces duplicates.
   type: dev_session                # the live Cerberus resource today; see instances.current
   service_name: null
   binary: ~/dev/hollis-labs/apps/tangent/tangent   # workspace build output; `go install` also puts a copy on $GOBIN
   instances:
     current:
-      note: one process serves both roles — Cerberus tangent-dev on 7842 against ~/.tangent/tangent.db; no launchd job exists yet
+      note: since 2026-09-07 stable runs under launchd on 7842 (~/.local/bin/tangent, Tangent.app in ~/Applications); dev runs on 7843 against <repo>/.tangent/dev.db, started by hand until the Cerberus daemon is restarted to re-read the 7843 spec (CW-20260907-0036) — no Cerberus lifecycle verb may target tangent-dev before that
     stable:
       port: 7842
       state: ~/.tangent/tangent.db
@@ -46,8 +50,8 @@ deployment:
     dev:
       port: 7843
       state: ~/dev/hollis-labs/apps/tangent/.tangent/dev.db
-      authority: cerberus          # resource tangent-dev after `cerberus resource deploy` with packaging/cerberus/tangent.cerberus.yaml
-      catalog_entry: tangent-dev   # ~/.tether/catalog/mcp-servers/tangent-dev.yaml; disabled until 7843 answers
+      authority: cerberus          # resource tangent-dev (live file = packaging/cerberus/tangent.cerberus.yaml) once the daemon registry is reconciled (CW-20260907-0036); hand-run meanwhile
+      catalog_entry: tangent-dev   # ~/.tether/catalog/mcp-servers/tangent-dev.yaml; present, DISABLED in the shared catalog (CW-20260907-0037); use a scratch catalog or --only tangent-dev
       make_targets: dev, dev-go, db-migrate, db-rollback, smoke (DEV_PORT, DEV_DB_PATH)
 docs:
   readme: README.md
@@ -60,7 +64,7 @@ roadmap:
 usage_examples:
   - intent: Check or restart the managed Tangent process
     command: 'cerberus resource status tangent-dev'
-    note: Cerberus owns the lifecycle. Use `cerberus resource deploy tangent-dev` to rebuild and restart; do not launch ./tangent by hand while the resource is running.
+    note: Cerberus owns the DEV lifecycle (stable is launchd). Until the daemon registry is reconciled (CW-20260907-0036) its port spec is stale and stop/reload/deploy would signal the STABLE daemon; do not run them. `deploy` also needs the pinned Node on Cerberus's PATH (CW-20260905-0017).
   - intent: Run Tangent standalone (no Cerberus on this machine)
     command: 'make build && ./tangent'
     note: Serves http://localhost:7842/ against ~/.tangent (the STABLE defaults); override with TANGENT_HTTP_PORT and TANGENT_DB_PATH. Only valid when nothing else supervises the process.
