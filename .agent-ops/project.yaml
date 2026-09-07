@@ -18,17 +18,37 @@ catalog:
 locations:
   repo: ~/dev/hollis-labs/apps/tangent
   agent_os_tracking: ~/dev/agent-os/workspaces/execution/tangent
-  state_dir: ~/.tangent
+  state_dir: ~/.tangent            # STABLE state; the dev instance uses <repo>/.tangent/dev.db (gitignored)
+  dev_state_dir: ~/dev/hollis-labs/apps/tangent/.tangent
   catalog: null                    # no per-project catalog dir; tangent uses no ~/.tangent/catalog
   artifacts: null                  # dev_session runs from the workspace; no ~/.cerberus/apps artifact is installed
 build:
-  authority: cerberus              # single launch authority — see docs/mcp-integration.md "Managed runtime"
-  resource: tangent-dev            # cerberus resource id; mode dev_session, run_from workspace, port 7842
+  authority: cerberus              # launch authority of the DEV instance — see docs/mcp-integration.md "Managed runtime"
+  resource: tangent-dev            # cerberus resource id; mode dev_session, run_from workspace
   command: 'make build'            # cerberus drives this via build_strategy: make_standard
 deployment:
-  type: dev_session                # Cerberus-supervised localhost process; no launchd job exists for Tangent
+  # Two instances by design (CW-20260907-0018, plan CW-20260907-0014 decision 1).
+  # `current` says what is true on this machine right now; `target` is what
+  # the split produces once Chrispian gives the redeploy its go. Agents reach
+  # `tangent` (7842) by default through the Tether catalog; `tangent-dev` is
+  # the opt-in upstream for relay testing against the dev build.
+  type: dev_session                # the live Cerberus resource today; see instances.current
   service_name: null
   binary: ~/dev/hollis-labs/apps/tangent/tangent   # workspace build output; `go install` also puts a copy on $GOBIN
+  instances:
+    current:
+      note: one process serves both roles — Cerberus tangent-dev on 7842 against ~/.tangent/tangent.db; no launchd job exists yet
+    stable:
+      port: 7842
+      state: ~/.tangent/tangent.db
+      authority: launchd           # com.hollislabs.tangent LaunchAgent, headless daemon (docs/launch-at-login.md); installed by CW-20260907-0020, not yet
+      catalog_entry: tangent       # ~/.tether/catalog/mcp-servers/tangent.yaml; what agents reach by default
+    dev:
+      port: 7843
+      state: ~/dev/hollis-labs/apps/tangent/.tangent/dev.db
+      authority: cerberus          # resource tangent-dev after `cerberus resource deploy` with packaging/cerberus/tangent.cerberus.yaml
+      catalog_entry: tangent-dev   # ~/.tether/catalog/mcp-servers/tangent-dev.yaml; disabled until 7843 answers
+      make_targets: dev, dev-go, db-migrate, db-rollback, smoke (DEV_PORT, DEV_DB_PATH)
 docs:
   readme: README.md
   architecture: docs/architecture.md
@@ -43,13 +63,16 @@ usage_examples:
     note: Cerberus owns the lifecycle. Use `cerberus resource deploy tangent-dev` to rebuild and restart; do not launch ./tangent by hand while the resource is running.
   - intent: Run Tangent standalone (no Cerberus on this machine)
     command: 'make build && ./tangent'
-    note: Serves http://localhost:7842/; override port with TANGENT_HTTP_PORT. Only valid when nothing else supervises the process.
+    note: Serves http://localhost:7842/ against ~/.tangent (the STABLE defaults); override with TANGENT_HTTP_PORT and TANGENT_DB_PATH. Only valid when nothing else supervises the process.
+  - intent: Run the DEV instance by hand, beside stable
+    command: 'make build && make dev-go'
+    note: DEV_PORT (7843) and DEV_DB_PATH (<repo>/.tangent/dev.db) keep it off stable's port, database and flock.
   - intent: Reach Tangent from a mux-speaking agent
     command: 'mux_discover intent="triage" then mux_call tangent.triage'
     note: Upstream declared in ~/.tether/catalog/mcp-servers/tangent.yaml (SSE at /sse); mux exposes tangent as proxy_only.
   - intent: Develop the frontend with hot reload
     command: 'make dev'
-    note: Go server on :7842 reverse-proxies non-API routes to Vite on :5173.
+    note: Go DEV server on :7843 (DEV_PORT) with the workspace database reverse-proxies non-API routes to Vite on :5173.
   - intent: Regenerate envelope TypeScript types after a go-envelopes bump
     command: 'make generate-envelopes'
     note: CI gates on staleness via `make check-envelopes`; the generated file is committed.

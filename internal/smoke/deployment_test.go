@@ -42,6 +42,11 @@ const (
 	envResource = "TANGENT_SMOKE_RESOURCE"
 	envCatalog  = "TANGENT_SMOKE_CATALOG"
 	envGateway  = "TANGENT_SMOKE_GATEWAY"
+	// envCatalogEntry names the Tether catalog entry that should reach the
+	// deployment under test. The stable install is `tangent`; the dev
+	// instance is `tangent-dev` (CW-20260907-0018), and `make smoke` sets it
+	// to match the URL it points this check at.
+	envCatalogEntry = "TANGENT_SMOKE_CATALOG_ENTRY"
 )
 
 func requireEnvGate(t *testing.T) {
@@ -63,6 +68,13 @@ func managedResource() string {
 		return resource
 	}
 	return "tangent-dev"
+}
+
+func catalogEntryID() string {
+	if id := os.Getenv(envCatalogEntry); id != "" {
+		return id
+	}
+	return "tangent"
 }
 
 func catalogRoot(t *testing.T) string {
@@ -157,7 +169,7 @@ func TestDeployedTangentMatchesShippedBuild(t *testing.T) {
 	}
 
 	// 4. Is Tangent still published where the gateway looks for it?
-	entry, err := smoke.ReadCatalogEntry(catalogRoot(t), "tangent")
+	entry, err := smoke.ReadCatalogEntry(catalogRoot(t), catalogEntryID())
 	if err != nil {
 		t.Errorf("read Tether catalog entry: %v", err)
 	} else {
@@ -199,7 +211,7 @@ func TestTetherGatewayStillPublishesTangent(t *testing.T) {
 		t.Fatalf("could not derive the shipped build's surface:\n%s", finding)
 	}
 
-	entry, err := smoke.ReadCatalogEntry(catalogRoot(t), "tangent")
+	entry, err := smoke.ReadCatalogEntry(catalogRoot(t), catalogEntryID())
 	if err != nil {
 		t.Fatalf("read Tether catalog entry: %v", err)
 	}
@@ -216,15 +228,15 @@ func TestTetherGatewayStillPublishesTangent(t *testing.T) {
 	if writeErr := os.WriteFile(filepath.Join(root, "global.yaml"), []byte(global), 0o600); writeErr != nil {
 		t.Fatalf("write disposable global catalog: %v", writeErr)
 	}
-	mirrored := fmt.Sprintf("id: tangent\ntransport: %s\nurl: %s\nenabled: true\n", entry.Transport, entry.URL)
-	if writeErr := os.WriteFile(filepath.Join(root, "mcp-servers", "tangent.yaml"), []byte(mirrored), 0o600); writeErr != nil {
+	mirrored := fmt.Sprintf("id: %s\ntransport: %s\nurl: %s\nenabled: true\n", catalogEntryID(), entry.Transport, entry.URL)
+	if writeErr := os.WriteFile(filepath.Join(root, "mcp-servers", catalogEntryID()+".yaml"), []byte(mirrored), 0o600); writeErr != nil {
 		t.Fatalf("write mirrored Tangent entry: %v", writeErr)
 	}
 
 	// #nosec G204,G702 -- the gateway binary is resolved from PATH (operator-chosen,
 	// defaulting to `mux`), every other argument is a literal or this test's own
 	// temp directory, and the subcommand is the read-only stdio proxy.
-	command := exec.CommandContext(ctx, resolved, "--catalog", root, "mcp", "--proxy", "--only", "tangent")
+	command := exec.CommandContext(ctx, resolved, "--catalog", root, "mcp", "--proxy", "--only", catalogEntryID())
 	command.Env = append(os.Environ(), "HOLLIS_OTEL_DISABLED=1")
 	stdin, err := command.StdinPipe()
 	if err != nil {

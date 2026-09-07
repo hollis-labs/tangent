@@ -1,0 +1,54 @@
+# Prepared Cerberus resource definition for the DEV instance (CW-20260907-0018).
+#
+# This is the file ~/.cerberus/projects/tangent.cerberus.yaml should become
+# when dev is split from stable. It is committed here so the change is
+# reviewable; it is NOT applied by anything in the repo. Applying it is a
+# two-step operator action, both steps Chrispian's call:
+#
+#   1. cp packaging/cerberus/tangent.cerberus.yaml ~/.cerberus/projects/tangent.cerberus.yaml
+#   2. cerberus resource deploy tangent-dev     # rebuild and restart on 7843
+#
+# and then the stable install (launchd, CW-20260907-0020) takes 7842 and
+# ~/.tangent/tangent.db, which this resource no longer touches. Until step 2
+# runs, the live resource still serves 7842 against ~/.tangent, and the
+# tangent-dev Tether catalog entry stays disabled.
+#
+# Differences from the live file as of 2026-09-07: port, health, url move to
+# 7843; env pins the dev port and a workspace-local database (.tangent/dev.db
+# is gitignored and removed by `make clean`). A different database path is a
+# different `.owner` lock, so dev and stable cannot collide on the flock.
+kind: cerberus-project/v1
+owner: tangent
+namespace: local
+project:
+  id: tangent
+  name: Tangent
+resources:
+  - id: tangent-dev
+    name: Tangent Dev
+    type: process
+    project: tangent
+    connector: local
+    config:
+      build_strategy:
+        kind: make_standard
+      command:
+        - ./tangent
+      dir: /Users/chrispian/dev/hollis-labs/apps/tangent
+      env:
+        TANGENT_HTTP_PORT: "7843"
+        TANGENT_DB_PATH: /Users/chrispian/dev/hollis-labs/apps/tangent/.tangent/dev.db
+        TANGENT_MANAGED_RESOURCE: tangent-dev
+      health: http://127.0.0.1:7843/healthz
+      mode: dev_session
+      port: 7843
+      run_from: workspace
+      url: http://127.0.0.1:7843
+    tags:
+      - gui
+      - mcp
+      - go
+      - dev
+      - tangent
+      - v2
+registry_urn: msg://agent/agent-mux/prj_6zsvst6o25
