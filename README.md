@@ -17,10 +17,13 @@ Tangent is the *separate-window app surface* for an interactive collaboration sy
 
 ## Status
 
-The latest **git tag** is `v0.11.0`. `v0.12.0` (`tangent.wizard`) and the
-foundation work described below are documented in
-[`CHANGELOG.md`](./CHANGELOG.md) but are **not yet tagged** — build from source
-to get them.
+The current release is **`v0.13.0`**, the first stable cut for personal use:
+the foundation phase, the durable `/hitl` inbox, and the desktop shell as an
+unsigned, locally built `Tangent.app`. `v0.12.0` was documented but never
+tagged. The release version has one source, `ui/package.json`, and a test that
+fails when this file, the CHANGELOG, the Go host version, or the bundle
+disagree with it. See [`CHANGELOG.md`](./CHANGELOG.md) for what is and is not
+in the release.
 
 Since v0.12.0 Tangent has completed a foundation phase that changed the shape
 of the product rather than adding another workflow:
@@ -53,21 +56,22 @@ setup, see
 this.** Several capabilities above are declared or proven-by-construction
 rather than exercised in production, and the list says which.
 
-Tangent today is a Go HTTP server with an embedded Vite SPA served in an
-ordinary browser. **There is no Wails and no desktop shell in the tree.**
-Wails wrapping is deferred until the embedded-SPA pattern proves out
-elsewhere; the architecture is structured to make that future wrap mechanical
-(see [`docs/architecture.md`](./docs/architecture.md)).
+Tangent is a Go HTTP server with an embedded Vite SPA. It is served in an
+ordinary browser, and since v0.13.0 also in `Tangent.app`, a Wails v3 webview
+over the same loopback server (adopt-or-boot; see the Roadmap). The shell is
+unsigned, has no tray, and has not been through its acceptance matrix; the
+architecture and agent documents are reconciled to its presence by
+`CW-20260905-0051`, not yet.
 
 ## Quickstart
 
 Install:
 
 ```bash
-# Latest tagged release:
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
+# Latest tagged release (the headless daemon):
+go install github.com/hollis-labs/tangent/cmd/tangent@v0.13.0
 
-# Everything described under Status (untagged) — build from source:
+# Or build from source; `make build-app` additionally assembles Tangent.app on macOS:
 git clone git@github.com:hollis-labs/tangent.git && cd tangent && make build
 ```
 
@@ -109,7 +113,7 @@ For the full shipped behavior, see [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## How it works
 
-**Stack.** A Go HTTP server (`net/http`) with a React / TypeScript / Tailwind v4 / shadcn SPA embedded into the binary via `go:embed`, served to an ordinary browser on `:7842`. One binary, no desktop shell, no system tray. A Wails wrap is a *future* migration — see [Roadmap](#roadmap).
+**Stack.** A Go HTTP server (`net/http`) with a React / TypeScript / Tailwind v4 / shadcn SPA embedded into the binary via `go:embed`, served to an ordinary browser on `:7842`, or to the `Tangent.app` desktop shell, a Wails v3 webview pointed at that same server (v0.13.0). No system tray yet — see [Roadmap](#roadmap).
 
 **One transport today, one envelope schema.**
 
@@ -178,10 +182,24 @@ payload-safe telemetry, and database backup/restore/repair. The decisions behind
 it are [ADRs 0001–0005](./docs/adr/). What it does *not* yet do is
 [Current limitations](#current-limitations).
 
-### Deferred — desktop shell
+### v0.13 — Stable cut: desktop shell, launch at login, gateway fix
 
-A Wails wrap of the same Go server and the same SPA build. Deliberately not
-started; the HTTP layer is kept separate from app logic so it stays mechanical.
+Shipped, tagged `v0.13.0`, as the first stable install for personal use.
+**What shipped:** `Tangent.app`, a Wails v3 webview over the same loopback
+server, with adopt-or-boot against a running daemon, persisted window geometry
+and always-on-top, a stable client id so a relaunch is a reconnect,
+`make build-app` packaging verified by `internal/packagecheck`, a macOS CI job
+for the shell; the launch-at-login facility (a user LaunchAgent that starts the
+headless daemon, installed by the stable install script, not automatically);
+acceptance of gateway trace metadata so the default mux configuration can call
+the HITL tools; the dev/stable split (dev-facing targets on 7843 with a
+workspace database); and one version source with a drift test.
+**What did not:** the system tray, close-to-hide, and single-instance UX
+(`CW-20260905-0030`, stable 1.1); code signing and notarization; the
+desktop-shell acceptance matrix (`CW-20260905-0050`) and the shell's decision
+record (`CW-20260905-0051`); any relay or channel capability (ADR 0006 is
+direction only). The install itself, and moving dev to 7843, is
+`CW-20260907-0020`.
 
 ### Deferred — distribution and third-party workflows
 

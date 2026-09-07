@@ -45,7 +45,7 @@ const placeholderHTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <main><h1>Tangent v0.1.0-dev (placeholder &mdash; run ` + "`make build-ui`" + `)</h1></main>
+  <main><h1>Tangent development placeholder (no embedded UI in this build &mdash; run ` + "`make build-ui`" + `)</h1></main>
 </body>
 </html>`
 
