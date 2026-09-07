@@ -255,7 +255,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
 
   const baseURL = opts.wsURL ?? defaultWSURL();
   const clientID = opts.clientID ?? getTabClientID();
-  const clientKind = opts.clientKind ?? queryParam("clientKind") ?? "";
+  const clientKind = opts.clientKind ?? getTabClientKind();
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   let connected = false;
   let currentRoomID = roomID;
@@ -464,6 +464,49 @@ function queryParam(name: string): string | null {
   }
 }
 
+const CLIENT_ID_KEY = "tangent:v2:room:client-id";
+const CLIENT_KIND_KEY = "tangent:v2:room:client-kind";
+
+/**
+ * seedShellClientIdentity copies the app shell's one-time `?clientId=` and
+ * `?clientKind=` signals off the page URL into this tab's sessionStorage.
+ *
+ * It must run once at SPA boot, before any route renders. The shell opens the
+ * window at `/?clientId=…&clientKind=desktop`, but the first in-app navigation
+ * is a React Router pushState that drops the query string, and `connect()`
+ * only runs on the room route — so reading the params lazily from inside
+ * `connect()` would find nothing and mint a random tab id, which is exactly
+ * the second-tab (observer) outcome the shell's stable id exists to avoid.
+ *
+ * A plain browser tab carries neither param, so this is a no-op there.
+ */
+export function seedShellClientIdentity(): void {
+  const id = queryParam("clientId");
+  const kind = queryParam("clientKind");
+  try {
+    if (id) window.sessionStorage.setItem(CLIENT_ID_KEY, id);
+    if (kind) window.sessionStorage.setItem(CLIENT_KIND_KEY, kind);
+  } catch {
+    // Privacy modes can disable sessionStorage. getTabClientID still honours
+    // the query param directly while the URL carries it.
+  }
+}
+
+/**
+ * getTabClientKind returns the descriptive client kind the shell declared for
+ * this tab, or "" for a plain browser tab (the server then applies its own
+ * "browser" default). Query param first, then the slot seeded at boot.
+ */
+export function getTabClientKind(): string {
+  const fromQuery = queryParam("clientKind");
+  if (fromQuery) return fromQuery;
+  try {
+    return window.sessionStorage.getItem(CLIENT_KIND_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 /**
  * getTabClientID returns this tab's stable identity.
  *
@@ -476,10 +519,11 @@ function queryParam(name: string): string | null {
  * into the same slot: the app shell's window carries one so that quitting and
  * relaunching the app reads as a reconnect (same id, inherits the resolver
  * lease) rather than a second tab. sessionStorage alone cannot do this — it
- * resets with every new webview instance, which is every app relaunch.
+ * resets with every new webview instance, which is every app relaunch. See
+ * seedShellClientIdentity for why the slot is filled at boot, not here.
  */
 export function getTabClientID(): string {
-  const key = "tangent:v2:room:client-id";
+  const key = CLIENT_ID_KEY;
   const fromQuery = queryParam("clientId");
   if (fromQuery) {
     try {

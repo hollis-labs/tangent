@@ -79,6 +79,7 @@ import {
 } from "./components/envelopes/Whiteboard";
 import { Wizard, type WizardEnvelope, type WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
+import { seedShellClientIdentity } from "./lib/ws-client";
 import "./index.css";
 
 // v0.1 envelope component registrations. Each component registers
@@ -301,6 +302,10 @@ const rootEl = document.getElementById("root");
 if (!rootEl) {
   throw new Error("Tangent: #root not found in index.html");
 }
+
+// Before the router's first navigation drops the query string: the desktop
+// shell's stable client id and kind ride in on the window URL.
+seedShellClientIdentity();
 
 createRoot(rootEl).render(
   <StrictMode>
