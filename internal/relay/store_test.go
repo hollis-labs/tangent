@@ -279,7 +279,7 @@ func TestSequenceIsTheReplayCursor(t *testing.T) {
 		accepted = append(accepted, exchange)
 	}
 
-	all, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
+	all, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, false)
 	if err != nil {
 		t.Fatalf("ListForDestination(cursor=0): %v", err)
 	}
@@ -287,12 +287,119 @@ func TestSequenceIsTheReplayCursor(t *testing.T) {
 		t.Fatalf("ListForDestination(cursor=0) returned %d, want 3", len(all))
 	}
 
-	resumed, err := h.relay.ListForDestination(ctx, channelID, agentID, accepted[0].Sequence, 50)
+	resumed, err := h.relay.ListForDestination(ctx, channelID, agentID, accepted[0].Sequence, 50, false)
 	if err != nil {
 		t.Fatalf("ListForDestination(cursor=%d): %v", accepted[0].Sequence, err)
 	}
 	if len(resumed) != 2 || resumed[0].ID != accepted[1].ID || resumed[1].ID != accepted[2].ID {
 		t.Fatalf("ListForDestination resumed from cursor = %+v, want exchanges b and c in order", resumed)
+	}
+}
+
+// TestUnackedOnlyExcludesAlreadyAckedExchangesRegardlessOfCursor is
+// CW-20260906-0072's fix for a relaunched, cursor-less session: cursor=0
+// alone re-reads a destination's entire history on every check-in, with no
+// way to tell "new to me" from "I acked this yesterday" — a non-issue under
+// continuous standby (the cursor lived in memory for the process's whole
+// life) but the central ergonomic and cost fact of a durable check-in
+// model, where a fresh process with no cursor is the normal case.
+// unacked_only turns cursor=0 into "give me exactly what still needs
+// handling", scaling with backlog rather than with total history.
+func TestUnackedOnlyExcludesAlreadyAckedExchangesRegardlessOfCursor(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	var accepted []Exchange
+	for _, key := range []string{"idem-a", "idem-b", "idem-c"} {
+		exchange, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+			IdempotencyKey: key, ChannelID: channelID,
+			SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: key,
+		})
+		if err != nil {
+			t.Fatalf("AcceptExchange %s: %v", key, err)
+		}
+		accepted = append(accepted, exchange)
+	}
+	// Ack the middle one out of order, the way a real recipient might
+	// process an out-of-order backlog.
+	if _, err := h.relay.RecordRead(ctx, accepted[1].ID, agentID); err != nil {
+		t.Fatalf("RecordRead: %v", err)
+	}
+
+	// A relaunched session with no cursor: cursor=0, unacked_only=true.
+	unacked, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, true)
+	if err != nil {
+		t.Fatalf("ListForDestination(unacked_only=true): %v", err)
+	}
+	if len(unacked) != 2 || unacked[0].ID != accepted[0].ID || unacked[1].ID != accepted[2].ID {
+		t.Fatalf("ListForDestination(unacked_only=true) = %+v, want exchanges a and c, not the acked one", unacked)
+	}
+
+	// The same cursor=0 without the filter still returns all three — the
+	// filter is additive, not a replacement for the existing contract.
+	everything, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, false)
+	if err != nil {
+		t.Fatalf("ListForDestination(unacked_only=false): %v", err)
+	}
+	if len(everything) != 3 {
+		t.Fatalf("ListForDestination(unacked_only=false) = %+v, want all 3", everything)
+	}
+
+	// Ack the rest; a subsequent unacked_only call finds nothing left.
+	_, err = h.relay.RecordRead(ctx, accepted[0].ID, agentID)
+	if err != nil {
+		t.Fatalf("RecordRead: %v", err)
+	}
+	_, err = h.relay.RecordRead(ctx, accepted[2].ID, agentID)
+	if err != nil {
+		t.Fatalf("RecordRead: %v", err)
+	}
+	drained, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, true)
+	if err != nil {
+		t.Fatalf("ListForDestination(unacked_only=true, drained): %v", err)
+	}
+	if len(drained) != 0 {
+		t.Fatalf("ListForDestination(unacked_only=true) after acking everything = %+v, want none", drained)
+	}
+}
+
+func TestReceiveWithUnackedOnlySkipsAlreadyAckedItems(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	first, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-first", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "first",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (first): %v", err)
+	}
+	_, err = h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-second", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "second",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (second): %v", err)
+	}
+	_, err = h.relay.RecordRead(ctx, first.ID, agentID)
+	if err != nil {
+		t.Fatalf("RecordRead: %v", err)
+	}
+
+	// A relaunched session's check-in: cursor 0 (it has no memory of one),
+	// unacked_only true.
+	result, err := h.relay.Receive(ctx, ReceiveParams{
+		ChannelID: channelID, ParticipantID: agentID, Cursor: 0, UnackedOnly: true,
+	})
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Body != "second" {
+		t.Fatalf("Receive(unacked_only=true) = %+v, want only the unacked \"second\" exchange", result.Items)
 	}
 }
 
@@ -524,7 +631,7 @@ func TestRecordReadIsIdempotentAndDistinctFromReceive(t *testing.T) {
 	}
 
 	// Listing (receiving) the exchange does not itself create a read fact.
-	_, err = h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
+	_, err = h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, false)
 	if err != nil {
 		t.Fatalf("ListForDestination: %v", err)
 	}
@@ -636,7 +743,7 @@ func TestListForDestinationNeverTouchesPresenceOrCursor(t *testing.T) {
 	// would call to show history, several times over, as a UI polling for
 	// display would.
 	for i := range 3 {
-		items, listErr := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
+		items, listErr := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50, false)
 		if listErr != nil {
 			t.Fatalf("ListForDestination (%d): %v", i, listErr)
 		}

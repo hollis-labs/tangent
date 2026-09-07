@@ -586,6 +586,64 @@ func TestRelayReceiveReplaysEverythingSinceAnOldCursorNoGaps(t *testing.T) {
 	}
 }
 
+// TestRelayReceiveUnackedOnlyIsTheDurableCheckInShape is CW-20260906-0072's
+// fix for a relaunched, cursor-less session: cursor 0 alone re-reads the
+// destination's entire history every check-in with no way to tell "new to
+// me" from "I acked this yesterday". unacked_only turns cursor=0 into
+// exactly what a fresh process needs on every check-in.
+func TestRelayReceiveUnackedOnlyIsTheDurableCheckInShape(t *testing.T) {
+	h := newRelayHarness(t)
+	defer h.close()
+
+	opened := callInteractionTool[struct {
+		ChannelID             string `json:"channel_id"`
+		OperatorParticipantID string `json:"operator_participant_id"`
+	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
+	callInteractionTool[struct {
+		ParticipantID string `json:"participant_id"`
+	}](t, h.client, "tangent.relay_attach", map[string]any{
+		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
+	})
+	agentParticipant, err := h.channels.UpsertParticipant(context.Background(), channel.UpsertParticipantParams{
+		Kind: channel.ParticipantAgent, ExternalAuthority: "claude-code", ExternalRef: "tangent-14",
+	})
+	if err != nil {
+		t.Fatalf("resolve agent: %v", err)
+	}
+	var firstExchangeID string
+	for i, key := range []string{"idem-old-1", "idem-old-2"} {
+		exchange, acceptErr := h.relay.AcceptExchange(context.Background(), relay.AcceptExchangeParams{
+			IdempotencyKey: key, ChannelID: opened.ChannelID,
+			SenderParticipantID: opened.OperatorParticipantID, RecipientParticipantID: agentParticipant.ID,
+			Body: key,
+		})
+		if acceptErr != nil {
+			t.Fatalf("seed exchange %s: %v", key, acceptErr)
+		}
+		if i == 0 {
+			firstExchangeID = exchange.ID
+		}
+	}
+	// The agent already handled the first one yesterday, in a process that
+	// no longer exists — no cursor survives to this check-in.
+	if _, err := h.relay.RecordRead(context.Background(), firstExchangeID, agentParticipant.ID); err != nil {
+		t.Fatalf("RecordRead: %v", err)
+	}
+
+	checkIn := callInteractionTool[struct {
+		Items []struct {
+			ExchangeID string `json:"exchange_id"`
+			Body       string `json:"body"`
+		} `json:"items"`
+	}](t, h.client, "tangent.relay_receive", map[string]any{
+		"channel_id": opened.ChannelID, "source": agentSource, "cursor": 0, "unacked_only": true,
+	})
+	if len(checkIn.Items) != 1 || checkIn.Items[0].Body != "idem-old-2" {
+		t.Fatalf("relay_receive(cursor=0, unacked_only=true) = %+v, want only the unacked exchange", checkIn.Items)
+	}
+}
+
 func TestRelaySendCorrelatesToAStructuredSubject(t *testing.T) {
 	h := newRelayHarness(t)
 	defer h.close()

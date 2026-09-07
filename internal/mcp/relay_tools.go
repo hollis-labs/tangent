@@ -3,8 +3,6 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,14 +12,19 @@ import (
 )
 
 // relay_tools.go is the cooperative MCP inbox (CW-20260906-0066): seven
-// tools over internal/channel and internal/relay, implementing ADR 0006 §3
-// and the CW-20260907-0016 spike's observed contract.
+// tools over relay.Provider, implementing ADR 0006 §3 and the
+// CW-20260907-0016 spike's observed contract. This file owns the wire
+// boundary only — JSON shapes, contract versioning, and translating
+// relay.Provider's Go-level params/results to and from them. Participant
+// resolution, default-recipient resolution, and every relay_* business rule
+// live in relay.Provider (CW-20260906-0072): this file's handlers are thin
+// on purpose.
 //
 // The operator's own send/read path is deliberately not here. These seven
 // tools are the agent-facing MCP surface only; a human operator has no MCP
 // client. CW-20260906-0017's channel pane is where the operator side lives,
-// over a REST API calling the same two Stores directly — this file's gap is
-// that boundary, not an omission.
+// over a REST API calling relay.Provider (or the stores directly) — this
+// file's gap is that boundary, not an omission.
 //
 // contractVersion is repeated on every input/output the way tangent.hitl_*
 // repeats "1.0": "versioned contracts" per this task's acceptance item 1.
@@ -37,6 +40,10 @@ const relayContractVersion = "1.0"
 type relaySourceInput struct {
 	ApplicationID string `json:"application_id"`
 	AgentID       string `json:"agent_id"`
+}
+
+func (s relaySourceInput) toRelaySource() relay.Source {
+	return relay.Source{ApplicationID: s.ApplicationID, AgentID: s.AgentID}
 }
 
 // relayParticipantRef echoes a resolved participant back in a result, so a
@@ -127,23 +134,17 @@ func (s *Server) handleRelayOpenChannel(
 	_ *mcpsdk.CallToolRequest,
 	input relayOpenChannelInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	ch, operator, err := s.channels.OpenChannel(ctx, channel.CreateChannelParams{
-		Title: input.Title, OwnerScope: standaloneLocalScope, ProjectRef: input.ProjectRef,
+	result, err := s.relayProvider.OpenChannel(ctx, relay.OpenChannelParams{
+		Title: input.Title, ProjectRef: input.ProjectRef,
 	})
 	if err != nil {
 		return relayErrorResult(err)
 	}
 	return nil, relayOpenChannelOutput{
-		ContractVersion: relayContractVersion, ChannelID: ch.ID,
-		OperatorParticipantID: operator.ID, CreatedAt: ch.CreatedAt,
+		ContractVersion: relayContractVersion, ChannelID: result.Channel.ID,
+		OperatorParticipantID: result.Operator.ID, CreatedAt: result.Channel.CreatedAt,
 	}, nil
 }
-
-// standaloneLocalScope is the same advisory, non-enforced scope every
-// direct-loopback caller gets elsewhere in this host (ADR 0004 §3.4); relay
-// channels carry it for the same reason surfaces do, not as an access
-// boundary.
-const standaloneLocalScope = "standalone-local:anonymous"
 
 // ── tangent.relay_attach ────────────────────────────────────────────────
 
@@ -184,43 +185,18 @@ func (s *Server) handleRelayAttach(
 	_ *mcpsdk.CallToolRequest,
 	input relayAttachInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if input.ChannelID == "" {
-		return relayErrorResult(fmt.Errorf("%w: channel_id is required", channel.ErrInvalidRecord))
-	}
-	if input.Runtime.Authority == "" {
-		return relayErrorResult(fmt.Errorf("%w: runtime.authority is required", channel.ErrInvalidRecord))
-	}
-	if _, err := s.channels.GetChannel(ctx, input.ChannelID); err != nil {
-		return relayErrorResult(err)
-	}
-	participant, err := s.resolveAgentParticipant(ctx, input.Source)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	_, err = s.channels.AddParticipant(ctx, input.ChannelID, participant.ID)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	binding, err := s.channels.Rebind(ctx, input.ChannelID, participant.ID, channel.RebindParams{
+	result, err := s.relayProvider.Attach(ctx, relay.AttachParams{
+		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 		RuntimeAuthority: input.Runtime.Authority, RuntimeEndpointRef: input.Runtime.EndpointRef,
 	})
 	if err != nil {
 		return relayErrorResult(err)
 	}
 	return nil, relayAttachOutput{
-		ContractVersion: relayContractVersion, ParticipantID: participant.ID, ChannelID: input.ChannelID,
-		Generation: binding.Generation, RuntimeAuthority: binding.RuntimeAuthority,
-		RuntimeEndpointRef: binding.RuntimeEndpointRef, AttachedAt: binding.BoundAt,
+		ContractVersion: relayContractVersion, ParticipantID: result.Participant.ID, ChannelID: result.ChannelID,
+		Generation: result.Binding.Generation, RuntimeAuthority: result.Binding.RuntimeAuthority,
+		RuntimeEndpointRef: result.Binding.RuntimeEndpointRef, AttachedAt: result.Binding.BoundAt,
 	}, nil
-}
-
-func (s *Server) resolveAgentParticipant(ctx context.Context, source relaySourceInput) (channel.Participant, error) {
-	if source.ApplicationID == "" || source.AgentID == "" {
-		return channel.Participant{}, fmt.Errorf("%w: source.application_id and source.agent_id are both required", channel.ErrInvalidRecord)
-	}
-	return s.channels.UpsertParticipant(ctx, channel.UpsertParticipantParams{
-		Kind: channel.ParticipantAgent, ExternalAuthority: source.ApplicationID, ExternalRef: source.AgentID,
-	})
 }
 
 // ── tangent.relay_detach ────────────────────────────────────────────────
@@ -242,20 +218,15 @@ func (s *Server) handleRelayDetach(
 	_ *mcpsdk.CallToolRequest,
 	input relayDetachInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if input.ChannelID == "" {
-		return relayErrorResult(fmt.Errorf("%w: channel_id is required", channel.ErrInvalidRecord))
-	}
-	participant, err := s.resolveAgentParticipant(ctx, input.Source)
+	result, err := s.relayProvider.Detach(ctx, relay.DetachParams{
+		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
+	})
 	if err != nil {
 		return relayErrorResult(err)
 	}
-	detachedAt := time.Now().UTC()
-	if err := s.channels.RemoveParticipant(ctx, input.ChannelID, participant.ID); err != nil {
-		return relayErrorResult(err)
-	}
 	return nil, relayDetachOutput{
-		ContractVersion: relayContractVersion, ParticipantID: participant.ID,
-		ChannelID: input.ChannelID, DetachedAt: detachedAt,
+		ContractVersion: relayContractVersion, ParticipantID: result.Participant.ID,
+		ChannelID: result.ChannelID, DetachedAt: result.DetachedAt,
 	}, nil
 }
 
@@ -298,101 +269,21 @@ func (s *Server) handleRelaySend(
 	_ *mcpsdk.CallToolRequest,
 	input relaySendInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if input.ChannelID == "" || input.IdempotencyKey == "" || input.Body == "" {
-		return relayErrorResult(fmt.Errorf("%w: channel_id, idempotency_key, and body are all required", channel.ErrInvalidRecord))
-	}
-	sender, err := s.resolveAgentParticipant(ctx, input.Source)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	hasApplicationID := input.RecipientApplicationID != ""
-	hasAgentID := input.RecipientAgentID != ""
-	var recipient channel.Participant
-	switch {
-	case hasApplicationID != hasAgentID:
-		return relayErrorResult(fmt.Errorf(
-			"%w: recipient_application_id and recipient_agent_id must be given together, or both omitted",
-			channel.ErrInvalidRecord))
-	case hasApplicationID && hasAgentID:
-		recipient, err = s.resolveAgentParticipant(ctx, relaySourceInput{
-			ApplicationID: input.RecipientApplicationID, AgentID: input.RecipientAgentID,
-		})
-		if err != nil {
-			return relayErrorResult(err)
-		}
-	default:
-		recipient, err = s.resolveDefaultRecipient(ctx, input.ChannelID)
-		if err != nil {
-			return relayErrorResult(err)
-		}
-	}
-
-	exchange, err := s.relay.AcceptExchange(ctx, relay.AcceptExchangeParams{
-		IdempotencyKey: input.IdempotencyKey, ChannelID: input.ChannelID,
-		SubjectID: input.SubjectID, SenderParticipantID: sender.ID, RecipientParticipantID: recipient.ID,
-		ReplyToExchangeID: input.ReplyToExchangeID, Body: input.Body,
+	result, err := s.relayProvider.Send(ctx, relay.SendParams{
+		ChannelID: input.ChannelID, IdempotencyKey: input.IdempotencyKey, Source: input.Source.toRelaySource(),
+		RecipientApplicationID: input.RecipientApplicationID, RecipientAgentID: input.RecipientAgentID,
+		SubjectID: input.SubjectID, ReplyToExchangeID: input.ReplyToExchangeID, Body: input.Body,
 	})
 	if err != nil {
 		return relayErrorResult(err)
 	}
-	// An operator recipient has no runtime binding at all — "current" would
-	// be a vacuous true (both sides empty) that reads as "yes, live and
-	// routable" for a destination that was never routed via a binding in
-	// the first place. Only ask the question for an agent recipient.
-	var current bool
-	if recipient.Kind == channel.ParticipantAgent {
-		current, err = s.relay.RecipientBindingCurrent(ctx, exchange.ID)
-		if err != nil {
-			return relayErrorResult(err)
-		}
-	}
-	presence, err := s.relay.Presence(ctx, recipient.ID)
-	if err != nil {
-		return relayErrorResult(err)
-	}
 	return nil, relaySendOutput{
-		ContractVersion: relayContractVersion, ExchangeID: exchange.ID, ChannelID: exchange.ChannelID,
-		Sequence: exchange.Sequence, Sender: relayRefFor(sender), Recipient: relayRefFor(recipient),
-		RecipientBindingCurrent: current, SubjectID: exchange.SubjectID, ReplyToExchangeID: exchange.ReplyToExchangeID,
-		CreatedAt: exchange.CreatedAt, RecipientPresence: relayPresenceFor(presence),
+		ContractVersion: relayContractVersion, ExchangeID: result.Exchange.ID, ChannelID: result.Exchange.ChannelID,
+		Sequence: result.Exchange.Sequence, Sender: relayRefFor(result.Sender), Recipient: relayRefFor(result.Recipient),
+		RecipientBindingCurrent: result.RecipientBindingCurrent, SubjectID: result.Exchange.SubjectID,
+		ReplyToExchangeID: result.Exchange.ReplyToExchangeID, CreatedAt: result.Exchange.CreatedAt,
+		RecipientPresence: relayPresenceFor(result.Presence),
 	}, nil
-}
-
-// ambiguousRecipientError is CW-20260906-0066's review requirement: refuse
-// rather than guess when a channel has zero or several live operator
-// participants, naming the candidates rather than silently misrouting.
-type ambiguousRecipientError struct {
-	ChannelID    string
-	CandidateIDs []string
-}
-
-func (e *ambiguousRecipientError) Error() string {
-	if len(e.CandidateIDs) == 0 {
-		return fmt.Sprintf("channel %s has no live operator participant to default to; recipient is required", e.ChannelID)
-	}
-	return fmt.Sprintf("channel %s has %d live operator participants (%s); recipient is required",
-		e.ChannelID, len(e.CandidateIDs), strings.Join(e.CandidateIDs, ", "))
-}
-
-func (s *Server) resolveDefaultRecipient(ctx context.Context, channelID string) (channel.Participant, error) {
-	members, err := s.channels.ListChannelParticipants(ctx, channelID)
-	if err != nil {
-		return channel.Participant{}, err
-	}
-	var operators []channel.Participant
-	for _, member := range members {
-		if member.Kind == channel.ParticipantOperator {
-			operators = append(operators, member)
-		}
-	}
-	if len(operators) != 1 {
-		ids := make([]string, len(operators))
-		for i, operator := range operators {
-			ids[i] = operator.ID
-		}
-		return channel.Participant{}, &ambiguousRecipientError{ChannelID: channelID, CandidateIDs: ids}
-	}
-	return operators[0], nil
 }
 
 // ── tangent.relay_receive ───────────────────────────────────────────────
@@ -403,6 +294,15 @@ type relayReceiveInput struct {
 	Cursor    int64            `json:"cursor,omitempty"`
 	WaitMs    int64            `json:"wait_ms,omitempty"`
 	Limit     int64            `json:"limit,omitempty"`
+	// UnackedOnly excludes anything this participant already acked. A
+	// relaunched process holds no cursor in memory, so cursor 0 with
+	// unacked_only true is the durable-check-in shape: "everything that
+	// still needs handling", regardless of how much acked history exists.
+	// The corollary: anything received but never acked via
+	// tangent.relay_ack keeps reappearing on every subsequent check-in,
+	// forever — ack what you actually handle, including a message that
+	// needs no reply, or it is re-delivered for the life of the channel.
+	UnackedOnly bool `json:"unacked_only,omitempty" jsonschema:"Exclude anything already acknowledged via tangent.relay_ack, regardless of cursor. With cursor 0 this is the durable check-in shape for a freshly launched session: everything still unhandled. Anything received but not acked is re-delivered on every future call, forever, including a message you decided needed no reply — ack it anyway, or it never stops coming back."`
 }
 
 type relayExchangeView struct {
@@ -437,40 +337,29 @@ func (s *Server) handleRelayReceive(
 	_ *mcpsdk.CallToolRequest,
 	input relayReceiveInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if input.ChannelID == "" {
-		return relayErrorResult(fmt.Errorf("%w: channel_id is required", channel.ErrInvalidRecord))
-	}
-	participant, err := s.resolveAgentParticipant(ctx, input.Source)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	limit := int(input.Limit)
-	result, err := s.relay.Receive(ctx, relay.ReceiveParams{
-		ChannelID: input.ChannelID, ParticipantID: participant.ID,
-		Cursor: input.Cursor, Wait: time.Duration(input.WaitMs) * time.Millisecond, Limit: limit,
+	page, err := s.relayProvider.Receive(ctx, relay.InboxQuery{
+		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
+		Cursor: input.Cursor, Wait: time.Duration(input.WaitMs) * time.Millisecond, Limit: int(input.Limit),
+		UnackedOnly: input.UnackedOnly,
 	})
 	if err != nil {
 		return relayErrorResult(err)
 	}
 	status := "ok"
-	if result.TimedOut {
+	if page.TimedOut {
 		status = "timeout"
 	}
-	items := make([]relayExchangeView, 0, len(result.Items))
-	for _, exchange := range result.Items {
-		sender, senderErr := s.channels.GetParticipant(ctx, exchange.SenderParticipantID)
-		if senderErr != nil {
-			return relayErrorResult(senderErr)
-		}
+	items := make([]relayExchangeView, 0, len(page.Items))
+	for _, item := range page.Items {
 		items = append(items, relayExchangeView{
-			ExchangeID: exchange.ID, Sequence: exchange.Sequence, Sender: relayRefFor(sender),
-			SubjectID: exchange.SubjectID, ReplyToExchangeID: exchange.ReplyToExchangeID,
-			Body: exchange.Body, CreatedAt: exchange.CreatedAt,
+			ExchangeID: item.Exchange.ID, Sequence: item.Exchange.Sequence, Sender: relayRefFor(item.Sender),
+			SubjectID: item.Exchange.SubjectID, ReplyToExchangeID: item.Exchange.ReplyToExchangeID,
+			Body: item.Exchange.Body, CreatedAt: item.Exchange.CreatedAt,
 		})
 	}
 	return nil, relayReceiveOutput{
 		ContractVersion: relayContractVersion, Status: status, Items: items,
-		NextCursor: result.NextCursor, Presence: relayPresenceFor(result.Presence),
+		NextCursor: page.NextCursor, Presence: relayPresenceFor(page.Presence),
 	}, nil
 }
 
@@ -494,35 +383,15 @@ func (s *Server) handleRelayAck(
 	_ *mcpsdk.CallToolRequest,
 	input relayAckInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	if input.ExchangeID == "" {
-		return relayErrorResult(fmt.Errorf("%w: exchange_id is required", channel.ErrInvalidRecord))
-	}
-	participant, err := s.resolveAgentParticipant(ctx, input.Source)
+	result, err := s.relayProvider.Ack(ctx, relay.AckParams{
+		Source: input.Source.toRelaySource(), ExchangeID: input.ExchangeID,
+	})
 	if err != nil {
 		return relayErrorResult(err)
-	}
-	exchange, err := s.relay.GetExchange(ctx, input.ExchangeID)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	if exchange.RecipientParticipantID != participant.ID {
-		return relayErrorResult(fmt.Errorf("%w: %s is not the recipient of %s", relay.ErrUnauthorized, participant.ID, exchange.ID))
-	}
-	existing, err := s.relay.GetRead(ctx, input.ExchangeID, participant.ID)
-	alreadyAcked := err == nil
-	if err != nil && !errors.Is(err, relay.ErrNotFound) {
-		return relayErrorResult(err)
-	}
-	receipt, err := s.relay.RecordRead(ctx, input.ExchangeID, participant.ID)
-	if err != nil {
-		return relayErrorResult(err)
-	}
-	if alreadyAcked {
-		receipt = existing
 	}
 	return nil, relayAckOutput{
-		ContractVersion: relayContractVersion, ExchangeID: receipt.ExchangeID,
-		ParticipantID: receipt.ParticipantID, AckedAt: receipt.AckedAt, AlreadyAcked: alreadyAcked,
+		ContractVersion: relayContractVersion, ExchangeID: result.Receipt.ExchangeID,
+		ParticipantID: result.Receipt.ParticipantID, AckedAt: result.Receipt.AckedAt, AlreadyAcked: result.AlreadyAcked,
 	}, nil
 }
 
@@ -563,32 +432,20 @@ func (s *Server) handleRelayCapabilities(
 	_ *mcpsdk.CallToolRequest,
 	input relayCapabilitiesInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	// The pairing rule lives here, in code, rather than as a schema
-	// conditional: CW-20260907-0016 found mux's discovery schema drops
-	// allOf/if/then branches, so a field gated behind one reaches the model
-	// untyped. Both fields stay independently optional in the schema.
-	hasApplicationID := input.ApplicationID != ""
-	hasAgentID := input.AgentID != ""
-	switch {
-	case hasApplicationID != hasAgentID:
-		return relayErrorResult(fmt.Errorf("%w: application_id and agent_id must be given together, or both omitted", channel.ErrInvalidRecord))
-	case input.ChannelID != "" && !hasApplicationID:
-		return relayErrorResult(fmt.Errorf("%w: application_id and agent_id are required when channel_id is given", channel.ErrInvalidRecord))
-	case input.ChannelID != "":
-		if _, err := s.channels.GetChannel(ctx, input.ChannelID); err != nil {
-			return relayErrorResult(err)
-		}
-		if _, err := s.resolveAgentParticipant(ctx, relaySourceInput{ApplicationID: input.ApplicationID, AgentID: input.AgentID}); err != nil {
-			return relayErrorResult(err)
-		}
+	result, err := s.relayProvider.Capabilities(ctx, relay.CapabilitiesParams{
+		ChannelID: input.ChannelID, ApplicationID: input.ApplicationID, AgentID: input.AgentID,
+	})
+	if err != nil {
+		return relayErrorResult(err)
 	}
 	return nil, relayCapabilitiesOutput{
-		ContractVersion: relayContractVersion, Adapter: "cli-relay",
+		ContractVersion: relayContractVersion, Adapter: result.Adapter,
 		Capabilities: relayCapabilitiesSet{
-			Receive: true, Ack: true, BoundedWait: true, Presence: true,
-			Wake: false, EventReplay: false, StructuredEnvelopes: false,
+			Receive: result.Capabilities.Receive, Ack: result.Capabilities.Ack, BoundedWait: result.Capabilities.BoundedWait,
+			Presence: result.Capabilities.Presence, Wake: result.Capabilities.Wake, EventReplay: result.Capabilities.EventReplay,
+			StructuredEnvelopes: result.Capabilities.StructuredEnvelopes,
 		},
-		WaitMsMax: int64(relay.MaximumReceiveWait / time.Millisecond),
+		WaitMsMax: result.WaitMsMax,
 	}, nil
 }
 
@@ -596,7 +453,7 @@ func (s *Server) handleRelayCapabilities(
 
 func relayErrorResult(err error) (*mcpsdk.CallToolResult, any, error) {
 	code := "relay_error"
-	var ambiguous *ambiguousRecipientError
+	var ambiguous *relay.AmbiguousRecipientError
 	switch {
 	case errors.As(err, &ambiguous):
 		code = "ambiguous_recipient"
