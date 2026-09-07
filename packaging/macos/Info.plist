@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Committed template, not the file that ships in the bundle: scripts/build-macos-app.sh
+  copies this into Tangent.app-bin/Contents/Info.plist and substitutes
+  __TANGENT_VERSION__ with ui/package.json's "version" field before
+  `plutil -lint` and packagecheck ever see it. See that script for why
+  package.json was chosen over `git describe` (CI checkouts are shallow and
+  untagged; package.json is already this repo's one source of truth for
+  "the version").
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Tangent</string>
+	<key>CFBundleExecutable</key>
+	<string>tangent-app</string>
+	<key>CFBundleGetInfoString</key>
+	<string>Tangent — an MCP-native HITL room server and desktop shell</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hollislabs.tangent</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Tangent</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>__TANGENT_VERSION__</string>
+	<key>CFBundleVersion</key>
+	<string>__TANGENT_VERSION__</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<!--
+	  LSUIElement is deliberately omitted (defaults to false, i.e. a Dock
+	  icon). This must stay consistent with internal/appshell/shell.go's
+	  application.MacOptions.ActivationPolicy — as of CW-20260905-0032 that
+	  is ActivationPolicyRegular, a regular Dock-visible app. The Tangent
+	  shell keeps the server alive on close-to-hide, so a Dock icon (and
+	  Cmd-Tab visibility) is the correct affordance for getting the window
+	  back. If a future tray-only mode changes ActivationPolicy, this key
+	  must change with it.
+	-->
+	<!--
+	  LSMultipleInstancesProhibited is also deliberately omitted. Unlike a
+	  strictly single-instance menu-bar utility, Tangent's shell is built
+	  around adopt-or-boot (see internal/appshell/shell.go New): a second
+	  launch is expected to probe the port, find a healthy server, and open
+	  another window onto it rather than be refused by LaunchServices before
+	  it gets the chance to.
+	-->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Hollis Labs</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>
