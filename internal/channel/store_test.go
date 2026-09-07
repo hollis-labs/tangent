@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/hollis-labs/tangent/internal/authz"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 )
 
@@ -352,6 +353,82 @@ func TestOneParticipantSpansMultipleChannels(t *testing.T) {
 	}
 	if len(after) != 1 || after[0].ID != channelB.ID {
 		t.Fatalf("ListParticipantChannels after leaving A = %+v, want only B", after)
+	}
+}
+
+// TestChannelPartitionsAreAdvisoryNotIsolationBoundaries pins acceptance
+// item 3's least-tested clause: "advisory partitions remain advisory" (ADR
+// 0006 §3; internal/authz.AdvisoryPartitionNotice makes the identical claim
+// about caller partitions — "any local caller can assert any partition, and
+// isolation is enforced only across authorities"). The property holds today
+// only because nothing in this package filters a channel or membership query
+// by owner_scope or project_ref; that is a claim that holds by absence, and
+// this repo's own rule is that a claim like that needs a test that goes red
+// the day someone adds such a filter, not prose that goes stale silently.
+func TestChannelPartitionsAreAdvisoryNotIsolationBoundaries(t *testing.T) {
+	t.Parallel()
+	store, _ := openTestStore(t)
+	ctx := context.Background()
+	t.Log(authz.AdvisoryPartitionNotice)
+
+	participant, err := store.UpsertParticipant(ctx, UpsertParticipantParams{
+		Kind: ParticipantAgent, ExternalAuthority: "claude-code", ExternalRef: "tangent-14",
+	})
+	if err != nil {
+		t.Fatalf("UpsertParticipant: %v", err)
+	}
+	channelA, err := store.CreateChannel(ctx, CreateChannelParams{
+		Title: "tangent", OwnerScope: "standalone-local:project-a", ProjectRef: "PRJ-a",
+	})
+	if err != nil {
+		t.Fatalf("CreateChannel A: %v", err)
+	}
+	channelB, err := store.CreateChannel(ctx, CreateChannelParams{
+		Title: "hadron", OwnerScope: "standalone-local:project-b", ProjectRef: "PRJ-b",
+	})
+	if err != nil {
+		t.Fatalf("CreateChannel B: %v", err)
+	}
+	if channelA.OwnerScope == channelB.OwnerScope || channelA.ProjectRef == channelB.ProjectRef {
+		t.Fatal("test setup is broken: the two channels must differ in both owner_scope and project_ref")
+	}
+
+	_, err = store.AddParticipant(ctx, channelA.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("AddParticipant A: %v", err)
+	}
+	_, err = store.AddParticipant(ctx, channelB.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("AddParticipant B: %v", err)
+	}
+
+	// One participant reference, bound to two channels under different
+	// owner_scope and project_ref: nothing here refuses the second bind or
+	// narrows the read because the partitions differ.
+	channels, err := store.ListParticipantChannels(ctx, participant.ID)
+	if err != nil {
+		t.Fatalf("ListParticipantChannels across two owner_scope/project_ref partitions: %v", err)
+	}
+	if len(channels) != 2 {
+		t.Fatalf("ListParticipantChannels returned %d channels across two partitions, want 2 — a partition became an isolation boundary", len(channels))
+	}
+	seen := map[string]bool{}
+	for _, ch := range channels {
+		seen[ch.ID] = true
+	}
+	if !seen[channelA.ID] || !seen[channelB.ID] {
+		t.Fatalf("ListParticipantChannels = %+v, want both channelA (owner_scope %q) and channelB (owner_scope %q)",
+			channels, channelA.OwnerScope, channelB.OwnerScope)
+	}
+
+	// Same property, other direction: reading channel A's members is not
+	// narrowed by channel B's differing partition existing at all.
+	membersOfA, err := store.ListChannelParticipants(ctx, channelA.ID)
+	if err != nil {
+		t.Fatalf("ListChannelParticipants: %v", err)
+	}
+	if len(membersOfA) != 1 || membersOfA[0].ID != participant.ID {
+		t.Fatalf("ListChannelParticipants(A) = %+v, want exactly the one participant despite the partition difference", membersOfA)
 	}
 }
 
