@@ -60,6 +60,17 @@ remain open.
   own defaults (7842, `~/.tangent/tangent.db`) are the stable install's. The
   Cerberus resource change is committed as `packaging/cerberus/` and applied by
   the install, not by the repo. (`CW-20260907-0018`; PR #27)
+- **macOS installer.** `cmd/tangent-install` (wrapped by
+  `scripts/install-macos.sh` and `make install-macos` / `install-macos-dry-run`
+  / `uninstall-macos`) places the headless daemon and `Tangent.app`, writes the
+  LaunchAgent, and waits for `/readyz`; install and upgrade are the same path.
+  It refuses, touching nothing, when the two artifacts are not a pair, when the
+  daemon on the port is not ready or is not the installed stable daemon, when
+  the artifact would downgrade, when the artifact's `--db-check` rejects the
+  existing database, or when nothing healthy answers afterwards. Uninstall
+  never removes the database. `tangent --version` prints the gate-checked
+  release so the installer and an operator can ask a binary what it is.
+  (`CW-20260907-0020`; PR #29)
 - **ADR 0006, the collaboration-surface and relay boundary.** Supersedes four
   named places in ADR 0005 and keeps every other exclusion; records the
   channel / thread / view / runtime-binding vocabulary, operational-history
@@ -274,8 +285,9 @@ id, or phase projection changed. Two routes were added (`/api/rooms`,
   here.
 - **No relay, channel, or addressed conversation.** ADR 0006 is a decision
   about direction; the durable `/hitl` inbox is the only attention surface.
-- **The stable install itself** (LaunchAgent written, dev redeployed to 7843,
-  `tangent-dev` catalog entry enabled) is `CW-20260907-0020`, after this tag.
+- **The stable install has not been performed.** The installer ships; running
+  it (LaunchAgent written, dev redeployed to 7843, `tangent-dev` catalog entry
+  enabled) is the rest of `CW-20260907-0020`, after this tag.
 
 ### Security
 
@@ -855,7 +867,7 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.13.0...HEAD
 [v0.13.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.13.0
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
 [v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0
