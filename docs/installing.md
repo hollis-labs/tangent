@@ -20,7 +20,7 @@ The version the install places is whatever the tagged tree says: one source,
 | Launch authority | LaunchAgent `com.hollislabs.tangent`, headless daemon | Cerberus resource `tangent-dev` |
 | Logs | `~/.tangent/logs/tangent.log` | Cerberus |
 | Binary and app | `~/.local/bin/tangent`, `~/Applications/Tangent.app` | the workspace build |
-| Tether catalog entry | `tangent` (what agents reach by default) | `tangent-dev` (opt-in) |
+| Tether catalog entry | `tangent` (what agents reach by default) | `tangent-dev` (present, **disabled**; reach dev via a scratch catalog or `--only tangent-dev`, CW-20260907-0037) |
 
 Different ports and database paths mean different `.owner` lock files, so the
 two never collide on the single-writer flock. See
@@ -108,21 +108,39 @@ that is what you mean.
 
 ## The first cutover on the reference machine
 
-Recorded on `CW-20260907-0020`; runs on the operator's go, in this order so
-the stable port is never dead for a session that loads mux:
+Recorded on `CW-20260907-0020` and run on 2026-09-07. The order keeps the
+stable port from ever being dead for a session that loads mux, and the notes
+are what the run taught:
 
 1. `tangent --db-backup` of the existing database; keep the sidecar manifest.
-2. Stop the Cerberus `tangent-dev` resource, which today serves the stable
-   port from the workspace build.
+2. Stop the Cerberus `tangent-dev` resource, which until then served the stable
+   port from the workspace build. **Then wait for its pid to exit**, not just
+   for the port to close: the process still holds the database flock while it
+   drains, and the stable daemon's first start fails with "another process holds
+   the Tangent database" if it starts inside that window (`CW-20260907-0035`
+   makes the installer wait for the lock itself).
 3. `make install-macos` from the tagged tree; confirm `/readyz`.
-4. Redeploy `tangent-dev` on the dev port with the prepared
-   `packaging/cerberus/tangent.cerberus.yaml`.
-5. Enable the `tangent-dev` Tether catalog entry once the dev port answers.
+4. Bring dev up on the dev port against the workspace database. The prepared
+   Cerberus file is `packaging/cerberus/tangent.cerberus.yaml`, but **do not run
+   any Cerberus lifecycle verb against `tangent-dev` until the Cerberus daemon
+   has re-read that file**: its in-memory spec keeps the old port and it finds
+   "the running process" by `lsof` on it, so `stop`, `reload`, `apply`, and
+   `deploy` would signal the stable daemon (`CW-20260907-0036`). Reconcile with
+   `cerberus daemon restart` while the operator watches (other dev sessions are
+   that daemon's children), confirm `cerberus resource status tangent-dev` says
+   stopped and `inspect` shows the dev port, then `apply`. Until then, run dev by
+   hand with `make dev-go` or the equivalent environment. Cerberus's `deploy`
+   also needs the pinned Node on its PATH (`CW-20260905-0017`).
+5. Leave the `tangent-dev` Tether catalog entry **disabled**. Enabling it beside
+   `tangent` makes mux rename one side's identical tool names and route the
+   bare `tangent.*` names to the other (`CW-20260907-0037`). Reach dev through a
+   scratch catalog copy or `mux mcp --proxy --only tangent-dev`.
 6. Collision test: both instances up, neither refuses on the flock or the
    port, `--db-check` under each instance's environment reports its own
-   database.
+   database, a room opened on each.
 7. The HITL end-to-end pass from a Claude Code session through the default
-   mux configuration ([`manual-tests/hitl-inbox-e2e.md`](./manual-tests/hitl-inbox-e2e.md)).
+   mux configuration against stable
+   ([`manual-tests/hitl-inbox-e2e.md`](./manual-tests/hitl-inbox-e2e.md)).
 
 ## Where the code is
 

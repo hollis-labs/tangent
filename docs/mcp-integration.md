@@ -109,20 +109,32 @@ development build never lands in the install the operator relies on:
 | Port | `7842` (the daemon default) | `7843` (`DEV_PORT`) |
 | Database | `~/.tangent/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` (`DEV_DB_PATH`) |
 | Launch authority | launchd user agent, headless daemon ([`launch-at-login.md`](./launch-at-login.md)) | Cerberus resource `tangent-dev` (`dev_session`) |
-| Tether catalog entry | `tangent` — what agents reach by default | `tangent-dev` — opt-in, for pointing a session at the dev build |
+| Tether catalog entry | `tangent` — the only enabled Tangent upstream in the shared catalog | `tangent-dev` — present but **disabled**; reach dev with a scratch catalog or `mux mcp --proxy --only tangent-dev` |
 | Started by | the install script (`CW-20260907-0020`) | `make dev`, `make dev-go`, or `cerberus resource deploy tangent-dev` |
 
 Different ports and different database paths mean different `.owner` lock
 files, so the two can never collide on the single-writer flock.
 
-**State of the switch.** As of 2026-09-07 the split is prepared but not yet
-applied: one Cerberus-supervised process still serves 7842 against
-`~/.tangent`, the prepared resource definition is
-[`packaging/cerberus/tangent.cerberus.yaml`](../packaging/cerberus/tangent.cerberus.yaml),
-and the `tangent-dev` catalog entry is present but disabled until 7843 answers
-(an enabled upstream with no listener stalled `mux mcp --proxy` startup when
-measured). `.agent-ops/project.yaml` `deployment.instances.current` records
-which is true at any moment.
+**State of the switch.** The cutover ran on 2026-09-07 (`CW-20260907-0020`):
+stable is the tagged build under launchd on 7842; dev runs on 7843 against the
+workspace database. Two things learned there, both load-bearing:
+
+- **`tangent-dev` must stay disabled in the shared catalog.** When two
+  upstreams expose identical tool names, `mux` gives the bare `tangent.*`
+  names to one of them and renames the other's (`tangent__tangent.*`); with
+  both enabled, a session on the default configuration sent its HITL item to
+  dev. Until Tether namespaces duplicate names (`CW-20260907-0037`), reach dev
+  through a scratch catalog copy or `mux mcp --proxy --only tangent-dev`, never
+  by enabling the shared entry.
+- **No Cerberus lifecycle verb may target `tangent-dev` until the Cerberus
+  daemon has re-read the 7843 spec.** The daemon keeps a resource's port in
+  memory and finds "the running process" by `lsof` on it; after the port changed
+  on disk it identified the stable daemon as `tangent-dev`, so `stop`, `reload`,
+  `apply`, and `deploy` would have signalled stable (`CW-20260907-0036`). Dev is
+  hand-run until a `cerberus daemon restart` is done with the operator watching.
+
+`.agent-ops/project.yaml` `deployment.instances.current` records which is true
+at any moment.
 
 ### Managed: Cerberus owns the process, Tether fronts the surface
 
