@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -148,10 +147,20 @@ const standaloneLocalScope = "standalone-local:anonymous"
 
 // ── tangent.relay_attach ────────────────────────────────────────────────
 
+// relayRuntimeInput carries no adapter_capabilities field. A []string is
+// unconditionally schema'd as `"type": ["null", "array"]` by jsonschema-go —
+// required or optional makes no difference, since a nil slice is a real Go
+// zero value distinct from an empty one — so there is no flat way to keep
+// an optional list here the way relay_send's recipient fields were
+// flattened. Nothing in this task reads adapter_capabilities back once
+// stored, so it is simpler and equally correct to not accept it at attach
+// time at all; the DB column defaults to '[]' with no caller input. A
+// future task that needs a caller to declare capabilities should carry
+// them one string at a time or find a shape jsonschema-go renders as a
+// plain type, not resurrect this field.
 type relayRuntimeInput struct {
-	Authority           string   `json:"authority"`
-	EndpointRef         string   `json:"endpoint_ref,omitempty"`
-	AdapterCapabilities []string `json:"adapter_capabilities,omitempty"`
+	Authority   string `json:"authority"`
+	EndpointRef string `json:"endpoint_ref,omitempty"`
 }
 
 type relayAttachInput struct {
@@ -192,13 +201,8 @@ func (s *Server) handleRelayAttach(
 	if err != nil {
 		return relayErrorResult(err)
 	}
-	capabilities, err := jsonRawArray(input.Runtime.AdapterCapabilities)
-	if err != nil {
-		return relayErrorResult(fmt.Errorf("%w: adapter_capabilities: %w", channel.ErrInvalidRecord, err))
-	}
 	binding, err := s.channels.Rebind(ctx, input.ChannelID, participant.ID, channel.RebindParams{
 		RuntimeAuthority: input.Runtime.Authority, RuntimeEndpointRef: input.Runtime.EndpointRef,
-		AdapterCapabilities: capabilities,
 	})
 	if err != nil {
 		return relayErrorResult(err)
@@ -258,13 +262,21 @@ func (s *Server) handleRelayDetach(
 // ── tangent.relay_send ──────────────────────────────────────────────────
 
 type relaySendInput struct {
-	ChannelID         string            `json:"channel_id"`
-	IdempotencyKey    string            `json:"idempotency_key"`
-	Source            relaySourceInput  `json:"source"`
-	Recipient         *relaySourceInput `json:"recipient,omitempty"`
-	SubjectID         string            `json:"subject_id,omitempty"`
-	ReplyToExchangeID string            `json:"reply_to_exchange_id,omitempty"`
-	Body              string            `json:"body"`
+	ChannelID      string           `json:"channel_id"`
+	IdempotencyKey string           `json:"idempotency_key"`
+	Source         relaySourceInput `json:"source"`
+	// RecipientApplicationID and RecipientAgentID are flat, not a nested
+	// object, per director review of PR #34: a pointer-to-struct optional
+	// field serializes as `"type": ["null", "object"]`, the exact union
+	// shape the CW-20260907-0016 spike measured a model sending as a JSON
+	// string in 3 of 3 sessions. Both must be given together, or both
+	// omitted to default to the channel's one live operator; the pairing
+	// is enforced in the handler, never as a schema conditional.
+	RecipientApplicationID string `json:"recipient_application_id,omitempty" jsonschema:"Application id of an explicit recipient. Give this and recipient_agent_id together, or omit both to default to the channel's one live operator participant."`
+	RecipientAgentID       string `json:"recipient_agent_id,omitempty" jsonschema:"Agent id of an explicit recipient. Give this and recipient_application_id together, or omit both to default to the channel's one live operator participant."`
+	SubjectID              string `json:"subject_id,omitempty"`
+	ReplyToExchangeID      string `json:"reply_to_exchange_id,omitempty"`
+	Body                   string `json:"body"`
 }
 
 type relaySendOutput struct {
@@ -293,13 +305,22 @@ func (s *Server) handleRelaySend(
 	if err != nil {
 		return relayErrorResult(err)
 	}
+	hasApplicationID := input.RecipientApplicationID != ""
+	hasAgentID := input.RecipientAgentID != ""
 	var recipient channel.Participant
-	if input.Recipient != nil {
-		recipient, err = s.resolveAgentParticipant(ctx, *input.Recipient)
+	switch {
+	case hasApplicationID != hasAgentID:
+		return relayErrorResult(fmt.Errorf(
+			"%w: recipient_application_id and recipient_agent_id must be given together, or both omitted",
+			channel.ErrInvalidRecord))
+	case hasApplicationID && hasAgentID:
+		recipient, err = s.resolveAgentParticipant(ctx, relaySourceInput{
+			ApplicationID: input.RecipientApplicationID, AgentID: input.RecipientAgentID,
+		})
 		if err != nil {
 			return relayErrorResult(err)
 		}
-	} else {
+	default:
 		recipient, err = s.resolveDefaultRecipient(ctx, input.ChannelID)
 		if err != nil {
 			return relayErrorResult(err)
@@ -508,8 +529,16 @@ func (s *Server) handleRelayAck(
 // ── tangent.relay_capabilities ──────────────────────────────────────────
 
 type relayCapabilitiesInput struct {
-	ChannelID string            `json:"channel_id,omitempty"`
-	Source    *relaySourceInput `json:"source,omitempty"`
+	ChannelID string `json:"channel_id,omitempty"`
+	// ApplicationID and AgentID are flat, not a nested object, for the same
+	// reason relay_send's recipient fields are: a pointer-to-struct
+	// optional field serializes as `"type": ["null", "object"]`, the union
+	// shape CW-20260907-0016 measured a model sending as a JSON string.
+	// Both must be given together, and both are required when channel_id
+	// is given — the pairing is enforced in the handler, never as a schema
+	// conditional.
+	ApplicationID string `json:"application_id,omitempty" jsonschema:"Required together with agent_id when channel_id is given, to scope the answer to that channel's current binding; omit both for the adapter's generic capabilities."`
+	AgentID       string `json:"agent_id,omitempty" jsonschema:"Required together with application_id when channel_id is given; omit both for the adapter's generic capabilities."`
 }
 
 type relayCapabilitiesSet struct {
@@ -538,14 +567,18 @@ func (s *Server) handleRelayCapabilities(
 	// conditional: CW-20260907-0016 found mux's discovery schema drops
 	// allOf/if/then branches, so a field gated behind one reaches the model
 	// untyped. Both fields stay independently optional in the schema.
-	if input.ChannelID != "" {
-		if input.Source == nil {
-			return relayErrorResult(fmt.Errorf("%w: source is required when channel_id is given", channel.ErrInvalidRecord))
-		}
+	hasApplicationID := input.ApplicationID != ""
+	hasAgentID := input.AgentID != ""
+	switch {
+	case hasApplicationID != hasAgentID:
+		return relayErrorResult(fmt.Errorf("%w: application_id and agent_id must be given together, or both omitted", channel.ErrInvalidRecord))
+	case input.ChannelID != "" && !hasApplicationID:
+		return relayErrorResult(fmt.Errorf("%w: application_id and agent_id are required when channel_id is given", channel.ErrInvalidRecord))
+	case input.ChannelID != "":
 		if _, err := s.channels.GetChannel(ctx, input.ChannelID); err != nil {
 			return relayErrorResult(err)
 		}
-		if _, err := s.resolveAgentParticipant(ctx, *input.Source); err != nil {
+		if _, err := s.resolveAgentParticipant(ctx, relaySourceInput{ApplicationID: input.ApplicationID, AgentID: input.AgentID}); err != nil {
 			return relayErrorResult(err)
 		}
 	}
@@ -579,15 +612,4 @@ func relayErrorResult(err error) (*mcpsdk.CallToolResult, any, error) {
 		code = "idempotency_conflict"
 	}
 	return toolErrorResult(code, err.Error()), nil, nil
-}
-
-func jsonRawArray(values []string) ([]byte, error) {
-	if len(values) == 0 {
-		return []byte("[]"), nil
-	}
-	encoded, err := json.Marshal(values)
-	if err != nil {
-		return nil, err
-	}
-	return encoded, nil
 }

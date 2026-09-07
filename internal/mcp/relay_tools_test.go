@@ -112,6 +112,14 @@ func TestRelayToolsRegisterWithFlatSchemasAndNoConditionals(t *testing.T) {
 				t.Errorf("%s input schema contains %q, which CW-20260907-0016 found gateways drop", tool.Name, forbidden)
 			}
 		}
+		// A director review of PR #34 found relay_send.recipient and
+		// relay_capabilities.source emitting `"type": ["null", "object"]`
+		// — a union, not a conditional, so the check above missed it. That
+		// is exactly the shape the spike measured a model sending as a
+		// JSON string in 3 of 3 sessions. Every property's type must be a
+		// single plain string, and no property may be an object at all
+		// except the deliberately-kept required source/runtime.
+		assertNoUnionOrUnexpectedObjectTypes(t, tool.Name, schema, relayAllowedNestedObjectProperties)
 	}
 	for name, found := range want {
 		if !found {
@@ -142,6 +150,45 @@ func jsonBytesIndex(haystack, needle []byte) int {
 		}
 	}
 	return -1
+}
+
+// relayAllowedNestedObjectProperties are the only property names anywhere
+// in a relay_* input schema allowed to have `"type": "object"`: the
+// required source (every tool) and runtime (relay_attach only), the shape
+// HITL ships and the CW-20260907-0016 spike drove without trouble. Every
+// other property — in particular an OPTIONAL nested object, which Go
+// renders as a pointer-to-struct field — must be a flat scalar or array of
+// scalars, never an object and never a `["null", "object"]` union.
+var relayAllowedNestedObjectProperties = map[string]bool{"source": true, "runtime": true}
+
+// assertNoUnionOrUnexpectedObjectTypes walks a JSON Schema's properties
+// (recursively, since an allowed nested object like source has its own
+// properties that must hold the same rule) and fails the test if any
+// property's "type" is not a single JSON string, or is "object" without
+// being in allowedObjects.
+func assertNoUnionOrUnexpectedObjectTypes(t *testing.T, toolName string, schema map[string]any, allowedObjects map[string]bool) {
+	t.Helper()
+	props, _ := schema["properties"].(map[string]any)
+	for name, raw := range props {
+		prop, ok := raw.(map[string]any)
+		if !ok {
+			t.Errorf("%s: property %q is not an object in the schema", toolName, name)
+			continue
+		}
+		switch typed := prop["type"].(type) {
+		case string:
+			if typed != "object" {
+				continue
+			}
+			if !allowedObjects[name] {
+				t.Errorf("%s: property %q has type \"object\", want a flat scalar — only source/runtime are deliberately kept as nested objects", toolName, name)
+				continue
+			}
+			assertNoUnionOrUnexpectedObjectTypes(t, toolName, prop, allowedObjects)
+		default:
+			t.Errorf("%s: property %q has type %#v, not a single JSON Schema type — this is the [\"null\",\"object\"]-shaped union CW-20260907-0016 found a model send as a stringified JSON blob", toolName, name, typed)
+		}
+	}
 }
 
 func TestRelayOpenChannelCreatesChannelWithTheOperatorAsAMember(t *testing.T) {
@@ -280,6 +327,69 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 	}
 	if _, err := h.channels.CurrentBinding(ctx, opened.ChannelID, attached.ParticipantID); err == nil {
 		t.Fatal("CurrentBinding still resolves after relay_detach")
+	}
+}
+
+func TestRelaySendWithAnExplicitFlatRecipient(t *testing.T) {
+	h := newRelayHarness(t)
+	defer h.close()
+
+	opened := callInteractionTool[struct {
+		ChannelID string `json:"channel_id"`
+	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	agentA := map[string]any{"application_id": "claude-code", "agent_id": "agent-a"}
+	agentB := map[string]any{"application_id": "claude-code", "agent_id": "agent-b"}
+	for _, source := range []map[string]any{agentA, agentB} {
+		callInteractionTool[struct {
+			ParticipantID string `json:"participant_id"`
+		}](t, h.client, "tangent.relay_attach", map[string]any{
+			"channel_id": opened.ChannelID, "source": source, "runtime": map[string]any{"authority": "claude-code-cli"},
+		})
+	}
+
+	sent := callInteractionTool[struct {
+		Recipient struct {
+			ParticipantID string `json:"participant_id"`
+			AgentID       string `json:"agent_id"`
+		} `json:"recipient"`
+	}](t, h.client, "tangent.relay_send", map[string]any{
+		"channel_id": opened.ChannelID, "idempotency_key": "idem-explicit", "source": agentA,
+		"recipient_application_id": "claude-code", "recipient_agent_id": "agent-b",
+		"body": "for agent B specifically",
+	})
+	if sent.Recipient.AgentID != "agent-b" {
+		t.Fatalf("relay_send with an explicit recipient = %+v, want agent-b addressed directly", sent)
+	}
+}
+
+func TestRelaySendRefusesAHalfGivenRecipient(t *testing.T) {
+	h := newRelayHarness(t)
+	defer h.close()
+
+	opened := callInteractionTool[struct {
+		ChannelID string `json:"channel_id"`
+	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
+	callInteractionTool[struct {
+		ParticipantID string `json:"participant_id"`
+	}](t, h.client, "tangent.relay_attach", map[string]any{
+		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
+	})
+
+	result, err := h.client.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name: "tangent.relay_send",
+		Arguments: map[string]any{
+			"channel_id": opened.ChannelID, "idempotency_key": "idem-half", "source": agentSource,
+			"recipient_application_id": "claude-code", // recipient_agent_id deliberately omitted
+			"body":                     "half an address",
+		},
+	})
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !result.IsError || relayErrorCode(t, result) != "validation_failed" {
+		t.Fatalf("relay_send with recipient_application_id and no recipient_agent_id = IsError %v code %q, want validation_failed",
+			result.IsError, relayErrorCode(t, result))
 	}
 }
 
@@ -546,7 +656,8 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 		ChannelID string `json:"channel_id"`
 	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
 
-	// channel_id without source: the pairing rule refuses in code.
+	// channel_id without application_id/agent_id: the pairing rule refuses
+	// in code.
 	paired, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name: "tangent.relay_capabilities", Arguments: map[string]any{"channel_id": opened.ChannelID},
 	})
@@ -554,16 +665,31 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 		t.Fatalf("transport error: %v", err)
 	}
 	if !paired.IsError || relayErrorCode(t, paired) != "validation_failed" {
-		t.Fatalf("relay_capabilities with channel_id and no source = IsError %v code %q, want validation_failed",
+		t.Fatalf("relay_capabilities with channel_id and no identity = IsError %v code %q, want validation_failed",
 			paired.IsError, relayErrorCode(t, paired))
 	}
 
-	// Both fields, a real channel and a resolvable source: succeeds.
-	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
+	// application_id without agent_id: the two flat fields must be given
+	// together, the same rule relay_send's recipient fields enforce.
+	halfPaired, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name: "tangent.relay_capabilities",
+		Arguments: map[string]any{
+			"channel_id": opened.ChannelID, "application_id": "claude-code",
+		},
+	})
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !halfPaired.IsError || relayErrorCode(t, halfPaired) != "validation_failed" {
+		t.Fatalf("relay_capabilities with application_id and no agent_id = IsError %v code %q, want validation_failed",
+			halfPaired.IsError, relayErrorCode(t, halfPaired))
+	}
+
+	// Both fields, a real channel and a resolvable identity: succeeds.
 	scoped := callInteractionTool[struct {
 		Adapter string `json:"adapter"`
 	}](t, h.client, "tangent.relay_capabilities", map[string]any{
-		"channel_id": opened.ChannelID, "source": agentSource,
+		"channel_id": opened.ChannelID, "application_id": "claude-code", "agent_id": "tangent-14",
 	})
 	if scoped.Adapter != "cli-relay" {
 		t.Fatalf("relay_capabilities (scoped) = %+v", scoped)

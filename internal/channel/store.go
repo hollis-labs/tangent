@@ -99,10 +99,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 // It is not wrapped in one cross-call transaction: CreateChannel,
 // UpsertParticipant, and AddParticipant are each already correct and tested
 // in isolation, and composing them sequentially means an interruption
-// between steps fails loud (an operator-less channel, which relay_send's
-// ambiguous-recipient check surfaces immediately) rather than silently —
-// the same standard as everything else this task added, applied to
-// implementation cost as well as behavior.
+// between steps leaves an operator-less channel rather than a corrupted
+// one. That is not unconditionally "fails loud": relay_send's
+// ambiguous-recipient check only surfaces the gap for a caller that omits
+// an explicit recipient and falls through to the channel's default
+// operator. A caller that always names its recipient explicitly never hits
+// that check and would not learn the operator is missing this way — the
+// loud failure is a property of that call shape, not a guarantee this
+// method makes on its own.
 func (s *Store) OpenChannel(ctx context.Context, params CreateChannelParams) (Channel, Participant, error) {
 	ch, err := s.CreateChannel(ctx, params)
 	if err != nil {
