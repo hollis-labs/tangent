@@ -648,8 +648,13 @@ func TestChannelsAndParticipantBindingsMigrationRollsBackIndependently(t *testin
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if err := RunMigrations(database); err != nil {
-		t.Fatalf("RunMigrations: %v", err)
+	// migrateTo(13), not RunMigrations: this test's RollbackOne below has to
+	// undo exactly migration 0013, and RunMigrations now lands on whatever
+	// is newest — 0014 (CW-20260906-0065) stacks on top of this one — so
+	// "the newest applied migration" stopped meaning "this one" the moment
+	// a migration was added after it.
+	if err := migrateTo(database, 13); err != nil {
+		t.Fatalf("migrate to version 13: %v", err)
 	}
 
 	newTables := []string{
@@ -735,6 +740,97 @@ VALUES ('subject-1', 'channel-1', 'interaction', 'interaction-existing', ?, ?)`,
 
 	// Re-applying brings the schema back to current, proving up is idempotent
 	// after a rollback-one round trip.
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err != nil {
+			t.Fatalf("%s after re-apply: %v", table, err)
+		}
+	}
+}
+
+// TestRelayJournalAndOutboxMigrationRollsBackIndependently proves the
+// CW-20260906-0065 migration is additive and self-contained the same way
+// TestChannelsAndParticipantBindingsMigrationRollsBackIndependently proved
+// it for 0013: it adds exactly four tables, none of them alter the existing
+// channel/participant substrate's rows or shape, and RollbackOne removes
+// only what this migration added.
+func TestRelayJournalAndOutboxMigrationRollsBackIndependently(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	// migrateTo(14), not RunMigrations: RollbackOne below has to undo
+	// exactly this migration, and RunMigrations lands on whatever is
+	// newest — the same fragility fixed on the 0013 test above once this
+	// migration stopped being the last one.
+	if err := migrateTo(database, 14); err != nil {
+		t.Fatalf("migrate to version 14: %v", err)
+	}
+
+	newTables := []string{
+		"exchanges",
+		"exchange_outbox",
+		"exchange_delivery_receipts",
+		"exchange_reads",
+	}
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err != nil {
+			t.Fatalf("%s after up: %v", table, err)
+		}
+	}
+
+	now := "2026-09-07T00:00:00Z"
+	if _, err := database.Exec(`
+INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch1', 'standalone-local:anonymous', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	for _, id := range []string{"p_sender", "p_recipient"} {
+		if _, err := database.Exec(`
+INSERT INTO participants (id, kind, created_at, updated_at)
+VALUES (?, 'agent', ?, ?)`, id, now, now); err != nil {
+			t.Fatalf("seed participant %s: %v", id, err)
+		}
+	}
+	if _, err := database.Exec(`
+INSERT INTO exchanges (id, idempotency_key, channel_id, sender_participant_id, recipient_participant_id, body, sequence, created_at)
+VALUES ('ex1', 'idem-1', 'ch1', 'p_sender', 'p_recipient', 'hello', 1, ?)`, now); err != nil {
+		t.Fatalf("seed exchange: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO exchange_outbox (exchange_id, created_at, updated_at) VALUES ('ex1', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed outbox row: %v", err)
+	}
+
+	var channelTitle sql.NullString
+	if err := database.QueryRow(`SELECT title FROM channels WHERE id = 'ch1'`).Scan(&channelTitle); err != nil {
+		t.Fatalf("read seeded channel: %v", err)
+	}
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err == nil || !strings.Contains(err.Error(), "no such table") {
+			t.Fatalf("%s query after rollback error = %v, want no such table", table, err)
+		}
+	}
+
+	// The rollback removed the relay substrate but left the channel and
+	// participant rows exactly as 0064 left them.
+	if _, err := database.Exec(`SELECT 1 FROM channels WHERE id = 'ch1'`); err != nil {
+		t.Fatalf("channel should remain after rolling back only the relay substrate: %v", err)
+	}
+	if _, err := database.Exec(`SELECT 1 FROM participants WHERE id = 'p_sender'`); err != nil {
+		t.Fatalf("participant should remain after rolling back only the relay substrate: %v", err)
+	}
+
 	if err := RunMigrations(database); err != nil {
 		t.Fatalf("re-apply after rollback: %v", err)
 	}

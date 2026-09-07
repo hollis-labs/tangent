@@ -68,12 +68,18 @@ func TestGuardInventoryIsDerivedFromTheMigrations(t *testing.T) {
 	}
 	// Twelve delete guards at migration 0012: the nine ADR 0002 counted at
 	// 0a45caa, plus terminal_outcome_acknowledgements (0006),
-	// definition_manifests (0007), and retention_operations (0012).
-	if deletes != 12 {
-		t.Fatalf("expected 12 DELETE guards, found %d: %v", deletes, reference.Names())
+	// definition_manifests (0007), and retention_operations (0012). Fifteen
+	// at migration 0014: exchanges, exchange_delivery_receipts, and
+	// exchange_reads (CW-20260906-0065) are each fully immutable — none of
+	// them are on channels/participants/channel_subjects' cascade path from
+	// a surface, so none of them are in purgeGuards; see the migration's own
+	// comment and internal/db/retention_test.go's purge-with-an-exchange
+	// case for why that is safe rather than an oversight.
+	if deletes != 15 {
+		t.Fatalf("expected 15 DELETE guards, found %d: %v", deletes, reference.Names())
 	}
-	if updates != 29 {
-		t.Fatalf("expected 29 UPDATE guards, found %d: %v", updates, reference.Names())
+	if updates != 32 {
+		t.Fatalf("expected 32 UPDATE guards, found %d: %v", updates, reference.Names())
 	}
 
 	f := newFixture(t)
@@ -462,6 +468,100 @@ VALUES ('sub_surface', 'ch_fixture', 'surface', ?, ?, ?)`, f.surfaceID, now, now
 	}
 	if surfaceRef.Valid {
 		t.Fatalf("sub_surface.surface_id = %q, want NULL after its surface was purged", surfaceRef.String)
+	}
+
+	if drift := f.guardDrift(t); !drift.Intact() {
+		t.Fatalf("the purge left the schema without its guards: %+v", drift)
+	}
+}
+
+// TestPurgeSurfaceLeavesTheRelayJournalIntact is the CW-20260906-0065
+// instance of the standing check the 0064 review established: any new
+// table's foreign keys have to be walked against PurgeSurface before its
+// tests are written, not after. exchanges.subject_id reaches a surface only
+// indirectly, through channel_subjects, which the previous test already
+// proved survives a purge as a tombstone. This proves the chain holds one
+// hop further out: the exchange, its outbox row, its delivery receipt, and
+// its read fact all survive a purge of the surface their subject once
+// correlated, untouched, because none of exchanges' own foreign keys point
+// at interactions or surfaces at all.
+func TestPurgeSurfaceLeavesTheRelayJournalIntact(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	now := f.now
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch_relay', 'standalone-local:anonymous', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO channel_subjects (id, channel_id, subject_type, interaction_id, created_at, updated_at)
+VALUES ('sub_relay', 'ch_relay', 'interaction', ?, ?, ?)`, f.interactionIDs[0], now, now); err != nil {
+		t.Fatalf("seed channel subject: %v", err)
+	}
+	for _, id := range []string{"p_operator", "p_agent"} {
+		if _, err := f.db.ExecContext(ctx, `
+INSERT INTO participants (id, kind, created_at, updated_at) VALUES (?, 'agent', ?, ?)`, id, now, now); err != nil {
+			t.Fatalf("seed participant %s: %v", id, err)
+		}
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO exchanges (id, idempotency_key, channel_id, subject_id, sender_participant_id, recipient_participant_id, body, sequence, created_at)
+VALUES ('ex_relay', 'idem-relay', 'ch_relay', 'sub_relay', 'p_operator', 'p_agent', 'about the interaction being purged', 1, ?)`, now); err != nil {
+		t.Fatalf("seed exchange: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO exchange_outbox (exchange_id, status, created_at, updated_at)
+VALUES ('ex_relay', 'delivered', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed outbox row: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO exchange_delivery_receipts (id, exchange_id, attempt_number, outcome, attempted_at)
+VALUES ('receipt_relay', 'ex_relay', 1, 'delivered', ?)`, now); err != nil {
+		t.Fatalf("seed delivery receipt: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO exchange_reads (exchange_id, participant_id, acked_at) VALUES ('ex_relay', 'p_agent', ?)`, now); err != nil {
+		t.Fatalf("seed read receipt: %v", err)
+	}
+
+	result, err := PurgeSurface(ctx, f.db, RetentionRequest{
+		SurfaceID: f.surfaceID, ActorRef: "operator:test", Authority: AuthorityLocalUser, Now: f.now,
+	})
+	if err != nil {
+		t.Fatalf("purge surface with a relay exchange correlating it (through a channel subject): %v", err)
+	}
+	if !result.GuardsRestored {
+		t.Fatal("guards were not verified restored after the purge")
+	}
+
+	for table, id := range map[string]string{
+		"channels":                   "ch_relay",
+		"channel_subjects":           "sub_relay",
+		"exchanges":                  "ex_relay",
+		"exchange_outbox":            "ex_relay",
+		"exchange_delivery_receipts": "receipt_relay",
+		"exchange_reads":             "ex_relay",
+	} {
+		column := "id"
+		if table == "exchange_outbox" || table == "exchange_reads" {
+			column = "exchange_id"
+		}
+		if remaining := f.count(t, `SELECT COUNT(*) FROM `+table+` WHERE `+column+` = ?`, id); remaining != 1 { //nolint:gosec // table is one of this map's own literal keys
+			t.Errorf("%s row %q did not survive the purge: %d rows", table, id, remaining)
+		}
+	}
+
+	// The exchange's own body and correlation are untouched — only the
+	// subject's canonical interaction reference went NULL, exactly as the
+	// previous test already proved.
+	var body, subjectID string
+	if err := f.db.QueryRow(`SELECT body, subject_id FROM exchanges WHERE id = 'ex_relay'`).Scan(&body, &subjectID); err != nil {
+		t.Fatalf("read exchange after purge: %v", err)
+	}
+	if body != "about the interaction being purged" || subjectID != "sub_relay" {
+		t.Fatalf("exchange changed shape after a purge it has no foreign key into: body=%q subject_id=%q", body, subjectID)
 	}
 
 	if drift := f.guardDrift(t); !drift.Intact() {

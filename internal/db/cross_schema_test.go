@@ -36,6 +36,17 @@ func backupSchemaVersion(t *testing.T) int64 {
 	return expected - 2
 }
 
+// preRetentionOperationsSchemaVersion is fixed, not derived: the erasure log
+// (retention_operations) arrives at a specific historical migration, 0012,
+// and "before that log existed" is version 11 regardless of how many
+// migrations land on top of it later. Deriving this one the way
+// backupSchemaVersion derives its "two behind HEAD" would have been wrong
+// the same way TestOlderSchemaAnswersAreLegibleNotDriverErrors's own
+// "-2" assumption was: CW-20260906-0065 (migration 0014) pushed HEAD-2 to
+// version 12, which already has the log, and the assertion that a database
+// behind it has no log silently stopped holding.
+const preRetentionOperationsSchemaVersion int64 = 11
+
 // TestBackupOfADatabaseOlderThanTheBinaryIsSoundAndFingerprinted is the
 // defect, asserted directly. Against the code this replaces it fails three
 // times over: integrity_ok false, a fingerprint of zeros, and a
@@ -440,7 +451,7 @@ func TestAnInapplicablePropertyIsNotAMissingOne(t *testing.T) {
 // paths is damaged; each one has to say which schema it is on and what to do,
 // rather than surfacing "no such table" from the driver.
 func TestOlderSchemaAnswersAreLegibleNotDriverErrors(t *testing.T) {
-	version := backupSchemaVersion(t)
+	version := preRetentionOperationsSchemaVersion
 	f := newFixtureAtSchema(t, version)
 	ctx := context.Background()
 
