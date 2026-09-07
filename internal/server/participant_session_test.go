@@ -15,6 +15,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/hollis-labs/tangent/internal/channel"
+	"github.com/hollis-labs/tangent/internal/channelpane"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
@@ -22,6 +24,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
@@ -242,6 +245,8 @@ type guardedApp struct {
 	database *sql.DB
 	sessions *participant.Store
 	manager  *room.Manager
+	channels *channel.Store
+	relay    *relay.Store
 	server   *server.Server
 	listener net.Listener
 	baseURL  string
@@ -302,11 +307,25 @@ func startGuardedApp(t *testing.T) *guardedApp {
 	wsHandler := tangentws.New(manager, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	wsHandler.SetParticipantResolver(gate.ResolveBinding)
 
+	channels, err := channel.NewStore(database)
+	if err != nil {
+		t.Fatalf("channel.NewStore: %v", err)
+	}
+	relayStore, err := relay.NewStore(database, channels)
+	if err != nil {
+		t.Fatalf("relay.NewStore: %v", err)
+	}
+	channelPane, err := channelpane.New(channels, relayStore, hitlService)
+	if err != nil {
+		t.Fatalf("channelpane.New: %v", err)
+	}
+
 	logs := &lockedBuffer{}
 	httpServer, err := server.New(server.Config{
 		Port: 0, Logger: slog.New(slog.NewTextHandler(logs, nil)),
 		Envelope: envelopeService, MCP: mcpServer, WSHandler: wsHandler,
-		RoomManager: manager, HITL: hitlService, Rooms: mcpServer, Participants: gate,
+		RoomManager: manager, HITL: hitlService, Rooms: mcpServer, Channels: channelPane,
+		Participants: gate,
 	})
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
@@ -316,8 +335,8 @@ func startGuardedApp(t *testing.T) *guardedApp {
 		t.Fatalf("server.Listen: %v", err)
 	}
 	app := &guardedApp{
-		database: database, sessions: sessions, manager: manager, server: httpServer,
-		listener: listener, baseURL: "http://" + listener.Addr().String(),
+		database: database, sessions: sessions, manager: manager, channels: channels, relay: relayStore,
+		server: httpServer, listener: listener, baseURL: "http://" + listener.Addr().String(),
 		logs: logs, done: make(chan error, 1),
 	}
 	go func() { app.done <- httpServer.Serve(listener) }()

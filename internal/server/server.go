@@ -242,11 +242,36 @@ func New(cfg Config) (*Server, error) {
 
 	if cfg.Channels != nil {
 		// The channel pane's browser API (CW-20260907-0017). Listing and
-		// reading need `view`; sending a message creates a new exchange —
-		// `submit`, the same capability that creates an interaction on a
-		// surface — and marking read is an acknowledgment over
-		// already-viewed content, closer to `draft`'s "acknowledges a
-		// presented projection" than to creating anything new.
+		// reading need `view`. Sending a message and marking read both need
+		// `draft`, not `submit` — and that is a choice, not just an
+		// available slot `submit` happened not to occupy.
+		//
+		// The ADR 0004 §7 matrix's KindParticipant row is exactly {view,
+		// draft, resolve, cancel}, and authz.Authorize consults that row
+		// unconditionally regardless of what a session's own grant set
+		// holds (participant.Gate.Authorize's own doc comment: "the matrix
+		// is consulted even where the session's own grant set would have
+		// answered"). `submit`'s own doc says it "creates an interaction on
+		// a surface" — a caller-application act, not a human's — and a
+		// relay exchange is not an interaction at all, so `submit` was
+		// never the right shape here, independent of whether a participant
+		// could hold it. `draft` is the only authoring capability the
+		// participant row does hold, and composing a channel message —
+		// non-terminal, immediately visible, revisable by sending again —
+		// is exactly what `draft` already means elsewhere in this file. If
+		// the relay's operator actions ever earn a capability of their
+		// own, that is an amendment to ADR 0004's matrix, decided
+		// deliberately, not drift arrived at by finding whatever slot a
+		// route happens to authorize against.
+		//
+		// Gating the send route on `submit` instead — as this route
+		// originally shipped — meant a real browser participant session
+		// could never hold it, so an operator could never have sent a
+		// message through this pane at all: caught live against dev while
+		// seeding the phase 4 acceptance run, not by any test, since every
+		// existing channels test used a fake ChannelService with no
+		// Participants gate configured, making the whole class invisible
+		// to them. See TestChannelSendWorksForARealParticipantSession.
 		channelHandler := newChannelHTTPHandler(cfg.Channels)
 		channelGuard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
 			return hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler))
@@ -254,7 +279,7 @@ func New(cfg Config) (*Server, error) {
 		mux.Handle("GET /api/channels", channelGuard(authz.View, channelHandler.list))
 		mux.Handle("GET /api/channels/events", channelGuard(authz.View, channelHandler.events))
 		mux.Handle("GET /api/channels/{channelID}", channelGuard(authz.View, channelHandler.get))
-		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Submit, channelHandler.send))
+		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Draft, channelHandler.send))
 		mux.Handle("POST /api/channels/{channelID}/read", channelGuard(authz.Draft, channelHandler.markRead))
 	}
 
