@@ -341,6 +341,7 @@ More docs:
 - [`docs/database-operations.md`](./docs/database-operations.md) — single-writer ownership, backup and restore modes, repair, and the six deletion kinds
 - [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
+- [`docs/installing.md`](./docs/installing.md) — install and upgrade the stable Tangent on macOS (daemon under launchd, Tangent.app, one database), and the two-instance layout
 - [`docs/launch-at-login.md`](./docs/launch-at-login.md) — the macOS LaunchAgent that starts the headless daemon at login (the facility; not installed on the dev machine)
 - [`docs/mcp-integration.md`](./docs/mcp-integration.md) — Claude Code / Cursor / curl recipes
 - [`docs/manual-tests/workflow-smoke-tests.md`](./docs/manual-tests/workflow-smoke-tests.md) — quick smoke pass across every shipped workflow
