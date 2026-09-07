@@ -137,9 +137,26 @@ timeout still returns the latest pending projection. For
 observed `expected_revision` and a non-empty `reason`. Never withdraw merely
 because an Await request timed out.
 
-## Tether native-flat gateway
+## Tether gateway
 
-Start Tether's native-flat proxy with the configured Tangent server selected:
+Either Tether mode reaches Tangent. On the default proxy (`mux mcp --proxy
+--servers ...`, Tangent listed as `proxy_only`), call the tools through
+`mux_call`:
+
+```text
+Call mux_call with tool_name "tangent.hitl_enqueue" and these arguments:
+{"contract_version":"1.0","kind":"attention","idempotency_key":"tether:tangent:CW-20260904-0016:docs-attention-v1","title":"Review HITL documentation result","summary":"The direct and gateway examples use the same strict v1 schema.","request":"Acknowledge the documentation result, optionally leaving a note or reply.","source":{"application_id":"tether-docs-smoke","application_label":"Tether","agent_id":"hitl-docs-gateway"}}
+```
+
+`mux_call` adds the caller's W3C trace context to the arguments as
+`_traceparent` (and `_tracestate`). Tangent recognises exactly those keys as
+gateway transport metadata, removes them before the strict schema is applied,
+and records the trace as an upstream link on its own telemetry
+(`CW-20260907-0022`). Nothing else may be added: any other unknown key is
+still rejected by the v1 schema.
+
+Native-flat mode is optional. It exposes the tools under their own names, which
+saves the `mux_call` wrapper:
 
 ```bash
 mux mcp --proxy --only tangent
@@ -163,10 +180,12 @@ Native-flat forwarding does not by itself authenticate the payload's
 only a separately verified gateway binding may establish authenticated
 identity, and it cannot rewrite the source assertion.
 
-Do not use the tested Tether adapter's `mux_call` compatibility wrapper for
-this strict contract: its injected top-level tracing field is rejected. The
-adapter's discovery schema can also omit top-level conditional unions, so
-Tangent's upstream v1 validation remains authoritative.
+The adapter's discovery schema omits top-level conditional unions
+(`allOf`/`if`/`then`, `oneOf`), so a field defined only inside one, such as
+`action_labels`, reaches the model without a type; models have sent it as a
+JSON string and been refused. Prefer the flat fields, and treat Tangent's
+upstream v1 validation as authoritative over the gateway's reduced discovery
+schema.
 
 The cross-repository test sets `HOLLIS_OTEL_DISABLED=1` only to avoid a known
 startup logging recursion in the tested local Tether checkout. That is a test
