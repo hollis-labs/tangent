@@ -41,11 +41,13 @@
 	  LSUIElement is deliberately omitted (defaults to false, i.e. a Dock
 	  icon). This must stay consistent with internal/appshell/shell.go's
 	  application.MacOptions.ActivationPolicy — as of CW-20260905-0032 that
-	  is ActivationPolicyRegular, a regular Dock-visible app. The Tangent
-	  shell keeps the server alive on close-to-hide, so a Dock icon (and
-	  Cmd-Tab visibility) is the correct affordance for getting the window
-	  back. If a future tray-only mode changes ActivationPolicy, this key
-	  must change with it.
+	  is ActivationPolicyRegular, a regular Dock-visible app. Today closing
+	  the last window quits the app (ApplicationShouldTerminateAfterLastWindowClosed
+	  is true in shell.go); close-to-hide with a tray arrives in
+	  CW-20260905-0030, at which point the Dock icon (and Cmd-Tab
+	  visibility) becomes the affordance for getting the window back. If a
+	  future tray-only mode changes ActivationPolicy, this key must change
+	  with it.
 	-->
 	<!--
 	  LSMultipleInstancesProhibited is also deliberately omitted. Unlike a

@@ -187,6 +187,16 @@ func New(cfg Config) (*Shell, error) {
 		Name: "Tangent",
 		Mac: application.MacOptions{
 			ActivationPolicy: application.ActivationPolicyRegular,
+			// Until close-to-hide lands (CW-20260905-0030, stable 1.1), a
+			// red-button close destroys the only window, and Wails' default
+			// is to keep the process alive with no way to get a window back:
+			// a windowless app holding the port and the database lock, which
+			// the next `./tangent` reports as an ownership conflict naming a
+			// pid nobody can see. Quitting on last-window-close is the
+			// honest v1 behaviour; a launchd-managed daemon this app merely
+			// adopted keeps running regardless (stopIfBooted only stops what
+			// this process booted).
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
 	shell.app = app
