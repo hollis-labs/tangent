@@ -8,23 +8,15 @@ import Index from "./routes/Index";
 import Room from "./routes/Room";
 
 function Layout() {
-  // Keyed by the top-level section ("hitl", "channels", "r", "" for the
-  // index), not the full resolved path: HITLInbox and ChannelPane are each
-  // one long-lived component instance that reacts to its own dynamic param
-  // (itemID / channelID) changing via useParams, the same way Room reacts to
-  // roomID — keying on the full path would remount that instance on every
-  // in-page selection, destroying state a route was never meant to lose
-  // (confirmed the hard way: it broke HITLInbox's own focus-management
-  // continuity between items). A fresh boundary only when the operator
-  // actually leaves for a different top-level page is what
-  // CW-20260907-0085 asked for; resetting a still-crashed page you haven't
-  // left is what the "Try again" button is for.
+  // See RouteErrorBoundary's own doc comment for why this is a plain prop
+  // rather than a React key: the boundary itself decides when to clear a
+  // crash (any location change), while React's own reconciliation decides
+  // whether HITLInbox/ChannelPane/Room's instance continues or is replaced.
   const location = useLocation();
-  const section = location.pathname.split("/")[1] ?? "";
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <TabStrip />
-      <RouteErrorBoundary key={section}>
+      <RouteErrorBoundary locationKey={location.pathname}>
         <Outlet />
       </RouteErrorBoundary>
     </div>

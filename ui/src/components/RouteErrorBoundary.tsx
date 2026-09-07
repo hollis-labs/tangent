@@ -5,12 +5,30 @@ import { Link } from "react-router-dom";
 // wrong shape (as #39 did) is a server defect and gets fixed there — this
 // exists for whatever gets through anyway, so one route's render error costs
 // that route, not the shell, the nav, or every other route. Render this once,
-// around <Outlet/>, keyed by the current path (see App.tsx) so navigating to
-// a different route always mounts a fresh boundary instead of staying stuck
-// showing a stale crash.
+// around <Outlet/> (see App.tsx), passing the current location as
+// locationKey.
+//
+// Deliberately not keyed by location: an earlier version of this component
+// was, so that navigating anywhere reset a crash — but that conflates "should
+// the boundary's error clear" with "should the children remount," and those
+// want different answers. HITLInbox, ChannelPane, and Room are each one
+// long-lived instance reacting to their own dynamic param (itemID /
+// channelID / roomID) via useParams; a key forces a remount on every in-page
+// selection even when nothing crashed, destroying state (confirmed the hard
+// way: it broke HITLInbox's own focus-management continuity between items).
+// componentDidUpdate below only clears the error when locationKey actually
+// changes, and only reacts at all when an error is present — a healthy
+// in-page selection never touches this boundary's state, and React's own
+// type-and-position reconciliation decides whether the next children are a
+// fresh instance or a continuing one, which is exactly right either way:
+// the crash's own unmount (render() shows RouteCrashed instead of children
+// while state.error is set) already means whatever children resolves to
+// next — the same route or a different one, same top-level section or
+// not — gets a genuine fresh render attempt the moment the error clears.
 
 interface Props {
   children: ReactNode;
+  locationKey: string;
 }
 
 interface State {
@@ -33,13 +51,24 @@ export class RouteErrorBoundary extends Component<Props, State> {
     console.error("Tangent: a route failed to render", error, info.componentStack);
   }
 
+  componentDidUpdate(prevProps: Props): void {
+    if (this.state.error && prevProps.locationKey !== this.props.locationKey) {
+      // The operator navigated away from a crashed view — to a genuinely
+      // different resource, same top-level section or not (a sibling
+      // channel, a different room). Clear the error so it gets a real
+      // render attempt instead of showing yesterday's failure for a
+      // healthy destination.
+      this.setState({ error: null });
+    }
+  }
+
   private handleRetry = (): void => {
-    // Clearing the error alone would re-render the same component instances
-    // with whatever internal state they already held — often the same state
-    // that crashed a moment ago. Advancing resetKey changes the child
-    // Fragment's key, so React tears the whole subtree down and mounts it
-    // fresh, the same clean start a full reload would give, scoped to this
-    // route only.
+    // Clearing the error alone would re-render the same component instance
+    // with whatever internal state it already held — often the same state
+    // that crashed a moment ago, for the same route the operator has not
+    // left. Advancing resetKey changes the child Fragment's key, so React
+    // tears that subtree down and mounts it fresh, the same clean start a
+    // full reload would give, scoped to this route only.
     this.setState((state) => ({ error: null, resetKey: state.resetKey + 1 }));
   };
 
