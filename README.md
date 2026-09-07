@@ -13,7 +13,7 @@ Use cases the chat window can't carry well:
 - spreadsheet review
 - progress tracking
 
-Tangent is the *separate-window app surface* for an interactive collaboration system. Inline modals, fast-triage popovers, spatial canvases, and chat-multiplexor modes are deliberately handled elsewhere — keeping Tangent's scope to a single shape is intentional.
+Tangent is the *separate-window app surface* for an interactive collaboration system. Inline modals, fast-triage popovers, and spatial canvases are deliberately handled elsewhere — keeping Tangent's scope to a single shape is intentional. The proposed [ADR 0006](./docs/adr/0006-collaboration-surface-and-relay-boundary.md) adds an addressed multi-agent collaboration surface to that shape as a *target*; nothing of it is in the shipped build.
 
 ## Status
 
@@ -319,7 +319,7 @@ above.
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape, layers, and the canonical limitations list
-- [`docs/adr/`](./docs/adr/) — the five accepted decision records (0001 lifecycle boundaries, 0002 retention and draft custody, 0003 definition and package ownership, 0004 access authority, 0005 product boundary)
+- [`docs/adr/`](./docs/adr/) — the five accepted decision records (0001 lifecycle boundaries, 0002 retention and draft custody, 0003 definition and package ownership, 0004 access authority, 0005 product boundary) and the proposed 0006 (collaboration surface and relay boundary, a target that supersedes 0005 in part)
 - [`docs/database-operations.md`](./docs/database-operations.md) — single-writer ownership, backup and restore modes, repair, and the six deletion kinds
 - [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup
