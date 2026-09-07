@@ -242,11 +242,19 @@ func New(cfg Config) (*Server, error) {
 
 	if cfg.Channels != nil {
 		// The channel pane's browser API (CW-20260907-0017). Listing and
-		// reading need `view`; sending a message creates a new exchange —
-		// `submit`, the same capability that creates an interaction on a
-		// surface — and marking read is an acknowledgment over
-		// already-viewed content, closer to `draft`'s "acknowledges a
-		// presented projection" than to creating anything new.
+		// reading need `view`. Sending a message and marking read both need
+		// `draft`, not `submit`: the ADR 0004 §7 matrix's KindParticipant
+		// row is exactly {view, draft, resolve, cancel} — `submit` belongs
+		// only to KindCallerApplication and KindAdministrator, and
+		// authz.Authorize consults that row unconditionally (see
+		// participant.Gate.Authorize's own doc comment: "the matrix is
+		// consulted even where the session's own grant set would have
+		// answered"). A browser participant session can never hold
+		// `submit`, by design, so gating the send route on it would have
+		// made an operator unable to ever send a message through this
+		// pane — caught live against dev while seeding the phase 4
+		// acceptance run, not by any test, since no test exercised a real
+		// participant session against this route.
 		channelHandler := newChannelHTTPHandler(cfg.Channels)
 		channelGuard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
 			return hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler))
@@ -254,7 +262,7 @@ func New(cfg Config) (*Server, error) {
 		mux.Handle("GET /api/channels", channelGuard(authz.View, channelHandler.list))
 		mux.Handle("GET /api/channels/events", channelGuard(authz.View, channelHandler.events))
 		mux.Handle("GET /api/channels/{channelID}", channelGuard(authz.View, channelHandler.get))
-		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Submit, channelHandler.send))
+		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Draft, channelHandler.send))
 		mux.Handle("POST /api/channels/{channelID}/read", channelGuard(authz.Draft, channelHandler.markRead))
 	}
 
