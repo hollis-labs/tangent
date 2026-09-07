@@ -140,7 +140,11 @@ cerberus resource doctor  tangent-dev   # reads /readyz, not just supervisor sta
 ```
 
 Do not run `./tangent` by hand while this resource is running: you get two
-launch authorities racing for `:7842` and a split room store. And remember that
+launch authorities racing for `:7842` and a split room store. The stable
+install will use a user LaunchAgent as its launch authority instead of
+Cerberus; that facility is documented in
+[`launch-at-login.md`](./launch-at-login.md) and is not installed on this
+machine today. And remember that
 `status: running` is supervisor bookkeeping, not a probe — reconcile it against
 `/healthz` (see "Cold-start check" above).
 
