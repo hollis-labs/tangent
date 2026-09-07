@@ -92,3 +92,42 @@ type ReadReceipt struct {
 	ParticipantID string
 	AckedAt       time.Time
 }
+
+// Presence is the CW-20260907-0016 spike's item 3, split into its two
+// honest halves. Open is process-local and in-memory: true only while a
+// Receive call is actually blocked in a bounded wait for this participant
+// right now, in this process. It is never persisted and is always false
+// immediately after a restart — Tangent cannot know whether anyone
+// reconnected across a restart it did not observe, and claiming otherwise
+// is exactly the false continuity ADR 0006 §6 rules out ("an agent that is
+// not awaiting is, honestly, awaiting-peer"). LastSeenAt is durable
+// (participant_presence) and survives a restart: nil means this
+// participant has never completed a receive or an ack.
+type Presence struct {
+	ParticipantID string
+	Open          bool
+	LastSeenAt    *time.Time
+}
+
+// ReceiveParams are the fields a caller supplies to receive(cursor,
+// wait_ms) for one destination in one channel.
+type ReceiveParams struct {
+	ChannelID     string
+	ParticipantID string
+	Cursor        int64
+	// Wait is the bounded long-poll duration. Zero returns immediately with
+	// whatever is already new. Capped at MaximumReceiveWait.
+	Wait  time.Duration
+	Limit int
+}
+
+// ReceiveResult is one receive call's answer. TimedOut is never an error
+// and never cancels anything — Receive only ever reads; nothing about the
+// outbox or a delivery claim is touched by it — so a caller resumes with
+// NextCursor exactly as if nothing had happened.
+type ReceiveResult struct {
+	Items      []Exchange
+	NextCursor int64
+	TimedOut   bool
+	Presence   Presence
+}

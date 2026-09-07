@@ -475,16 +475,17 @@ VALUES ('sub_surface', 'ch_fixture', 'surface', ?, ?, ?)`, f.surfaceID, now, now
 	}
 }
 
-// TestPurgeSurfaceLeavesTheRelayJournalIntact is the CW-20260906-0065
-// instance of the standing check the 0064 review established: any new
-// table's foreign keys have to be walked against PurgeSurface before its
-// tests are written, not after. exchanges.subject_id reaches a surface only
-// indirectly, through channel_subjects, which the previous test already
-// proved survives a purge as a tombstone. This proves the chain holds one
-// hop further out: the exchange, its outbox row, its delivery receipt, and
-// its read fact all survive a purge of the surface their subject once
-// correlated, untouched, because none of exchanges' own foreign keys point
-// at interactions or surfaces at all.
+// TestPurgeSurfaceLeavesTheRelayJournalIntact is the CW-20260906-0065 (and,
+// for participant_presence, CW-20260906-0066) instance of the standing check
+// the 0064 review established: any new table's foreign keys have to be
+// walked against PurgeSurface before its tests are written, not after.
+// exchanges.subject_id reaches a surface only indirectly, through
+// channel_subjects, which the previous test already proved survives a purge
+// as a tombstone. This proves the chain holds one hop further out: the
+// exchange, its outbox row, its delivery receipt, its read fact, and the
+// recipient's presence row all survive a purge of the surface their subject
+// once correlated, untouched, because none of them have a foreign key into
+// interactions or surfaces at all.
 func TestPurgeSurfaceLeavesTheRelayJournalIntact(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -525,6 +526,10 @@ VALUES ('receipt_relay', 'ex_relay', 1, 'delivered', ?)`, now); err != nil {
 INSERT INTO exchange_reads (exchange_id, participant_id, acked_at) VALUES ('ex_relay', 'p_agent', ?)`, now); err != nil {
 		t.Fatalf("seed read receipt: %v", err)
 	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO participant_presence (participant_id, last_seen_at, updated_at) VALUES ('p_agent', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed presence: %v", err)
+	}
 
 	result, err := PurgeSurface(ctx, f.db, RetentionRequest{
 		SurfaceID: f.surfaceID, ActorRef: "operator:test", Authority: AuthorityLocalUser, Now: f.now,
@@ -543,10 +548,14 @@ INSERT INTO exchange_reads (exchange_id, participant_id, acked_at) VALUES ('ex_r
 		"exchange_outbox":            "ex_relay",
 		"exchange_delivery_receipts": "receipt_relay",
 		"exchange_reads":             "ex_relay",
+		"participant_presence":       "p_agent",
 	} {
 		column := "id"
-		if table == "exchange_outbox" || table == "exchange_reads" {
+		switch table {
+		case "exchange_outbox", "exchange_reads":
 			column = "exchange_id"
+		case "participant_presence":
+			column = "participant_id"
 		}
 		if remaining := f.count(t, `SELECT COUNT(*) FROM `+table+` WHERE `+column+` = ?`, id); remaining != 1 { //nolint:gosec // table is one of this map's own literal keys
 			t.Errorf("%s row %q did not survive the purge: %d rows", table, id, remaining)

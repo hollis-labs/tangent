@@ -279,7 +279,7 @@ func TestSequenceIsTheReplayCursor(t *testing.T) {
 		accepted = append(accepted, exchange)
 	}
 
-	all, err := h.relay.ListForDestination(ctx, agentID, 0, 50)
+	all, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
 	if err != nil {
 		t.Fatalf("ListForDestination(cursor=0): %v", err)
 	}
@@ -287,7 +287,7 @@ func TestSequenceIsTheReplayCursor(t *testing.T) {
 		t.Fatalf("ListForDestination(cursor=0) returned %d, want 3", len(all))
 	}
 
-	resumed, err := h.relay.ListForDestination(ctx, agentID, accepted[0].Sequence, 50)
+	resumed, err := h.relay.ListForDestination(ctx, channelID, agentID, accepted[0].Sequence, 50)
 	if err != nil {
 		t.Fatalf("ListForDestination(cursor=%d): %v", accepted[0].Sequence, err)
 	}
@@ -524,7 +524,7 @@ func TestRecordReadIsIdempotentAndDistinctFromReceive(t *testing.T) {
 	}
 
 	// Listing (receiving) the exchange does not itself create a read fact.
-	_, err = h.relay.ListForDestination(ctx, agentID, 0, 50)
+	_, err = h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
 	if err != nil {
 		t.Fatalf("ListForDestination: %v", err)
 	}
@@ -600,5 +600,189 @@ func TestOutboxSurvivesAProcessRestart(t *testing.T) {
 	}
 	if len(claimed) != 1 || claimed[0].ExchangeID != exchange.ID {
 		t.Fatalf("claim after restart = %+v, want the pre-restart item, nothing lost or stuck", claimed)
+	}
+}
+
+// TestListForDestinationNeverTouchesPresenceOrCursor is the test tangent-14
+// asked for by name in the CW-20260906-0066 design review: acceptance item
+// 2's "UI reads do not consume agent inbox messages" holds trivially today
+// because nothing about ListForDestination consumes anything — which is
+// exactly why that property needs to be pinned rather than left to hold by
+// accident. If presence-touching is ever moved down into the store to save
+// a call, this goes red.
+func TestListForDestinationNeverTouchesPresenceOrCursor(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	exchange, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-ui-read", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "a UI would show this too",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange: %v", err)
+	}
+
+	before, err := h.relay.Presence(ctx, agentID)
+	if err != nil {
+		t.Fatalf("Presence (before): %v", err)
+	}
+	if before.Open || before.LastSeenAt != nil {
+		t.Fatalf("presence before any UI-shaped read = %+v, want closed and never seen", before)
+	}
+
+	// A UI-shaped read: the same method a future channel-pane REST endpoint
+	// would call to show history, several times over, as a UI polling for
+	// display would.
+	for i := range 3 {
+		items, listErr := h.relay.ListForDestination(ctx, channelID, agentID, 0, 50)
+		if listErr != nil {
+			t.Fatalf("ListForDestination (%d): %v", i, listErr)
+		}
+		if len(items) != 1 || items[0].ID != exchange.ID {
+			t.Fatalf("ListForDestination (%d) = %+v, want the one exchange, unconsumed", i, items)
+		}
+	}
+
+	afterReads, err := h.relay.Presence(ctx, agentID)
+	if err != nil {
+		t.Fatalf("Presence (after UI reads): %v", err)
+	}
+	if afterReads.Open || afterReads.LastSeenAt != nil {
+		t.Fatalf("presence after UI-shaped reads = %+v, want still closed and never seen — a UI read must not touch presence", afterReads)
+	}
+	_, err = h.relay.GetRead(ctx, exchange.ID, agentID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRead after UI-shaped reads = %v, want ErrNotFound — a UI read must not consume", err)
+	}
+
+	// Receive, by contrast, does touch presence — proving the distinction is
+	// real, not that Presence itself is inert.
+	_, err = h.relay.Receive(ctx, ReceiveParams{ChannelID: channelID, ParticipantID: agentID})
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	afterReceive, err := h.relay.Presence(ctx, agentID)
+	if err != nil {
+		t.Fatalf("Presence (after Receive): %v", err)
+	}
+	if afterReceive.LastSeenAt == nil {
+		t.Fatal("presence after an actual Receive call still shows never seen")
+	}
+}
+
+func TestReceiveReturnsNewItemsAndAdvancesTheCursor(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	exchange, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-receive", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "hello agent",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange: %v", err)
+	}
+
+	result, err := h.relay.Receive(ctx, ReceiveParams{ChannelID: channelID, ParticipantID: agentID})
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if result.TimedOut {
+		t.Fatal("Receive with an item already waiting reported a timeout")
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != exchange.ID {
+		t.Fatalf("Receive.Items = %+v, want the one exchange", result.Items)
+	}
+	if result.NextCursor != exchange.Sequence {
+		t.Fatalf("Receive.NextCursor = %d, want %d", result.NextCursor, exchange.Sequence)
+	}
+	if result.Presence.LastSeenAt == nil {
+		t.Fatal("Presence.LastSeenAt is nil after a completed Receive")
+	}
+
+	// Resuming from the returned cursor sees nothing new: no replay gap and
+	// no duplicate delivery of the same item.
+	resumed, err := h.relay.Receive(ctx, ReceiveParams{ChannelID: channelID, ParticipantID: agentID, Cursor: result.NextCursor})
+	if err != nil {
+		t.Fatalf("Receive (resumed): %v", err)
+	}
+	if len(resumed.Items) != 0 || resumed.NextCursor != result.NextCursor {
+		t.Fatalf("Receive (resumed) = %+v, want no items and the same cursor", resumed)
+	}
+}
+
+func TestReceiveTimesOutWithoutErrorOrSideEffectOnTheOutbox(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, _, agentID := h.seedChannel(t)
+
+	result, err := h.relay.Receive(ctx, ReceiveParams{
+		ChannelID: channelID, ParticipantID: agentID, Wait: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if !result.TimedOut {
+		t.Fatal("Receive with nothing to deliver did not report a timeout")
+	}
+	if len(result.Items) != 0 || result.NextCursor != 0 {
+		t.Fatalf("Receive (timeout) = %+v, want no items and the cursor unchanged", result)
+	}
+	// A timeout is not an error and cancels no outstanding delivery work —
+	// there was none to cancel, and this is the check that stays true even
+	// if a future change adds some.
+}
+
+func TestReceiveWakesBeforeItsWaitElapsesWhenAMessageArrives(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		if _, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+			IdempotencyKey: "idem-late-arrival", ChannelID: channelID,
+			SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "sorry for the delay",
+		}); err != nil {
+			t.Errorf("AcceptExchange (background): %v", err)
+		}
+	}()
+
+	started := time.Now()
+	result, err := h.relay.Receive(ctx, ReceiveParams{
+		ChannelID: channelID, ParticipantID: agentID, Wait: 5 * time.Second,
+	})
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if result.TimedOut || len(result.Items) != 1 {
+		t.Fatalf("Receive = %+v, want the item that arrived mid-wait, not a timeout", result)
+	}
+	if elapsed >= 5*time.Second {
+		t.Fatalf("Receive took the full wait (%s) instead of waking up when the message arrived", elapsed)
+	}
+}
+
+func TestReceiveRejectsAWaitOutsideZeroToMaximum(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, _, agentID := h.seedChannel(t)
+
+	if _, err := h.relay.Receive(ctx, ReceiveParams{
+		ChannelID: channelID, ParticipantID: agentID, Wait: MaximumReceiveWait + time.Second,
+	}); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("Receive with wait over the maximum = %v, want ErrInvalidRecord", err)
+	}
+	if _, err := h.relay.Receive(ctx, ReceiveParams{
+		ChannelID: channelID, ParticipantID: agentID, Wait: -time.Second,
+	}); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("Receive with a negative wait = %v, want ErrInvalidRecord", err)
 	}
 }

@@ -10,11 +10,13 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
+	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -77,6 +79,17 @@ type Server struct {
 	// Nil is valid, and the tool says so.
 	maintenanceDB     *sql.DB
 	maintenanceDBPath string
+
+	// channels and relay answer the tangent.relay_* tools (CW-20260906-0066):
+	// the cooperative MCP inbox over channels/participants/bindings
+	// (internal/channel) and the exchange journal/outbox
+	// (internal/relay). Both nil is a valid state — a build with no
+	// database has nothing to relay — and the tools are then not
+	// registered at all, the same choice tangent.retention_status makes for
+	// the same reason: there is no useful "unavailable" answer to give for
+	// a surface that answers nothing without a database.
+	channels *channel.Store
+	relay    *relay.Store
 
 	roomflowOptions []roomflow.Option
 
@@ -144,6 +157,27 @@ func WithMaintenance(database *sql.DB, databasePath string) Option {
 		}
 		server.maintenanceDB = database
 		server.maintenanceDBPath = databasePath
+		return nil
+	}
+}
+
+// WithRelay enables the tangent.relay_* tools (CW-20260906-0066): the
+// cooperative MCP inbox over channels, participants, bindings, and the
+// exchange journal. Both stores share whatever *sql.DB they were
+// constructed with; that handle is not taken here because unlike
+// WithMaintenance's read posture, the relay tools write, and one shared
+// connection pool per process is Tangent's whole safety story for it (see
+// internal/relay.Store.AcceptExchange's sequence-assignment comment).
+func WithRelay(channels *channel.Store, relayStore *relay.Store) Option {
+	return func(server *Server) error {
+		if channels == nil {
+			return fmt.Errorf("mcp: channel store is nil")
+		}
+		if relayStore == nil {
+			return fmt.Errorf("mcp: relay store is nil")
+		}
+		server.channels = channels
+		server.relay = relayStore
 		return nil
 	}
 }
@@ -591,6 +625,11 @@ func (s *Server) registerTools() error {
 	if s.hitl != nil {
 		if err := s.registerHITLTools(); err != nil {
 			return fmt.Errorf("register hitl tools: %w", err)
+		}
+	}
+	if s.channels != nil && s.relay != nil {
+		if err := s.registerRelayTools(); err != nil {
+			return fmt.Errorf("register relay tools: %w", err)
 		}
 	}
 

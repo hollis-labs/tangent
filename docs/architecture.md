@@ -285,6 +285,43 @@ reports a degraded connection and retries. This channel is intentionally
 separate from both per-room `/ws` and the four caller-facing
 `tangent.hitl_*` MCP tools.
 
+### Cooperative relay inbox
+
+`internal/channel/` + `internal/relay/` back seven relay MCP tools
+implementing ADR 0006's collaboration-surface boundary
+(`docs/adr/0006-collaboration-surface-and-relay-boundary.md`):
+`tangent.relay_open_channel`, `tangent.relay_attach`, `tangent.relay_detach`,
+`tangent.relay_send`, `tangent.relay_receive`, `tangent.relay_ack`, and
+`tangent.relay_capabilities`. Every input carries `contract_version` and
+stays flat at the top level — no `allOf`/`if`/`then` on a field a model
+fills — because a gateway's discovery schema has been observed to drop a
+conditional branch and leave the model sending an untyped value.
+
+A channel is a persistent collaboration context independent of any runtime
+session, holding a canonical operator participant and any number of
+attached agent participants; a room stays an unrelated compatibility
+projection of a surface (ADR 0001 §2) and is never renamed into one.
+`relay_attach` binds an agent's current runtime session to a channel it
+must already exist in — creation is `relay_open_channel`'s job alone, so a
+mistyped or omitted channel id fails loudly rather than silently opening a
+second channel nobody is watching. `relay_send` accepts one message into an
+immutable exchange journal and atomically queues its delivery; the
+recipient defaults to the channel's operator only when exactly one is a
+live member, and refuses rather than guessing otherwise. `relay_receive`
+lists new messages since a caller-held cursor, optionally waiting up to
+50000 ms, and never returns an error on timeout. `relay_ack` records that a
+participant consumed a message, separately from receiving it, and refuses
+a caller that is not the message's recipient. `relay_capabilities` reports
+what this adapter supports, with unsupported operations named explicitly
+rather than simulated.
+
+Presence — whether a receive is open on a destination right now, and when
+it was last seen — is split the same way: "open now" is in-memory and
+process-local, honestly lost across a restart Tangent cannot observe
+through; `last_seen_at` is durable. The operator's own send/read path has
+no MCP tool here; it is a REST surface over the same two Stores, not yet
+built.
+
 ### Persistence layer
 
 `internal/db/` + `internal/room/` — Tangent persists room rows and
@@ -895,6 +932,14 @@ caller scope" above.
   SDK installed and watched spans arrive somewhere (`CW-20260905-0011`).
 
 ### Open work
+
+- **The cooperative relay inbox has no manually-launched-agent proof yet,
+  and no operator-side surface.** The relay tools (`CW-20260906-0066`)
+  ship the agent-facing MCP surface only; proving the loop end to end with a
+  real launched Claude session is `CW-20260906-0071`, a built-in CLI relay
+  provider and launcher skill is `CW-20260906-0072`, the operator's own
+  channel pane is `CW-20260906-0017`, and attention-entry projection over
+  relay messages is `CW-20260906-0067`.
 
 Everything above that is not a scope decision has a Torque task. Further open
 direction lives in the twelve `CW-20260905-*` tasks that

@@ -31,6 +31,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/channel"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
@@ -43,6 +44,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -402,6 +404,20 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	if err != nil {
 		return release(fmt.Errorf("register interaction packages: %w", err))
 	}
+
+	// The cooperative MCP inbox (CW-20260906-0066): channels and the
+	// exchange journal share this process's one *sql.DB, the same handle
+	// everything else here does. relay.NewStore depends on channelStore for
+	// its own validation, never the reverse.
+	channelStore, err := channel.NewStore(sqlDB)
+	if err != nil {
+		return release(fmt.Errorf("construct channel store: %w", err))
+	}
+	relayStore, err := relay.NewStore(sqlDB, channelStore)
+	if err != nil {
+		return release(fmt.Errorf("construct relay store: %w", err))
+	}
+
 	mcpSrv, err := mcp.New(
 		envSvc,
 		dispatcher,
@@ -417,6 +433,8 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// to the local user and MCP has no authenticated caller identity
 		// to hold it.
 		mcp.WithMaintenance(sqlDB, cfg.DBPath),
+		// tangent.relay_*: the cooperative MCP inbox.
+		mcp.WithRelay(channelStore, relayStore),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP

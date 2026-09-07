@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -54,6 +55,45 @@ func TestCreateChannelRoundTrips(t *testing.T) {
 		!loaded.CreatedAt.Equal(created.CreatedAt) || !loaded.UpdatedAt.Equal(created.UpdatedAt) ||
 		loaded.ArchivedAt != nil {
 		t.Fatalf("GetChannel = %+v, want %+v", loaded, created)
+	}
+}
+
+func TestOpenChannelAddsTheCanonicalOperatorAsAMember(t *testing.T) {
+	t.Parallel()
+	store, _ := openTestStore(t)
+	ctx := context.Background()
+
+	ch, operator, err := store.OpenChannel(ctx, CreateChannelParams{OwnerScope: "standalone-local:anonymous"})
+	if err != nil {
+		t.Fatalf("OpenChannel: %v", err)
+	}
+	if operator.Kind != ParticipantOperator || operator.ExternalAuthority != OperatorExternalAuthority ||
+		operator.ExternalRef != OperatorExternalRef {
+		t.Fatalf("operator = %+v, want the canonical operator identity", operator)
+	}
+	members, err := store.ListChannelParticipants(ctx, ch.ID)
+	if err != nil {
+		t.Fatalf("ListChannelParticipants: %v", err)
+	}
+	if len(members) != 1 || members[0].ID != operator.ID {
+		t.Fatalf("members of a freshly opened channel = %+v, want exactly the operator", members)
+	}
+
+	// The operator is the same stable participant across channels — opening
+	// a second channel does not mint a second operator identity.
+	secondChannel, secondOperator, err := store.OpenChannel(ctx, CreateChannelParams{OwnerScope: "standalone-local:anonymous"})
+	if err != nil {
+		t.Fatalf("OpenChannel (second): %v", err)
+	}
+	if secondOperator.ID != operator.ID {
+		t.Fatalf("second channel's operator = %s, want the same operator %s", secondOperator.ID, operator.ID)
+	}
+	operatorChannels, err := store.ListParticipantChannels(ctx, operator.ID)
+	if err != nil {
+		t.Fatalf("ListParticipantChannels: %v", err)
+	}
+	if len(operatorChannels) != 2 {
+		t.Fatalf("operator's channels = %+v, want both %s and %s", operatorChannels, ch.ID, secondChannel.ID)
 	}
 }
 
@@ -505,6 +545,66 @@ INSERT INTO channel_participant_bindings (id, channel_id, participant_id, genera
 VALUES ('rogue', ?, ?, 3, 'claude-code-cli', ?)`, ch.ID, participant.ID, first.BoundAt)
 	if err == nil {
 		t.Fatal("inserting a second current binding for the same (channel, participant) should violate the partial unique index")
+	}
+}
+
+// TestRemoveParticipantSupersedesTheCurrentBinding is the CW-20260906-0066
+// settlement of the decision CW-20260906-0064's review left open: leaving a
+// channel supersedes the current binding in the same transaction, so
+// CurrentBinding never resolves a destination for a non-member and a
+// rejoin always requires an explicit Rebind.
+func TestRemoveParticipantSupersedesTheCurrentBinding(t *testing.T) {
+	t.Parallel()
+	store, _ := openTestStore(t)
+	ctx := context.Background()
+
+	participant, err := store.UpsertParticipant(ctx, UpsertParticipantParams{
+		Kind: ParticipantAgent, ExternalAuthority: "claude-code", ExternalRef: "tangent-14",
+	})
+	if err != nil {
+		t.Fatalf("UpsertParticipant: %v", err)
+	}
+	ch, err := store.CreateChannel(ctx, CreateChannelParams{OwnerScope: "standalone-local:anonymous"})
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	_, err = store.AddParticipant(ctx, ch.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("AddParticipant: %v", err)
+	}
+	bound, err := store.Rebind(ctx, ch.ID, participant.ID, RebindParams{
+		RuntimeAuthority: "claude-code-cli", RuntimeEndpointRef: "session-alpha",
+	})
+	if err != nil {
+		t.Fatalf("Rebind: %v", err)
+	}
+
+	err = store.RemoveParticipant(ctx, ch.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("RemoveParticipant: %v", err)
+	}
+
+	_, err = store.CurrentBinding(ctx, ch.ID, participant.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CurrentBinding after leaving = %v, want ErrNotFound", err)
+	}
+	history, err := store.BindingHistory(ctx, ch.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("BindingHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != bound.ID || history[0].Current() || history[0].SupersededAt == nil {
+		t.Fatalf("BindingHistory after leaving = %+v, want the one binding superseded", history)
+	}
+
+	// A rejoin does not resurrect the old binding: CurrentBinding stays
+	// ErrNotFound until an explicit Rebind.
+	_, err = store.AddParticipant(ctx, ch.ID, participant.ID)
+	if err != nil {
+		t.Fatalf("AddParticipant (rejoin): %v", err)
+	}
+	_, err = store.CurrentBinding(ctx, ch.ID, participant.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CurrentBinding after rejoin without an explicit Rebind = %v, want ErrNotFound", err)
 	}
 }
 

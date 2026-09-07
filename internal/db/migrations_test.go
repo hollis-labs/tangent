@@ -855,6 +855,58 @@ INSERT INTO exchange_outbox (exchange_id, created_at, updated_at) VALUES ('ex1',
 	}
 }
 
+// TestParticipantPresenceMigrationRollsBackIndependently proves the
+// CW-20260906-0066 migration is additive and self-contained: it adds
+// exactly one table, does not alter participants' shape, and RollbackOne
+// removes only what this migration added.
+func TestParticipantPresenceMigrationRollsBackIndependently(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "presence.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrateTo(database, 15); err != nil {
+		t.Fatalf("migrate to version 15: %v", err)
+	}
+
+	if err := probeTableExists(database, "participant_presence"); err != nil {
+		t.Fatalf("participant_presence after up: %v", err)
+	}
+
+	now := "2026-09-07T00:00:00Z"
+	if _, err := database.Exec(`
+INSERT INTO participants (id, kind, created_at, updated_at) VALUES ('p1', 'agent', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed participant: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO participant_presence (participant_id, last_seen_at, updated_at) VALUES ('p1', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed presence: %v", err)
+	}
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+	if err := probeTableExists(database, "participant_presence"); err == nil || !strings.Contains(err.Error(), "no such table") {
+		t.Fatalf("participant_presence query after rollback error = %v, want no such table", err)
+	}
+	var survivingParticipants int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM participants WHERE id = 'p1'`).Scan(&survivingParticipants); err != nil {
+		t.Fatalf("count surviving participant: %v", err)
+	}
+	if survivingParticipants != 1 {
+		t.Fatalf("participant row count after rolling back only presence = %d, want 1", survivingParticipants)
+	}
+
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	if err := probeTableExists(database, "participant_presence"); err != nil {
+		t.Fatalf("participant_presence after re-apply: %v", err)
+	}
+}
+
 // probeTableExists runs a trivial SELECT against a fixed, internally-listed
 // table name. The name is never caller-supplied, so string concatenation
 // here carries none of the injection risk gosec's G202 checks for; SQLite
