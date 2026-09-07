@@ -30,10 +30,36 @@ cd ui && npm install && cd ..
 make dev
 ```
 
-Runs Vite (`:5173`) and the Go server (`:7842`) in parallel. The Go
+Runs Vite (`:5173`) and the Go **dev** server (`:7843`) in parallel. The Go
 server proxies non-API requests to Vite, so HMR works as if the SPA
 were standalone, and the same routes you'll hit in production are
-reachable on `:7842` during dev.
+reachable on `:7843` during dev.
+
+### Two instances: stable and dev
+
+The daemon's own defaults (`:7842`, `~/.tangent/tangent.db`) belong to the
+**stable** install the operator uses every day. Nothing agent-facing rewires
+for the split: the Tether catalog entry `tangent` still points at 7842.
+
+Every dev-facing `make` target (`dev`, `dev-go`, `db-migrate`, `db-rollback`,
+and the environment-coupled arm of `smoke`) runs the **dev** instance instead,
+by exporting the two existing overrides:
+
+| Variable | Dev value | Set by |
+|---|---|---|
+| `TANGENT_HTTP_PORT` | `DEV_PORT`, default `7843` | `make` |
+| `TANGENT_DB_PATH` | `DEV_DB_PATH`, default `<repo>/.tangent/dev.db` | `make` |
+
+`.tangent/` is gitignored and removed by `make clean`. A different database
+path is a different `.owner` lock file, so dev and stable can never collide on
+the single-writer flock or on the port; two binaries at different migration
+levels never share a database, which is the failure this layout prevents
+(`bab0b89` exists because it happened once).
+
+`./tangent` with no environment still means the stable defaults. Do not run it
+by hand while a supervisor owns that instance; see
+[`mcp-integration.md`](./mcp-integration.md#managed-runtime-single-launch-authority)
+for who supervises what on the reference machine.
 
 For a production-shaped run (no Vite proxy, embedded build):
 
@@ -216,15 +242,16 @@ came to mislead its readers. What follows is the contributor-facing subset.
 
 ## Persistence layer
 
-Local state now lives in SQLite at `~/.tangent/tangent.db`
-(`TANGENT_DB_PATH` overrides).
+Local state lives in SQLite. The stable install uses `~/.tangent/tangent.db`;
+the dev instance uses `<repo>/.tangent/dev.db` (`TANGENT_DB_PATH` selects;
+see "Two instances" above).
 
-Useful commands:
+Useful commands (all against the **dev** database):
 
 ```bash
 make db-migrate
 make db-rollback
-sqlite3 ~/.tangent/tangent.db
+sqlite3 .tangent/dev.db
 ```
 
 When you add a migration, create matching files in

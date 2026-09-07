@@ -99,6 +99,31 @@ Treat that file as the answer to "who starts Tangent here?" — and if a
 skill, runbook, or agent prompt tells you to `cd` into the repo and run
 `./tangent` while a supervisor owns it, that instruction is stale.
 
+### Two instances on the reference machine: stable and dev
+
+Stable and dev are separate processes by design (`CW-20260907-0018`), so a
+development build never lands in the install the operator relies on:
+
+| | Stable | Dev |
+|---|---|---|
+| Port | `7842` (the daemon default) | `7843` (`DEV_PORT`) |
+| Database | `~/.tangent/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` (`DEV_DB_PATH`) |
+| Launch authority | launchd user agent, headless daemon ([`launch-at-login.md`](./launch-at-login.md)) | Cerberus resource `tangent-dev` (`dev_session`) |
+| Tether catalog entry | `tangent` — what agents reach by default | `tangent-dev` — opt-in, for pointing a session at the dev build |
+| Started by | the install script (`CW-20260907-0020`) | `make dev`, `make dev-go`, or `cerberus resource deploy tangent-dev` |
+
+Different ports and different database paths mean different `.owner` lock
+files, so the two can never collide on the single-writer flock.
+
+**State of the switch.** As of 2026-09-07 the split is prepared but not yet
+applied: one Cerberus-supervised process still serves 7842 against
+`~/.tangent`, the prepared resource definition is
+[`packaging/cerberus/tangent.cerberus.yaml`](../packaging/cerberus/tangent.cerberus.yaml),
+and the `tangent-dev` catalog entry is present but disabled until 7843 answers
+(an enabled upstream with no listener stalled `mux mcp --proxy` startup when
+measured). `.agent-ops/project.yaml` `deployment.instances.current` records
+which is true at any moment.
+
 ### Managed: Cerberus owns the process, Tether fronts the surface
 
 This is how Tangent runs on the machine this repository is developed on, and
@@ -648,10 +673,10 @@ lifetime; every browser mints a fresh one on its next page load.
   invocation, which returns the same handle rather than creating a second
   interaction. See
   [`room-workflow-completion.md`](./room-workflow-completion.md).
-- **Two Tangent processes point at the same DB.** SQLite WAL mode
-  tolerates concurrent readers and writers, but sharing one
-  `~/.tangent/tangent.db` between multiple long-lived Tangent processes
-  is still a coordination choice. If you want isolation for testing, set
-  `TANGENT_DB_PATH` per process.
+- **Two Tangent processes point at the same DB.** The single-writer flock
+  on `<db>.owner` refuses the second one, and two binaries at different
+  migration levels must never share a database. Give each long-lived process
+  its own `TANGENT_DB_PATH` (and port); that is exactly how the dev instance
+  is kept apart from stable (see "Two instances" above).
 
 For more, see the manual e2e recipe's troubleshooting section.

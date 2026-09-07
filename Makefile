@@ -1,5 +1,16 @@
 .PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
 
+# The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
+# (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
+# dev-facing target below runs on DEV_PORT against a workspace-local database
+# (.tangent/ is gitignored and removed by `make clean`). A different database
+# path is a different `.owner` lock file, so dev and stable can never collide
+# on the single-writer flock or the port. `./tangent` with no environment
+# still means the stable defaults; only make targets are pointed at dev.
+DEV_PORT ?= 7843
+DEV_DB_PATH ?= $(CURDIR)/.tangent/dev.db
+DEV_ENV = TANGENT_HTTP_PORT=$(DEV_PORT) TANGENT_DB_PATH=$(DEV_DB_PATH)
+
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
 DEV_FRONTEND_URL ?= http://localhost:5173
@@ -30,11 +41,11 @@ build-ui: check-node ## Build frontend (Vite production build)
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
 
-db-migrate: ## Apply local SQLite migrations and exit
-	go run ./cmd/tangent --migrate-only
+db-migrate: ## Apply migrations to the DEV database (DEV_DB_PATH) and exit
+	$(DEV_ENV) go run ./cmd/tangent --migrate-only
 
-db-rollback: ## Roll back the most recent local SQLite migration and exit
-	go run ./cmd/tangent --rollback-one
+db-rollback: ## Roll back the most recent migration on the DEV database and exit
+	$(DEV_ENV) go run ./cmd/tangent --rollback-one
 
 # ── Codegen ────────────────────────────────────────────────────────────
 #
@@ -51,15 +62,15 @@ check-envelopes: check-node ## Fail if committed envelope types are stale
 
 # ── Dev ────────────────────────────────────────────────────────────────
 
-dev: check-node ## Run Go server + Vite dev server in parallel (Go proxies to Vite)
-	@echo "Starting Vite (port 5173) and Tangent server (port 7842, proxying to Vite)..."
+dev: check-node ## Run Go server (DEV_PORT, DEV_DB_PATH) + Vite dev server in parallel (Go proxies to Vite)
+	@echo "Starting Vite (port 5173) and the Tangent DEV server (port $(DEV_PORT), db $(DEV_DB_PATH), proxying to Vite)..."
 	@$(MAKE) -j 2 dev-ui dev-go
 
 dev-ui: check-node
 	cd ui && npm run dev
 
 dev-go:
-	TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
+	$(DEV_ENV) TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
 
 # ── Test ───────────────────────────────────────────────────────────────
 
@@ -86,8 +97,17 @@ test-frontend: check-node ## Run vitest
 #
 # See docs/mcp-smoketest.md for the operator recipe and the four failure modes.
 
-smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live deployment, Cerberus, and Tether checks
-	go test -count=1 -v ./internal/smoke/...
+# The environment-coupled arm (TANGENT_SMOKE_ENV=1) targets the DEV instance:
+# its URL, its Cerberus resource, and its Tether catalog entry. Point it at
+# stable explicitly when that is what you mean:
+#   TANGENT_SMOKE_ENV=1 SMOKE_URL=http://127.0.0.1:7842 SMOKE_CATALOG_ENTRY=tangent make smoke
+SMOKE_URL ?= http://127.0.0.1:$(DEV_PORT)
+SMOKE_RESOURCE ?= tangent-dev
+SMOKE_CATALOG_ENTRY ?= tangent-dev
+
+smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live DEV deployment, Cerberus, and Tether checks
+	TANGENT_SMOKE_URL=$(SMOKE_URL) TANGENT_SMOKE_RESOURCE=$(SMOKE_RESOURCE) TANGENT_SMOKE_CATALOG_ENTRY=$(SMOKE_CATALOG_ENTRY) \
+		go test -count=1 -v ./internal/smoke/...
 
 # ── Lint ───────────────────────────────────────────────────────────────
 
