@@ -214,6 +214,9 @@ func New(
 		Name:    implementationName,
 		Version: implementationVersion,
 	}, nil)
+	// Ahead of every tool's schema validation, which the SDK runs inside the
+	// typed handler it wraps around ours. See gateway_metadata.go.
+	mcpServer.AddReceivingMiddleware(gatewayMetadataMiddleware)
 
 	s := &Server{
 		envSvc:      envSvc,

@@ -126,8 +126,16 @@ entry, because Cerberus owns launching. An agent behind the gateway reaches
 Tangent through `mux`:
 
 ```bash
-mux mcp --proxy --only tangent   # native-flat proxy: the supported gateway path
+mux mcp --proxy --servers torque,tesseract,cerberus   # default proxy: Tangent tools via mux_call
+mux mcp --proxy --only tangent                        # native-flat: Tangent tools under their own names
 ```
+
+Both modes work against the strict tool schemas. The default proxy's
+`mux_call` writes the caller's W3C trace context into the arguments as
+`_traceparent` (and `_tracestate`); Tangent strips exactly those keys at its
+MCP boundary before schema validation and records the trace as an upstream
+link on its telemetry (`CW-20260907-0022`). Any other unknown key is still
+rejected.
 
 Discovery is dynamic — the gateway lists whatever the upstream advertises — so
 a gateway serving a cached list is the single most common way Tangent "loses"
@@ -309,11 +317,13 @@ outcome.
 The full operator exercise is in
 [`manual-tests/hitl-inbox-e2e.md`](./manual-tests/hitl-inbox-e2e.md).
 
-Tether discovers these names dynamically. For native-flat gateway use, run its
-proxy with `mux mcp --proxy --only tangent`. The currently tested adapter's
-`mux_call` fallback injects a top-level tracing field that strict v1 HITL
-schemas reject, so the native-flat route is the supported gateway path until
-trace propagation moves into MCP `_meta`. The adapter retains the schema object
+Tether discovers these names dynamically. The default proxy reaches them
+through `mux_call`; native-flat (`mux mcp --proxy --only tangent`) exposes
+them under their own names. `mux_call` injects `_traceparent` (and
+`_tracestate`) into the arguments; Tangent accepts exactly those two keys as
+gateway transport metadata, removes them before the strict v1 validation, and
+otherwise keeps the schemas closed. Moving that injection into MCP `_meta` is
+Tether's follow-up (`CW-20260907-0026`). The adapter retains the schema object
 root, properties, required fields, and `$defs`, but omits top-level `allOf` and
 `oneOf` while adapting schemas through its MCP SDK. Tangent's upstream schema
 validation remains authoritative; callers must not treat the gateway's reduced

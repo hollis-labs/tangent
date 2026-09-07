@@ -735,6 +735,18 @@ refuses a stale frame, by the delivery that hands the outcome back, and by a
 health report naming a broken kind — so a restart, a refresh, and an idempotent
 retry all land in the same trace without anything having carried a header.
 
+**Gateway trace context is a link, not the identity.** A gateway in front of
+Tangent (Tether's `mux` proxy) forwards each tool call with the caller's W3C
+`traceparent` written into the arguments as `_traceparent` (and `_tracestate`).
+The MCP boundary (`internal/mcp/gateway_metadata.go`) removes exactly those two
+keys before strict schema validation, so closed schemas stay closed and an
+unknown key is still refused, and it attaches the parsed context to the
+request. Every observation emitted while serving that call then carries
+`upstream_trace_id` and `upstream_span_id` as record-only attributes and an
+OpenTelemetry span link to the caller's span. The derived identity is
+unchanged: the upstream trace never replaces `trace_id`, never becomes a metric
+dimension, and is dropped rather than recorded when it is malformed.
+
 **How far it genuinely reaches.** The trace covers the server's observation of
 every stage: admission, definition resolution, presentation, the participant's
 terminal action as the server received it, persistence, and delivery. It does
