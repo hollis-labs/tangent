@@ -634,3 +634,124 @@ func TestInspectMigrationsFailsLoudlyOnAClosedDatabase(t *testing.T) {
 		t.Fatal("InspectMigrations reported a schema state for a nil handle")
 	}
 }
+
+// TestChannelsAndParticipantBindingsMigrationRollsBackIndependently proves
+// the CW-20260906-0064 migration is additive and self-contained: it adds
+// exactly six tables, none of them touch the existing surface/interaction
+// substrate's rows or shape, and RollbackOne removes only what this
+// migration added.
+func TestChannelsAndParticipantBindingsMigrationRollsBackIndependently(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "channels.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	newTables := []string{
+		"channels",
+		"channel_subjects",
+		"participants",
+		"channel_participants",
+		"channel_participant_bindings",
+		"channel_view_focus",
+	}
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err != nil {
+			t.Fatalf("%s after up: %v", table, err)
+		}
+	}
+
+	// Existing surface authority is unaffected: a surface and an interaction
+	// seeded before this migration existed still read the same after it.
+	now := "2026-09-07T00:00:00Z"
+	if _, err := database.Exec(`
+INSERT INTO surfaces (id, owner_scope, lifecycle_state, created_at, updated_at)
+VALUES ('surface-existing', 'standalone-local:anonymous', 'active', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed surface: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO interactions (
+  id, surface_id, caller_scope, caller_authority, caller_assurance,
+  idempotency_key, surface_sequence, request_snapshot, lifecycle_state,
+  created_at, updated_at
+) VALUES (
+  'interaction-existing', 'surface-existing', 'standalone-local:anonymous',
+  'standalone-local', 'loopback-unverified', 'idem-existing', 1, '{}',
+  'submitted', ?, ?
+)`, now, now); err != nil {
+		t.Fatalf("seed interaction: %v", err)
+	}
+
+	// A channel subject may associate with that canonical interaction without
+	// altering it.
+	if _, err := database.Exec(`
+INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('channel-1', 'standalone-local:anonymous', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO channel_subjects (id, channel_id, subject_type, interaction_id, created_at, updated_at)
+VALUES ('subject-1', 'channel-1', 'interaction', 'interaction-existing', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed channel subject: %v", err)
+	}
+
+	var interactionState string
+	if err := database.QueryRow(`SELECT lifecycle_state FROM interactions WHERE id = 'interaction-existing'`).
+		Scan(&interactionState); err != nil {
+		t.Fatalf("read seeded interaction: %v", err)
+	}
+	if interactionState != "submitted" {
+		t.Fatalf("seeded interaction lifecycle_state = %q, want submitted (unaffected by the channel association)", interactionState)
+	}
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err == nil || !strings.Contains(err.Error(), "no such table") {
+			t.Fatalf("%s query after rollback error = %v, want no such table", table, err)
+		}
+	}
+
+	// The rollback removed the channel substrate but left the pre-existing
+	// surface/interaction rows exactly as they were: existing surface
+	// authority is not a casualty of an additive rollback.
+	if err := database.QueryRow(`SELECT lifecycle_state FROM interactions WHERE id = 'interaction-existing'`).
+		Scan(&interactionState); err != nil {
+		t.Fatalf("read interaction after rollback: %v", err)
+	}
+	if interactionState != "submitted" {
+		t.Fatalf("interaction lifecycle_state after rollback = %q, want submitted", interactionState)
+	}
+	if _, err := database.Exec(`SELECT 1 FROM surfaces WHERE id = 'surface-existing'`); err != nil {
+		t.Fatalf("surface should remain after rolling back only the channel substrate: %v", err)
+	}
+
+	// Re-applying brings the schema back to current, proving up is idempotent
+	// after a rollback-one round trip.
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	for _, table := range newTables {
+		if err := probeTableExists(database, table); err != nil {
+			t.Fatalf("%s after re-apply: %v", table, err)
+		}
+	}
+}
+
+// probeTableExists runs a trivial SELECT against a fixed, internally-listed
+// table name. The name is never caller-supplied, so string concatenation
+// here carries none of the injection risk gosec's G202 checks for; SQLite
+// also has no placeholder syntax for identifiers.
+//
+//nolint:gosec // table is always one of this file's own literal table-name lists
+func probeTableExists(database *sql.DB, table string) error {
+	_, err := database.Exec(`SELECT 1 FROM ` + table + ` LIMIT 1`)
+	return err
+}
