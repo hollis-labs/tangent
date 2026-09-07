@@ -93,6 +93,37 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 	return ch, nil
 }
 
+// OpenChannel creates a channel and adds the canonical operator participant
+// (OperatorExternalAuthority/OperatorExternalRef) as its first member.
+//
+// It is not wrapped in one cross-call transaction: CreateChannel,
+// UpsertParticipant, and AddParticipant are each already correct and tested
+// in isolation, and composing them sequentially means an interruption
+// between steps leaves an operator-less channel rather than a corrupted
+// one. That is not unconditionally "fails loud": relay_send's
+// ambiguous-recipient check only surfaces the gap for a caller that omits
+// an explicit recipient and falls through to the channel's default
+// operator. A caller that always names its recipient explicitly never hits
+// that check and would not learn the operator is missing this way — the
+// loud failure is a property of that call shape, not a guarantee this
+// method makes on its own.
+func (s *Store) OpenChannel(ctx context.Context, params CreateChannelParams) (Channel, Participant, error) {
+	ch, err := s.CreateChannel(ctx, params)
+	if err != nil {
+		return Channel{}, Participant{}, err
+	}
+	operator, err := s.UpsertParticipant(ctx, UpsertParticipantParams{
+		Kind: ParticipantOperator, ExternalAuthority: OperatorExternalAuthority, ExternalRef: OperatorExternalRef,
+	})
+	if err != nil {
+		return Channel{}, Participant{}, err
+	}
+	if _, err := s.AddParticipant(ctx, ch.ID, operator.ID); err != nil {
+		return Channel{}, Participant{}, err
+	}
+	return ch, operator, nil
+}
+
 // GetChannel loads one channel by id.
 func (s *Store) GetChannel(ctx context.Context, id string) (Channel, error) {
 	var (
@@ -466,28 +497,34 @@ ON CONFLICT (channel_id, participant_id) DO UPDATE SET left_at = NULL`,
 // RemoveParticipant ends a participant's membership without deleting the
 // row, so binding history (channel_participant_bindings) keeps its parent.
 //
-// Undecided, flagged by a director review of CW-20260906-0064 (PR #32) and
-// left open on purpose rather than fixed in that PR: this does not supersede
-// the participant's current runtime binding. CurrentBinding keeps resolving
-// a destination for a participant who has left, and a leave-then-rejoin
-// resumes on whatever binding was current before — a caller has to make an
-// explicit Rebind call to know it is not routing to a dead session, rather
-// than being told so by CurrentBinding returning ErrNotFound. That is the
-// same failure ADR 0006 §3's explicit-rebind rule exists to prevent for a
-// live member ("no automatic choice of the newest session sharing a name"),
-// just reached through membership instead of through a stale generation.
-// The two readings — leaving a channel implicitly supersedes the binding
-// (recommended: membership and routing stay consistent, and 0066/0072 never
-// have to remember to check both), versus a live binding for a
-// non-member is fine because 0066's routing path is expected to consult
-// ListChannelParticipants/getMembership before ever calling CurrentBinding —
-// have not been chosen between. Whichever CW-20260906-0066 or 0072 decides,
-// record it here.
+// Settled by director review of CW-20260906-0066, closing the question left
+// open on CW-20260906-0064 (PR #32): leaving a channel supersedes the
+// participant's current runtime binding, in the same transaction. This is
+// the only door — there is no separate Detach with different semantics —
+// so CurrentBinding reliably returns ErrNotFound the moment a participant
+// leaves, and a rejoin always requires an explicit Rebind rather than
+// resuming on whatever binding happened to be current before. That is the
+// same rule ADR 0006 §3 already applies to a live rebind ("no automatic
+// choice of the newest session sharing a name"), extended here to
+// membership instead of generation.
+//
+// This only covers a clean exit. A `-p` CLI session that simply exits never
+// calls this at all — nothing does, on its behalf — so presence
+// (last_seen_at and "a receive/await is open right now", internal/relay)
+// is what actually answers "is anyone listening" for that case; membership
+// alone cannot.
 func (s *Store) RemoveParticipant(ctx context.Context, channelID, participantID string) error {
-	result, err := s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("channel store: begin remove participant: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := s.now()
+	result, err := tx.ExecContext(ctx, `
 UPDATE channel_participants SET left_at = ?
 WHERE channel_id = ? AND participant_id = ? AND left_at IS NULL`,
-		s.now(), channelID, participantID)
+		now, channelID, participantID)
 	if err != nil {
 		return fmt.Errorf("channel store: remove participant: %w", err)
 	}
@@ -497,6 +534,15 @@ WHERE channel_id = ? AND participant_id = ? AND left_at IS NULL`,
 	}
 	if affected == 0 {
 		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE channel_participant_bindings SET superseded_at = ?
+WHERE channel_id = ? AND participant_id = ? AND superseded_at IS NULL`,
+		now, channelID, participantID); err != nil {
+		return fmt.Errorf("channel store: supersede binding on remove: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("channel store: commit remove participant: %w", err)
 	}
 	return nil
 }

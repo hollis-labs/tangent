@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,6 +38,10 @@ var (
 	// ErrNotMember means AcceptExchange's sender or recipient is not a live
 	// member of the named channel.
 	ErrNotMember = errors.New("relay store: sender or recipient is not a member of the channel")
+	// ErrUnauthorized means a caller asserted an identity that does not
+	// hold the authority the operation requires — e.g. acking an exchange
+	// this participant was never the recipient of.
+	ErrUnauthorized = errors.New("relay store: caller is not authorized for this exchange")
 )
 
 // Store persists the exchange journal, its outbox, delivery receipts, and
@@ -46,6 +51,13 @@ type Store struct {
 	channels *channel.Store
 	now      func() time.Time
 	id       func() string
+
+	// presenceMu guards openNow, the in-memory half of presence: "a
+	// receive/await is open on this destination right now". It is
+	// deliberately process-local and never persisted — see Presence's doc
+	// comment.
+	presenceMu sync.Mutex
+	openNow    map[string]bool
 }
 
 // NewStore constructs a Store over the shared Tangent handle and the
@@ -57,7 +69,10 @@ func NewStore(db *sql.DB, channels *channel.Store) (*Store, error) {
 	if channels == nil {
 		return nil, fmt.Errorf("%w: nil channel store", ErrInvalidRecord)
 	}
-	return &Store{db: db, channels: channels, now: func() time.Time { return time.Now().UTC() }, id: uuid.NewString}, nil
+	return &Store{
+		db: db, channels: channels, now: func() time.Time { return time.Now().UTC() }, id: uuid.NewString,
+		openNow: map[string]bool{},
+	}, nil
 }
 
 // ── exchanges (the journal) ─────────────────────────────────────────────
@@ -148,6 +163,16 @@ func (s *Store) AcceptExchange(ctx context.Context, params AcceptExchangeParams)
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// This read-then-insert is correct only because internal/db.Open pins
+	// SetMaxOpenConns(1): every statement on this *sql.DB, across every
+	// goroutine and every Store, serializes onto the same one connection, so
+	// no other transaction can insert a row between this SELECT and the
+	// INSERT below it. Measured directly (director review of PR #33):
+	// 12 concurrent AcceptExchange calls to one recipient over this single
+	// pool give 12 distinct sequences; the same load spread across two
+	// separate connections to the same file fails most of them with
+	// SQLITE_BUSY. If that pool size ever changes, this needs a real
+	// counter row (the surfaces.next_interaction_sequence pattern) instead.
 	var nextSequence int64
 	err = tx.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(sequence), 0) + 1 FROM exchanges WHERE recipient_participant_id = ?`,
@@ -223,17 +248,25 @@ func (s *Store) getByIdempotencyKey(ctx context.Context, senderParticipantID, id
 }
 
 // ListForDestination is the storage half of the spike's `receive(cursor,
-// wait_ms)` contract: every exchange addressed to recipientParticipantID
-// with sequence strictly greater than sinceSequence, oldest first. The
-// caller holds the cursor (the last sequence it saw) and passes it back
-// next time; nothing here persists a per-destination read position.
-func (s *Store) ListForDestination(ctx context.Context, recipientParticipantID string, sinceSequence int64, limit int) ([]Exchange, error) {
+// wait_ms)` contract: every exchange in channelID addressed to
+// recipientParticipantID with sequence strictly greater than sinceSequence,
+// oldest first. The caller holds the cursor (the last sequence it saw) and
+// passes it back next time; nothing here persists a per-destination read
+// position.
+//
+// This is a pure read: it advances no cursor of its own, marks nothing
+// read, and never touches presence. That is deliberate — a future UI-facing
+// list of the same channel reuses this method safely, because acceptance
+// item 2's "UI reads do not consume agent inbox messages" has to hold by
+// construction, not by every future caller remembering not to call Receive
+// instead. See TestListForDestinationNeverTouchesPresenceOrCursor.
+func (s *Store) ListForDestination(ctx context.Context, channelID, recipientParticipantID string, sinceSequence int64, limit int) ([]Exchange, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx,
-		exchangeSelectColumns+` FROM exchanges WHERE recipient_participant_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`,
-		recipientParticipantID, sinceSequence, limit)
+		exchangeSelectColumns+` FROM exchanges WHERE channel_id = ? AND recipient_participant_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`,
+		channelID, recipientParticipantID, sinceSequence, limit)
 	if err != nil {
 		return nil, fmt.Errorf("relay store: list for destination: %w", err)
 	}
@@ -548,6 +581,10 @@ func scanOutboxItem(row rowScanner) (OutboxItem, error) {
 // idempotent: acking the same (exchange, participant) pair twice is a
 // no-op, never an error, so a retried ack call can never produce a false
 // "acked twice" claim.
+//
+// An ack is also a presence signal — it proves this participant is
+// currently reachable just as surely as an open receive does — so this
+// touches the same durable last_seen_at that Receive does.
 func (s *Store) RecordRead(ctx context.Context, exchangeID, participantID string) (ReadReceipt, error) {
 	now := s.now()
 	if _, err := s.db.ExecContext(ctx, `
@@ -555,6 +592,9 @@ INSERT INTO exchange_reads (exchange_id, participant_id, acked_at)
 VALUES (?, ?, ?)
 ON CONFLICT (exchange_id, participant_id) DO NOTHING`, exchangeID, participantID, now); err != nil {
 		return ReadReceipt{}, fmt.Errorf("relay store: record read: %w", err)
+	}
+	if err := s.touchLastSeen(ctx, participantID); err != nil {
+		return ReadReceipt{}, err
 	}
 	return s.GetRead(ctx, exchangeID, participantID)
 }
@@ -575,6 +615,152 @@ func (s *Store) GetRead(ctx context.Context, exchangeID, participantID string) (
 		return ReadReceipt{}, fmt.Errorf("relay store: load read receipt: %w", err)
 	}
 	return receipt, nil
+}
+
+// ── presence ────────────────────────────────────────────────────────────
+
+// MaximumReceiveWait bounds Receive's wait the same way tangent.hitl_await
+// is bounded — under the 60s HTTP write timeout the transport itself
+// enforces (measured by the CW-20260907-0016 spike). This is a transport
+// constraint, not a schema one; Receive does not change it.
+const MaximumReceiveWait = 50 * time.Second
+
+const receivePollInterval = 100 * time.Millisecond
+
+func (s *Store) markOpen(participantID string) {
+	s.presenceMu.Lock()
+	defer s.presenceMu.Unlock()
+	if s.openNow == nil {
+		s.openNow = map[string]bool{}
+	}
+	s.openNow[participantID] = true
+}
+
+func (s *Store) markClosed(participantID string) {
+	s.presenceMu.Lock()
+	defer s.presenceMu.Unlock()
+	delete(s.openNow, participantID)
+}
+
+func (s *Store) isOpen(participantID string) bool {
+	s.presenceMu.Lock()
+	defer s.presenceMu.Unlock()
+	return s.openNow[participantID]
+}
+
+func (s *Store) touchLastSeen(ctx context.Context, participantID string) error {
+	now := s.now()
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO participant_presence (participant_id, last_seen_at, updated_at)
+VALUES (?, ?, ?)
+ON CONFLICT (participant_id) DO UPDATE SET last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at`,
+		participantID, now, now,
+	); err != nil {
+		return fmt.Errorf("relay store: touch last seen: %w", err)
+	}
+	return nil
+}
+
+// Presence reports both halves of the CW-20260907-0016 spike's item 3 for
+// one participant: whether a Receive is open right now (in-memory, never
+// persisted) and when this participant was last seen (durable, survives a
+// restart). A participant that has never received or acked anything has a
+// nil LastSeenAt.
+func (s *Store) Presence(ctx context.Context, participantID string) (Presence, error) {
+	presence := Presence{ParticipantID: participantID, Open: s.isOpen(participantID)}
+	var lastSeenAt time.Time
+	err := s.db.QueryRowContext(ctx,
+		`SELECT last_seen_at FROM participant_presence WHERE participant_id = ?`, participantID,
+	).Scan(&lastSeenAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return presence, nil
+	}
+	if err != nil {
+		return Presence{}, fmt.Errorf("relay store: load presence: %w", err)
+	}
+	presence.LastSeenAt = &lastSeenAt
+	return presence, nil
+}
+
+// Receive is the cooperative-inbox half of the spike's `receive(cursor,
+// wait_ms)` contract, and the ONLY path in this package that touches
+// presence: it marks this participant open for the duration of the call
+// (even the zero-wait case, briefly) and always records last_seen_at on
+// return, success or timeout. ListForDestination stays presence-free by
+// construction, so a future UI-facing read never has to remember not to
+// call this instead.
+//
+// A wait that finds nothing new returns TimedOut with the same cursor —
+// never an error, and nothing about the outbox or a delivery claim is
+// touched by a receive at all, so there is nothing to cancel.
+func (s *Store) Receive(ctx context.Context, params ReceiveParams) (ReceiveResult, error) {
+	if params.ChannelID == "" || params.ParticipantID == "" {
+		return ReceiveResult{}, fmt.Errorf("%w: channel id and participant id are required", ErrInvalidRecord)
+	}
+	if params.Wait < 0 || params.Wait > MaximumReceiveWait {
+		return ReceiveResult{}, fmt.Errorf("%w: wait must be between 0 and %s", ErrInvalidRecord, MaximumReceiveWait)
+	}
+
+	s.markOpen(params.ParticipantID)
+	defer s.markClosed(params.ParticipantID)
+
+	result, err := s.receiveOnce(ctx, params)
+	if err != nil {
+		return ReceiveResult{}, err
+	}
+	if len(result.Items) > 0 || params.Wait == 0 {
+		return s.finishReceive(ctx, params.ParticipantID, result)
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, params.Wait)
+	defer cancel()
+	ticker := time.NewTicker(receivePollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ReceiveResult{}, ctx.Err()
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return ReceiveResult{}, ctx.Err()
+			}
+			return s.finishReceive(ctx, params.ParticipantID, ReceiveResult{NextCursor: params.Cursor, TimedOut: true})
+		case <-ticker.C:
+			result, err := s.receiveOnce(ctx, params)
+			if err != nil {
+				return ReceiveResult{}, err
+			}
+			if len(result.Items) > 0 {
+				return s.finishReceive(ctx, params.ParticipantID, result)
+			}
+		}
+	}
+}
+
+func (s *Store) receiveOnce(ctx context.Context, params ReceiveParams) (ReceiveResult, error) {
+	items, err := s.ListForDestination(ctx, params.ChannelID, params.ParticipantID, params.Cursor, params.Limit)
+	if err != nil {
+		return ReceiveResult{}, err
+	}
+	next := params.Cursor
+	for _, item := range items {
+		if item.Sequence > next {
+			next = item.Sequence
+		}
+	}
+	return ReceiveResult{Items: items, NextCursor: next}, nil
+}
+
+func (s *Store) finishReceive(ctx context.Context, participantID string, result ReceiveResult) (ReceiveResult, error) {
+	if err := s.touchLastSeen(ctx, participantID); err != nil {
+		return ReceiveResult{}, err
+	}
+	presence, err := s.Presence(ctx, participantID)
+	if err != nil {
+		return ReceiveResult{}, err
+	}
+	result.Presence = presence
+	return result, nil
 }
 
 func nullableText(value string) any {

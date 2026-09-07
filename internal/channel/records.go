@@ -105,6 +105,17 @@ const (
 	ParticipantAgent    ParticipantKind = "agent"
 )
 
+// OperatorExternalAuthority and OperatorExternalRef are the fixed asserted
+// identity OpenChannel resolves its canonical operator participant under.
+// They are deliberately stable and shared across every channel, so "one
+// participant across channels" (ADR 0006 §3) applies to the operator the
+// same way it applies to an agent that re-registers on every launch: there
+// is exactly one operator participant, not one per channel.
+const (
+	OperatorExternalAuthority = "operator"
+	OperatorExternalRef       = "local"
+)
+
 // Participant is an explicit user-facing communication identity (ADR 0006
 // §3, "Participant reference"). External identity remains authoritative:
 // ExternalAuthority and ExternalRef are self-asserted by the peer, never
@@ -137,9 +148,9 @@ type Membership struct {
 // an append-only history, and rebinding is always explicit — there is no
 // automatic choice of the newest session sharing a name.
 //
-// See Store.RemoveParticipant's doc comment for an open question this
-// invariant does not yet cover: whether leaving a channel should itself
-// supersede the current binding.
+// Leaving a channel is also a supersession, not just a rebind: see
+// Store.RemoveParticipant's doc comment for why "current" and "member" are
+// kept consistent by construction rather than by convention.
 type RuntimeBinding struct {
 	ID                  string
 	ChannelID           string

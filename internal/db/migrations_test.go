@@ -734,8 +734,13 @@ VALUES ('subject-1', 'channel-1', 'interaction', 'interaction-existing', ?, ?)`,
 	if interactionState != "submitted" {
 		t.Fatalf("interaction lifecycle_state after rollback = %q, want submitted", interactionState)
 	}
-	if _, err := database.Exec(`SELECT 1 FROM surfaces WHERE id = 'surface-existing'`); err != nil {
-		t.Fatalf("surface should remain after rolling back only the channel substrate: %v", err)
+	var survivingSurfaces int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM surfaces WHERE id = 'surface-existing'`).
+		Scan(&survivingSurfaces); err != nil {
+		t.Fatalf("count surviving surface: %v", err)
+	}
+	if survivingSurfaces != 1 {
+		t.Fatalf("surface row count after rolling back only the channel substrate = %d, want 1 (the row itself, not just the table)", survivingSurfaces)
 	}
 
 	// Re-applying brings the schema back to current, proving up is idempotent
@@ -823,12 +828,21 @@ INSERT INTO exchange_outbox (exchange_id, created_at, updated_at) VALUES ('ex1',
 	}
 
 	// The rollback removed the relay substrate but left the channel and
-	// participant rows exactly as 0064 left them.
-	if _, err := database.Exec(`SELECT 1 FROM channels WHERE id = 'ch1'`); err != nil {
-		t.Fatalf("channel should remain after rolling back only the relay substrate: %v", err)
+	// participant rows exactly as 0064 left them. Counting the matching row,
+	// not just running the SELECT: Exec succeeds on zero rows too, so it
+	// would prove the table still exists, never that this row survived.
+	var survivingChannels, survivingParticipants int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM channels WHERE id = 'ch1'`).Scan(&survivingChannels); err != nil {
+		t.Fatalf("count surviving channel: %v", err)
 	}
-	if _, err := database.Exec(`SELECT 1 FROM participants WHERE id = 'p_sender'`); err != nil {
-		t.Fatalf("participant should remain after rolling back only the relay substrate: %v", err)
+	if survivingChannels != 1 {
+		t.Fatalf("channel row count after rolling back only the relay substrate = %d, want 1", survivingChannels)
+	}
+	if err := database.QueryRow(`SELECT COUNT(*) FROM participants WHERE id = 'p_sender'`).Scan(&survivingParticipants); err != nil {
+		t.Fatalf("count surviving participant: %v", err)
+	}
+	if survivingParticipants != 1 {
+		t.Fatalf("participant row count after rolling back only the relay substrate = %d, want 1", survivingParticipants)
 	}
 
 	if err := RunMigrations(database); err != nil {
@@ -838,6 +852,58 @@ INSERT INTO exchange_outbox (exchange_id, created_at, updated_at) VALUES ('ex1',
 		if err := probeTableExists(database, table); err != nil {
 			t.Fatalf("%s after re-apply: %v", table, err)
 		}
+	}
+}
+
+// TestParticipantPresenceMigrationRollsBackIndependently proves the
+// CW-20260906-0066 migration is additive and self-contained: it adds
+// exactly one table, does not alter participants' shape, and RollbackOne
+// removes only what this migration added.
+func TestParticipantPresenceMigrationRollsBackIndependently(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "presence.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrateTo(database, 15); err != nil {
+		t.Fatalf("migrate to version 15: %v", err)
+	}
+
+	if err := probeTableExists(database, "participant_presence"); err != nil {
+		t.Fatalf("participant_presence after up: %v", err)
+	}
+
+	now := "2026-09-07T00:00:00Z"
+	if _, err := database.Exec(`
+INSERT INTO participants (id, kind, created_at, updated_at) VALUES ('p1', 'agent', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed participant: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO participant_presence (participant_id, last_seen_at, updated_at) VALUES ('p1', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed presence: %v", err)
+	}
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+	if err := probeTableExists(database, "participant_presence"); err == nil || !strings.Contains(err.Error(), "no such table") {
+		t.Fatalf("participant_presence query after rollback error = %v, want no such table", err)
+	}
+	var survivingParticipants int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM participants WHERE id = 'p1'`).Scan(&survivingParticipants); err != nil {
+		t.Fatalf("count surviving participant: %v", err)
+	}
+	if survivingParticipants != 1 {
+		t.Fatalf("participant row count after rolling back only presence = %d, want 1", survivingParticipants)
+	}
+
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	if err := probeTableExists(database, "participant_presence"); err != nil {
+		t.Fatalf("participant_presence after re-apply: %v", err)
 	}
 }
 
