@@ -243,18 +243,35 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Channels != nil {
 		// The channel pane's browser API (CW-20260907-0017). Listing and
 		// reading need `view`. Sending a message and marking read both need
-		// `draft`, not `submit`: the ADR 0004 §7 matrix's KindParticipant
-		// row is exactly {view, draft, resolve, cancel} — `submit` belongs
-		// only to KindCallerApplication and KindAdministrator, and
-		// authz.Authorize consults that row unconditionally (see
-		// participant.Gate.Authorize's own doc comment: "the matrix is
-		// consulted even where the session's own grant set would have
-		// answered"). A browser participant session can never hold
-		// `submit`, by design, so gating the send route on it would have
-		// made an operator unable to ever send a message through this
-		// pane — caught live against dev while seeding the phase 4
-		// acceptance run, not by any test, since no test exercised a real
-		// participant session against this route.
+		// `draft`, not `submit` — and that is a choice, not just an
+		// available slot `submit` happened not to occupy.
+		//
+		// The ADR 0004 §7 matrix's KindParticipant row is exactly {view,
+		// draft, resolve, cancel}, and authz.Authorize consults that row
+		// unconditionally regardless of what a session's own grant set
+		// holds (participant.Gate.Authorize's own doc comment: "the matrix
+		// is consulted even where the session's own grant set would have
+		// answered"). `submit`'s own doc says it "creates an interaction on
+		// a surface" — a caller-application act, not a human's — and a
+		// relay exchange is not an interaction at all, so `submit` was
+		// never the right shape here, independent of whether a participant
+		// could hold it. `draft` is the only authoring capability the
+		// participant row does hold, and composing a channel message —
+		// non-terminal, immediately visible, revisable by sending again —
+		// is exactly what `draft` already means elsewhere in this file. If
+		// the relay's operator actions ever earn a capability of their
+		// own, that is an amendment to ADR 0004's matrix, decided
+		// deliberately, not drift arrived at by finding whatever slot a
+		// route happens to authorize against.
+		//
+		// Gating the send route on `submit` instead — as this route
+		// originally shipped — meant a real browser participant session
+		// could never hold it, so an operator could never have sent a
+		// message through this pane at all: caught live against dev while
+		// seeding the phase 4 acceptance run, not by any test, since every
+		// existing channels test used a fake ChannelService with no
+		// Participants gate configured, making the whole class invisible
+		// to them. See TestChannelSendWorksForARealParticipantSession.
 		channelHandler := newChannelHTTPHandler(cfg.Channels)
 		channelGuard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
 			return hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler))
