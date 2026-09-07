@@ -188,10 +188,21 @@ export type WSClientOptions = {
 
   /**
    * Override this tab's client identity. Defaults to a sessionStorage-backed
-   * per-tab id. Tests and the lifecycle e2e driver set it explicitly to model
-   * "the same tab refreshing" versus "a second tab".
+   * per-tab id, itself defaulting to a `?clientId=` query param on the page
+   * URL when one is present (see getTabClientID) — that is how the desktop
+   * shell's stable id reaches the socket without a Wails runtime bridge.
+   * Tests and the lifecycle e2e driver set it explicitly to model "the same
+   * tab refreshing" versus "a second tab".
    */
   clientID?: string;
+
+  /**
+   * Descriptive label for the sort of client behind this connection, shown
+   * to the operator when more than one is attached. Defaults to a
+   * `?clientKind=` query param on the page URL, and then to the server's own
+   * "browser" default. Purely descriptive — see room.AttachOptions.ClientKind.
+   */
+  clientKind?: string;
 
   /** Attach as an observer, declining the resolver lease even when it is free. */
   observer?: boolean;
@@ -244,6 +255,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
 
   const baseURL = opts.wsURL ?? defaultWSURL();
   const clientID = opts.clientID ?? getTabClientID();
+  const clientKind = opts.clientKind ?? queryParam("clientKind") ?? "";
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   let connected = false;
   let currentRoomID = roomID;
@@ -272,7 +284,9 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   }
 
   function openSocket(nextRoomID: string): WebSocket {
-    const socket = new WebSocket(socketURL(baseURL, nextRoomID, clientID, opts.observer === true));
+    const socket = new WebSocket(
+      socketURL(baseURL, nextRoomID, clientID, clientKind, opts.observer === true),
+    );
     socket.addEventListener("open", () => {
       if (socket !== ws) return;
       connected = true;
@@ -415,15 +429,39 @@ function send(ws: WebSocket, frame: object): boolean {
   }
 }
 
-function socketURL(base: string, roomID: string, clientID: string, observer: boolean): string {
+function socketURL(
+  base: string,
+  roomID: string,
+  clientID: string,
+  clientKind: string,
+  observer: boolean,
+): string {
   let url = appendQuery(base, "roomID", roomID);
   if (clientID) {
     url = appendQuery(url, "clientID", clientID);
+  }
+  if (clientKind) {
+    url = appendQuery(url, "clientKind", clientKind);
   }
   if (observer) {
     url = appendQuery(url, "role", "observer");
   }
   return url;
+}
+
+/**
+ * queryParam reads one parameter off the current page URL. Used only for the
+ * one-time signals the app shell injects (?clientId=, ?clientKind=) — an
+ * external-URL Wails window gets no runtime bridge to pass these any other
+ * way (CW-20260905-0025's findings). A plain browser tab never carries them,
+ * so this is a no-op there.
+ */
+function queryParam(name: string): string | null {
+  try {
+    return new URLSearchParams(window.location.search).get(name);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -433,9 +471,25 @@ function socketURL(base: string, roomID: string, clientID: string, observer: boo
  * reload, which is exactly the distinction the server uses to tell a refresh
  * from a second tab. This is a new v2-shaped key and does not participate in
  * the localStorage draft migration described in ADR 0002.
+ *
+ * A `?clientId=` query param on the page URL takes precedence and is written
+ * into the same slot: the app shell's window carries one so that quitting and
+ * relaunching the app reads as a reconnect (same id, inherits the resolver
+ * lease) rather than a second tab. sessionStorage alone cannot do this — it
+ * resets with every new webview instance, which is every app relaunch.
  */
 export function getTabClientID(): string {
   const key = "tangent:v2:room:client-id";
+  const fromQuery = queryParam("clientId");
+  if (fromQuery) {
+    try {
+      window.sessionStorage.setItem(key, fromQuery);
+    } catch {
+      // Privacy modes can disable sessionStorage; the query param still
+      // answers this call directly below.
+    }
+    return fromQuery;
+  }
   try {
     const existing = window.sessionStorage.getItem(key);
     if (existing) return existing;
