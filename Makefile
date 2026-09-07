@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
+.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -29,6 +29,9 @@ build-ui: check-node ## Build frontend (Vite production build)
 
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
+
+build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
+	./scripts/build-macos-app.sh
 
 db-migrate: ## Apply local SQLite migrations and exit
 	go run ./cmd/tangent --migrate-only
@@ -110,8 +113,9 @@ lint-frontend: check-node ## biome check
 
 # ── Maintenance ────────────────────────────────────────────────────────
 
-clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent
+clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent, Tangent.app
 	rm -f tangent
+	rm -rf Tangent.app Tangent.app-bin
 	rm -rf ui/dist
 	rm -rf ui/node_modules
 	rm -rf .tangent
