@@ -43,14 +43,33 @@ jobs:
         working-directory: ui
         run: npm run build
 
+      - name: Determine server-only Go packages
+        id: server-packages
+        run: |
+          # cmd/tangent-app and internal/appshell embed Wails v3
+          # (v3.0.0-beta.16). Its default (non-gtk3) Linux backend cgo-links
+          # against gtk4 + webkitgtk-6.0 via pkg-config — see
+          # pkg/application/linux_cgo.go and
+          # internal/operatingsystem/webkit_linux.go in that module — and
+          # ubuntu-latest does not ship those dev packages. That makes the two
+          # desktop-shell packages fail to even compile here, independent of
+          # this job's own correctness, so every step below is scoped to
+          # everything except them. The desktop shell gets its own macOS job.
+          #
+          # Emitted as ./relative paths, not import paths: go vet/build/test
+          # accept either, but golangci-lint resolves its arguments as
+          # directories and fails with "directory not found" on an import path.
+          packages=$(go list -f '{{.Dir}}' ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$' | sed "s#^$PWD#.#" | tr '\n' ' ')
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: v2.11.4
-          args: --timeout=5m
+          args: --timeout=5m ${{ steps.server-packages.outputs.packages }}
 
       - name: go vet
-        run: go vet ./...
+        run: go vet ${{ steps.server-packages.outputs.packages }}
 
       - name: gofmt check
         run: |
@@ -65,10 +84,58 @@ jobs:
         run: make check-envelopes
 
       - name: Build
-        run: go build ./...
+        run: go build ${{ steps.server-packages.outputs.packages }}
 
       - name: Test (race)
-        run: go test -race ./...
+        run: go test -race ${{ steps.server-packages.outputs.packages }}
+
+  go-desktop:
+    name: Go desktop shell (macOS)
+    runs-on: macos-latest
+    env:
+      # See the "go" job's "Determine server-only Go packages" step for why
+      # these two packages need their own runner: Wails v3's macOS backend
+      # is the one it actually ships for, unlike the Linux backend above.
+      GOPRIVATE: "github.com/hollis-labs/*"
+      GONOSUMDB: "github.com/hollis-labs/*"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git for private hollis-labs modules
+        run: |
+          git config --global url."https://${{ secrets.GH_PAT }}@github.com/hollis-labs/".insteadOf "https://github.com/hollis-labs/"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Set up Node (for envelope codegen and the embedded frontend)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: go vet (desktop shell)
+        run: CGO_ENABLED=1 go vet ./cmd/tangent-app/... ./internal/appshell/...
+
+      - name: go build (desktop shell)
+        run: CGO_ENABLED=1 go build ./cmd/tangent-app/... ./internal/appshell/...
+
+      - name: go test (desktop shell)
+        run: CGO_ENABLED=1 go test -race ./cmd/tangent-app/... ./internal/appshell/...
+
+      - name: Build and verify Tangent.app
+        run: make build-app
+
+      - name: Re-verify the promoted bundle (packagecheck)
+        run: go run ./cmd/tangent-packagecheck Tangent.app
 
   frontend:
     name: Frontend (lint + build + test)

@@ -1,4 +1,15 @@
-.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback
+.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status
+
+# The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
+# (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
+# dev-facing target below runs on DEV_PORT against a workspace-local database
+# (.tangent/ is gitignored and removed by `make clean`). A different database
+# path is a different `.owner` lock file, so dev and stable can never collide
+# on the single-writer flock or the port. `./tangent` with no environment
+# still means the stable defaults; only make targets are pointed at dev.
+DEV_PORT ?= 7843
+DEV_DB_PATH ?= $(CURDIR)/.tangent/dev.db
+DEV_ENV = TANGENT_HTTP_PORT=$(DEV_PORT) TANGENT_DB_PATH=$(DEV_DB_PATH)
 
 # Default port for the Vite dev server. The Go server (in dev mode)
 # reverse-proxies non-API requests to this URL.
@@ -30,11 +41,14 @@ build-ui: check-node ## Build frontend (Vite production build)
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
 
-db-migrate: ## Apply local SQLite migrations and exit
-	go run ./cmd/tangent --migrate-only
+build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
+	./scripts/build-macos-app.sh
 
-db-rollback: ## Roll back the most recent local SQLite migration and exit
-	go run ./cmd/tangent --rollback-one
+db-migrate: ## Apply migrations to the DEV database (DEV_DB_PATH) and exit
+	$(DEV_ENV) go run ./cmd/tangent --migrate-only
+
+db-rollback: ## Roll back the most recent migration on the DEV database and exit
+	$(DEV_ENV) go run ./cmd/tangent --rollback-one
 
 # ── Codegen ────────────────────────────────────────────────────────────
 #
@@ -51,15 +65,15 @@ check-envelopes: check-node ## Fail if committed envelope types are stale
 
 # ── Dev ────────────────────────────────────────────────────────────────
 
-dev: check-node ## Run Go server + Vite dev server in parallel (Go proxies to Vite)
-	@echo "Starting Vite (port 5173) and Tangent server (port 7842, proxying to Vite)..."
+dev: check-node ## Run Go server (DEV_PORT, DEV_DB_PATH) + Vite dev server in parallel (Go proxies to Vite)
+	@echo "Starting Vite (port 5173) and the Tangent DEV server (port $(DEV_PORT), db $(DEV_DB_PATH), proxying to Vite)..."
 	@$(MAKE) -j 2 dev-ui dev-go
 
 dev-ui: check-node
 	cd ui && npm run dev
 
 dev-go:
-	TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
+	$(DEV_ENV) TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
 
 # ── Test ───────────────────────────────────────────────────────────────
 
@@ -86,8 +100,17 @@ test-frontend: check-node ## Run vitest
 #
 # See docs/mcp-smoketest.md for the operator recipe and the four failure modes.
 
-smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live deployment, Cerberus, and Tether checks
-	go test -count=1 -v ./internal/smoke/...
+# The environment-coupled arm (TANGENT_SMOKE_ENV=1) targets the DEV instance:
+# its URL, its Cerberus resource, and its Tether catalog entry. Point it at
+# stable explicitly when that is what you mean:
+#   TANGENT_SMOKE_ENV=1 SMOKE_URL=http://127.0.0.1:7842 SMOKE_CATALOG_ENTRY=tangent make smoke
+SMOKE_URL ?= http://127.0.0.1:$(DEV_PORT)
+SMOKE_RESOURCE ?= tangent-dev
+SMOKE_CATALOG_ENTRY ?= tangent-dev
+
+smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live DEV deployment, Cerberus, and Tether checks
+	TANGENT_SMOKE_URL=$(SMOKE_URL) TANGENT_SMOKE_RESOURCE=$(SMOKE_RESOURCE) TANGENT_SMOKE_CATALOG_ENTRY=$(SMOKE_CATALOG_ENTRY) \
+		go test -count=1 -v ./internal/smoke/...
 
 # ── Lint ───────────────────────────────────────────────────────────────
 
@@ -108,10 +131,36 @@ lint-go: ## golangci-lint + go vet + gofmt check
 lint-frontend: check-node ## biome check
 	cd ui && npm run lint
 
+# ── Launch at login (macOS LaunchAgent) ────────────────────────────────
+#
+# The agent runs the headless daemon at login (RunAtLoad true, KeepAlive
+# false) from ~/Library/LaunchAgents/com.hollislabs.tangent.plist. The binary
+# path is hardcoded into the plist, so LAUNCH_AGENT_BINARY must be the
+# daemon's *installed* location; the workspace build below is the default
+# only so `make launch-agent-render` has something to show. The real install
+# is performed by the stable install script (CW-20260907-0020), not by hand.
+
+LAUNCH_AGENT_BINARY ?= $(CURDIR)/tangent
+LAUNCH_AGENT_PORT ?= 7842
+LAUNCH_AGENT_FLAGS = --binary "$(LAUNCH_AGENT_BINARY)" --port $(LAUNCH_AGENT_PORT) $(if $(LAUNCH_AGENT_DB),--db "$(LAUNCH_AGENT_DB)",)
+
+launch-agent-render: ## Print the LaunchAgent plist for LAUNCH_AGENT_BINARY; touches nothing
+	go run ./cmd/tangent-launchagent render $(LAUNCH_AGENT_FLAGS)
+
+launch-agent-install: ## Write and load the LaunchAgent (macOS; refuses if LAUNCH_AGENT_BINARY is missing)
+	go run ./cmd/tangent-launchagent install $(LAUNCH_AGENT_FLAGS)
+
+launch-agent-uninstall: ## Boot out and remove the LaunchAgent (macOS; idempotent)
+	go run ./cmd/tangent-launchagent uninstall
+
+launch-agent-status: ## Report the LaunchAgent and re-validate the binary path it hardcodes
+	go run ./cmd/tangent-launchagent status
+
 # ── Maintenance ────────────────────────────────────────────────────────
 
-clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent
+clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent, Tangent.app
 	rm -f tangent
+	rm -rf Tangent.app Tangent.app-bin
 	rm -rf ui/dist
 	rm -rf ui/node_modules
 	rm -rf .tangent
