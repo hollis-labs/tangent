@@ -193,7 +193,7 @@ func New(cfg Config) (*Shell, error) {
 			// a windowless app holding the port and the database lock, which
 			// the next `./tangent` reports as an ownership conflict naming a
 			// pid nobody can see. Quitting on last-window-close is the
-			// honest v1 behaviour; a launchd-managed daemon this app merely
+			// honest v1 behavior; a launchd-managed daemon this app merely
 			// adopted keeps running regardless (stopIfBooted only stops what
 			// this process booted).
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

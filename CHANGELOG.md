@@ -7,8 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [v0.13.0] - 2026-09-07
+
+The first **stable cut for personal use** (plan `CW-20260907-0014`): everything
+the foundation phase shipped, the durable `/hitl` inbox, and the desktop shell
+as an unsigned, locally built `Tangent.app`. What this release deliberately does
+**not** contain is listed under *Not in this release* at the end of the
+section. The formal desktop-shell acceptance (`CW-20260905-0050`) and the
+shell's own decision record (`CW-20260905-0051`) are not gates for this cut and
+remain open.
+
 ### Added
 
+- **Desktop shell (`cmd/tangent-app`, `internal/appshell`).** A Wails v3 webview
+  pointed at the same loopback server `tangent` serves; no Wails asset server
+  and no generated bindings, so the SPA and its participant-cookie / CSP model
+  are unchanged. On launch the app probes `/healthz` and **adopts** a running
+  daemon or **boots** one in-process; a database held by something that is not
+  serving is reported distinctly, never guessed through. Window geometry,
+  always-on-top, and a stable client id persist in
+  `os.UserConfigDir()/tangent/shell.json` with the measured guards (readback
+  epsilon, sanity bounds, creation-time gate, title-bar height correction, and
+  atomic writes). The persisted client id reaches the SPA as `?clientId=`, so
+  quitting and relaunching the app is a reconnect that inherits the resolver
+  lease rather than a second tab. `internal/boot` is the server assembly both
+  binaries share. (`CW-20260905-0026`, `0027`, `0029`; PR #22)
+- **macOS packaging.** `make build-app` assembles `Tangent.app` from
+  `packaging/macos/Info.plist` and an icon, verified by
+  `internal/packagecheck` before promotion. The bundle is **not code-signed or
+  notarized** by design. CI runs the desktop shell in its own macOS job so a
+  broken shell build never blocks the server build. (`CW-20260905-0032`; PR #22)
+- **Launch at login.** `internal/launchagent` and `cmd/tangent-launchagent`
+  (with `make launch-agent-*`) write, validate, install, remove, and inspect a
+  user LaunchAgent that starts the **headless daemon** at login: `RunAtLoad`
+  true, `KeepAlive` false, `launchctl bootstrap`/`bootout`. Install refuses
+  when the binary is not where the plist would say; `status` re-validates the
+  path so a moved binary is reported. Nothing installs it automatically; the
+  stable install script (`CW-20260907-0020`) does. (`CW-20260905-0031`; PR #26)
+- **Gateway trace metadata is accepted at the MCP boundary.** Tether's `mux`
+  proxy writes the caller's W3C trace context into tool arguments as
+  `_traceparent` (and `_tracestate`), which every strict schema refused, so a
+  Claude Code session on the default mux configuration could not call a single
+  HITL tool. A receiving middleware now strips exactly those two keys before
+  validation and records the trace as an **upstream link** beside the derived
+  telemetry identity (record-only attributes, an OpenTelemetry span link; never
+  the trace id, never a metric dimension). Schemas stay strict; unknown keys are
+  still rejected. (`CW-20260907-0022`; PR #24)
+- **Dev and stable are separate instances.** Every dev-facing `make` target
+  runs on `DEV_PORT` (7843) against a workspace-local database; the daemon's
+  own defaults (7842, `~/.tangent/tangent.db`) are the stable install's. The
+  Cerberus resource change is committed as `packaging/cerberus/` and applied by
+  the install, not by the repo. (`CW-20260907-0018`; PR #27)
+- **ADR 0006, the collaboration-surface and relay boundary.** Supersedes four
+  named places in ADR 0005 and keeps every other exclusion; records the
+  channel / thread / view / runtime-binding vocabulary, operational-history
+  custody, and the conductor scenario; states that none of that capability
+  exists in this build. (`CW-20260906-0056`; PR #23)
+- **One version source.** `ui/package.json` is the release version;
+  `internal/smoke/version_test.go` fails when the CHANGELOG, the README, the
+  Go `HostVersion`, or the bundle template disagree with it. Previously the
+  tree said 0.1.0, v0.11.0, and v0.12.0 about itself at once.
+  (`CW-20260907-0019`)
 - **Database operations: single-writer ownership, backup, restore, repair, and
   six distinct deletion kinds.** Implements
   [ADR 0002](docs/adr/0002-retention-and-draft-custody.md) §6 and §7, and clears
@@ -182,6 +243,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 No wire name, version, request schema, response payload, MCP tool name, room
 id, or phase projection changed. Two routes were added (`/api/rooms`,
 `/api/rooms/{roomID}`); none was removed.
+
+### Fixed
+
+- **Backing up and restoring a database older than the binary.** The
+  pre-upgrade backup, the one case the tooling exists for, failed its own
+  integrity check because every fixture had been migrated to current first.
+  Backup and restore now work against a source schema behind the binary.
+  (`bab0b89`)
+- **An identical room-workflow retry returns the bound room.** Six identical
+  `tangent.approval-queue` calls produced one interaction but six rooms; the
+  retry now returns the same handle and room. (`5c7f536`)
+- **A refused submission no longer empties the form.** Submit cleared the
+  pending envelope optimistically, unmounting the renderer and every field the
+  operator had typed before the server refused it. (`da21f2d`)
+- **The room-workflow parity test no longer races a 250 ms window.** Tests that
+  answer the room while the caller waits use a rig whose window cannot expire
+  inside their own deadlines; the tests that want expiry keep the compressed
+  window. (`CW-20260907-0024`; PR #25)
+
+### Not in this release
+
+- **No system tray, close-to-hide, or single-instance UX** (`CW-20260905-0030`,
+  stable 1.1). Closing the last window quits the app.
+- **No code signing or notarization.** `Tangent.app` is unsigned and locally
+  built, for a single-user machine.
+- **The desktop-shell acceptance matrix has not been run** (`CW-20260905-0050`),
+  and the shell's decision record is unwritten (`CW-20260905-0051`, ADR 0007).
+  Documents that say "nothing in the tree is Wails" are corrected there, not
+  here.
+- **No relay, channel, or addressed conversation.** ADR 0006 is a decision
+  about direction; the durable `/hitl` inbox is the only attention surface.
+- **The stable install itself** (LaunchAgent written, dev redeployed to 7843,
+  `tangent-dev` catalog entry enabled) is `CW-20260907-0020`, after this tag.
 
 ### Security
 
@@ -762,6 +856,7 @@ _None — first release._
   across restarts.
 
 [Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.11.0...HEAD
+[v0.13.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.13.0
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
 [v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0
 [v0.9.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.9.0
