@@ -15,10 +15,24 @@ import (
 	"github.com/hollis-labs/tangent/internal/roomflow"
 )
 
-// testWindow is the compressed compatibility window used throughout this file.
-// It stands in for the shipped 45 seconds so the pending-receipt path is
-// exercised deterministically instead of by waiting out a real transport.
+// testWindow is the compressed compatibility window for the tests that WANT
+// the wait to run out: the pending-receipt path, handle recovery after
+// expiry, restart, retry. It stands in for the shipped 45 seconds so those
+// paths are exercised without waiting out a real transport.
+//
+// It is the wrong window for a test that resolves the room from the browser
+// side and asserts the inline fast-path response: on a loaded runner the
+// resolve can land after 250 ms and the durable path then legitimately returns
+// a pending receipt (CW-20260907-0024; CI run 34078625177 failed exactly so).
+// Those tests use newFastPathRig.
 const testWindow = 250 * time.Millisecond
+
+// fastPathWindow is the window for tests that resolve promptly and assert the
+// inline response. It only has to be longer than the test's own bound on the
+// resolve (readWSFrame's 3-5 s deadlines), so that the wait cannot expire
+// unless the test has already failed on its own clock. Nothing in these tests
+// ever waits it out; it is a ceiling, not a duration anyone experiences.
+const fastPathWindow = 30 * time.Second
 
 // pendingReceipt mirrors the normative receipt shape callers branch on.
 type pendingReceipt struct {
@@ -37,9 +51,20 @@ type pendingReceipt struct {
 	} `json:"resume"`
 }
 
+// newDurableRig is the durable topology with the compressed window. Use it
+// when the test needs the wait to expire and a pending receipt to come back.
 func newDurableRig(t *testing.T) *sessionRig {
 	t.Helper()
 	return newSessionRigWith(t, sessionRigOptions{durable: true, window: testWindow})
+}
+
+// newFastPathRig is the durable topology for tests that answer the room while
+// the caller is still waiting and assert the inline v0.12-shaped response. Its
+// window cannot run out inside the test's own deadlines, so the assertion is
+// about the fast path, never about how fast the runner was.
+func newFastPathRig(t *testing.T) *sessionRig {
+	t.Helper()
+	return newSessionRigWith(t, sessionRigOptions{durable: true, window: fastPathWindow})
 }
 
 // TestRoomWorkflows_FastPathMatchesLegacyResponse runs every shipped room
@@ -54,7 +79,7 @@ func TestRoomWorkflows_FastPathMatchesLegacyResponse(t *testing.T) {
 	for _, fixture := range shippedRoomWorkflows() {
 		t.Run(fixture.tool, func(t *testing.T) {
 			legacy := runFixtureToCompletion(t, newSessionRig(t), fixture, nil)
-			durable := runFixtureToCompletion(t, newDurableRig(t), fixture, nil)
+			durable := runFixtureToCompletion(t, newFastPathRig(t), fixture, nil)
 			if !reflect.DeepEqual(legacy, durable) {
 				legacyRaw, _ := json.MarshalIndent(legacy, "", "  ")
 				durableRaw, _ := json.MarshalIndent(durable, "", "  ")
@@ -352,7 +377,7 @@ func TestRoomWorkflow_BrowserDisconnectDoesNotTerminalize(t *testing.T) {
 // explicit cancellation is terminal, replayable, and preserves the v0.12
 // ack/cancelled response shape.
 func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
-	rg := newDurableRig(t)
+	rg := newFastPathRig(t)
 	defer rg.cleanup()
 	fixture := fixtureByTool(t, "tangent.triage")
 	roomID, _ := createSession(t, rg, "cancel")
@@ -404,7 +429,7 @@ func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
 // TestRoomWorkflow_AcknowledgementIsIdempotentAndSeparateFromRetrieval covers
 // the delivery/retrieval/acknowledgement separation.
 func TestRoomWorkflow_AcknowledgementIsIdempotentAndSeparateFromRetrieval(t *testing.T) {
-	rg := newDurableRig(t)
+	rg := newFastPathRig(t)
 	defer rg.cleanup()
 	fixture := fixtureByTool(t, "tangent.triage")
 	roomID, _ := createSession(t, rg, "ack")
@@ -636,6 +661,13 @@ func runFixtureToCompletion(
 	var decoded any
 	if err := json.Unmarshal([]byte(extractText(t, result.result)), &decoded); err != nil {
 		t.Fatalf("unmarshal %s result: %v", fixture.tool, err)
+	}
+	if body, ok := decoded.(map[string]any); ok && body["status"] == roomflow.StatusPending {
+		// The participant answered above, so a pending receipt can only mean
+		// the rig's wait ran out first. That is a rig with the wrong window,
+		// not a behavior difference; say so instead of printing a diff.
+		t.Fatalf("%s: the wait expired before the participant's answer was applied; "+
+			"a test that resolves the room must use newFastPathRig, not newDurableRig", fixture.tool)
 	}
 	return normalizeVolatile(decoded)
 }
