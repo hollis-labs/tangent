@@ -160,6 +160,28 @@ func (r *rig) wsURL(roomID string) string {
 	return "ws" + strings.TrimPrefix(r.httpURL, "http") + "?roomID=" + roomID
 }
 
+// mcpCallTimeout bounds the async tangent.triage MCP call in every test
+// below. It is not sized to the call's own round trip — the call only
+// resolves once this test's sequential "browser" choreography has run to
+// completion (an awaitRoom/awaitTwoRooms wait, one or two dial+readFrame
+// round trips, a writeFrame), each step already carrying its own generous
+// timeout. Those add up: TestIntegration_DisconnectResumesCall alone
+// declares up to 2s (awaitRoom) + 3s (first readFrame) + 3s (replacement
+// readFrame) + 2s (writeFrame) = 10s of nested budget, before counting
+// real dial/write latency. A 5s outer bound was strictly smaller than that
+// sum, so it was never "enough time for the call" — it was a coin flip
+// against the test's own setup path, and CI runs measurably slower than
+// local: this exact bound flaked in CI at 5.48s
+// (github.com/hollis-labs/tangent/actions/runs/34157457352) while passing
+// locally every time, and the run's own numbers showed why —
+// internal/server took 66.484s in that CI job against 27.805s locally
+// (~2.4x), consistent with the ~1.93x CI/local ratio independently
+// measured on internal/mcp (367s vs 190s) the same day. This bound is set
+// generously above the worst-case nested sum with room for that kind of
+// slowdown, rather than tuned to the fastest case that happens to pass
+// locally.
+const mcpCallTimeout = 30 * time.Second
+
 // TestIntegration_TriageRoundTrip — the v0.1 happy path: MCP client
 // calls tangent.triage, the handler creates a Room, the test acts as a
 // browser, sends a response, and the MCP call returns the response.
@@ -176,7 +198,7 @@ func TestIntegration_TriageRoundTrip(t *testing.T) {
 	var mcpErr error
 	go func() {
 		defer close(mcpDone)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
 			Name:      "tangent.triage",
@@ -254,7 +276,7 @@ func TestIntegration_DisconnectResumesCall(t *testing.T) {
 	var mcpErr error
 	go func() {
 		defer close(mcpDone)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
 			Name:      "tangent.triage",
@@ -313,7 +335,7 @@ func TestIntegration_Cancel(t *testing.T) {
 	var mcpErr error
 	go func() {
 		defer close(mcpDone)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
 			Name:      "tangent.triage",
@@ -370,7 +392,7 @@ func TestIntegration_ParallelRooms(t *testing.T) {
 	doneB := make(chan outcome, 1)
 
 	call := func(envID string, out chan<- outcome) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
 			Name:      "tangent.triage",
