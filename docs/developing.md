@@ -161,7 +161,7 @@ Go-specific conventions follow the broader Hollis Labs engineering direction:
 For the system layers (HTTP, MCP, WS bridge, envelope dispatcher,
 go-envelopes registry, definition registry, connection lifecycle,
 authorization, renderer trust classes, health, and telemetry) and the
-Wails-deferral note, see [`architecture.md`](./architecture.md). The five
+Wails-deferral note, see [`architecture.md`](./architecture.md). The six
 accepted decision records are in [`adr/`](./adr/).
 
 For how a room workflow states what it still needs, and how it reports a

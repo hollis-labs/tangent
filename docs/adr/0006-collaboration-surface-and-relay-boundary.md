@@ -1,9 +1,12 @@
 # ADR 0006: Tangent as a Collaboration Surface — the Relay Boundary
 
-**Status:** Proposed — awaiting Chrispian's approval. Nothing in this document
-describes shipped capability; see §6.
+**Status:** Accepted. Nothing in this document describes shipped capability;
+see §6.
 
 **Date:** 2026-09-07
+
+**Approved:** 2026-09-07 by Chrispian, via tangent-16's proxy review, after the
+`CW-20260907-0016` spike reported and §6 was amended with its findings
 
 **Task:** `CW-20260906-0056` (planning key V02 of the Tangent vNext capture)
 
@@ -233,12 +236,29 @@ capability this ADR describes exists.** Specifically:
   An agent that is not awaiting is, honestly, *awaiting-peer*; Tangent must
   never present it as reading. This is a property of the transport, not a gap
   a future task closes.
+- **Measured, 2026-09-07 (`CW-20260907-0016`).** With the shipped tools and
+  five manually launched Claude Code sessions: an operator reply reached an
+  agent inside `tangent.hitl_await` in 40–300 ms; a reply that landed while no
+  wait was open was returned by the next await or get, so queued input is not
+  lost; two concurrent sessions each received only their own reply, and a read
+  from another caller scope was refused. What the operator could not do or
+  see: speak to an agent that had not enqueued an item, tell whether any agent
+  was awaiting right now, or tell whether a reply had been read. Standing by
+  cost one model turn per 50 s (the await bound) with a 3–6 s blind spot
+  between turns. A session on the default mux proxy could not call any HITL
+  tool at all, because the proxy adds gateway trace metadata the strict schema
+  rejects (`CW-20260907-0022`). Those are the measured distances between this
+  section's current and its target; the full note is
+  `~/dev/agent-os/workspaces/drafts/tangent/cooperative-loop-spike.md`.
 
 The plan that moves from current to target is `CW-20260907-0014` (the personal
-MVP) and, beyond it, `CW-20260906-0052` (Tangent vNext). The first step is a
-zero-schema spike against the shipped HITL tools (`CW-20260907-0016`); channel
-bindings, the journal and outbox, the relay APIs, and the manual Claude proof
-follow (`CW-20260906-0064`, `0065`, `0066`, `0071`). No document may describe
+MVP) and, beyond it, `CW-20260906-0052` (Tangent vNext). The first step, a
+zero-schema spike against the shipped HITL tools (`CW-20260907-0016`), has
+reported and is folded into the bullet above. Accepting gateway trace metadata
+at the MCP boundary (`CW-20260907-0022`) comes next, because without it a
+default-configuration session cannot call any tool here; channel bindings, the
+journal and outbox, the relay APIs, and the manual Claude proof follow
+(`CW-20260906-0064`, `0065`, `0066`, `0071`). No document may describe
 any of those as present until its task is done and the shipped build is what
 `internal/smoke` derives it to be.
 
@@ -269,9 +289,10 @@ any of those as present until its task is done and the shipped build is what
 3. "Not general messaging" is a line a relay can drift across one adapter at a
    time. The Tether rule in ADR 0005 §5 — optional, never authoritative for
    Tangent's configuration — is the test to apply to each provider.
-4. The Proposed status means this ADR authorizes no implementation. That is
-   intended: the vNext capture is explicit that implementation remains manual
-   until Chrispian chooses to start it.
+4. Acceptance of this ADR authorizes no implementation by itself. The vNext
+   capture is explicit that implementation remains manual until Chrispian
+   chooses to start it; the personal-MVP plan (`CW-20260907-0014`) is where
+   that choice is recorded, task by task.
 
 ## Alternatives considered
 
@@ -312,8 +333,8 @@ deleted. Open direction goes to Torque tasks; decisions go to ADRs.
    (§4), given that the ADR 0002 precedence engine is not yet built?
 4. Is §5's refusal of any worker topology API compatible with showing worker
    provenance at all, or does provenance need its own minimal contract?
-5. Should this ADR move to Accepted before the `CW-20260907-0016` spike
-   reports, or should the spike's findings be allowed to amend §6 first?
+5. *Resolved 2026-09-07:* the `CW-20260907-0016` spike reported first and §6
+   was amended with its findings before this ADR was accepted.
 
 ## References
 
