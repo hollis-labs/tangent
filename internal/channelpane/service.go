@@ -341,7 +341,7 @@ func (s *Service) GetChannel(ctx context.Context, channelID string) (ChannelDeta
 		messages = append(messages, view)
 	}
 
-	var hitlItems []HITLItem
+	hitlItems := make([]HITLItem, 0)
 	if len(agents) > 0 {
 		pendingByAgent, pendingErr := s.pendingHITLByAgent(ctx)
 		if pendingErr != nil {
