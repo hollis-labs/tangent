@@ -1,6 +1,10 @@
 # ADR 0005: Tangent's Product Boundary and Portfolio Composition
 
-**Status:** Accepted
+**Status:** Accepted. Superseded in part by
+[ADR 0006](0006-collaboration-surface-and-relay-boundary.md) (Accepted,
+2026-09-07): §1's "conversation host" item, §2's "chat multiplexing across
+agents and conversations" bullet, §3's *Agent session and conversation* row,
+and §6's "chat-multiplexed" test. Every other section stands unchanged.
 
 **Date:** 2026-09-04
 
