@@ -397,6 +397,78 @@ func TestPurgeSurfaceCascadesAndLeavesTheAuditRow(t *testing.T) {
 	}
 }
 
+// TestPurgeSurfaceLeavesChannelSubjectsAsTombstones is the regression for a
+// director review finding on CW-20260906-0064 (PR #32): channel_subjects'
+// CHECK constraint originally required interaction_id/surface_id non-NULL
+// for their subject_type, which SQLite enforces on every row UPDATE
+// including one an ON DELETE SET NULL foreign-key action performs
+// internally — so purging a surface with a channel subject correlating it
+// aborted the whole purge transaction with SQLITE_CONSTRAINT_CHECK. The fix
+// relaxes the CHECK to allow the FK to go NULL while subject_type stays: the
+// thread survives its purged correlation as a tombstone, exposed by
+// channel.Subject.ReferentPurged, rather than being cascaded away with the
+// content it once pointed at.
+func TestPurgeSurfaceLeavesChannelSubjectsAsTombstones(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+
+	now := f.now
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch_fixture', 'standalone-local:anonymous', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed channel: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO channel_subjects (id, channel_id, subject_type, interaction_id, created_at, updated_at)
+VALUES ('sub_interaction', 'ch_fixture', 'interaction', ?, ?, ?)`, f.interactionIDs[0], now, now); err != nil {
+		t.Fatalf("seed interaction subject: %v", err)
+	}
+	if _, err := f.db.ExecContext(ctx, `
+INSERT INTO channel_subjects (id, channel_id, subject_type, surface_id, created_at, updated_at)
+VALUES ('sub_surface', 'ch_fixture', 'surface', ?, ?, ?)`, f.surfaceID, now, now); err != nil {
+		t.Fatalf("seed surface subject: %v", err)
+	}
+
+	result, err := PurgeSurface(ctx, f.db, RetentionRequest{
+		SurfaceID: f.surfaceID, ActorRef: "operator:test", Authority: AuthorityLocalUser, Now: f.now,
+	})
+	if err != nil {
+		t.Fatalf("purge surface with a channel subject present: %v", err)
+	}
+	if !result.GuardsRestored {
+		t.Fatal("guards were not verified restored after the purge")
+	}
+
+	// The channel and both subjects survive: a surface purge is not a channel
+	// operation, and reaches channel_subjects only through the FK it declared.
+	if remaining := f.count(t, `SELECT COUNT(*) FROM channels WHERE id = 'ch_fixture'`); remaining != 1 {
+		t.Fatalf("channel did not survive the purge: %d rows", remaining)
+	}
+	if remaining := f.count(t, `SELECT COUNT(*) FROM channel_subjects`); remaining != 2 {
+		t.Fatalf("expected both subjects to survive as tombstones, found %d rows", remaining)
+	}
+
+	var interactionRef, surfaceRef sql.NullString
+	if err := f.db.QueryRow(`SELECT interaction_id FROM channel_subjects WHERE id = 'sub_interaction'`).
+		Scan(&interactionRef); err != nil {
+		t.Fatalf("read interaction subject: %v", err)
+	}
+	if interactionRef.Valid {
+		t.Fatalf("sub_interaction.interaction_id = %q, want NULL after its interaction was purged", interactionRef.String)
+	}
+	if err := f.db.QueryRow(`SELECT surface_id FROM channel_subjects WHERE id = 'sub_surface'`).
+		Scan(&surfaceRef); err != nil {
+		t.Fatalf("read surface subject: %v", err)
+	}
+	if surfaceRef.Valid {
+		t.Fatalf("sub_surface.surface_id = %q, want NULL after its surface was purged", surfaceRef.String)
+	}
+
+	if drift := f.guardDrift(t); !drift.Intact() {
+		t.Fatalf("the purge left the schema without its guards: %+v", drift)
+	}
+}
+
 func (f *fixture) guardDrift(t *testing.T) GuardDrift {
 	t.Helper()
 	ctx := context.Background()

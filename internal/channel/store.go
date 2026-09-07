@@ -320,6 +320,17 @@ type UpsertParticipantParams struct {
 // ExternalRef) pair, that existing row is returned unchanged — this is what
 // lets a peer that re-registers on every launch still resolve to one stable
 // participant across channels, rather than minting a new identity per run.
+//
+// The non-empty-ExternalRef path is one INSERT ... ON CONFLICT DO NOTHING
+// statement against idx_participants_external_identity, not a lookup
+// followed by a separate insert: a director review of CW-20260906-0064
+// (PR #32) reproduced two concurrent registrations of the same identity —
+// exactly the 0071/0072 scenario of two peers attaching at once — each
+// observing "not found" and both attempting to insert, so the loser errored
+// on the unique constraint instead of resolving to the winner. An UPSERT is
+// one atomic statement from SQLite's point of view, so exactly one caller's
+// insert lands and every other caller's affected-row count is zero, at
+// which point it looks up the row it lost the race to.
 func (s *Store) UpsertParticipant(ctx context.Context, params UpsertParticipantParams) (Participant, error) {
 	if s == nil || s.db == nil {
 		return Participant{}, fmt.Errorf("%w: nil store", ErrInvalidRecord)
@@ -334,16 +345,6 @@ func (s *Store) UpsertParticipant(ctx context.Context, params UpsertParticipantP
 		return Participant{}, fmt.Errorf("%w: metadata: %w", ErrInvalidRecord, err)
 	}
 
-	if params.ExternalRef != "" {
-		existing, lookupErr := s.lookupParticipantByExternalIdentity(ctx, params.ExternalAuthority, params.ExternalRef)
-		if lookupErr != nil && !errors.Is(lookupErr, ErrNotFound) {
-			return Participant{}, lookupErr
-		}
-		if lookupErr == nil {
-			return existing, nil
-		}
-	}
-
 	now := s.now()
 	participant := Participant{
 		ID:                s.id(),
@@ -355,16 +356,45 @@ func (s *Store) UpsertParticipant(ctx context.Context, params UpsertParticipantP
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	_, err = s.db.ExecContext(ctx, `
+
+	if params.ExternalRef == "" {
+		// No stable external identity to dedupe against — every call mints a
+		// fresh participant, same as an operator template always has.
+		_, insertErr := s.db.ExecContext(ctx, `
 INSERT INTO participants (id, kind, external_authority, external_ref, label, metadata, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			participant.ID, string(participant.Kind), participant.ExternalAuthority, participant.ExternalRef,
+			participant.Label, string(participant.Metadata), participant.CreatedAt, participant.UpdatedAt,
+		)
+		if insertErr != nil {
+			return Participant{}, fmt.Errorf("channel store: insert participant: %w", insertErr)
+		}
+		return participant, nil
+	}
+
+	result, err := s.db.ExecContext(ctx, `
+INSERT INTO participants (id, kind, external_authority, external_ref, label, metadata, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (external_authority, external_ref) WHERE external_ref != '' DO NOTHING`,
 		participant.ID, string(participant.Kind), participant.ExternalAuthority, participant.ExternalRef,
 		participant.Label, string(participant.Metadata), participant.CreatedAt, participant.UpdatedAt,
 	)
 	if err != nil {
 		return Participant{}, fmt.Errorf("channel store: insert participant: %w", err)
 	}
-	return participant, nil
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return Participant{}, fmt.Errorf("channel store: insert participant: %w", err)
+	}
+	if affected == 1 {
+		return participant, nil
+	}
+	// Another caller's registration of the same identity won the race.
+	existing, lookupErr := s.lookupParticipantByExternalIdentity(ctx, params.ExternalAuthority, params.ExternalRef)
+	if lookupErr != nil {
+		return Participant{}, fmt.Errorf("channel store: resolve conflicting participant: %w", lookupErr)
+	}
+	return existing, nil
 }
 
 func (s *Store) lookupParticipantByExternalIdentity(ctx context.Context, authority, ref string) (Participant, error) {
@@ -435,6 +465,24 @@ ON CONFLICT (channel_id, participant_id) DO UPDATE SET left_at = NULL`,
 
 // RemoveParticipant ends a participant's membership without deleting the
 // row, so binding history (channel_participant_bindings) keeps its parent.
+//
+// Undecided, flagged by a director review of CW-20260906-0064 (PR #32) and
+// left open on purpose rather than fixed in that PR: this does not supersede
+// the participant's current runtime binding. CurrentBinding keeps resolving
+// a destination for a participant who has left, and a leave-then-rejoin
+// resumes on whatever binding was current before — a caller has to make an
+// explicit Rebind call to know it is not routing to a dead session, rather
+// than being told so by CurrentBinding returning ErrNotFound. That is the
+// same failure ADR 0006 §3's explicit-rebind rule exists to prevent for a
+// live member ("no automatic choice of the newest session sharing a name"),
+// just reached through membership instead of through a stale generation.
+// The two readings — leaving a channel implicitly supersedes the binding
+// (recommended: membership and routing stay consistent, and 0066/0072 never
+// have to remember to check both), versus a live binding for a
+// non-member is fine because 0066's routing path is expected to consult
+// ListChannelParticipants/getMembership before ever calling CurrentBinding —
+// have not been chosen between. Whichever CW-20260906-0066 or 0072 decides,
+// record it here.
 func (s *Store) RemoveParticipant(ctx context.Context, channelID, participantID string) error {
 	result, err := s.db.ExecContext(ctx, `
 UPDATE channel_participants SET left_at = ?

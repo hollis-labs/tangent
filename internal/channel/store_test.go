@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -144,6 +145,51 @@ func TestAddSubjectEnforcesCanonicalAssociationShape(t *testing.T) {
 	}
 }
 
+func TestSubjectSurvivesPurgeOfItsReferentAsATombstone(t *testing.T) {
+	t.Parallel()
+	store, database := openTestStore(t)
+	ctx := context.Background()
+
+	ch, err := store.CreateChannel(ctx, CreateChannelParams{OwnerScope: "standalone-local:anonymous"})
+	if err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+	surfaceID, interactionID := seedSurfaceAndInteraction(t, database, "surface-tombstone", "interaction-tombstone")
+	subject, err := store.AddSubject(ctx, CreateSubjectParams{
+		ChannelID: ch.ID, Type: SubjectInteraction, InteractionID: interactionID, Title: "will be purged",
+	})
+	if err != nil {
+		t.Fatalf("AddSubject: %v", err)
+	}
+	if subject.ReferentPurged() {
+		t.Fatal("a freshly created subject reports its referent as already purged")
+	}
+
+	// internal/db.PurgeSurface cascades a surface delete through interactions
+	// (ON DELETE CASCADE) and lands on this subject's FK (ON DELETE SET
+	// NULL). Deleting the surface directly exercises the same FK chain
+	// without importing internal/db, which would be a layering inversion for
+	// this leaf package.
+	_, err = database.ExecContext(ctx, `DELETE FROM surfaces WHERE id = ?`, surfaceID)
+	if err != nil {
+		t.Fatalf("delete surface (simulating a purge): %v", err)
+	}
+
+	purged, err := store.GetSubject(ctx, subject.ID)
+	if err != nil {
+		t.Fatalf("GetSubject after purge: %v", err)
+	}
+	if !purged.ReferentPurged() {
+		t.Fatal("subject does not report its referent as purged after the interaction was cascaded away")
+	}
+	if purged.InteractionID != "" {
+		t.Fatalf("purged subject InteractionID = %q, want empty", purged.InteractionID)
+	}
+	if purged.Type != SubjectInteraction || purged.Title != "will be purged" {
+		t.Fatalf("purge changed the subject's own identity: %+v", purged)
+	}
+}
+
 func TestWorkerProvenanceIsOpaqueAndNeverBecomesAParticipant(t *testing.T) {
 	t.Parallel()
 	store, _ := openTestStore(t)
@@ -196,6 +242,54 @@ func TestUpsertParticipantResolvesTheSameExternalIdentity(t *testing.T) {
 	}
 	if first.ID != second.ID {
 		t.Fatalf("UpsertParticipant minted a second identity for the same external ref: %s != %s", first.ID, second.ID)
+	}
+}
+
+// TestConcurrentUpsertParticipantSameIdentityResolvesToOneRow is the
+// regression for a director review finding on CW-20260906-0064 (PR #32):
+// UpsertParticipant's original lookup-then-insert had a gap in which two
+// concurrent registrations of the same asserted identity — the 0071/0072
+// scenario of two peers attaching at once — could both observe "not found"
+// and both attempt to insert, so every loser errored on the unique
+// constraint instead of resolving to the winner. The fix folds the lookup
+// and the insert into one INSERT ... ON CONFLICT DO NOTHING statement.
+func TestConcurrentUpsertParticipantSameIdentityResolvesToOneRow(t *testing.T) {
+	t.Parallel()
+	store, _ := openTestStore(t)
+	ctx := context.Background()
+
+	const n = 8
+	var wg sync.WaitGroup
+	ids := make([]string, n)
+	errs := make([]error, n)
+	start := make(chan struct{})
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			p, err := store.UpsertParticipant(ctx, UpsertParticipantParams{
+				Kind:              ParticipantAgent,
+				ExternalAuthority: "claude-code",
+				ExternalRef:       "session-abc",
+				Label:             "peer",
+			})
+			ids[i], errs[i] = p.ID, err
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	distinct := map[string]bool{}
+	for i := range n {
+		if errs[i] != nil {
+			t.Errorf("goroutine %d: UpsertParticipant returned an error instead of resolving to the existing participant: %v", i, errs[i])
+			continue
+		}
+		distinct[ids[i]] = true
+	}
+	if len(distinct) > 1 {
+		t.Fatalf("same asserted identity resolved to %d distinct participants, want exactly 1", len(distinct))
 	}
 }
 

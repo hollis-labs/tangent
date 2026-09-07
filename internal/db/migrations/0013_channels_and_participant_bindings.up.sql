@@ -58,9 +58,21 @@ CREATE TABLE channel_subjects (
   worker_provenance TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(worker_provenance)),
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
+  -- This CHECK holds type exclusivity forever — an interaction subject never
+  -- carries a surface_id and vice versa — but it deliberately does not
+  -- require the referenced id to still be *present*. internal/db.PurgeSurface
+  -- (ADR 0002) can delete the surface or interaction a subject correlates,
+  -- and this row's FK is ON DELETE SET NULL specifically so the thread
+  -- survives that as a tombstone rather than being cascaded away with the
+  -- content it once pointed at. SQLite evaluates a CHECK on every row UPDATE,
+  -- including one an FK action performs internally, so a CHECK requiring
+  -- non-NULL here would abort the purge transaction the moment SET NULL
+  -- tried to fire — this shape is what makes the two coexist. "Non-NULL at
+  -- creation" is enforced one layer up, by internal/channel's AddSubject;
+  -- Subject.ReferentPurged reports the tombstone state to a reader.
   CHECK (
-    (subject_type = 'interaction' AND interaction_id IS NOT NULL AND surface_id IS NULL)
-    OR (subject_type = 'surface' AND surface_id IS NOT NULL AND interaction_id IS NULL)
+    (subject_type = 'interaction' AND surface_id IS NULL)
+    OR (subject_type = 'surface' AND interaction_id IS NULL)
     OR (subject_type IN ('artifact', 'freeform') AND interaction_id IS NULL AND surface_id IS NULL)
   )
 );

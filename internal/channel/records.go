@@ -68,14 +68,33 @@ type Subject struct {
 	ID               string
 	ChannelID        string
 	Type             SubjectType
-	InteractionID    string // set only when Type == SubjectInteraction
-	SurfaceID        string // set only when Type == SubjectSurface
+	InteractionID    string // set only when Type == SubjectInteraction, empty once purged
+	SurfaceID        string // set only when Type == SubjectSurface, empty once purged
 	ExternalRef      string
 	Title            string
 	Status           SubjectStatus
 	WorkerProvenance json.RawMessage
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+}
+
+// ReferentPurged reports whether this subject's canonical association has
+// been removed by a surface purge (internal/db.PurgeSurface, ADR 0002) since
+// the subject was created. It is true only for a SubjectInteraction or
+// SubjectSurface subject whose foreign key went NULL through the schema's
+// ON DELETE SET NULL — nothing in this package ever clears the field any
+// other way, and AddSubject refuses to create one already in this state. The
+// row, its type, and its title all survive a purge; only the canonical
+// backing is gone.
+func (s Subject) ReferentPurged() bool {
+	switch s.Type {
+	case SubjectInteraction:
+		return s.InteractionID == ""
+	case SubjectSurface:
+		return s.SurfaceID == ""
+	default:
+		return false
+	}
 }
 
 // ParticipantKind names the kind of identity a participant reference names.
@@ -117,6 +136,10 @@ type Membership struct {
 // to (ADR 0006 §3, "Runtime binding"). It is not the agent: it is one row of
 // an append-only history, and rebinding is always explicit — there is no
 // automatic choice of the newest session sharing a name.
+//
+// See Store.RemoveParticipant's doc comment for an open question this
+// invariant does not yet cover: whether leaving a channel should itself
+// supersede the current binding.
 type RuntimeBinding struct {
 	ID                  string
 	ChannelID           string
