@@ -1,15 +1,35 @@
-// Package relay owns the durable exchange journal and its transactional
+// Package relay owns two things that share a home because the personal-MVP
+// plan's decision 2 asks for both to be liftable into go-app-agent later
+// without a rewrite: the durable exchange journal and its transactional
 // outbox that implement docs/adr/0006-collaboration-surface-and-relay-boundary.md
-// §4 (CW-20260906-0065): "Tangent's relay journal is authoritative for what
-// Tangent accepted and delivered, and for nothing else."
+// §4 (CW-20260906-0065) — "Tangent's relay journal is authoritative for what
+// Tangent accepted and delivered, and for nothing else" — and the Provider
+// orchestration boundary (CW-20260906-0072) a transport calls into instead
+// of touching the two stores directly.
 //
-// It is a leaf storage package over internal/channel the same way
-// internal/channel is a leaf storage package over the shared *sql.DB — a
-// concrete Store, no transport, no MCP surface, shaped so the personal-MVP
-// plan's decision 2 can lift it into go-app-agent later without a rewrite.
-// It depends on internal/channel to validate a channel, its participants,
-// and their current runtime binding; internal/channel has no reciprocal
-// dependency.
+// Store is a leaf storage package over internal/channel the same way
+// internal/channel is a leaf storage package over the shared *sql.DB — no
+// transport, no MCP surface. It depends on internal/channel to validate a
+// channel, its participants, and their current runtime binding;
+// internal/channel has no reciprocal dependency.
+//
+// Provider sits above Store and channel.Store: participant resolution,
+// default-recipient resolution, and every relay_* business rule live there,
+// not in a transport's handlers. CLIProvider is the only implementation —
+// a request/response provider an agent calls into (relay_send,
+// relay_receive, ...) with nothing addressable for Tangent to push into
+// between calls. Every accepted exchange still writes an exchange_outbox
+// row in the same transaction (AcceptExchange); ClaimNextForDelivery and
+// RecordDeliveryOutcome exist and are exercised by tests, but CLIProvider
+// never calls them, and CW-20260906-0071's live proof against the dev
+// instance confirmed the outbox has zero callers in this build. That is
+// deliberate, not unfinished: a future push-capable provider — a
+// persistent-connection transport under CW-20260907-0061, or a
+// Nanite-hosted plugin with its own transport — needs an addressable
+// destination to write into unprompted, and the outbox is that
+// destination, already durable and already populated. It starts consuming
+// a real backlog with no migration, because the same AcceptExchange call
+// that serves today's pull-only CLIProvider already wrote its work item.
 package relay
 
 import (
@@ -254,19 +274,36 @@ func (s *Store) getByIdempotencyKey(ctx context.Context, senderParticipantID, id
 // passes it back next time; nothing here persists a per-destination read
 // position.
 //
-// This is a pure read: it advances no cursor of its own, marks nothing
-// read, and never touches presence. That is deliberate — a future UI-facing
-// list of the same channel reuses this method safely, because acceptance
-// item 2's "UI reads do not consume agent inbox messages" has to hold by
-// construction, not by every future caller remembering not to call Receive
-// instead. See TestListForDestinationNeverTouchesPresenceOrCursor.
-func (s *Store) ListForDestination(ctx context.Context, channelID, recipientParticipantID string, sinceSequence int64, limit int) ([]Exchange, error) {
+// unackedOnly additionally excludes anything this participant has already
+// acked (exchange_reads). This is CW-20260906-0072's fix for a durable
+// check-in model, not the continuous-standby one 0066 shipped for: a
+// relaunched process holds no cursor in memory, so cursor=0 alone re-reads
+// this destination's entire history on every check-in and cannot tell "new
+// to me" from "I acked this yesterday" without it. unackedOnly=true turns
+// that into "give me exactly what still needs handling" — the response
+// scales with genuine backlog, not with total history, and exchange_reads
+// (already durable) becomes the position marker a relaunched session never
+// had to keep itself.
+//
+// This is still a pure read: it advances no cursor of its own, marks
+// nothing read, and never touches presence. That is deliberate — a future
+// UI-facing list of the same channel reuses this method safely, because
+// acceptance item 2's "UI reads do not consume agent inbox messages" has to
+// hold by construction, not by every future caller remembering not to call
+// Receive instead. See TestListForDestinationNeverTouchesPresenceOrCursor.
+func (s *Store) ListForDestination(ctx context.Context, channelID, recipientParticipantID string, sinceSequence int64, limit int, unackedOnly bool) ([]Exchange, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx,
-		exchangeSelectColumns+` FROM exchanges WHERE channel_id = ? AND recipient_participant_id = ? AND sequence > ? ORDER BY sequence LIMIT ?`,
-		channelID, recipientParticipantID, sinceSequence, limit)
+	query := exchangeSelectColumns + ` FROM exchanges WHERE channel_id = ? AND recipient_participant_id = ? AND sequence > ?`
+	args := []any{channelID, recipientParticipantID, sinceSequence}
+	if unackedOnly {
+		query += ` AND NOT EXISTS (SELECT 1 FROM exchange_reads WHERE exchange_reads.exchange_id = exchanges.id AND exchange_reads.participant_id = ?)`
+		args = append(args, recipientParticipantID)
+	}
+	query += ` ORDER BY sequence LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("relay store: list for destination: %w", err)
 	}
@@ -738,7 +775,7 @@ func (s *Store) Receive(ctx context.Context, params ReceiveParams) (ReceiveResul
 }
 
 func (s *Store) receiveOnce(ctx context.Context, params ReceiveParams) (ReceiveResult, error) {
-	items, err := s.ListForDestination(ctx, params.ChannelID, params.ParticipantID, params.Cursor, params.Limit)
+	items, err := s.ListForDestination(ctx, params.ChannelID, params.ParticipantID, params.Cursor, params.Limit, params.UnackedOnly)
 	if err != nil {
 		return ReceiveResult{}, err
 	}

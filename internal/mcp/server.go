@@ -88,8 +88,9 @@ type Server struct {
 	// registered at all, the same choice tangent.retention_status makes for
 	// the same reason: there is no useful "unavailable" answer to give for
 	// a surface that answers nothing without a database.
-	channels *channel.Store
-	relay    *relay.Store
+	channels      *channel.Store
+	relay         *relay.Store
+	relayProvider relay.Provider
 
 	roomflowOptions []roomflow.Option
 
@@ -178,6 +179,7 @@ func WithRelay(channels *channel.Store, relayStore *relay.Store) Option {
 		}
 		server.channels = channels
 		server.relay = relayStore
+		server.relayProvider = relay.NewCLIProvider(channels, relayStore)
 		return nil
 	}
 }

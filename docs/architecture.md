@@ -322,6 +322,41 @@ through; `last_seen_at` is durable. The operator's own send/read path has
 no MCP tool here; it is a REST surface over the same two Stores, not yet
 built.
 
+`internal/relay` also defines a `Provider` interface (CW-20260906-0072)
+that sits between the seven MCP handlers and the two Stores: participant
+resolution, default-recipient resolution, and every `relay_*` business rule
+live behind it, not in `relay_tools.go`. `CLIProvider` is the only
+implementation today — a request/response provider a Claude Code session's
+cooperative-loop skill calls into, with nothing addressable for Tangent to
+push into between calls.
+
+`exchange_outbox` and its `ClaimNextForDelivery`/`RecordDeliveryOutcome`
+methods implement a transactional outbox for push-style delivery: every
+`AcceptExchange` call writes an outbox row in the same transaction as the
+exchange, but `CLIProvider` never claims one. That is a deliberate,
+measured decision, not a gap — CW-20260906-0071's live proof against the
+dev instance confirmed the outbox has zero callers in this build. A
+pull-only provider has no addressable destination to push into between
+calls, so consuming the outbox would have nothing to deliver to. Leaving it
+dormant costs nothing to reverse: a future push-capable provider (a
+persistent-connection transport under CW-20260907-0061, or a Nanite-hosted
+plugin with its own transport) starts consuming a real backlog with no
+migration, because the same `AcceptExchange` call that serves today's
+`CLIProvider` already wrote its work item.
+
+`relay_receive`'s `unacked_only` input (CW-20260906-0072) is the other half
+of that same pull-only shape: a relaunched session holds no cursor in
+memory, so `cursor=0` alone would re-read the destination's entire history
+every check-in with no way to tell new from already-handled. `unacked_only`
+answers that by excluding anything already recorded in
+`exchange_reads` for the caller, regardless of cursor — `cursor=0,
+unacked_only=true` is exactly the durable check-in shape a freshly launched
+process needs, and response size tracks genuine backlog rather than total
+history. The corollary: anything received but never acknowledged via
+`relay_ack` keeps reappearing on every subsequent `unacked_only` call,
+forever — a caller must ack what it actually handles, including a message
+it decides needs no reply, or that message is never done being delivered.
+
 ### Persistence layer
 
 `internal/db/` + `internal/room/` — Tangent persists room rows and

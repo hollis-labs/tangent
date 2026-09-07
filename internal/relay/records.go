@@ -119,6 +119,10 @@ type ReceiveParams struct {
 	// whatever is already new. Capped at MaximumReceiveWait.
 	Wait  time.Duration
 	Limit int
+	// UnackedOnly excludes anything already acked by ParticipantID. See
+	// Store.ListForDestination's doc comment for why a relaunched, cursor-
+	// less session needs this rather than cursor=0 alone.
+	UnackedOnly bool
 }
 
 // ReceiveResult is one receive call's answer. TimedOut is never an error
