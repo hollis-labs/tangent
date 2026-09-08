@@ -1,6 +1,10 @@
 package relay
 
-import "time"
+import (
+	"time"
+
+	"github.com/hollis-labs/tangent/internal/db"
+)
 
 // Exchange is one message plus its frozen recipient binding, thread, and
 // correlation ids (ADR 0006 §3, "Exchange"). It is immutable once accepted —
@@ -25,6 +29,15 @@ type Exchange struct {
 	// `sequence > cursor`.
 	Sequence  int64
 	CreatedAt time.Time
+}
+
+// BodyRedacted reports whether Body currently holds a redaction tombstone
+// rather than what the sender wrote — the same computed-from-an-already-
+// persisted-fact shape as channel.Subject.ReferentPurged, so a caller can
+// tell "this resolved to an existing exchange whose content has since been
+// erased" without string-matching the tombstone itself.
+func (e Exchange) BodyRedacted() bool {
+	return db.IsRedacted(e.Body)
 }
 
 // OutboxStatus is exchange_outbox's current delivery-workflow state.

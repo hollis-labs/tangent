@@ -142,9 +142,15 @@ type RetentionRequest struct {
 	Kind          OperationKind
 	SurfaceID     string
 	InteractionID string
-	ActorRef      string
-	Authority     Authority
-	PolicyRef     string
+	// ChannelID and ExchangeID are the relay journal's two scopes
+	// (CW-20260907-0043): a channel is to its exchanges what a surface is to
+	// its interactions, and an exchange is the content-bearing leaf, the
+	// same role an interaction plays for a surface.
+	ChannelID  string
+	ExchangeID string
+	ActorRef   string
+	Authority  Authority
+	PolicyRef  string
 	// DryRun computes and reports everything the operation would remove and
 	// writes nothing — not the content change, and not an audit row. A plan is
 	// not an act, and logging it as one would make the erasure log lie.
@@ -168,6 +174,8 @@ type RetentionResult struct {
 	Kind          OperationKind    `json:"kind"`
 	SurfaceID     string           `json:"surface_id,omitempty"`
 	InteractionID string           `json:"interaction_id,omitempty"`
+	ChannelID     string           `json:"channel_id,omitempty"`
+	ExchangeID    string           `json:"exchange_id,omitempty"`
 	Outcome       Outcome          `json:"outcome"`
 	Code          string           `json:"code,omitempty"`
 	AffectedRows  int              `json:"affected_rows"`
@@ -214,6 +222,17 @@ var redactionGuards = []string{
 // window wider than the work.
 var draftGuards = []string{
 	"draft_revisions_immutable_update",
+}
+
+// relayRedactionGuards are what an exchange- or channel-scoped redaction
+// suspends. Both triggers already exist as of migration 0014 — this task
+// needed no migration to add a guard, only to name the two it already had.
+// exchange_outbox carries no guard to suspend (it is this schema's one
+// mutable workflow-state table), and exchange_reads has no content column
+// this redaction ever touches, so neither appears here.
+var relayRedactionGuards = []string{
+	"exchanges_immutable_update",
+	"exchange_delivery_receipts_immutable_update",
 }
 
 // purgeGuards are the eleven delete guards a surface cascade reaches, plus the
@@ -323,6 +342,36 @@ var draftRedactionTargets = []redactionTarget{
 		RefExpr: "interaction_id || '#' || revision"},
 }
 
+// exchangeRedactionTargets are the columns ADR 0002 §2 puts in the caller
+// payload and adapter freeform text classes, for one exchange.
+//
+// error_message, runtime_authority, and runtime_endpoint_ref are here
+// together, not just error_message: §2's own rule for delivery evidence is
+// "durable-record for the typed fields; the freeform text carried inside
+// them is treated as caller payload", and runtime_authority/
+// runtime_endpoint_ref are exactly that freeform text — the relay skill
+// itself tells a caller to pass "an endpoint_ref you control, such as a
+// session id", which can be a path, a hostname, or a personal identifier,
+// unlike the enum-like outcome/error_code columns beside them. last_error on
+// exchange_outbox is the same class again, on the one mutable workflow row;
+// it needs no guard (that table carries none), so it is redacted here for
+// completeness rather than left for a caller to reach with a bare UPDATE.
+//
+// Absent by design: exchanges.idempotency_key, .channel_id, .subject_id,
+// .sender_participant_id, .recipient_participant_id, .recipient_binding_id,
+// .reply_to_exchange_id, .sequence, .created_at (identity, lifecycle, and
+// the replay cursor — UNIQUE(recipient_participant_id, sequence) and
+// UNIQUE(sender_participant_id, idempotency_key) both depend on these
+// surviving); exchange_delivery_receipts.outcome/error_code (enum-like, not
+// freeform); exchange_reads entirely (no content column exists there).
+var exchangeRedactionTargets = []redactionTarget{
+	{Table: "exchanges", Column: "body", Where: "id = ?", RefExpr: "id"},
+	{Table: "exchange_delivery_receipts", Column: "error_message", Where: "exchange_id = ?", RefExpr: "id"},
+	{Table: "exchange_delivery_receipts", Column: "runtime_authority", Where: "exchange_id = ?", RefExpr: "id"},
+	{Table: "exchange_delivery_receipts", Column: "runtime_endpoint_ref", Where: "exchange_id = ?", RefExpr: "id"},
+	{Table: "exchange_outbox", Column: "last_error", Where: "exchange_id = ?", RefExpr: "exchange_id"},
+}
+
 // ── Operations ─────────────────────────────────────────────────────────
 
 // RedactInteraction removes the caller payload, participant drafts,
@@ -369,6 +418,62 @@ func RedactSurface(ctx context.Context, database *sql.DB, req RetentionRequest) 
 		planned := scope.surface(req.SurfaceID)
 		for _, id := range interactionIDs {
 			planned = append(planned, scope.interaction(id)...)
+		}
+		return planned
+	})
+}
+
+// RedactExchange removes one exchange's body and the freeform text on its
+// delivery receipts and outbox row, preserving its identity, its channel and
+// participant correlation, its sequence, and its idempotency key.
+func RedactExchange(ctx context.Context, database *sql.DB, req RetentionRequest) (RetentionResult, error) {
+	req.Kind = OperationPayloadRedaction
+	if req.ExchangeID == "" {
+		return RetentionResult{}, fmt.Errorf("redact exchange: %w: no exchange id", ErrNoSuchTarget)
+	}
+	exists, err := rowExists(ctx, database, `SELECT 1 FROM exchanges WHERE id = ?`, req.ExchangeID)
+	if err != nil {
+		return RetentionResult{}, err
+	}
+	if !exists {
+		return refuse(ctx, database, req, "unknown_exchange",
+			"no exchange with that id exists in this database")
+	}
+	return applyRedaction(ctx, database, req, relayRedactionGuards, func(scope scopeBinder) []plannedTarget {
+		return scope.exchange(req.ExchangeID)
+	})
+}
+
+// RedactChannel removes the body and delivery freeform text of every
+// exchange in a channel, both directions. Unlike RedactSurface, it adds no
+// channel-scoped columns of its own: migration 0013's channel tables
+// (channels, channel_subjects, participants, channel_participant_bindings)
+// carry no immutability trigger at all, so nothing in them is trapped the
+// way a surface's or an interaction's payload is — an operator who wants a
+// channel's title or metadata gone can already reach it with an ordinary
+// UPDATE. What only this function can reach is the immutable journal: the
+// exchanges a channel's redaction has to name all of.
+func RedactChannel(ctx context.Context, database *sql.DB, req RetentionRequest) (RetentionResult, error) {
+	req.Kind = OperationPayloadRedaction
+	if req.ChannelID == "" {
+		return RetentionResult{}, fmt.Errorf("redact channel: %w: no channel id", ErrNoSuchTarget)
+	}
+	exists, err := rowExists(ctx, database, `SELECT 1 FROM channels WHERE id = ?`, req.ChannelID)
+	if err != nil {
+		return RetentionResult{}, err
+	}
+	if !exists {
+		return refuse(ctx, database, req, "unknown_channel",
+			"no channel with that id exists in this database")
+	}
+	exchangeIDs, err := exchangeIDsForChannel(ctx, database, req.ChannelID)
+	if err != nil {
+		return RetentionResult{}, err
+	}
+	return applyRedaction(ctx, database, req, relayRedactionGuards, func(scope scopeBinder) []plannedTarget {
+		planned := []plannedTarget{}
+		for _, id := range exchangeIDs {
+			planned = append(planned, scope.exchange(id)...)
 		}
 		return planned
 	})
@@ -755,6 +860,14 @@ func (scopeBinder) drafts(id string) []plannedTarget {
 	return planned
 }
 
+func (scopeBinder) exchange(id string) []plannedTarget {
+	planned := make([]plannedTarget, 0, len(exchangeRedactionTargets))
+	for _, target := range exchangeRedactionTargets {
+		planned = append(planned, plannedTarget{target: target, scope: id})
+	}
+	return planned
+}
+
 func applyRedaction(
 	ctx context.Context,
 	database *sql.DB,
@@ -783,8 +896,8 @@ func applyRedactionWithExtra(
 		}
 		return RetentionResult{
 			OperationID: newOperationID(), Kind: req.Kind, SurfaceID: req.SurfaceID,
-			InteractionID: req.InteractionID, Outcome: OutcomeApplied,
-			AffectedRows: len(removed), Removed: removed, DryRun: true,
+			InteractionID: req.InteractionID, ChannelID: req.ChannelID, ExchangeID: req.ExchangeID,
+			Outcome: OutcomeApplied, AffectedRows: len(removed), Removed: removed, DryRun: true,
 		}, nil
 	}
 
@@ -808,8 +921,8 @@ func applyRedactionWithExtra(
 
 	result := RetentionResult{
 		OperationID: newOperationID(), Kind: req.Kind, SurfaceID: req.SurfaceID,
-		InteractionID: req.InteractionID, Outcome: OutcomeApplied,
-		AffectedRows: len(removed), Removed: removed, GuardsRestored: restored,
+		InteractionID: req.InteractionID, ChannelID: req.ChannelID, ExchangeID: req.ExchangeID,
+		Outcome: OutcomeApplied, AffectedRows: len(removed), Removed: removed, GuardsRestored: restored,
 	}
 	if len(removed) == 0 {
 		result.Code = "already_redacted"
@@ -1003,11 +1116,13 @@ func writeOperationRow(
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO retention_operations (
   operation_id, kind, target_surface_id, target_interaction_id,
+  target_channel_id, target_exchange_id,
   actor_ref, authority, policy_ref,
   requested_at, completed_at, outcome, code, affected_rows,
   removed_digests, known_backups, backup_survey, schema_version, guards_restored
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		result.OperationID, string(result.Kind), req.SurfaceID, req.InteractionID,
+		req.ChannelID, req.ExchangeID,
 		actor, string(authority), req.PolicyRef,
 		at, at, string(result.Outcome), result.Code, result.AffectedRows,
 		string(digests), string(backups), survey.State, schemaVersion, guards)
@@ -1025,7 +1140,8 @@ func refuse(
 ) (RetentionResult, error) {
 	result := RetentionResult{
 		OperationID: newOperationID(), Kind: req.Kind, SurfaceID: req.SurfaceID,
-		InteractionID: req.InteractionID, Outcome: OutcomeRefused, Code: code,
+		InteractionID: req.InteractionID, ChannelID: req.ChannelID, ExchangeID: req.ExchangeID,
+		Outcome: OutcomeRefused, Code: code,
 		Removed: []RemovedContent{}, Note: note,
 	}
 	if req.DryRun {
@@ -1050,7 +1166,8 @@ func recordFailure(
 	_ = cause
 	result := RetentionResult{
 		OperationID: newOperationID(), Kind: req.Kind, SurfaceID: req.SurfaceID,
-		InteractionID: req.InteractionID, Outcome: OutcomeFailed, Code: code,
+		InteractionID: req.InteractionID, ChannelID: req.ChannelID, ExchangeID: req.ExchangeID,
+		Outcome: OutcomeFailed, Code: code,
 		Removed: []RemovedContent{},
 		// The transaction rolled back, and SQLite DDL rolls back with it, so
 		// the guards are in place. It is reported as false anyway: this field
@@ -1070,6 +1187,8 @@ type RetentionOperationRow struct {
 	Kind           string    `json:"kind"`
 	SurfaceID      string    `json:"surface_id,omitempty"`
 	InteractionID  string    `json:"interaction_id,omitempty"`
+	ChannelID      string    `json:"channel_id,omitempty"`
+	ExchangeID     string    `json:"exchange_id,omitempty"`
 	ActorRef       string    `json:"actor_ref"`
 	Authority      string    `json:"authority"`
 	PolicyRef      string    `json:"policy_ref,omitempty"`
@@ -1105,7 +1224,8 @@ func RetentionHistory(ctx context.Context, database *sql.DB, limit int) ([]Reten
 				"database has no log rather than a damaged one. %s", status.Advice())
 	}
 	rows, err := database.QueryContext(ctx, `
-SELECT operation_id, kind, target_surface_id, target_interaction_id, actor_ref, authority,
+SELECT operation_id, kind, target_surface_id, target_interaction_id, target_channel_id,
+       target_exchange_id, actor_ref, authority,
        policy_ref, requested_at, outcome, code, affected_rows, removed_digests,
        backup_survey, schema_version, guards_restored
 FROM retention_operations ORDER BY requested_at DESC, operation_id DESC LIMIT ?`, limit)
@@ -1120,6 +1240,7 @@ FROM retention_operations ORDER BY requested_at DESC, operation_id DESC LIMIT ?`
 		var digests string
 		var guards int
 		if scanErr := rows.Scan(&row.OperationID, &row.Kind, &row.SurfaceID, &row.InteractionID,
+			&row.ChannelID, &row.ExchangeID,
 			&row.ActorRef, &row.Authority, &row.PolicyRef, &row.RequestedAt, &row.Outcome,
 			&row.Code, &row.AffectedRows, &digests, &row.BackupSurvey, &row.SchemaVersion,
 			&guards); scanErr != nil {
@@ -1363,6 +1484,27 @@ func surfaceInteractionIDs(ctx context.Context, database *sql.DB, surfaceID stri
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate surface interactions: %w", err)
+	}
+	return ids, nil
+}
+
+func exchangeIDsForChannel(ctx context.Context, database *sql.DB, channelID string) ([]string, error) {
+	rows, err := database.QueryContext(ctx,
+		`SELECT id FROM exchanges WHERE channel_id = ? ORDER BY created_at, id`, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("list channel exchanges: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, fmt.Errorf("scan channel exchanges: %w", scanErr)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate channel exchanges: %w", err)
 	}
 	return ids, nil
 }

@@ -166,8 +166,16 @@ func (s *Store) AcceptExchange(ctx context.Context, params AcceptExchangeParams)
 	existing, err := s.getByIdempotencyKey(ctx, params.SenderParticipantID, params.IdempotencyKey)
 	switch {
 	case err == nil:
+		// A body comparison against a redacted exchange can never match a
+		// real retry body — the stored value is a tombstone JSON string, not
+		// what the sender sent — so it would misfire as a conflict on every
+		// legitimate replay of an already-redacted exchange. The idempotency
+		// key match alone is trusted instead: it is identity, never redacted.
+		// existing.BodyRedacted() stays true on the returned Exchange either
+		// way, so a caller can still tell this resolved to erased content.
+		bodyMatches := existing.Body == params.Body || existing.BodyRedacted()
 		if existing.ChannelID != params.ChannelID || existing.RecipientParticipantID != params.RecipientParticipantID ||
-			existing.Body != params.Body {
+			!bodyMatches {
 			return Exchange{}, fmt.Errorf("%w: %q", ErrIdempotencyConflict, params.IdempotencyKey)
 		}
 		return existing, nil

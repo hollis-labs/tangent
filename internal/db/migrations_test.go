@@ -907,6 +907,84 @@ INSERT INTO participant_presence (participant_id, last_seen_at, updated_at) VALU
 	}
 }
 
+// TestRetentionOperationsRelayTargetsMigrationRollsBackIndependently proves
+// migration 0016 only widens retention_operations (two new columns, two new
+// indexes) and that RollbackOne narrows it back without touching a row this
+// migration did not write.
+func TestRetentionOperationsRelayTargetsMigrationRollsBackIndependently(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "retention-relay-targets.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrateTo(database, 16); err != nil {
+		t.Fatalf("migrate to version 16: %v", err)
+	}
+
+	if err := probeColumnExists(database, "retention_operations", "target_channel_id"); err != nil {
+		t.Fatalf("target_channel_id after up: %v", err)
+	}
+	if err := probeColumnExists(database, "retention_operations", "target_exchange_id"); err != nil {
+		t.Fatalf("target_exchange_id after up: %v", err)
+	}
+
+	now := "2026-09-07T00:00:00Z"
+	if _, err := database.Exec(`
+INSERT INTO retention_operations (
+  operation_id, kind, target_channel_id, target_exchange_id,
+  actor_ref, authority, requested_at, completed_at, outcome
+) VALUES ('op1', 'payload-redaction', 'ch1', 'ex1', 'operator:test', 'local-user', ?, ?, 'applied')`,
+		now, now); err != nil {
+		t.Fatalf("seed retention operation: %v", err)
+	}
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+	if err := probeColumnExists(database, "retention_operations", "target_channel_id"); err == nil ||
+		!strings.Contains(err.Error(), "no such column") {
+		t.Fatalf("target_channel_id query after rollback error = %v, want no such column", err)
+	}
+	var survivingOperations int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM retention_operations WHERE operation_id = 'op1'`).
+		Scan(&survivingOperations); err != nil {
+		t.Fatalf("count surviving operation: %v", err)
+	}
+	if survivingOperations != 1 {
+		t.Fatalf("retention_operations row count after rolling back only its relay columns = %d, want 1",
+			survivingOperations)
+	}
+
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	if err := probeColumnExists(database, "retention_operations", "target_channel_id"); err != nil {
+		t.Fatalf("target_channel_id after re-apply: %v", err)
+	}
+	// A row written before the rollback comes back with the empty-string
+	// default, the same trade migration 0010's own rollback makes — reading
+	// as "not recorded" is honest for a column that briefly did not exist.
+	var channelID string
+	if err := database.QueryRow(`SELECT target_channel_id FROM retention_operations WHERE operation_id = 'op1'`).
+		Scan(&channelID); err != nil {
+		t.Fatalf("read target_channel_id after re-apply: %v", err)
+	}
+	if channelID != "" {
+		t.Fatalf("target_channel_id after re-apply = %q, want empty string for a pre-rollback row", channelID)
+	}
+}
+
+// probeColumnExists runs a trivial SELECT against a fixed, internally-listed
+// table and column name. Neither is ever caller-supplied.
+//
+//nolint:gosec // table and column are always this file's own literal names
+func probeColumnExists(database *sql.DB, table, column string) error {
+	_, err := database.Exec(`SELECT ` + column + ` FROM ` + table + ` LIMIT 1`)
+	return err
+}
+
 // probeTableExists runs a trivial SELECT against a fixed, internally-listed
 // table name. The name is never caller-supplied, so string concatenation
 // here carries none of the injection risk gosec's G202 checks for; SQLite
