@@ -52,6 +52,8 @@ type maintenanceFlags struct {
 
 	eraseSurface     *string
 	eraseInteraction *string
+	eraseExchange    *string
+	eraseChannel     *string
 	eraseDrafts      *string
 	purgeSurface     *string
 	closeSurface     *string
@@ -90,6 +92,12 @@ func registerMaintenanceFlags(flagSet *flag.FlagSet) *maintenanceFlags {
 		"redact one interaction's caller payload, drafts, resolution, and adapter text (requires --confirm)")
 	f.eraseSurface = flagSet.String("erase-surface", "",
 		"redact every payload on one surface, including the legacy room copy (requires --confirm)")
+	f.eraseExchange = flagSet.String("erase-exchange", "",
+		"redact one relay exchange's body and its delivery receipts' and outbox row's freeform "+
+			"text (requires --confirm)")
+	f.eraseChannel = flagSet.String("erase-channel", "",
+		"redact the body and delivery freeform text of every exchange in one channel, both "+
+			"directions (requires --confirm)")
 	f.eraseDrafts = flagSet.String("erase-drafts", "",
 		"delete one interaction's draft revisions and write their tombstones (requires --confirm)")
 	f.purgeSurface = flagSet.String("purge-surface", "",
@@ -121,6 +129,7 @@ func (f *maintenanceFlags) requested() int {
 	modes := []bool{
 		*f.check, *f.backup != "", *f.restore != "", *f.compact, *f.repair,
 		*f.retentionPlan, *f.retentionApply, *f.eraseSurface != "", *f.eraseInteraction != "",
+		*f.eraseExchange != "", *f.eraseChannel != "",
 		*f.eraseDrafts != "", *f.purgeSurface != "", *f.closeSurface != "",
 		*f.expireCapability, *f.externalReport != "", *f.history,
 	}
@@ -144,8 +153,8 @@ func (f *maintenanceFlags) needsExclusiveOwnership() bool {
 	case *f.backup != "" && *f.drain:
 		return true
 	case *f.restore != "", *f.compact, *f.repair, *f.retentionApply,
-		*f.eraseSurface != "", *f.eraseInteraction != "", *f.eraseDrafts != "",
-		*f.purgeSurface != "", *f.closeSurface != "", *f.expireCapability,
+		*f.eraseSurface != "", *f.eraseInteraction != "", *f.eraseExchange != "", *f.eraseChannel != "",
+		*f.eraseDrafts != "", *f.purgeSurface != "", *f.closeSurface != "", *f.expireCapability,
 		// The external-source report writes a refusal row, and a write is a
 		// write: it is listed here rather than treated as a reader because the
 		// erasure log must not be appended to by a second process.
@@ -162,8 +171,8 @@ func (f *maintenanceFlags) needsConfirmation() bool {
 		return false
 	}
 	return *f.restore != "" || *f.retentionApply || *f.eraseSurface != "" ||
-		*f.eraseInteraction != "" || *f.eraseDrafts != "" || *f.purgeSurface != "" ||
-		*f.expireCapability
+		*f.eraseInteraction != "" || *f.eraseExchange != "" || *f.eraseChannel != "" ||
+		*f.eraseDrafts != "" || *f.purgeSurface != "" || *f.expireCapability
 }
 
 // runMaintenance executes the requested command. It returns the process exit
@@ -320,6 +329,24 @@ func runMaintenance(
 		result, err := tangentdb.RedactSurface(ctx, database, req)
 		if err != nil {
 			return fail("erase-surface: %v", err)
+		}
+		emit(result)
+		return 0
+
+	case *flags.eraseExchange != "":
+		req.ExchangeID = *flags.eraseExchange
+		result, err := tangentdb.RedactExchange(ctx, database, req)
+		if err != nil {
+			return fail("erase-exchange: %v", err)
+		}
+		emit(result)
+		return 0
+
+	case *flags.eraseChannel != "":
+		req.ChannelID = *flags.eraseChannel
+		result, err := tangentdb.RedactChannel(ctx, database, req)
+		if err != nil {
+			return fail("erase-channel: %v", err)
 		}
 		emit(result)
 		return 0
