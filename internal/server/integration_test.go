@@ -19,6 +19,7 @@ import (
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/telemetry"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
@@ -26,10 +27,44 @@ import (
 // MCP-side client session, the WS handler URL, and the room manager.
 // Each sub-test gets its own rig to avoid cross-talk.
 type rig struct {
-	mgr       *room.Manager
-	mcpClient *mcpsdk.ClientSession
-	httpURL   string
-	cleanup   func()
+	mgr           *room.Manager
+	mcpClient     *mcpsdk.ClientSession
+	httpURL       string
+	telemetrySink *recordingTelemetrySink
+	cleanup       func()
+}
+
+// recordingTelemetrySink captures every record the ws handler emits, so a
+// test can assert on an operational fact — such as a reconnect inheriting
+// its predecessor's resolver lease — without room.Connection's own
+// Replaced/InheritedLease ever needing a wire representation. This is the
+// same fact internal/ws/telemetry.go's reportAttachment already records for
+// exactly this reason: "telemetry has to be able to count it without
+// inventing parallel state."
+type recordingTelemetrySink struct {
+	mu      sync.Mutex
+	records []telemetry.Record
+}
+
+func (s *recordingTelemetrySink) Append(_ context.Context, record telemetry.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records = append(s.records, record)
+	return nil
+}
+
+// latestAttachment returns the most recent connection.attached record, or
+// the zero value if none has been emitted yet.
+func (s *recordingTelemetrySink) latestAttachment() telemetry.Record {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var latest telemetry.Record
+	for _, record := range s.records {
+		if record.Name == telemetry.EventConnectionAttached {
+			latest = record
+		}
+	}
+	return latest
 }
 
 func newRig(t *testing.T) *rig {
@@ -73,6 +108,8 @@ func newRig(t *testing.T) *rig {
 
 	wsHandler := tangentws.New(mgr, logger)
 	wsHandler.SetOriginPatterns([]string{"*"})
+	telemetrySink := &recordingTelemetrySink{}
+	wsHandler.SetTelemetry(telemetry.New(telemetry.WithSink(telemetrySink)))
 
 	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "")
 	if err != nil {
@@ -144,9 +181,10 @@ func newRig(t *testing.T) *rig {
 	}
 
 	return &rig{
-		mgr:       mgr,
-		mcpClient: clientSession,
-		httpURL:   wsSrv.URL,
+		mgr:           mgr,
+		mcpClient:     clientSession,
+		httpURL:       wsSrv.URL,
+		telemetrySink: telemetrySink,
 		cleanup: func() {
 			_ = clientSession.Close()
 			_ = serverSession.Close()
@@ -158,6 +196,18 @@ func newRig(t *testing.T) *rig {
 
 func (r *rig) wsURL(roomID string) string {
 	return "ws" + strings.TrimPrefix(r.httpURL, "http") + "?roomID=" + roomID
+}
+
+// wsURLWithClientID is wsURL plus a stable per-tab clientID, matching what a
+// real browser sends on every attach (ws-client.ts: sessionStorage-backed,
+// unchanged across a reconnect). Dialing twice with the same clientID is
+// what a genuine "disconnect resumes call" looks like in production —
+// room.Room.AttachConn's evictClientLocked replaces the predecessor and
+// transfers its resolver lease synchronously, under the same lock as the
+// decision, regardless of whether the predecessor's own read loop has
+// noticed its socket closed yet.
+func (r *rig) wsURLWithClientID(roomID, clientID string) string {
+	return r.wsURL(roomID) + "&clientID=" + clientID
 }
 
 // mcpCallTimeout bounds the async tangent.triage MCP call in every test
@@ -265,6 +315,26 @@ func TestIntegration_TriageRoundTrip(t *testing.T) {
 // TestIntegration_DisconnectResumesCall — closing the WS mid-call leaves the
 // MCP call pending; a replacement attachment receives a revisioned replay and
 // resolves that same call.
+//
+// Both dials share one clientID, which is what makes this a reconnect
+// (room.Room.AttachConn's evictClientLocked, run synchronously under the
+// same lock as the resolver-lease decision) rather than a second,
+// independent peer. That distinction is load-bearing, not cosmetic: without
+// a shared clientID the replacement gets peer semantics, and whether its
+// response succeeds or gets refused with a lease conflict depends on
+// whether the predecessor's own read-loop goroutine has been scheduled yet
+// to notice its closed socket and call DetachConn — a real race this
+// process hit intermittently in CI (rare enough to pass on #38-#40, common
+// enough to fail once before #36's timeout raise and once on #41). A real
+// browser never has this problem: ws-client.ts always sends a stable
+// per-tab clientID (sessionStorage-backed, unchanged across a refresh), so
+// a genuine disconnect-and-resume always resolves the lease correctly on
+// attach — either by evicting a predecessor still holding it, or by finding
+// it already free because the predecessor's own detach won the race — the
+// assertion below checks the outcome both orderings share, not which one
+// occurred. The peer-semantics case — two genuinely live tabs racing for
+// the lease — is its own, correctly-refused behavior, already pinned by
+// internal/room's own TestResolverConflictReturnsLeaseError.
 func TestIntegration_DisconnectResumesCall(t *testing.T) {
 	rg := newRig(t)
 	defer rg.cleanup()
@@ -285,14 +355,15 @@ func TestIntegration_DisconnectResumesCall(t *testing.T) {
 	}()
 
 	rm := awaitRoom(t, rg.mgr, 2*time.Second)
-	clientConn, _, err := websocket.Dial(context.Background(), rg.wsURL(rm.ID), nil)
+	clientURL := rg.wsURLWithClientID(rm.ID, "resume-tab")
+	clientConn, _, err := websocket.Dial(context.Background(), clientURL, nil)
 	if err != nil {
 		t.Fatalf("ws dial: %v", err)
 	}
 	first := readFrame(t, clientConn, 3*time.Second)
 	_ = clientConn.Close(websocket.StatusGoingAway, "tab closed")
 
-	replacement, _, err := websocket.Dial(context.Background(), rg.wsURL(rm.ID), nil)
+	replacement, _, err := websocket.Dial(context.Background(), clientURL, nil)
 	if err != nil {
 		t.Fatalf("replacement ws dial: %v", err)
 	}
@@ -301,6 +372,28 @@ func TestIntegration_DisconnectResumesCall(t *testing.T) {
 	if replayed["revision"].(float64) <= first["revision"].(float64) {
 		t.Fatalf("replacement revision = %v, first = %v", replayed["revision"], first["revision"])
 	}
+
+	// Pin the reconnect semantics this test's freedom from the race depends
+	// on. Replaced/InheritedLease are deliberately NOT asserted here: which
+	// of them ends up true depends on a second, harmless race — whether the
+	// predecessor's own read loop reaches DetachConn before or after the
+	// replacement's AttachConn runs. Both orderings are correct and both are
+	// observed in practice (confirmed locally: a fast redial usually finds
+	// the predecessor already self-detached, giving replaced=false, role
+	// still resolves correctly either way), because a shared clientID makes
+	// AttachConn's own lease decision self-healing regardless of which
+	// ordering wins: if the predecessor is still there, evictClientLocked
+	// takes over its lease; if it is already gone, the lease is already
+	// free. What must hold in EITHER ordering, and is what a dropped
+	// clientID would actually break, is that the room ends up with exactly
+	// one connection holding the resolver role.
+	attachment := rg.telemetrySink.latestAttachment()
+	if attachment.Attributes[telemetry.AttrRole] != string(room.RoleResolver) ||
+		attachment.Attributes[telemetry.AttrConnections] != int64(1) {
+		t.Fatalf("replacement attachment attributes = %+v, want %s=%q %s=1",
+			attachment.Attributes, telemetry.AttrRole, room.RoleResolver, telemetry.AttrConnections)
+	}
+
 	writeFrame(t, replacement, map[string]any{
 		"type":       "response",
 		"envelopeId": "int-drop-1",
