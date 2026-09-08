@@ -138,6 +138,55 @@ type Server struct {
 	// envelope holds the registry-backed validation/dispatch service
 	// shared with future MCP and WebSocket subsystems.
 	envelope *envelope.Service
+
+	// participantRoutes is CW-20260907-0084's enumeration point: every
+	// route registerParticipantRoute wired up during New, in the order it
+	// was registered. It exists so a check can read what the server
+	// actually did rather than a hand-maintained list that drifts the way
+	// #37's route did — see ParticipantRoutes.
+	participantRoutes []ParticipantRoute
+}
+
+// ParticipantRoute names one HTTP route requireParticipant gates, and the
+// capability it was registered with.
+type ParticipantRoute struct {
+	Pattern    string
+	Capability authz.Capability
+}
+
+// ParticipantRoutes returns every participant-guarded route this Server
+// registered, in registration order.
+//
+// It is CW-20260907-0084's answer to a real bug: PR #37 shipped
+// POST /api/channels/{id}/messages gated on authz.Submit, a capability
+// ADR 0004 §7's KindParticipant row never holds, so no browser participant
+// session could ever have sent a message through it — and every test for
+// that route used a fake service with no participant gate configured, so
+// nothing could have caught it. A check that reads this list back and
+// asserts every capability is one KindParticipant actually holds closes
+// that class at test time, for every route registerParticipantRoute wires
+// up, present and future, with no per-route test and no hand-maintained
+// list to drift.
+func (s *Server) ParticipantRoutes() []ParticipantRoute {
+	return s.participantRoutes
+}
+
+// registerParticipantRoute wires pattern to handler behind the same
+// same-origin and participant-capability guards every browser API route
+// uses, and records the (pattern, capability) pair on the Server being
+// built. This is the one place a route's capability is written down, so it
+// and Server.ParticipantRoutes can never drift apart — a route registered
+// any other way is, by construction, not a route ParticipantRoutes can see.
+func registerParticipantRoute(
+	mux *http.ServeMux,
+	routes *[]ParticipantRoute,
+	cfg Config,
+	pattern string,
+	capability authz.Capability,
+	handler http.HandlerFunc,
+) {
+	*routes = append(*routes, ParticipantRoute{Pattern: pattern, Capability: capability})
+	mux.Handle(pattern, hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler)))
 }
 
 const (
@@ -161,6 +210,7 @@ func New(cfg Config) (*Server, error) {
 
 	mux := http.NewServeMux()
 	registerHealthRoutes(mux, cfg.Health)
+	var participantRoutes []ParticipantRoute
 
 	if cfg.MCP != nil {
 		// Streamable-HTTP transport (modern MCP clients). The SDK's
@@ -207,17 +257,16 @@ func New(cfg Config) (*Server, error) {
 		// acknowledging a presented projection needs `draft`, and submitting a
 		// terminal response needs `resolve`.
 		hitlHandler := newHITLHTTPHandler(cfg.HITL)
-		guard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
-			return hitlSameOrigin(requireParticipant(
-				cfg.Participants, cfg.Telemetry, capability, handler))
+		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
 		}
-		mux.Handle("GET /api/hitl", guard(authz.View, hitlHandler.inbox))
-		mux.Handle("GET /api/hitl/events", guard(authz.View, hitlHandler.events))
-		mux.Handle("GET /api/hitl/items/{itemID}", guard(authz.View, hitlHandler.item))
-		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", guard(authz.View, hitlHandler.tangentEvidence))
-		mux.Handle("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", guard(authz.View, hitlHandler.artifactPreview))
-		mux.Handle("POST /api/hitl/items/{itemID}/present", guard(authz.Draft, hitlHandler.present))
-		mux.Handle("POST /api/hitl/items/{itemID}/resolve", guard(authz.Resolve, hitlHandler.resolve))
+		register("GET /api/hitl", authz.View, hitlHandler.inbox)
+		register("GET /api/hitl/events", authz.View, hitlHandler.events)
+		register("GET /api/hitl/items/{itemID}", authz.View, hitlHandler.item)
+		register("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", authz.View, hitlHandler.tangentEvidence)
+		register("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", authz.View, hitlHandler.artifactPreview)
+		register("POST /api/hitl/items/{itemID}/present", authz.Draft, hitlHandler.present)
+		register("POST /api/hitl/items/{itemID}/resolve", authz.Resolve, hitlHandler.resolve)
 	}
 
 	if cfg.Rooms != nil {
@@ -232,12 +281,9 @@ func New(cfg Config) (*Server, error) {
 		// establishes which browser is asking; the caller identity decides
 		// what it may destroy.
 		roomHandler := newRoomHTTPHandler(cfg.Rooms)
-		mux.Handle("GET /api/rooms", hitlSameOrigin(requireParticipant(
-			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.list))))
-		mux.Handle("GET /api/rooms/{roomID}", hitlSameOrigin(requireParticipant(
-			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.inspect))))
-		mux.Handle("POST /api/rooms/{roomID}/close", hitlSameOrigin(requireParticipant(
-			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(roomHandler.close))))
+		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/rooms", authz.View, roomHandler.list)
+		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/rooms/{roomID}", authz.View, roomHandler.inspect)
+		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/rooms/{roomID}/close", authz.View, roomHandler.close)
 	}
 
 	if cfg.Channels != nil {
@@ -273,14 +319,14 @@ func New(cfg Config) (*Server, error) {
 		// Participants gate configured, making the whole class invisible
 		// to them. See TestChannelSendWorksForARealParticipantSession.
 		channelHandler := newChannelHTTPHandler(cfg.Channels)
-		channelGuard := func(capability authz.Capability, handler http.HandlerFunc) http.Handler {
-			return hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler))
+		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
 		}
-		mux.Handle("GET /api/channels", channelGuard(authz.View, channelHandler.list))
-		mux.Handle("GET /api/channels/events", channelGuard(authz.View, channelHandler.events))
-		mux.Handle("GET /api/channels/{channelID}", channelGuard(authz.View, channelHandler.get))
-		mux.Handle("POST /api/channels/{channelID}/messages", channelGuard(authz.Draft, channelHandler.send))
-		mux.Handle("POST /api/channels/{channelID}/read", channelGuard(authz.Draft, channelHandler.markRead))
+		register("GET /api/channels", authz.View, channelHandler.list)
+		register("GET /api/channels/events", authz.View, channelHandler.events)
+		register("GET /api/channels/{channelID}", authz.View, channelHandler.get)
+		register("POST /api/channels/{channelID}/messages", authz.Draft, channelHandler.send)
+		register("POST /api/channels/{channelID}/read", authz.Draft, channelHandler.markRead)
 	}
 
 	if cfg.Effects != nil && cfg.EffectContext != nil {
@@ -291,8 +337,7 @@ func New(cfg Config) (*Server, error) {
 		// audit table free of rows for requests that were never participant
 		// acts.
 		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext, cfg.Telemetry)
-		mux.Handle("POST /api/effects", hitlSameOrigin(requireParticipant(
-			cfg.Participants, cfg.Telemetry, authz.View, http.HandlerFunc(effectHandler.request))))
+		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/effects", authz.View, effectHandler.request)
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)
@@ -331,11 +376,12 @@ func New(cfg Config) (*Server, error) {
 	}
 
 	return &Server{
-		cfg:      cfg,
-		logger:   logger,
-		mux:      mux,
-		httpS:    httpS,
-		envelope: cfg.Envelope,
+		cfg:               cfg,
+		logger:            logger,
+		mux:               mux,
+		httpS:             httpS,
+		envelope:          cfg.Envelope,
+		participantRoutes: participantRoutes,
 	}, nil
 }
 
