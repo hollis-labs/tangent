@@ -306,6 +306,221 @@ func TestRedactSurfaceReachesTheLegacyCopiesAndTheSecondSnapshot(t *testing.T) {
 	}
 }
 
+// TestRedactExchangeRemovesBodyAndDeliveryFreeformTextPreservesIdentity is
+// CW-20260907-0043's core case: the relay journal's caller payload and its
+// delivery evidence's freeform text are erased, while identity, the
+// idempotency key, the sequence (replay cursor), the channel/participant
+// correlation, and the read fact all survive untouched.
+func TestRedactExchangeRemovesBodyAndDeliveryFreeformTextPreservesIdentity(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := f.now
+
+	f.exec(t, `INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch_ex', 'standalone-local:anonymous', ?, ?)`, now, now)
+	for _, id := range []string{"p_operator", "p_agent"} {
+		f.exec(t, `INSERT INTO participants (id, kind, created_at, updated_at) VALUES (?, 'agent', ?, ?)`,
+			id, now, now)
+	}
+	f.exec(t, `INSERT INTO exchanges (
+  id, idempotency_key, channel_id, sender_participant_id, recipient_participant_id, body, sequence, created_at
+) VALUES ('ex1', 'idem-ex1', 'ch_ex', 'p_operator', 'p_agent', 'the caller wrote this', 1, ?)`, now)
+	f.exec(t, `INSERT INTO exchange_outbox (exchange_id, status, last_error, created_at, updated_at)
+VALUES ('ex1', 'failed', 'connection refused by session runner-7', ?, ?)`, now, now)
+	f.exec(t, `INSERT INTO exchange_delivery_receipts (
+  id, exchange_id, attempt_number, outcome, runtime_authority, runtime_endpoint_ref, error_code, error_message, attempted_at
+) VALUES ('receipt1', 'ex1', 1, 'failed', 'claude-code', 'session-abc123-on-chrispians-laptop', 'ECONNREFUSED',
+          'socket closed by session runner-7', ?)`, now)
+	f.exec(t, `INSERT INTO exchange_reads (exchange_id, participant_id, acked_at) VALUES ('ex1', 'p_agent', ?)`, now)
+
+	result, err := RedactExchange(ctx, f.db, RetentionRequest{
+		ExchangeID: "ex1", ActorRef: "operator:test", Authority: AuthorityLocalUser,
+		PolicyRef: "test-erasure", Now: f.now,
+	})
+	if err != nil {
+		t.Fatalf("redact exchange: %v", err)
+	}
+	if result.Outcome != OutcomeApplied {
+		t.Fatalf("outcome = %s, want applied", result.Outcome)
+	}
+	if !result.GuardsRestored {
+		t.Fatal("the maintenance path did not verify the guards back in place")
+	}
+	if len(result.Removed) != 5 {
+		t.Fatalf("removed %d columns, want 5 (body, error_message, runtime_authority, "+
+			"runtime_endpoint_ref, last_error) — got %+v", len(result.Removed), result.Removed)
+	}
+
+	// Content is gone, and gone in the exact tombstone shape ADR 0002 §2
+	// specifies — never a bare NULL or empty string.
+	for _, check := range []struct{ query, forbid string }{
+		{`SELECT body FROM exchanges WHERE id = 'ex1'`, "the caller wrote this"},
+		{`SELECT last_error FROM exchange_outbox WHERE exchange_id = 'ex1'`, "connection refused"},
+		{`SELECT error_message FROM exchange_delivery_receipts WHERE id = 'receipt1'`, "socket closed"},
+		{`SELECT runtime_authority FROM exchange_delivery_receipts WHERE id = 'receipt1'`, "claude-code"},
+		{`SELECT runtime_endpoint_ref FROM exchange_delivery_receipts WHERE id = 'receipt1'`,
+			"chrispians-laptop"},
+	} {
+		value := f.column(t, check.query)
+		if strings.Contains(value, check.forbid) {
+			t.Fatalf("content survived: %q still contains %q", value, check.forbid)
+		}
+		var tombstone RedactionTombstone
+		if decodeErr := json.Unmarshal([]byte(value), &tombstone); decodeErr != nil {
+			t.Fatalf("%q did not become a tombstone: %v (value %q)", check.query, decodeErr, value)
+		}
+		if !tombstone.Redacted || tombstone.ContentDigest == "" {
+			t.Fatalf("tombstone is incomplete: %+v", tombstone)
+		}
+	}
+
+	// Identity, correlation, the replay cursor, and the read fact are
+	// untouched by construction: none of them are in exchangeRedactionTargets.
+	var idempotencyKey, channelID, sender, recipient string
+	var sequence int64
+	if scanErr := f.db.QueryRow(`SELECT idempotency_key, channel_id, sender_participant_id,
+       recipient_participant_id, sequence FROM exchanges WHERE id = 'ex1'`).Scan(
+		&idempotencyKey, &channelID, &sender, &recipient, &sequence); scanErr != nil {
+		t.Fatalf("read exchange identity: %v", scanErr)
+	}
+	if idempotencyKey != "idem-ex1" || channelID != "ch_ex" || sender != "p_operator" ||
+		recipient != "p_agent" || sequence != 1 {
+		t.Fatalf("identity changed: key=%q channel=%q sender=%q recipient=%q sequence=%d",
+			idempotencyKey, channelID, sender, recipient, sequence)
+	}
+	if errorCode := f.column(t,
+		`SELECT error_code FROM exchange_delivery_receipts WHERE id = 'receipt1'`); errorCode != "ECONNREFUSED" {
+		t.Fatalf("enum-like error_code changed to %q", errorCode)
+	}
+	if acked := f.count(t, `SELECT COUNT(*) FROM exchange_reads WHERE exchange_id = 'ex1' AND participant_id = 'p_agent'`); acked != 1 {
+		t.Fatal("the read fact did not survive redaction")
+	}
+
+	if drift := f.guardDrift(t); !drift.Intact() {
+		t.Fatalf("the redaction left the schema without its guards: %+v", drift)
+	}
+
+	// The audit row names the exchange, never the content it removed.
+	history, err := RetentionHistory(ctx, f.db, 10)
+	if err != nil {
+		t.Fatalf("retention history: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected exactly one audit row, got %d", len(history))
+	}
+	row := history[0]
+	if row.Kind != string(OperationPayloadRedaction) || row.ExchangeID != "ex1" || row.ChannelID != "" ||
+		row.RemovedCount != len(result.Removed) {
+		t.Fatalf("audit row does not describe the operation: %+v", row)
+	}
+	for _, removed := range result.Removed {
+		if strings.Contains(removed.Ref, "the caller wrote") || strings.Contains(removed.Ref, "socket closed") {
+			t.Fatalf("removed-content record's Ref carries content, not a reference: %+v", removed)
+		}
+	}
+}
+
+// TestRedactExchangeIsIdempotent mirrors TestRedactionIsIdempotent for the
+// relay journal: a second redaction finds only tombstones and digests
+// nothing a second time.
+func TestRedactExchangeIsIdempotent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := f.now
+
+	f.exec(t, `INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch_ex', 'standalone-local:anonymous', ?, ?)`, now, now)
+	for _, id := range []string{"p_operator", "p_agent"} {
+		f.exec(t, `INSERT INTO participants (id, kind, created_at, updated_at) VALUES (?, 'agent', ?, ?)`,
+			id, now, now)
+	}
+	f.exec(t, `INSERT INTO exchanges (
+  id, idempotency_key, channel_id, sender_participant_id, recipient_participant_id, body, sequence, created_at
+) VALUES ('ex1', 'idem-ex1', 'ch_ex', 'p_operator', 'p_agent', 'the caller wrote this', 1, ?)`, now)
+
+	req := RetentionRequest{ExchangeID: "ex1", ActorRef: "operator:test", Now: f.now}
+	first, err := RedactExchange(ctx, f.db, req)
+	if err != nil {
+		t.Fatalf("first redaction: %v", err)
+	}
+	second, err := RedactExchange(ctx, f.db, req)
+	if err != nil {
+		t.Fatalf("second redaction: %v", err)
+	}
+	if len(second.Removed) != 0 {
+		t.Fatalf("the second redaction removed %d more columns; it should have found only a tombstone",
+			len(second.Removed))
+	}
+	if second.Code != "already_redacted" {
+		t.Fatalf("second redaction code = %q, want already_redacted", second.Code)
+	}
+	body := f.column(t, `SELECT body FROM exchanges WHERE id = 'ex1'`)
+	var tombstone RedactionTombstone
+	if err := json.Unmarshal([]byte(body), &tombstone); err != nil {
+		t.Fatalf("decode tombstone: %v", err)
+	}
+	if tombstone.ContentDigest != first.Removed[0].SHA256 {
+		t.Fatal("the tombstone digest changed on the second pass — a digest of a digest")
+	}
+}
+
+// TestRedactChannelReachesEveryExchangeInBothDirections is RedactChannel's
+// case: a channel names every exchange under it, in either direction,
+// without touching the channel/participant/binding tables themselves —
+// those carry no immutability trigger (migration 0013), so nothing in them
+// is trapped the way a payload is.
+func TestRedactChannelReachesEveryExchangeInBothDirections(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	now := f.now
+
+	f.exec(t, `INSERT INTO channels (id, owner_scope, created_at, updated_at)
+VALUES ('ch1', 'standalone-local:anonymous', ?, ?)`, now, now)
+	for _, id := range []string{"p_operator", "p_agent"} {
+		f.exec(t, `INSERT INTO participants (id, kind, created_at, updated_at) VALUES (?, 'agent', ?, ?)`,
+			id, now, now)
+	}
+	f.exec(t, `INSERT INTO exchanges (
+  id, idempotency_key, channel_id, sender_participant_id, recipient_participant_id, body, sequence, created_at
+) VALUES ('ex_out', 'idem-out', 'ch1', 'p_operator', 'p_agent', 'operator to agent', 1, ?)`, now)
+	f.exec(t, `INSERT INTO exchanges (
+  id, idempotency_key, channel_id, sender_participant_id, recipient_participant_id, body, sequence, created_at
+) VALUES ('ex_in', 'idem-in', 'ch1', 'p_agent', 'p_operator', 'agent to operator', 1, ?)`,
+		now.Add(time.Second))
+
+	result, err := RedactChannel(ctx, f.db, RetentionRequest{
+		ChannelID: "ch1", ActorRef: "operator:test", Now: f.now,
+	})
+	if err != nil {
+		t.Fatalf("redact channel: %v", err)
+	}
+	if !result.GuardsRestored {
+		t.Fatal("guards were not verified restored")
+	}
+	if len(result.Removed) != 2 {
+		t.Fatalf("removed %d columns, want 2 (one body per exchange)", len(result.Removed))
+	}
+	for _, id := range []string{"ex_out", "ex_in"} {
+		if value := f.column(t, `SELECT body FROM exchanges WHERE id = ?`, id); !IsRedacted(value) {
+			t.Fatalf("exchange %s body survived RedactChannel: %q", id, value)
+		}
+	}
+	// The channel/participant substrate this redaction deliberately leaves
+	// alone, per migration 0013 carrying no immutability trigger at all.
+	if scope := f.column(t, `SELECT owner_scope FROM channels WHERE id = 'ch1'`); scope !=
+		"standalone-local:anonymous" {
+		t.Fatalf("channel row changed shape: owner_scope = %q", scope)
+	}
+
+	history, err := RetentionHistory(ctx, f.db, 10)
+	if err != nil {
+		t.Fatalf("retention history: %v", err)
+	}
+	if len(history) != 1 || history[0].ChannelID != "ch1" || history[0].ExchangeID != "" {
+		t.Fatalf("audit row does not name the channel: %+v", history)
+	}
+}
+
 func TestDeleteDraftsWritesTheTombstonesNobodyEverWrote(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

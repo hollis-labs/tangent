@@ -166,8 +166,40 @@ func (s *Store) AcceptExchange(ctx context.Context, params AcceptExchangeParams)
 	existing, err := s.getByIdempotencyKey(ctx, params.SenderParticipantID, params.IdempotencyKey)
 	switch {
 	case err == nil:
+		// A body comparison against a redacted exchange can never match a
+		// real retry body — the stored value is a tombstone JSON string, not
+		// what the sender sent — so it would misfire as a conflict on every
+		// legitimate replay of an already-redacted exchange. The idempotency
+		// key match alone is trusted instead once the body is gone: it is
+		// identity, never redacted. existing.BodyRedacted() stays true on the
+		// returned Exchange either way, so a caller can still tell this
+		// resolved to erased content rather than reading a tombstone with no
+		// signal anything unusual happened.
+		//
+		// This is a decision, not an oversight, and it has a real cost: once
+		// redacted, a resubmission under that key resolves silently to the
+		// existing exchange regardless of what body it now carries — the
+		// tombstone destroys the only thing a body comparison could check, so
+		// "same message replayed" and "different message under a reused key"
+		// become indistinguishable. Two alternatives were rejected:
+		//
+		//   - Fail closed instead (always ErrIdempotencyConflict once
+		//     redacted). Safer against a caller reusing a key for a genuinely
+		//     different message, at the cost of failing every correct retry
+		//     of a redacted exchange. Rejected: BodyRedacted() already gives a
+		//     caller the signal to notice something unusual happened, and a
+		//     spurious failure on a correct action is the worse default.
+		//   - Store a digest of the body at accept time, so the comparison
+		//     survives redaction. Rejected, and this is the one worth
+		//     remembering: a digest of low-entropy message text is
+		//     effectively reversible by enumeration, so keeping one would let
+		//     someone confirm what a redacted message said by hashing
+		//     candidates and comparing. That trades erasure completeness for
+		//     conflict detection, which is the wrong trade in the one
+		//     feature whose entire purpose is erasure.
+		bodyMatches := existing.Body == params.Body || existing.BodyRedacted()
 		if existing.ChannelID != params.ChannelID || existing.RecipientParticipantID != params.RecipientParticipantID ||
-			existing.Body != params.Body {
+			!bodyMatches {
 			return Exchange{}, fmt.Errorf("%w: %q", ErrIdempotencyConflict, params.IdempotencyKey)
 		}
 		return existing, nil

@@ -148,6 +148,61 @@ func TestAcceptExchangeIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestAcceptExchangeReplayResolvesAfterTheOriginalIsRedacted is
+// CW-20260907-0043's required case: AcceptExchange's idempotency-conflict
+// check compares bodies, and a redacted body is a tombstone JSON string that
+// can never equal a real retry body. Without the fix, every legitimate
+// replay of an already-redacted exchange would misfire as
+// ErrIdempotencyConflict. The key match alone is trusted instead once the
+// original is redacted — there is no longer a real body left to compare
+// against — and the caller must still be able to tell the content is gone:
+// Exchange.BodyRedacted() is that signal, not a silently-returned tombstone.
+func TestAcceptExchangeReplayResolvesAfterTheOriginalIsRedacted(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	params := AcceptExchangeParams{
+		IdempotencyKey: "idem-redacted-replay", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID,
+		Body: "the original message",
+	}
+	original, err := h.relay.AcceptExchange(ctx, params)
+	if err != nil {
+		t.Fatalf("AcceptExchange (original): %v", err)
+	}
+	if original.BodyRedacted() {
+		t.Fatal("a freshly accepted exchange reports its body as already redacted")
+	}
+
+	if _, redactErr := tangentdb.RedactExchange(ctx, h.db, tangentdb.RetentionRequest{
+		ExchangeID: original.ID, ActorRef: "operator:test", Authority: tangentdb.AuthorityLocalUser,
+	}); redactErr != nil {
+		t.Fatalf("RedactExchange: %v", redactErr)
+	}
+
+	replayed, err := h.relay.AcceptExchange(ctx, params)
+	if err != nil {
+		t.Fatalf("AcceptExchange (replay after redaction) = %v, want it to resolve to the existing exchange", err)
+	}
+	if replayed.ID != original.ID {
+		t.Fatalf("replay after redaction minted a second exchange: %s != %s", replayed.ID, original.ID)
+	}
+	if !replayed.BodyRedacted() {
+		t.Fatal("the replay result does not signal that its content was already erased")
+	}
+
+	var exchangeCount int
+	if err := h.db.QueryRow(`SELECT COUNT(*) FROM exchanges WHERE idempotency_key = 'idem-redacted-replay'`).
+		Scan(&exchangeCount); err != nil {
+		t.Fatalf("count exchanges: %v", err)
+	}
+	if exchangeCount != 1 {
+		t.Fatalf("exchanges with idem-redacted-replay = %d, want 1", exchangeCount)
+	}
+}
+
 func TestAcceptExchangeRefusesANonMember(t *testing.T) {
 	t.Parallel()
 	h := openTestHarness(t)
@@ -926,6 +981,63 @@ func TestListForChannelReturnsBothDirectionsNewestFirst(t *testing.T) {
 	}
 	if len(items) != 2 || items[0].ID != toOperator.ID || items[1].ID != toAgent.ID {
 		t.Fatalf("ListForChannel = %+v, want [toOperator, toAgent] newest first", items)
+	}
+}
+
+// TestRedactionPreservesListOrderingAndTheReplayCursor is CW-20260907-0043's
+// replay-cursor case: redacting an exchange must not disturb ListForChannel's
+// (created_at, id) order or ListForDestination's sequence-based cursor —
+// both read the row exactly as stored, and a tombstone is just a different
+// string in the same body column.
+func TestRedactionPreservesListOrderingAndTheReplayCursor(t *testing.T) {
+	t.Parallel()
+	h := openTestHarness(t)
+	ctx := context.Background()
+	channelID, operatorID, agentID := h.seedChannel(t)
+
+	first, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-first", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "message one",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (first): %v", err)
+	}
+	second, err := h.relay.AcceptExchange(ctx, AcceptExchangeParams{
+		IdempotencyKey: "idem-second", ChannelID: channelID,
+		SenderParticipantID: operatorID, RecipientParticipantID: agentID, Body: "message two",
+	})
+	if err != nil {
+		t.Fatalf("AcceptExchange (second): %v", err)
+	}
+
+	if _, redactErr := tangentdb.RedactExchange(ctx, h.db, tangentdb.RetentionRequest{
+		ExchangeID: first.ID, ActorRef: "operator:test", Authority: tangentdb.AuthorityLocalUser,
+	}); redactErr != nil {
+		t.Fatalf("RedactExchange: %v", redactErr)
+	}
+
+	channelItems, err := h.relay.ListForChannel(ctx, channelID, 0)
+	if err != nil {
+		t.Fatalf("ListForChannel: %v", err)
+	}
+	if len(channelItems) != 2 || channelItems[0].ID != second.ID || channelItems[1].ID != first.ID {
+		t.Fatalf("ListForChannel after redacting the older item = %+v, want [second, first] newest first",
+			channelItems)
+	}
+	if channelItems[1].BodyRedacted() != true || channelItems[0].BodyRedacted() {
+		t.Fatalf("BodyRedacted did not distinguish the redacted item from the untouched one: %+v", channelItems)
+	}
+
+	destinationItems, err := h.relay.ListForDestination(ctx, channelID, agentID, 0, 0, false)
+	if err != nil {
+		t.Fatalf("ListForDestination: %v", err)
+	}
+	if len(destinationItems) != 2 || destinationItems[0].Sequence != 1 || destinationItems[1].Sequence != 2 {
+		t.Fatalf("ListForDestination after redacting sequence 1 = %+v, want sequence 1 then 2 — "+
+			"the replay cursor must still resume from the same sequence numbers", destinationItems)
+	}
+	if !destinationItems[0].BodyRedacted() {
+		t.Fatal("ListForDestination lost the redacted item's tombstone")
 	}
 }
 

@@ -47,6 +47,18 @@ func backupSchemaVersion(t *testing.T) int64 {
 // behind it has no log silently stopped holding.
 const preRetentionOperationsSchemaVersion int64 = 11
 
+// lastGuardChangingSchemaVersion is fixed for the same reason
+// preRetentionOperationsSchemaVersion is: TestGuardReferenceIsBuiltAtTheDatabaseOwnSchema
+// needs a schema whose guard count is strictly less than HEAD's, and that
+// depends on which migration last added a guard-suspending trigger, not on
+// how many migrations have landed since. Migration 0014 (CW-20260906-0065)
+// added the relay journal's six immutability triggers; 0015
+// (participant_presence) and 0016 (CW-20260907-0043's retention_operations
+// columns) added none, so backupSchemaVersion's "two behind HEAD" stopped
+// implying a smaller guard count the moment a second guard-free migration
+// landed on top of the first.
+const lastGuardChangingSchemaVersion int64 = 13
+
 // TestBackupOfADatabaseOlderThanTheBinaryIsSoundAndFingerprinted is the
 // defect, asserted directly. Against the code this replaces it fails three
 // times over: integrity_ok false, a fingerprint of zeros, and a
@@ -291,7 +303,7 @@ func TestOlderIsDistinguishableFromDamaged(t *testing.T) {
 // the binary's.
 func TestGuardReferenceIsBuiltAtTheDatabaseOwnSchema(t *testing.T) {
 	ctx := context.Background()
-	version := backupSchemaVersion(t)
+	version := lastGuardChangingSchemaVersion
 
 	older, err := ReferenceGuardsAt(ctx, version)
 	if err != nil {
