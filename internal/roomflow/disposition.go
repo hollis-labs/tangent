@@ -327,3 +327,60 @@ func (d *roomDisposition) ensurePresented(
 	return interaction.InteractionRecord{}, fmt.Errorf(
 		"roomflow: could not establish presentation for interaction %q", d.interactionID)
 }
+
+// Draft records the participant's non-terminal state inside the interaction.
+//
+// This is the surface's view state — which filters are applied, which record is
+// selected, whether a detail pane is open — and it is deliberately a different
+// object from both a resolution and a channel's ViewFocus (ADR 0007 §3). It is
+// interaction-scoped because it is meaningless without the interaction that
+// defines what its contents refer to.
+//
+// Nothing here settles. The interaction stays open, the presentation stays
+// live, and no caller waiting on a resolution is woken. A caller reads this by
+// pulling `tangent.surface_get`, which already projects the draft revisions;
+// Tangent never pushes a participant's in-progress state at a caller, and a
+// caller must not present a draft as a decision.
+func (d *roomDisposition) Draft(
+	ctx context.Context,
+	roomID string,
+	env *envelopes.Envelope,
+	draftRevision int64,
+	payload json.RawMessage,
+) error {
+	envelopeID := ""
+	if env != nil {
+		envelopeID = env.ID
+	}
+	record, err := d.ensurePresented(ctx, roomID, envelopeID, 0, "")
+	if err != nil {
+		return err
+	}
+	_, err = d.service.interactions.SaveDraft(ctx, interaction.SaveDraftInput{
+		InteractionID:       record.ID,
+		DraftRevision:       draftRevision,
+		InteractionRevision: record.Revision,
+		Participant:         Participant,
+		DefinitionVersion:   record.Definition.Version,
+		Payload:             payload,
+		Capability:          surfaceCapability,
+	})
+	correlation := correlationFor(record, roomID, envelopeID)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, interaction.ErrRevisionConflict):
+		// The participant's browser built on a draft the record has moved past.
+		// The client resynchronizes and retries; the payload is untouched and
+		// cannot be reported, so the refusal carries revisions and a code and
+		// nothing else. `Service.SaveDraft` has already emitted the telemetry.
+		return fmt.Errorf("%w: %s", room.ErrDispositionDraftConflict, record.ID)
+	case errors.Is(err, interaction.ErrTerminal):
+		d.reportDispositionRefusal(ctx, correlation, "terminal")
+		return fmt.Errorf("%w: %s", room.ErrDispositionTerminal, record.ID)
+	default:
+		d.reportDispositionRefusal(ctx, correlation,
+			telemetry.CodeForError(err, interactionErrorCodes))
+		return err
+	}
+}

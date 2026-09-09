@@ -8,6 +8,7 @@ function stubClient(overrides: Partial<WSClient> = {}): WSClient {
     isConnected: () => false,
     submitResponse: vi.fn(() => true),
     cancel: vi.fn(() => true),
+    saveDraft: vi.fn(() => true),
     claimResolver: vi.fn(() => true),
     releaseResolver: vi.fn(() => true),
     resync: vi.fn(() => true),

@@ -8,6 +8,7 @@
 //   server → client : {type:"error", code, message, envelopeId, revision, lease}
 //   client → server : {type:"response", envelopeId, revision, response}
 //   client → server : {type:"cancel", envelopeId, revision}
+//   client → server : {type:"draft", envelopeId, draftRevision, draft}
 //   client → server : {type:"claim_resolver", takeover}
 //   client → server : {type:"release_resolver"}
 //   client → server : {type:"resync"}
@@ -222,6 +223,17 @@ export type WSClient = {
   cancel: (envelopeId: string, revision?: number) => boolean;
 
   /**
+   * Records non-terminal participant state for the given envelope — what the
+   * participant is looking at, not what they decided.
+   *
+   * `draftRevision` is the revision this update builds on, and its sequence is
+   * the draft's own, not the presentation's. A stale value comes back as a
+   * `stale_draft` error frame: nothing was written and nothing was merged, and
+   * the caller reconciles from what it holds rather than being re-presented.
+   */
+  saveDraft: (envelopeId: string, draft: unknown, draftRevision?: number) => boolean;
+
+  /**
    * Asks for the resolver lease. `takeover` revokes it from a live peer and
    * is only ever sent from an explicit operator action.
    */
@@ -369,6 +381,9 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
     },
     cancel: (envelopeId, revision = 0) => {
       return send(ws, { type: "cancel", envelopeId, revision });
+    },
+    saveDraft: (envelopeId, draft, draftRevision = 1) => {
+      return send(ws, { type: "draft", envelopeId, draftRevision, draft });
     },
     claimResolver: (takeover = false) => {
       return send(ws, { type: "claim_resolver", takeover });

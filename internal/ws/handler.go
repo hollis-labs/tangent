@@ -11,6 +11,7 @@
 //	server → client : {"type":"error","code":"resolver_lease_held","envelopeId":"<id>","lease":{...}}
 //	client → server : {"type":"response","envelopeId":"<id>","revision":1,"response":{...}}
 //	client → server : {"type":"cancel","envelopeId":"<id>","revision":1}
+//	client → server : {"type":"draft","envelopeId":"<id>","draftRevision":3,"draft":{...}}
 //	client → server : {"type":"claim_resolver","takeover":true}
 //	client → server : {"type":"release_resolver"}
 //	client → server : {"type":"resync"}
@@ -55,6 +56,10 @@ const (
 	errorCodeResolverLeaseHeld = "resolver_lease_held"
 	errorCodeStalePresentation = "stale_presentation"
 	errorCodeRoomClosed        = "room_closed"
+	// errorCodeStaleDraft reports that a draft named a revision the canonical
+	// record has moved past. Nothing was written and nothing was merged; the
+	// client resynchronizes and retries with the current revision.
+	errorCodeStaleDraft = "stale_draft"
 	// errorCodeNotAuthorized reports a frame the attached session may not
 	// send. It is a Refused outcome in the sense of
 	// docs/room-validation-affordances.md — the server declined a submission —
@@ -170,6 +175,14 @@ type inboundMessage struct {
 	// Takeover asks to revoke a live peer's resolver lease. It is only ever
 	// set by an explicit operator action in the SPA.
 	Takeover bool `json:"takeover,omitempty"`
+	// Draft carries a participant's non-terminal state for the named envelope,
+	// and DraftRevision is the revision they believe they are building on.
+	// They are separate fields from Response/Revision on purpose: a draft is
+	// not a weaker response, it is a different record with its own revision
+	// sequence, and sharing the fields would let a client's stale response
+	// revision silently decide a draft's fate (ADR 0007 §5).
+	Draft         json.RawMessage `json:"draft,omitempty"`
+	DraftRevision int64           `json:"draftRevision,omitempty"`
 }
 
 // outboundError reports a rejected client action.
@@ -372,6 +385,23 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 			return
 		}
 		rm.BroadcastConnectionState(ctx)
+	case "draft":
+		if msg.EnvelopeID == "" || len(msg.Draft) == 0 {
+			h.logger.Warn("ws: draft missing envelopeId or draft", "room", rm.ID)
+			return
+		}
+		// `draft`, not `resolve`. Recording what a participant is looking at is
+		// a strictly lesser act than deciding, and a surface that let a viewer
+		// answer because they could type would be the wrong shape. This is the
+		// capability ADR 0004 already gives the participant session and the one
+		// /api/hitl/items/{itemID}/present uses.
+		if !h.authorize(ctx, rm, c, msg, authz.Draft) {
+			return
+		}
+		if err := rm.HandleDraftFrom(c, msg.EnvelopeID, msg.DraftRevision, msg.Draft); err != nil {
+			h.handleDispositionConflict(ctx, rm, c, msg, err)
+			return
+		}
 	case "claim_resolver":
 		if _, err := rm.ClaimResolver(c, msg.Takeover); err != nil {
 			h.reportLeaseConflict(ctx, rm, c, msg, err)
@@ -443,6 +473,21 @@ func (h *Handler) handleDispositionConflict(
 			Code: errorCodeRoomClosed, Message: err.Error(), EnvelopeID: msg.EnvelopeID,
 		})
 		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeRoomClosed)
+	case errors.Is(err, room.ErrDispositionDraftConflict):
+		// Deliberately not a replay. A stale response is re-rendered because
+		// the participant must answer the current presentation; a stale draft
+		// only means another writer got there first, and re-pushing the
+		// envelope would discard whatever the participant has since typed.
+		// They are told the revision moved and reconcile from what they hold.
+		h.logger.Debug("ws: stale draft revision",
+			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
+		h.sendError(ctx, c, outboundError{
+			Code:       errorCodeStaleDraft,
+			Message:    "the draft revision this update was built on is no longer current",
+			EnvelopeID: msg.EnvelopeID,
+			Revision:   msg.DraftRevision,
+		})
+		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeStaleDraft)
 	case errors.Is(err, room.ErrPresentationRevisionConflict):
 		h.logger.Debug("ws: stale presentation revision; resynchronizing",
 			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
