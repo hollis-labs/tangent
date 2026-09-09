@@ -16,7 +16,8 @@ something new.
 - `docs/architecture.md` — system shape and layers, and the canonical
   **Current limitations** list. Read it before designing anything.
 - `docs/adr/` — accepted decision records. `0005` owns the product boundary,
-  `0006` the collaboration-surface direction.
+  `0007` the collaboration surface, the plugin host and where view state
+  lives. `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
   `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite

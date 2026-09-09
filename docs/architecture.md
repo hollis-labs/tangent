@@ -288,8 +288,9 @@ separate from both per-room `/ws` and the four caller-facing
 ### Cooperative relay inbox
 
 `internal/channel/` + `internal/relay/` back seven relay MCP tools
-implementing ADR 0006's collaboration-surface boundary
-(`docs/adr/0006-collaboration-surface-and-relay-boundary.md`):
+implementing the collaboration-surface boundary of
+`docs/adr/0007-collaboration-surface-plugin-host-and-view-state.md`
+(which supersedes ADR 0006):
 `tangent.relay_open_channel`, `tangent.relay_attach`, `tangent.relay_detach`,
 `tangent.relay_send`, `tangent.relay_receive`, `tangent.relay_ack`, and
 `tangent.relay_capabilities`. Every input carries `contract_version` and

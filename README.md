@@ -13,7 +13,7 @@ Use cases the chat window can't carry well:
 - spreadsheet review
 - progress tracking
 
-Tangent is the *separate-window app surface* for an interactive collaboration system. Inline modals, fast-triage popovers, and spatial canvases are deliberately handled elsewhere — keeping Tangent's scope to a single shape is intentional. [ADR 0006](./docs/adr/0006-collaboration-surface-and-relay-boundary.md) adds an addressed multi-agent collaboration surface to that shape as a *target*; nothing of it is in the shipped build.
+Tangent is the *separate-window app surface* for an interactive collaboration system. Inline modals, fast-triage popovers, and spatial canvases are deliberately handled elsewhere — keeping Tangent's scope to a single shape is intentional. [ADR 0007](./docs/adr/0007-collaboration-surface-plugin-host-and-view-state.md) adds an addressed multi-agent collaboration surface to that shape; the channel pane, the relay journal and the relay tools are shipped, and that ADR stamps each claim about what is and is not.
 
 ## Status
 
@@ -197,9 +197,9 @@ workspace database); and one version source with a drift test.
 **What did not:** the system tray, close-to-hide, and single-instance UX
 (`CW-20260905-0030`, stable 1.1); code signing and notarization; the
 desktop-shell acceptance matrix (`CW-20260905-0050`) and the shell's decision
-record (`CW-20260905-0051`); any relay or channel capability (ADR 0006 is
-direction only). The install itself, and moving dev to 7843, is
-`CW-20260907-0020`.
+record (`CW-20260905-0051`); any relay or channel capability, which was still
+direction only at that cut and shipped afterwards. The install itself, and
+moving dev to 7843, is `CW-20260907-0020`.
 
 ### Deferred — distribution and third-party workflows
 
@@ -337,7 +337,7 @@ above.
 More docs:
 
 - [`docs/architecture.md`](./docs/architecture.md) — system shape, layers, and the canonical limitations list
-- [`docs/adr/`](./docs/adr/) — the six accepted decision records (0001 lifecycle boundaries, 0002 retention and draft custody, 0003 definition and package ownership, 0004 access authority, 0005 product boundary, 0006 collaboration surface and relay boundary, a target that supersedes 0005 in part)
+- [`docs/adr/`](./docs/adr/) — the accepted decision records (0001 lifecycle boundaries, 0002 retention and draft custody, 0003 definition and package ownership, 0004 access authority, 0005 product boundary, 0007 collaboration surface, plugin host and view state, superseding 0006 and superseding 0005 in part)
 - [`docs/database-operations.md`](./docs/database-operations.md) — single-writer ownership, backup and restore modes, repair, and the six deletion kinds
 - [`docs/host-mediated-capabilities.md`](./docs/host-mediated-capabilities.md) — the two capability namespaces, scoped handles, and what is enforced versus declared
 - [`docs/developing.md`](./docs/developing.md) — contributor onboarding and toolchain setup

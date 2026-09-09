@@ -1,7 +1,17 @@
 # ADR 0006: Tangent as a Collaboration Surface — the Relay Boundary
 
-**Status:** Accepted. Nothing in this document describes shipped capability;
-see §6.
+**Status:** **Superseded** by
+[ADR 0007](0007-collaboration-surface-plugin-host-and-view-state.md)
+(2026-09-09). Its decisions were re-adopted there without change of meaning.
+
+**Do not read §6 as current.** It enumerated what did not exist at `1bb93d4`,
+and most of it was false within two days: `internal/channel`,
+`internal/relay`, `internal/channelpane`, migrations `0013`-`0016`, five
+`/api/channels` routes, seven relay MCP tools and the SPA channel pane all
+landed. That section is why this ADR was superseded rather than amended — a
+status inventory in a boundary document is the thing ADR 0005 §6 forbids, and
+refreshing it would preserve the failure. ADR 0007 carries per-claim stamps
+and no inventory.
 
 **Date:** 2026-09-07
 
