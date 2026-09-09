@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -164,9 +165,9 @@ export function OutputRender({ envelope, onSubmit, onCancel }: OutputRenderProps
 
         <section className="space-y-2" data-testid="output-render-markdown">
           <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">Markdown</h3>
-          <pre className="whitespace-pre-wrap break-words rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100">
-            {markdown}
-          </pre>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <Markdown content={markdown} className="text-zinc-100" />
+          </div>
         </section>
       </CardContent>
 

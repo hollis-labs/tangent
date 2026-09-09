@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -46,6 +46,61 @@ describe("ApprovalQueue", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     window.localStorage.clear();
+  });
+
+  // The reported defect: an agent writes a proposal in markdown and the
+  // operator reviews it as one unbroken run of plain text.
+  it("renders the item body as markdown and leaves literal evidence unparsed", () => {
+    render(
+      <ApprovalQueue
+        envelope={{
+          ...baseEnvelope,
+          data: {
+            ...baseEnvelope.data,
+            queue_id: "queue-markdown",
+            items: [
+              {
+                id: "item-md",
+                title: "Gate r1",
+                summary: "Three gates",
+                body: "## Gates\n\n- **first** gate\n- second gate",
+                evidence: [
+                  {
+                    id: "ev-note",
+                    label: "Rationale",
+                    kind: "note",
+                    content: "## Why\n\nBecause.",
+                  },
+                  {
+                    id: "ev-diff",
+                    label: "Diff",
+                    kind: "diff",
+                    content: "- old\n+ # not a heading",
+                  },
+                ],
+              },
+            ],
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const description = screen.getByTestId("approval-queue-description");
+    expect(within(description).getByRole("heading", { name: "Gates" })).toBeInTheDocument();
+    expect(within(description).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(description).getByText("first").tagName).toBe("STRONG");
+
+    // An unnamed kind normalizes to `note`, which is prose and gets parsed.
+    const evidence = screen.getByTestId("approval-queue-evidence-content");
+    expect(within(evidence).getByRole("heading", { name: "Why" })).toBeInTheDocument();
+
+    // A diff is not prose: the `#` on the added line is data, not a heading.
+    fireEvent.click(screen.getByTestId("approval-queue-evidence-tab-1"));
+    const diffPane = screen.getByTestId("approval-queue-evidence-content");
+    expect(within(diffPane).queryByRole("heading")).not.toBeInTheDocument();
+    expect(within(diffPane).getByText(/# not a heading/)).toBeInTheDocument();
   });
 
   it("submits normalized decisions with comments and export refs", () => {
