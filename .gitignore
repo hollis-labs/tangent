@@ -37,3 +37,6 @@ coverage.html
 # Local scratch
 /tmp/
 /.tangent/
+
+# Claude client runtime state (worktrees, local settings, locks)
+/.claude/
