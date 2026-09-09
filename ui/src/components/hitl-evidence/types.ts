@@ -1,3 +1,7 @@
+import { boundedText } from "@/lib/bounded-text";
+
+export { boundedText };
+
 export const HITL_EVIDENCE_LIMITS = {
   items: 24,
   inlineText: 65_536,
@@ -134,17 +138,6 @@ export function normalizeEvidence(values: unknown): NormalizedEvidence[] {
         };
     }
   });
-}
-
-export function boundedText(value: string, maximum: number): { text: string; truncated: boolean } {
-  const sanitized = Array.from(value, (character) => {
-    const code = character.charCodeAt(0);
-    return (code >= 32 && code !== 127) || code === 9 || code === 10 || code === 13
-      ? character
-      : "";
-  }).join("");
-  if (sanitized.length <= maximum) return { text: sanitized, truncated: false };
-  return { text: sanitized.slice(0, maximum), truncated: true };
 }
 
 export function safeHTTPSURL(value: string | undefined): string | undefined {

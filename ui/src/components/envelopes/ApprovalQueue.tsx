@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -579,7 +580,11 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                   <div className="space-y-2">
                     <h3 className="text-lg font-semibold">{currentItem.title}</h3>
                     <p className="text-sm text-zinc-300">{currentItem.summary}</p>
-                    <p className="text-sm text-zinc-400">{currentItem.description}</p>
+                    <Markdown
+                      data-testid="approval-queue-description"
+                      content={currentItem.description}
+                      className="text-zinc-400"
+                    />
                   </div>
                   <div className="text-right text-xs text-zinc-500">
                     <div>Keys</div>
@@ -732,7 +737,16 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                       <div className="mb-1 text-xs uppercase tracking-[0.2em] text-zinc-500">
                         {currentItem.evidence[evidenceIndex]?.kind}
                       </div>
-                      <div>{currentItem.evidence[evidenceIndex]?.content}</div>
+                      {isLiteralEvidence(currentItem.evidence[evidenceIndex]?.kind) ? (
+                        <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-6">
+                          {currentItem.evidence[evidenceIndex]?.content}
+                        </pre>
+                      ) : (
+                        <Markdown
+                          content={currentItem.evidence[evidenceIndex]?.content ?? ""}
+                          className="text-zinc-200"
+                        />
+                      )}
                       {currentItem.evidence[evidenceIndex]?.uri ? (
                         <div className="mt-2 text-xs text-zinc-500">
                           {currentItem.evidence[evidenceIndex]?.uri}
@@ -882,6 +896,26 @@ function normalizeItems(items: Array<Record<string, unknown>> | undefined): Appr
       };
     })
     .filter((item) => item.id.length > 0);
+}
+
+// Evidence kinds whose bytes are literal. In a diff a leading `+` is data, in
+// YAML a leading `#` is a comment, and reflowing either destroys the thing
+// under review — so these panes stay monospace and unparsed. Everything else is
+// prose, including the `note` an agent that named no kind at all falls back to:
+// markdown over plain prose renders the same plain prose.
+const LITERAL_EVIDENCE_KINDS = new Set([
+  "diff",
+  "patch",
+  "code",
+  "text",
+  "log",
+  "json",
+  "yaml",
+  "yml",
+]);
+
+function isLiteralEvidence(kind: string | undefined): boolean {
+  return kind !== undefined && LITERAL_EVIDENCE_KINDS.has(kind.toLowerCase());
 }
 
 function normalizeEvidence(raw: unknown): EvidenceItem[] {

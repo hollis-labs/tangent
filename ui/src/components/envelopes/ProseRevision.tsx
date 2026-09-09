@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -219,9 +220,7 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
             <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
               Current accepted draft
             </p>
-            <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-100">
-              {currentDraft.markdown}
-            </pre>
+            <Markdown content={currentDraft.markdown} className="mt-3 text-zinc-100" />
           </section>
         ) : null}
 
