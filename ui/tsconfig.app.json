@@ -22,7 +22,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "baseUrl": ".",
+    // No baseUrl: TypeScript 7 removed it. These paths already resolve
+    // relative to this file's directory, which is exactly what `"baseUrl": "."`
+    // meant here, so the mapping is unchanged.
     "paths": {
       "@/*": ["./src/*"]
     }
