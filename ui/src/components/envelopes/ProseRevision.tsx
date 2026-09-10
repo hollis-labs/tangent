@@ -186,10 +186,10 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
           </div>
           <CardTitle className="text-lg">{envelope.title ?? "Prose revision"}</CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
           {envelope.data?.summary ? (
-            <p className="text-sm text-zinc-300">{envelope.data.summary}</p>
+            <Markdown content={envelope.data.summary} className="text-zinc-300" />
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">
@@ -276,12 +276,11 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                     the hint on the comment box is what keeps them apart.
                   */}
                   {suggestion.reason ? (
-                    <p
+                    <Markdown
                       data-testid={`prose-revision-reason-${suggestion.id}`}
-                      className="text-sm text-zinc-400"
-                    >
-                      {suggestion.reason}
-                    </p>
+                      content={suggestion.reason}
+                      className="text-zinc-400"
+                    />
                   ) : null}
                 </div>
 
@@ -290,7 +289,10 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                     <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                       Current wording
                     </p>
-                    <p className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300">
+                    <p
+                      data-testid={`prose-revision-original-${suggestion.id}`}
+                      className="whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm text-zinc-300"
+                    >
                       {suggestion.original_text}
                     </p>
                   </div>
@@ -300,7 +302,10 @@ export function ProseRevision({ envelope, onSubmit, onCancel }: ProseRevisionPro
                   <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                     Suggested change
                   </p>
-                  <p className="whitespace-pre-wrap rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100">
+                  <p
+                    data-testid={`prose-revision-suggested-${suggestion.id}`}
+                    className="whitespace-pre-wrap rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                  >
                     {suggestion.suggested_text}
                   </p>
                 </div>

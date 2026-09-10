@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   getSpreadsheetReviewDraftStorageKey,
   SPREADSHEET_REVIEW_AUTOSAVE_DEBOUNCE_MS,
@@ -290,5 +291,29 @@ describe("SpreadsheetReview", () => {
 
     expect(createObjectURL).toHaveBeenCalled();
     expect(screen.getByTestId("spreadsheet-review-message")).toHaveTextContent("Exported 1 row");
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <SpreadsheetReview
+        envelope={{
+          v: 1,
+          id: "sheet-md",
+          type: "tangent.spreadsheet-review",
+          context: proseProbe("sheet-context"),
+          data: {
+            table_id: "sheet-md",
+            intent: proseProbe("sheet-intent"),
+            columns: [{ column_id: "name", label: "Name" }],
+            rows: [{ row_id: "r1", cells: { name: "one" } }],
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("sheet-context");
+    expectProseRendered("sheet-intent");
   });
 });

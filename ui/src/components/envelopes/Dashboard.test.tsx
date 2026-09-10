@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { getDashboardDraftStorageKey } from "@/lib/dashboard-draft-storage";
 import { Dashboard, type DashboardEnvelope } from "./Dashboard";
 
@@ -256,5 +257,37 @@ describe("<Dashboard>", () => {
     expect(orderRoot.textContent?.indexOf("B")).toBeLessThan(
       orderRoot.textContent?.indexOf("A") ?? 0,
     );
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: DashboardEnvelope = {
+      v: 1,
+      id: "dashboard-md",
+      type: "tangent.dashboard",
+      context: proseProbe("dash-context"),
+      data: {
+        dashboard_id: "dashboard-md",
+        tiles: [
+          {
+            tile_id: "tile-1",
+            kind: "room_count",
+            title: "Open rooms",
+            value: "4",
+            summary: proseProbe("dash-tile"),
+          },
+        ],
+        summary: { headline: "One tile", detail: proseProbe("dash-detail") },
+        snapshot_history: [
+          { snapshot_id: "snap-1", action: "refresh", note: proseProbe("dash-note") },
+        ],
+      },
+    };
+
+    render(<Dashboard envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("dash-context");
+    expectProseRendered("dash-detail");
+    expectProseRendered("dash-tile");
+    expectProseRendered("dash-note");
   });
 });

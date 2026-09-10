@@ -16,6 +16,7 @@
 
 import { useMemo, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { RequiredMark } from "@/components/ui/field";
@@ -258,7 +259,9 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
     <Card data-testid="triage-root" className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle className="text-lg">{headerTitle}</CardTitle>
-        {prompt ? <p className="text-sm text-zinc-400">{prompt}</p> : null}
+        {prompt ? (
+          <Markdown data-testid="triage-prompt" content={prompt} className="text-zinc-400" />
+        ) : null}
         <p className="text-xs text-zinc-500">
           {items.length === 0
             ? "No items to triage."
@@ -287,12 +290,21 @@ export function Triage({ envelope, onSubmit, onCancel }: TriageProps) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p
-                      id={`triage-item-${item.itemId}-label`}
-                      className="text-sm font-medium text-zinc-100 break-words"
-                    >
-                      {item.label}
-                    </p>
+                    {/*
+                      The row label is the agent's own words — an item string,
+                      or an object's title/label/summary/name — so it routes
+                      through the shared renderer like every other prose
+                      surface. The id stays on a wrapper because the decision
+                      group's `aria-labelledby` points at it, and <Markdown>
+                      owns its own element.
+                    */}
+                    <div id={`triage-item-${item.itemId}-label`}>
+                      <Markdown
+                        data-testid={`triage-item-${item.itemId}-label-body`}
+                        content={item.label}
+                        className="font-medium text-zinc-100"
+                      />
+                    </div>
                     {item.details && item.isObject ? (
                       <pre className="mt-1 max-h-40 overflow-auto rounded border border-zinc-800 bg-zinc-900 p-2 text-[10px] text-zinc-400">
                         {item.details}

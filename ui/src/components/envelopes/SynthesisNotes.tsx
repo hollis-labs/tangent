@@ -1,3 +1,4 @@
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -68,7 +69,7 @@ export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesP
         <div className="space-y-1">
           <CardTitle className="text-lg">{envelope.title ?? "Synthesis notes"}</CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
         </div>
       </CardHeader>
@@ -96,7 +97,7 @@ export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesP
                 <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                   Summary
                 </h3>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-100">{summary}</p>
+                <Markdown content={summary} className="leading-6 text-zinc-100" />
               </div>
             ) : null}
 
@@ -118,9 +119,7 @@ export function SynthesisNotes({ envelope, onSubmit, onCancel }: SynthesisNotesP
                         <p className="text-sm font-medium text-zinc-100">{item.label}</p>
                       ) : null}
                       {item.description ? (
-                        <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-400">
-                          {item.description}
-                        </p>
+                        <Markdown content={item.description} className="mt-1 text-zinc-400" />
                       ) : null}
                     </div>
                   ))}

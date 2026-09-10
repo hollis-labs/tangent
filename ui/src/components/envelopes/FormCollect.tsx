@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -352,10 +353,10 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
       <CardHeader className="space-y-2">
         <CardTitle className="text-lg">{envelope.title ?? "Form collect"}</CardTitle>
         {envelope.data?.intent ? (
-          <p className="text-sm text-zinc-300">{envelope.data.intent}</p>
+          <Markdown content={envelope.data.intent} className="text-zinc-300" />
         ) : null}
         {envelope.context ? (
-          <p className="whitespace-pre-wrap text-sm text-zinc-500">{envelope.context}</p>
+          <Markdown content={envelope.context} className="text-zinc-500" />
         ) : null}
         <p className="text-xs text-zinc-500">
           {validation.visibleCount} visible field{validation.visibleCount === 1 ? "" : "s"}
@@ -804,7 +805,7 @@ function SectionRenderer({
         <div className="space-y-1">
           <p className="text-sm font-medium text-zinc-100">{section.title}</p>
           {section.description ? (
-            <p className="text-xs text-zinc-400">{section.description}</p>
+            <Markdown content={section.description} className="text-xs text-zinc-400" />
           ) : null}
         </div>
         {visibleRows.map((row, index) => (
@@ -870,7 +871,7 @@ function SectionRenderer({
       <div className="space-y-1">
         <p className="text-sm font-medium text-zinc-100">{section.title}</p>
         {section.description ? (
-          <p className="text-xs text-zinc-400">{section.description}</p>
+          <Markdown content={section.description} className="text-xs text-zinc-400" />
         ) : null}
       </div>
       {section.fields.map((field) => (

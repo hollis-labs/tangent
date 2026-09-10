@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   AppBoard,
   type AppBoardEnvelope,
@@ -99,6 +100,17 @@ describe("applyFilters", () => {
     const filters = [{ id: "q", label: "Search", kind: "text" as const }];
     expect(applyFilters(cards, filters, { q: ["transport"] }).map((c) => c.id)).toEqual(["CW-1"]);
     expect(applyFilters(cards, filters, { q: ["tangent"] }).map((c) => c.id)).toEqual(["CW-2"]);
+  });
+
+  // The body renders as markdown, but the filter runs on the markdown SOURCE,
+  // which is the string the caller sent and the only one it can predict. A
+  // filter that matched rendered text instead would silently stop finding
+  // anything a caller had emphasized.
+  it("matches the markdown source, not the rendered text", () => {
+    const filters = [{ id: "q", label: "Search", kind: "text" as const }];
+    expect(applyFilters(cards, filters, { q: ["**switch case**"] }).map((c) => c.id)).toEqual([
+      "CW-1",
+    ]);
   });
 });
 
@@ -285,6 +297,21 @@ describe("<AppBoard>", () => {
     render(<AppBoard envelope={envelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
     expect(() => fireEvent.click(screen.getByRole("button", { name: /Doing 1/ }))).not.toThrow();
     expect(screen.queryByTestId("app-board-card-CW-2")).toBeNull();
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <AppBoard
+        envelope={{
+          ...envelope(),
+          context: proseProbe("ab-context"),
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("ab-context");
   });
 });
 

@@ -27,6 +27,7 @@ var diffReviewInputSchemaJSON = []byte(`{
               "type": "array",
               "items": {
                 "type": "object",
+                "description": "{id, path, summary, before, after, hunks}. Each file summary renders as markdown. before, after and every hunk stay literal \u2014 a diff is evidence the reader compares character by character.",
                 "properties": {
                   "id": {"type": "string", "minLength": 1}
                 },

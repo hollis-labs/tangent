@@ -16,13 +16,13 @@ var designIterationInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.design-iteration", "description": "Must be 'tangent.design-iteration' for this tool."},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
           "required": ["variant_id", "html", "prompts"],
           "properties": {
-            "caption": {"type": "string"},
+            "caption": {"type": "string", "description": "What to look at in the preview. Renders as markdown."},
             "variant_id": {"type": "string", "minLength": 1},
             "html": {"type": "string", "minLength": 1},
             "prompts": {

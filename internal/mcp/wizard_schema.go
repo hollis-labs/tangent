@@ -23,9 +23,9 @@ var wizardInputSchemaJSON = []byte(`{
           "properties": {
             "wizard_id": {"type": "string", "minLength": 1},
             "title": {"type": "string"},
-            "description": {"type": "string"},
+            "description": {"type": "string", "description": "What this wizard is for. Renders as markdown."},
             "current_step_id": {"type": "string"},
-            "steps": {"type": "array"},
+            "steps": {"type": "array", "description": "[{step_id, title, description, kind, optional, fields, branches}]. Each step description, and each branch description, renders as markdown."},
             "progress": {"type": "array"},
             "branch_selections": {"type": "array"},
             "summary": {"type": "object"},

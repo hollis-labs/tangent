@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -260,10 +261,10 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
           <div className="space-y-1">
             <CardTitle className="text-lg">{envelope.title ?? "Design iteration"}</CardTitle>
             {envelope.data?.caption ? (
-              <p className="text-sm text-zinc-400">{envelope.data.caption}</p>
+              <Markdown content={envelope.data.caption} className="text-zinc-400" />
             ) : null}
             {envelope.context ? (
-              <p className="text-sm whitespace-pre-wrap text-zinc-500">{envelope.context}</p>
+              <Markdown content={envelope.context} className="text-zinc-500" />
             ) : null}
           </div>
           <div className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-300">

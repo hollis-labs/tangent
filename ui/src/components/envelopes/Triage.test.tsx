@@ -12,6 +12,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  expectProseLiteral,
+  expectProseRendered,
+  proseProbe,
+} from "@/components/markdown/prose-probe";
 import { Triage, type TriageEnvelope } from "./Triage";
 
 describe("<Triage>", () => {
@@ -178,5 +183,39 @@ describe("<Triage>", () => {
 
     expect(screen.getByText(/extra detail/)).toBeInTheDocument();
     expect(screen.getByText("Has context")).toBeInTheDocument();
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: TriageEnvelope = {
+      v: 1,
+      id: "triage-md",
+      type: "tangent.triage",
+      data: {
+        prompt: proseProbe("triage-prompt"),
+        items: [proseProbe("triage-item")],
+      },
+    };
+
+    render(<Triage envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("triage-prompt");
+    expectProseRendered("triage-item");
+  });
+
+  // The Leave bucket, pinned: an object item's detail blob is a JSON dump of
+  // the raw item, not prose, and a renderer that reflowed it would be worse.
+  it("keeps an object item's raw JSON detail literal", () => {
+    const envelope: TriageEnvelope = {
+      v: 1,
+      id: "triage-literal",
+      type: "tangent.triage",
+      data: { items: [{ id: "obj", title: "An object item", note: proseProbe("triage-detail") }] },
+    };
+
+    render(<Triage envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    const details = screen.getByTestId("triage-item-obj").querySelector("pre");
+    expect(details).not.toBeNull();
+    expectProseLiteral(details as HTMLElement, "triage-detail");
   });
 });

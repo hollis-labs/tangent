@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
+import { Markdown } from "@/components/markdown";
 import {
   type ChannelAgentPresence,
   ChannelAPIError,
@@ -399,7 +399,18 @@ function MessageRow({ message }: { message: ChannelMessage }) {
             : "border-zinc-800 bg-zinc-900 text-zinc-200",
         )}
       >
-        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.body}</p>
+        {/*
+          Both directions route through the shared renderer. People type
+          markdown too, and splitting by direction would print the operator's
+          literal ** beside the agent's rendered bold in one thread. The
+          renderer is inert either way — no HTML is constructed from the text,
+          and no link here can navigate.
+        */}
+        <Markdown
+          data-testid="channel-message-body"
+          content={message.body}
+          className={cn("space-y-2 leading-6", isOperator ? "text-zinc-100" : "text-zinc-200")}
+        />
         <p className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-zinc-500">
           <span>
             {new Date(message.created_at).toLocaleTimeString([], {

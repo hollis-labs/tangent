@@ -52,7 +52,7 @@ var triageInputSchemaJSON = []byte(`{
         "title": {"type": "string"},
         "context": {"type": "string"},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
-        "data": {"type": "object", "description": "Triage-specific payload; v0.1 leaves this open."},
+        "data": {"type": "object", "description": "Triage-specific payload; v0.1 leaves this open. The prompt, and each item\u2019s own words \u2014 a string item, or an object item\u2019s title, label, summary or name \u2014 render as markdown. An object item\u2019s remaining fields are shown as a JSON block and stay literal."},
         "trace": {"type": "object"},
         "meta": {"type": "object"}
       },

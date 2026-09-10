@@ -247,7 +247,7 @@ type relaySendInput struct {
 	RecipientAgentID       string `json:"recipient_agent_id,omitempty" jsonschema:"Agent id of an explicit recipient. Give this and recipient_application_id together, or omit both to default to the channel's one live operator participant."`
 	SubjectID              string `json:"subject_id,omitempty"`
 	ReplyToExchangeID      string `json:"reply_to_exchange_id,omitempty"`
-	Body                   string `json:"body"`
+	Body                   string `json:"body" jsonschema:"The message text. Renders as markdown in the operator's channel pane."`
 }
 
 type relaySendOutput struct {

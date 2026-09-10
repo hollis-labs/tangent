@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -145,7 +146,7 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
         <div className="space-y-1">
           <CardTitle className="text-lg">{envelope.title ?? "Draft block"}</CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">
@@ -176,9 +177,7 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
               {currentDraft.block_count} accepted block{currentDraft.block_count === 1 ? "" : "s"}
             </p>
             {currentDraft.markdown ? (
-              <pre className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-100">
-                {currentDraft.markdown}
-              </pre>
+              <Markdown content={currentDraft.markdown} className="mt-3 leading-6 text-zinc-100" />
             ) : null}
           </section>
         ) : null}
@@ -189,14 +188,18 @@ export function BlockDraft({ envelope, onSubmit, onCancel }: BlockDraftProps) {
               Proposed block
             </p>
             {envelope.data?.outline_hint ? (
-              <p className="text-sm text-zinc-400">{envelope.data.outline_hint}</p>
+              <Markdown content={envelope.data.outline_hint} className="text-zinc-400" />
             ) : null}
           </div>
-          <pre className="whitespace-pre-wrap break-words rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100">
-            {envelope.data?.content ?? ""}
-          </pre>
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+            <Markdown
+              content={envelope.data?.content ?? ""}
+              data-testid="block-draft-content"
+              className="leading-6 text-zinc-100"
+            />
+          </div>
           {envelope.data?.rationale ? (
-            <p className="text-sm text-zinc-500">{envelope.data.rationale}</p>
+            <Markdown content={envelope.data.rationale} className="text-zinc-500" />
           ) : null}
         </section>
 

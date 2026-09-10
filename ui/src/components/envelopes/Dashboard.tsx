@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -372,7 +373,9 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
       <CardHeader className="space-y-3">
         <div className="space-y-1">
           <CardTitle>{envelope.title ?? envelope.data?.title ?? "Dashboard"}</CardTitle>
-          {envelope.context ? <p className="text-sm text-zinc-400">{envelope.context}</p> : null}
+          {envelope.context ? (
+            <Markdown content={envelope.context} className="text-zinc-400" />
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">
           <span className="rounded-full border border-zinc-800 px-2 py-1">
@@ -402,7 +405,9 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
             <p className="text-sm font-medium text-zinc-100">
               {summary.headline || "No summary yet"}
             </p>
-            {summary.detail ? <p className="mt-1 text-sm text-zinc-400">{summary.detail}</p> : null}
+            {summary.detail ? (
+              <Markdown content={summary.detail} className="mt-1 text-zinc-400" />
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
               <span>{summary.tile_count ?? tiles.length} tiles</span>
               {summary.active_room_count !== undefined ? (
@@ -719,7 +724,9 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
                 {tile.value || "0"}
                 {tile.unit ? <span className="ml-1 text-sm text-zinc-400">{tile.unit}</span> : null}
               </p>
-              {tile.summary ? <p className="mt-2 text-sm text-zinc-400">{tile.summary}</p> : null}
+              {tile.summary ? (
+                <Markdown content={tile.summary} className="mt-2 text-zinc-400" />
+              ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-zinc-500">
                 {tile.workflow ? <span>{tile.workflow}</span> : null}
                 {tile.room_id ? <span>room {tile.room_id}</span> : null}
@@ -785,7 +792,9 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
                     {snapshot.created_at ? (
                       <span className="ml-2 text-zinc-500">{snapshot.created_at}</span>
                     ) : null}
-                    {snapshot.note ? <p className="mt-1 text-zinc-400">{snapshot.note}</p> : null}
+                    {snapshot.note ? (
+                      <Markdown content={snapshot.note} className="mt-1 text-zinc-400" />
+                    ) : null}
                   </div>
                 ))}
             </div>

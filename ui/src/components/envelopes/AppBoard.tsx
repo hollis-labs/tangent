@@ -481,7 +481,9 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
             </span>
           ) : null}
         </div>
-        {envelope.context ? <p className="text-xs text-zinc-400">{envelope.context}</p> : null}
+        {envelope.context ? (
+          <Markdown content={envelope.context} className="text-xs text-zinc-400" />
+        ) : null}
       </header>
 
       <BoardFilterBar

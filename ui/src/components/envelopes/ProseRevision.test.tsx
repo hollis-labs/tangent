@@ -1,6 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  expectProseLiteral,
+  expectProseRendered,
+  proseProbe,
+} from "@/components/markdown/prose-probe";
 import { ProseRevision, type ProseRevisionEnvelope } from "./ProseRevision";
 
 describe("<ProseRevision>", () => {
@@ -86,5 +91,79 @@ describe("<ProseRevision>", () => {
       ],
       general_comment: "Prefer the structural fix over new flourishes.",
     });
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <ProseRevision
+        envelope={{
+          v: 1,
+          id: "rev-md",
+          type: "tangent.prose-revision",
+          context: proseProbe("rev-context"),
+          data: {
+            lens: "review",
+            revision_id: "pass-1",
+            summary: proseProbe("rev-summary"),
+            source_text: "The original opening paragraph.",
+            suggestions: [
+              {
+                id: "s1",
+                label: "Clarify",
+                suggested_text: "Open with the claim.",
+                reason: proseProbe("rev-reason"),
+              },
+            ],
+            current_draft: {
+              block_count: 1,
+              markdown: proseProbe("rev-draft"),
+              blocks: [{ block_id: "intro", content: "Accepted." }],
+            },
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("rev-context");
+    expectProseRendered("rev-summary");
+    expectProseRendered("rev-draft");
+    expectProseRendered("rev-reason");
+  });
+
+  // The Leave bucket, pinned. `source_text` and the two per-suggestion wordings
+  // are what the reviewer compares character by character — the suggestions
+  // quote exact substrings of the source — so a renderer that reflowed them
+  // would destroy the comparison. Same reasoning as a diff hunk.
+  it("keeps the source text and both suggestion wordings literal", () => {
+    render(
+      <ProseRevision
+        envelope={{
+          v: 1,
+          id: "rev-literal",
+          type: "tangent.prose-revision",
+          data: {
+            lens: "review",
+            revision_id: "pass-2",
+            source_text: proseProbe("rev-source"),
+            suggestions: [
+              {
+                id: "s1",
+                label: "Clarify",
+                original_text: proseProbe("rev-original"),
+                suggested_text: proseProbe("rev-suggested"),
+              },
+            ],
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseLiteral(screen.getByTestId("prose-revision-source"), "rev-source");
+    expectProseLiteral(screen.getByTestId("prose-revision-original-s1"), "rev-original");
+    expectProseLiteral(screen.getByTestId("prose-revision-suggested-s1"), "rev-suggested");
   });
 });

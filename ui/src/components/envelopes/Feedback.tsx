@@ -11,6 +11,7 @@
 
 import { useMemo, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -263,10 +264,10 @@ export function Feedback({ envelope, onSubmit, onCancel }: FeedbackProps) {
       <CardHeader>
         <CardTitle className="text-lg">{envelope.title ?? "Feedback"}</CardTitle>
         {envelope.data?.prompt ? (
-          <p className="text-sm text-zinc-400">{envelope.data.prompt}</p>
+          <Markdown content={envelope.data.prompt} className="text-zinc-400" />
         ) : null}
         {envelope.context ? (
-          <p className="text-sm text-zinc-500 whitespace-pre-wrap">{envelope.context}</p>
+          <Markdown content={envelope.context} className="text-zinc-500" />
         ) : null}
         <p className="text-xs text-zinc-500">
           {questions.length} question{questions.length === 1 ? "" : "s"}
@@ -332,7 +333,10 @@ export function Feedback({ envelope, onSubmit, onCancel }: FeedbackProps) {
                       .join(" ")}
                   </FieldMessage>
                   {question.suggestion?.rationale ? (
-                    <p className="text-xs text-zinc-500">{question.suggestion.rationale}</p>
+                    <Markdown
+                      content={question.suggestion.rationale}
+                      className="text-xs text-zinc-500"
+                    />
                   ) : null}
                 </div>
                 <QuestionControl

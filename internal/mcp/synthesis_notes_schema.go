@@ -16,13 +16,13 @@ var synthesisNotesInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.synthesis-notes"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
           "properties": {
             "private_notes": {"type": "string", "minLength": 1},
-            "summary": {"type": "string"},
+            "summary": {"type": "string", "description": "The synthesis the reader sees once the preview is visible. Renders as markdown."},
             "outline_state": {"type": "string", "enum": ["absent", "present", "skipped"]},
             "outline": {
               "type": "object",
@@ -34,7 +34,7 @@ var synthesisNotesInputSchemaJSON = []byte(`{
                     "type": "object",
                     "properties": {
                       "label": {"type": "string"},
-                      "description": {"type": "string"}
+                      "description": {"type": "string", "description": "The outline item's prose. Renders as markdown."}
                     },
                     "additionalProperties": false
                   }
