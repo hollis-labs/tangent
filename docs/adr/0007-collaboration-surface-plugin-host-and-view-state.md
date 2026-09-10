@@ -313,6 +313,49 @@ the point. A document whose claims are checkable against the tree is this ADR's
 whole argument for existing (see §Context on ADR 0006); an absolute that the
 tree contradicts would be the same defect one section later.
 
+**Amended again 2026-09-10 (`CW-20260910-0054`), because the second app plugin
+takes the same exception, and amending this section once per plugin would turn a
+boundary into a changelog.** The amendment above names a plugin. The Tesseract
+plugin makes Tesseract writes from inside this process for exactly the reason
+the Torque board does — this host compiles its plugins in — and nothing about
+that is specific to either application.
+
+The exception is therefore restated as a property of **the host**, not of a
+plugin:
+
+> While this host compiles its plugins in, a compiled-in plugin's writes to the
+> application it adapts originate in Tangent's process. That is a known cost of
+> the compiled-in mode, tracked by `CW-20260910-0034`, and it closes for every
+> plugin at once when subprocess mode lands.
+
+Two conditions keep the exception readable rather than merely recorded:
+
+- **Every plugin that takes it says so in its package doc**, in the terms
+  `internal/plugins/torqueboard/plugin.go` already uses. Who is inside the
+  exception is then a `grep`, not a memory.
+- **A plugin that writes to an application holds that application's client in
+  its own package and nowhere else.** `internal/plugins/torqueboard/torque.go`
+  is the only file in the repository that knows Torque exists; a Tesseract
+  plugin's client must be the only file that knows Tesseract does. Widening the
+  exception widens what a *plugin* may do and not what Tangent core learns,
+  which is the half that was doing the work.
+
+What this does not relax, unchanged from the first amendment:
+`RegisterCRUDHandler` stays unimplemented, `GetService` stays unimplemented, and
+a plugin remains a caller through `pluginhost.ToolCaller` rather than an insider
+holding a handle to the database, the room manager or the interaction service.
+
+One thing this amendment adds rather than restates, because the second plugin
+raises it and the first did not:
+
+- **A plugin writes with whatever authority its own client carries, and Tangent
+  grants it none.** Tangent holds no credential for an application and issues no
+  identity to one. A plugin writing to a store that trusts an asserted actor is
+  relying on that store's policy, not on a guarantee from this host, and must not
+  be described as though the host vouched for the write. `CW-20260910-0045` is
+  where that is being made enforceable for Tesseract specifically; nothing here
+  anticipates its outcome.
+
 ## Consequences
 
 ### Positive
