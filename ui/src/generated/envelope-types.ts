@@ -1,14 +1,28 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
 // @definition-source sha256:5d559c4557052cdab32e95353aa2a425024249acdc0ef20a5aff6a0ed34318a8
-// Generated from go-envelopes v0.1.0 — do not edit.
+// Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Coverage: 45 registered kinds — 26 go-envelopes core,
+// Coverage: 37 registered kinds — 18 go-envelopes core,
 // 19 Tangent-owned (internal/envelope/extensions).
 //
 // Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
 // Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs
+
+/** Shared type used by "table-card" */
+export interface action {
+  /** When true, the client asks the user to confirm before submitting the response. Defaults to false. */
+  confirm?: boolean;
+  /** Message shown in the confirmation prompt. Only meaningful when confirm is true. */
+  confirm_message?: string;
+  /** Stable action identifier. Echoed back verbatim as `action_id` in the response payload posted to POST /api/envelopes/{id}/respond. Not shown to the user. */
+  id: string;
+  /** Button text. */
+  label: string;
+  /** Visual emphasis. Defaults to "default" (a subtle/secondary button). */
+  style?: "default" | "primary" | "destructive";
+}
 
 /** Shared type used by "tangent.hitl-item" */
 export interface AdditionalCorrelationV1 {
@@ -376,7 +390,7 @@ export interface ApprovalCardData {
   risk_level?: "low" | "medium" | "high";
 }
 
-/** Envelope data for "artifact-mini" — Compact downloadable-artifact card surfaced in the bottom chat drawer. Renders name, mime, size, Download CTA, and a Dismiss button. Lifetime is transient — auto-closes after the user downloads or dismisses. Use for ephemeral 'your file is ready' surfaces. Durable session-wide artifact list lives in the right-rail Artifacts panel. (C2, CW-20260428-0013) */
+/** Envelope data for "artifact-mini" — Compact downloadable-artifact card surfaced in the bottom chat drawer. Renders name, mime, size, Download CTA, and a Dismiss button. Lifetime is transient — auto-closes after the user downloads or dismisses. Use for ephemeral 'your file is ready' surfaces. Durable session-wide artifact lists are a host concern. */
 export interface ArtifactMiniData {
   /** ID of the artifact row in the artifacts table. Drives the /api/artifacts/{id}/download URL. */
   artifact_id: string;
@@ -388,18 +402,6 @@ export interface ArtifactMiniData {
   origin?: string;
   /** Size in bytes; rendered as a human-friendly KB/MB string. */
   size_bytes?: number;
-}
-
-/** Envelope data for "chat-loop-budget-soft-warning" — Emitted once per generation when the chat loop crosses the strategy planner's soft max_turns budget without terminating. Signal-only — the agent continues running until it self-terminates via end_turn or trips a hard circuit-breaker (runaway_tool_failures, hard_ceiling, idle_timeout, retry_budget_exhausted). Devmode-gated on the SSE stream; always logged at INFO. CW-20260504-0001. */
-export interface ChatLoopBudgetSoftWarningData {
-  /** Loop iteration at which the budget was crossed. */
-  iteration: number;
-  /** The soft budget the loop just crossed (from the strategy planner or the default fallback). */
-  max_turns: number;
-  /** Human-readable explanation of the signal. */
-  reason: string;
-  /** ISO 8601 timestamp of the warning emission. */
-  timestamp: string;
 }
 
 /** Envelope data for "chat-loop-terminated" — Emitted when the chat loop exits abnormally (hard circuit-breaker, idle timeout, max turns, hard ceiling, retry budget). Carries the structured reason so the FE can render a terminal pause card instead of truncating the assistant bubble. */
@@ -420,14 +422,18 @@ export interface ChatLoopTerminatedData {
   timestamp: string;
 }
 
-/** Envelope data for "confirmation-card" — A confirmation dialog with risk-level-styled buttons. */
+/** Envelope data for "confirmation-card" — A confirmation dialog with risk-level-styled buttons. Also supports a live `data_source` pointer (composition target for the retired standalone `plan-review` type — see TASKS/phase-6/02-rebuild-plan-review-as-composition.md) so the frontend can re-fetch live status at render time instead of trusting only `prior_response`. */
 export interface ConfirmationCardData {
   /** Label for the cancel button. Defaults to Cancel. */
   cancel_label?: string;
   /** Label for the confirm button. Defaults to Confirm. */
   confirm_label?: string;
+  /** Optional live-data-source pointer. When present, the frontend re-fetches live status from this source at render time (rather than trusting only `prior_response`) and routes confirm/cancel through the source's own mutation instead of the generic typed-response POST. */
+  data_source?: { kind: "plan_approval"; plan_id?: string };
   /** Confirmation message body. */
   message: string;
+  /** Optional label for a third, non-committal action (e.g. "Request changes"). Only rendered when present. Currently only meaningful when `data_source.kind` is "plan_approval". */
+  request_changes_label?: string;
   /** Risk level. Defaults to low. */
   risk?: "low" | "medium" | "high";
   /** Confirmation title. */
@@ -468,7 +474,7 @@ export interface ElicitationPromptData {
   elicitation_id: string;
   /** The question or prompt shown to the user. */
   message: string;
-  /** Where the elicitation was issued: server (Nanite's own tool) or client (external MCP server). */
+  /** Where the elicitation was issued: server (the host's own tool) or client (external MCP server). */
   origin: "server" | "client";
   /** Optional helper text shown below the input widget. */
   schema_description?: string;
@@ -506,27 +512,17 @@ export interface InfoCardData {
   variant?: "info" | "success" | "warning" | "danger";
 }
 
-/** Envelope data for "list-card" — An ordered or unordered list with optional item actions. */
+/** Envelope data for "list-card" — An ordered or unordered list with optional item actions. Also supports a live `data_source` pointer (composition target for the retired standalone `todo-list` type — see TASKS/phase-6/01-rebuild-todo-list-as-composition.md — and the retired standalone `plan-review` type — see TASKS/phase-6/02-rebuild-plan-review-as-composition.md) so the frontend can re-fetch items at render time instead of trusting a static snapshot. */
 export interface ListCardData {
-  /** List items. */
-  items: { action?: { label: string; type: string }; description?: string; icon?: string; label: string }[];
+  /** Optional live-data-source pointer. When present, the frontend re-fetches items from this source at render time (and re-fetches again after each mutation) instead of trusting the static `items` array above. */
+  data_source?: { kind: "todos" | "plans"; plan_id?: string; scope?: string; scope_id?: string };
+  /** List items. May be an empty placeholder array when `data_source` is set — the frontend re-fetches the real items live and does not trust this snapshot in that case. */
+  items: { action?: { label: string; type: string }; description?: string; icon?: string; id?: string; label: string; status?: "pending" | "done" | "in_progress" | "skipped" }[];
   /** Whether to show numbered list. Defaults to false. */
   ordered?: boolean;
   /** Optional list title. */
   title?: string;
 }
-
-/** Envelope data for "message-handoff" (no schema registered). */
-export type MessageHandoffData = Record<string, unknown>;
-
-/** Envelope data for "message-notification" (no schema registered). */
-export type MessageNotificationData = Record<string, unknown>;
-
-/** Envelope data for "message-reply" (no schema registered). */
-export type MessageReplyData = Record<string, unknown>;
-
-/** Envelope data for "message-request" (no schema registered). */
-export type MessageRequestData = Record<string, unknown>;
 
 /** Envelope data for "metric-card" — A single metric display with optional trend indicator. */
 export interface MetricCardData {
@@ -543,9 +539,6 @@ export interface MetricCardData {
   /** The metric value. */
   value: string | number;
 }
-
-/** Envelope data for "plan-review" (no schema registered). */
-export type PlanReviewData = Record<string, unknown>;
 
 /** Envelope data for "progress-card" — A progress bar with optional step checklist. */
 export interface ProgressCardData {
@@ -571,12 +564,6 @@ export interface ProposalCardData {
   type: string;
 }
 
-/** Envelope data for "question-form" — An interactive form with multiple question fields. */
-export interface QuestionFormData {
-  /** Array of questions. */
-  questions: { default?: string; options?: string[]; prompt: string; required: boolean; type: "text" | "textarea" | "select" | "radio" | "checkbox" }[];
-}
-
 /** Envelope data for "report-card" — A metrics report with summary and action buttons. */
 export interface ReportCardData {
   /** Action buttons shown at the bottom. */
@@ -585,6 +572,8 @@ export interface ReportCardData {
   generated_at?: string;
   /** Array of metric entries. */
   metrics: { color?: string; label: string; percent?: number; value: string }[];
+  /** Optional link back to the full session/task/run this report distills — lets a host render 'summary + link' instead of a raw transcript dump. */
+  session_link?: { label: string; url: string };
   /** Markdown summary text shown below metrics. */
   summary?: string;
   /** Report title. */
@@ -595,8 +584,8 @@ export interface ReportCardData {
 export interface SessionTaskData {
   /** Optional description shown below the task title. */
   description?: string;
-  /** Current task status. */
-  status: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+  /** Current task status. Use "canceled" for new payloads. The legacy "cancelled" spelling remains readable through go-envelopes v0.4.x and is scheduled for removal in v0.5.0. */
+  status: "pending" | "in_progress" | "completed" | "failed" | "canceled" | "cancelled";
   /** Unique identifier for the task. */
   task_id: string;
   /** Display title of the task. */
@@ -615,12 +604,14 @@ export interface SubagentSpawnApprovalData {
   timeout_seconds?: number;
 }
 
-/** Envelope data for "table-card" — A sortable data table. */
+/** Envelope data for "table-card" — A sortable data table, optionally with schema-validated row and/or column actions. */
 export interface TableCardData {
+  /** Row-scoped actions rendered as a button group on every row. A response for one of these carries action_id and row_index (no column_key). Interactive tables (root-level `actions` and/or any column `actions`) must be emitted through a path that persists an EnvelopeInstance (e.g. the same emit mechanism approval-card/elicitation-prompt use) so the envelope has an id the frontend can POST a response against — the passive card_show path does not create one. */
+  actions?: action[];
   /** Optional table caption. */
   caption?: string;
   /** Column definitions. */
-  columns: { key: string; label: string; sortable?: boolean }[];
+  columns: { actions?: action[]; key: string; label: string; sortable?: boolean }[];
   /** Row data. Keys must match column keys. */
   rows: Record<string, unknown>[];
   /** Optional table title. */
@@ -849,9 +840,6 @@ export interface TimelineCardData {
   title?: string;
 }
 
-/** Envelope data for "todo-list" (no schema registered). */
-export type TodoListData = Record<string, unknown>;
-
 /** Trace metadata mirrored from go-envelopes Trace. */
 export interface EnvelopeTrace {
   agentId?: string;
@@ -883,7 +871,6 @@ interface EnvelopeBase<TType extends string, TData> {
 
 export type ApprovalCardEnvelope = EnvelopeBase<"approval-card", ApprovalCardData>;
 export type ArtifactMiniEnvelope = EnvelopeBase<"artifact-mini", ArtifactMiniData>;
-export type ChatLoopBudgetSoftWarningEnvelope = EnvelopeBase<"chat-loop-budget-soft-warning", ChatLoopBudgetSoftWarningData>;
 export type ChatLoopTerminatedEnvelope = EnvelopeBase<"chat-loop-terminated", ChatLoopTerminatedData>;
 export type ConfirmationCardEnvelope = EnvelopeBase<"confirmation-card", ConfirmationCardData>;
 export type DiffCardEnvelope = EnvelopeBase<"diff-card", DiffCardData>;
@@ -892,15 +879,9 @@ export type ElicitationPromptEnvelope = EnvelopeBase<"elicitation-prompt", Elici
 export type ErrorReportEnvelope = EnvelopeBase<"error-report", ErrorReportData>;
 export type InfoCardEnvelope = EnvelopeBase<"info-card", InfoCardData>;
 export type ListCardEnvelope = EnvelopeBase<"list-card", ListCardData>;
-export type MessageHandoffEnvelope = EnvelopeBase<"message-handoff", MessageHandoffData>;
-export type MessageNotificationEnvelope = EnvelopeBase<"message-notification", MessageNotificationData>;
-export type MessageReplyEnvelope = EnvelopeBase<"message-reply", MessageReplyData>;
-export type MessageRequestEnvelope = EnvelopeBase<"message-request", MessageRequestData>;
 export type MetricCardEnvelope = EnvelopeBase<"metric-card", MetricCardData>;
-export type PlanReviewEnvelope = EnvelopeBase<"plan-review", PlanReviewData>;
 export type ProgressCardEnvelope = EnvelopeBase<"progress-card", ProgressCardData>;
 export type ProposalCardEnvelope = EnvelopeBase<"proposal-card", ProposalCardData>;
-export type QuestionFormEnvelope = EnvelopeBase<"question-form", QuestionFormData>;
 export type ReportCardEnvelope = EnvelopeBase<"report-card", ReportCardData>;
 export type SessionTaskEnvelope = EnvelopeBase<"session-task", SessionTaskData>;
 export type SubagentSpawnApprovalEnvelope = EnvelopeBase<"subagent-spawn-approval", SubagentSpawnApprovalData>;
@@ -925,13 +906,11 @@ export type TangentTriageEnvelope = EnvelopeBase<"tangent.triage", TangentTriage
 export type TangentWhiteboardEnvelope = EnvelopeBase<"tangent.whiteboard", TangentWhiteboardData>;
 export type TangentWizardEnvelope = EnvelopeBase<"tangent.wizard", TangentWizardData>;
 export type TimelineCardEnvelope = EnvelopeBase<"timeline-card", TimelineCardData>;
-export type TodoListEnvelope = EnvelopeBase<"todo-list", TodoListData>;
 
 /** Discriminated union of every envelope type Tangent has registered. */
 export type Envelope =
   | ApprovalCardEnvelope
   | ArtifactMiniEnvelope
-  | ChatLoopBudgetSoftWarningEnvelope
   | ChatLoopTerminatedEnvelope
   | ConfirmationCardEnvelope
   | DiffCardEnvelope
@@ -940,15 +919,9 @@ export type Envelope =
   | ErrorReportEnvelope
   | InfoCardEnvelope
   | ListCardEnvelope
-  | MessageHandoffEnvelope
-  | MessageNotificationEnvelope
-  | MessageReplyEnvelope
-  | MessageRequestEnvelope
   | MetricCardEnvelope
-  | PlanReviewEnvelope
   | ProgressCardEnvelope
   | ProposalCardEnvelope
-  | QuestionFormEnvelope
   | ReportCardEnvelope
   | SessionTaskEnvelope
   | SubagentSpawnApprovalEnvelope
@@ -972,14 +945,12 @@ export type Envelope =
   | TangentTriageEnvelope
   | TangentWhiteboardEnvelope
   | TangentWizardEnvelope
-  | TimelineCardEnvelope
-  | TodoListEnvelope;
+  | TimelineCardEnvelope;
 
 /** String literal union of every registered envelope type name. */
 export type EnvelopeType =
   | "approval-card"
   | "artifact-mini"
-  | "chat-loop-budget-soft-warning"
   | "chat-loop-terminated"
   | "confirmation-card"
   | "diff-card"
@@ -988,15 +959,9 @@ export type EnvelopeType =
   | "error-report"
   | "info-card"
   | "list-card"
-  | "message-handoff"
-  | "message-notification"
-  | "message-reply"
-  | "message-request"
   | "metric-card"
-  | "plan-review"
   | "progress-card"
   | "proposal-card"
-  | "question-form"
   | "report-card"
   | "session-task"
   | "subagent-spawn-approval"
@@ -1020,14 +985,12 @@ export type EnvelopeType =
   | "tangent.triage"
   | "tangent.whiteboard"
   | "tangent.wizard"
-  | "timeline-card"
-  | "todo-list";
+  | "timeline-card";
 
 /** Maps each envelope type string to its data interface. */
 export interface EnvelopeDataMap {
   "approval-card": ApprovalCardData;
   "artifact-mini": ArtifactMiniData;
-  "chat-loop-budget-soft-warning": ChatLoopBudgetSoftWarningData;
   "chat-loop-terminated": ChatLoopTerminatedData;
   "confirmation-card": ConfirmationCardData;
   "diff-card": DiffCardData;
@@ -1036,15 +999,9 @@ export interface EnvelopeDataMap {
   "error-report": ErrorReportData;
   "info-card": InfoCardData;
   "list-card": ListCardData;
-  "message-handoff": MessageHandoffData;
-  "message-notification": MessageNotificationData;
-  "message-reply": MessageReplyData;
-  "message-request": MessageRequestData;
   "metric-card": MetricCardData;
-  "plan-review": PlanReviewData;
   "progress-card": ProgressCardData;
   "proposal-card": ProposalCardData;
-  "question-form": QuestionFormData;
   "report-card": ReportCardData;
   "session-task": SessionTaskData;
   "subagent-spawn-approval": SubagentSpawnApprovalData;
@@ -1069,7 +1026,6 @@ export interface EnvelopeDataMap {
   "tangent.whiteboard": TangentWhiteboardData;
   "tangent.wizard": TangentWizardData;
   "timeline-card": TimelineCardData;
-  "todo-list": TodoListData;
 }
 
 /** Maps envelope type -> component slug declared in the kind's manifest. */
@@ -1077,7 +1033,6 @@ export interface EnvelopeDataMap {
 export const EnvelopeKindMap = {
   "approval-card": "components/chat/envelopes/ApprovalCard",
   "artifact-mini": "components/chat/envelopes/ArtifactMiniCard",
-  "chat-loop-budget-soft-warning": "",
   "chat-loop-terminated": "components/chat/envelopes/ChatLoopTerminatedCard",
   "confirmation-card": "components/chat/envelopes/primitives/ConfirmationCard",
   "diff-card": "components/chat/envelopes/primitives/DiffCard",
@@ -1086,18 +1041,12 @@ export const EnvelopeKindMap = {
   "error-report": "components/chat/envelopes/ErrorCard",
   "info-card": "components/chat/envelopes/primitives/InfoCard",
   "list-card": "components/chat/envelopes/primitives/ListCard",
-  "message-handoff": "",
-  "message-notification": "",
-  "message-reply": "",
-  "message-request": "",
   "metric-card": "components/chat/envelopes/primitives/MetricCard",
-  "plan-review": "components/chat/envelopes/PlanReviewCard",
   "progress-card": "components/chat/envelopes/primitives/ProgressCard",
   "proposal-card": "components/chat/envelopes/ProposalCard",
-  "question-form": "",
   "report-card": "components/chat/envelopes/ReportCard",
   "session-task": "",
-  "subagent-spawn-approval": "components/chat/envelopes/SubagentSpawnApprovalCard",
+  "subagent-spawn-approval": "components/chat/envelopes/ApprovalCard",
   "table-card": "components/chat/envelopes/primitives/TableCard",
   "tangent.app-board": "AppBoardView",
   "tangent.approval-queue": "ApprovalQueueView",
@@ -1119,14 +1068,12 @@ export const EnvelopeKindMap = {
   "tangent.whiteboard": "WhiteboardView",
   "tangent.wizard": "WizardView",
   "timeline-card": "components/chat/envelopes/primitives/TimelineCard",
-  "todo-list": "components/chat/envelopes/TodoListCard",
 } as const satisfies Record<EnvelopeType, string>;
 
 /** All registered envelope type strings, sorted by name. */
 export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "approval-card",
   "artifact-mini",
-  "chat-loop-budget-soft-warning",
   "chat-loop-terminated",
   "confirmation-card",
   "diff-card",
@@ -1135,15 +1082,9 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "error-report",
   "info-card",
   "list-card",
-  "message-handoff",
-  "message-notification",
-  "message-reply",
-  "message-request",
   "metric-card",
-  "plan-review",
   "progress-card",
   "proposal-card",
-  "question-form",
   "report-card",
   "session-task",
   "subagent-spawn-approval",
@@ -1168,7 +1109,6 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "tangent.whiteboard",
   "tangent.wizard",
   "timeline-card",
-  "todo-list",
 ] as const;
 
 /** The @definition-source stamp above, as a value. */

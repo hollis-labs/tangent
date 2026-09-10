@@ -26,7 +26,7 @@
 // Wire shape (one JSON document per run):
 //
 //	{
-//	  "envelopesVersion": "v0.1.0",
+//	  "envelopesVersion": "v0.4.0",
 //	  "types": [
 //	    {
 //	      "name": "info-card",
@@ -64,6 +64,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
@@ -73,13 +74,50 @@ import (
 	"github.com/hollis-labs/tangent/internal/plugins"
 )
 
-// envelopesVersion is the version line printed in the JSON dump banner.
-// Matches go.mod's `require github.com/hollis-labs/go-envelopes <ver>`;
-// the Node generator embeds this in the file banner so reviewers can see
-// at a glance which version produced the committed types.
+// envelopesModulePath is the module whose version the JSON dump banner
+// reports. The Node generator embeds that version in the generated file
+// banner so a reviewer can see at a glance which version produced the
+// committed types.
+const envelopesModulePath = "github.com/hollis-labs/go-envelopes"
+
+// envelopesVersion reads the selected go-envelopes version out of the
+// binary's own build info rather than repeating it here. The previous
+// hand-maintained constant carried the instruction "bump in lockstep with
+// go.mod", which is the kind of manual sync that silently rots: it still
+// read v0.1.0 while go.mod had moved on, so every regenerated artifact
+// was stamped with a version that had not produced it. Reading build info
+// cannot drift, because it is the same module graph the dump was built
+// from.
 //
-// Bump in lockstep with go.mod when upgrading the dep.
-const envelopesVersion = "v0.1.0"
+// Returns "unknown" when build info is unavailable (an interpreter or a
+// test binary stripped of module data) or when the module is absent from
+// the graph. That is deliberately a visible non-version rather than a
+// plausible-looking default — a wrong version in a provenance banner is
+// worse than an obviously missing one.
+func envelopesVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	if info.Main.Path == envelopesModulePath && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	for _, dep := range info.Deps {
+		if dep == nil || dep.Path != envelopesModulePath {
+			continue
+		}
+		// A replaced module reports the replacement's version; that is
+		// the one that actually produced these types.
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			return dep.Replace.Version
+		}
+		if dep.Version != "" {
+			return dep.Version
+		}
+		return "unknown"
+	}
+	return "unknown"
+}
 
 // dumpType is the JSON shape emitted per registered envelope type.
 type dumpType struct {
@@ -249,7 +287,7 @@ func run() error {
 
 	specs := svc.All()
 	out := dumpDoc{
-		EnvelopesVersion:       envelopesVersion,
+		EnvelopesVersion:       envelopesVersion(),
 		HostVersion:            envelope.HostVersion,
 		DefinitionSourceDigest: sourceDigest,
 		TrustProfiles:          trustProfiles(),

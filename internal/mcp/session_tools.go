@@ -489,7 +489,7 @@ func (s *Server) advanceRoomEnvelopeLegacy(
 				V:           envelopes.ProtocolVersion,
 				EnvelopeID:  env.ID,
 				Kind:        envelopes.ResponseKindAck,
-				Status:      envelopes.ResponseStatusCancelled,
+				Status:      envelopes.ResponseStatusCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 				CompletedAt: nowRFC3339(),
 			}
 			toolRes, payload := toolJSONResult(cancelled)

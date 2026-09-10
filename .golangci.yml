@@ -56,9 +56,13 @@ linters:
     misspell:
       locale: US
       ignore-rules:
-        # The Envelope UI Protocol uses "cancelled" (UK spelling) as
-        # the canonical ResponseStatusCancelled value; treating it as
-        # a misspelling would force us to fork the protocol token.
+        # No longer the canonical spelling: go-envelopes v0.3.0 moved the
+        # protocol token to "canceled" and v0.4.0 finished the Go API, so
+        # "cancelled" is now the legacy compatibility value rather than the
+        # authority. Tangent still emits, persists and reads it (see the
+        # SA1019 suppressions), so flagging it as a misspelling would fail
+        # the gate on values the wire genuinely carries. Retire this rule
+        # with the vocabulary migration in CW-20260904-0168.
         - cancelled
 
     revive:

@@ -283,7 +283,7 @@ func TestRoom_PushCancel(t *testing.T) {
 		t.Errorf("expected ErrUserCancelled, got %v", res.err)
 	}
 
-	assertEnvelopeStatus(t, db, rm.ID, env.ID, "cancelled", envelopes.ErrorCodeUserCancelled, true)
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "cancelled", envelopes.ErrorCodeUserCancelled, true) //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 }
 
 func TestRoom_SaveSpreadsheetReviewSnapshotPersistsAndReloads(t *testing.T) {
@@ -1418,7 +1418,7 @@ func TestRoom_PushCtxCancel(t *testing.T) {
 		t.Fatal("Push did not honor ctx cancel")
 	}
 
-	assertEnvelopeStatus(t, db, rm.ID, env.ID, "error", envelopes.ErrorCodeUserCancelled, true)
+	assertEnvelopeStatus(t, db, rm.ID, env.ID, "error", envelopes.ErrorCodeUserCancelled, true) //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 }
 
 func TestManager_Hydrate_StaleRoomsTimeout(t *testing.T) {

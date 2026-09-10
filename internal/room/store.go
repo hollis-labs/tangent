@@ -455,7 +455,7 @@ func (r *Room) persistCancelledEnvelope(envelopeID string, cancelErr error) erro
 		string(envelopes.ResponseKindAck),
 		nil,
 		envelopeStatusCancelled,
-		envelopes.ErrorCodeUserCancelled,
+		envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 		cancelErr.Error(),
 	)
 }
@@ -494,7 +494,7 @@ func (r *Room) persistTerminalEnvelopeError(envelopeID string, err error) error 
 		)
 	case errors.Is(err, context.Canceled):
 		payload := mustMarshalJSONText(map[string]any{
-			"code":    envelopes.ErrorCodeUserCancelled,
+			"code":    envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 			"message": err.Error(),
 		})
 		return r.persistEnvelopeFinalState(
@@ -502,7 +502,7 @@ func (r *Room) persistTerminalEnvelopeError(envelopeID string, err error) error 
 			string(envelopes.ResponseKindError),
 			&payload,
 			envelopeStatusError,
-			envelopes.ErrorCodeUserCancelled,
+			envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 			err.Error(),
 		)
 	case errors.Is(err, ErrRoomDisconnected), errors.Is(err, ErrRoomClosed):
@@ -853,8 +853,8 @@ func historyResponseStatus(status string) envelopes.ResponseStatus {
 	switch status {
 	case string(envelopes.ResponseStatusSubmitted):
 		return envelopes.ResponseStatusSubmitted
-	case string(envelopes.ResponseStatusCancelled):
-		return envelopes.ResponseStatusCancelled
+	case string(envelopes.ResponseStatusCancelled): //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+		return envelopes.ResponseStatusCancelled //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 	case string(envelopes.ResponseStatusPartial):
 		return envelopes.ResponseStatusPartial
 	default:

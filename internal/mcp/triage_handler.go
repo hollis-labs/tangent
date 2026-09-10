@@ -163,7 +163,7 @@ func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (
 			V:           envelopes.ProtocolVersion,
 			EnvelopeID:  env.ID,
 			Kind:        envelopes.ResponseKindAck,
-			Status:      envelopes.ResponseStatusCancelled,
+			Status:      envelopes.ResponseStatusCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 			CompletedAt: time.Now().UTC().Format(time.RFC3339),
 		}, nil
 	}

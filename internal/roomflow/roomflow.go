@@ -762,7 +762,7 @@ func cancelledResponse(envelopeID string, terminalAt *time.Time) *envelopes.Resp
 		V:           envelopes.ProtocolVersion,
 		EnvelopeID:  envelopeID,
 		Kind:        envelopes.ResponseKindAck,
-		Status:      envelopes.ResponseStatusCancelled,
+		Status:      envelopes.ResponseStatusCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
 		CompletedAt: completedAt,
 	}
 }
