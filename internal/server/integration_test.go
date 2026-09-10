@@ -465,7 +465,7 @@ func TestIntegration_Cancel(t *testing.T) {
 	if resp.Kind != envelopes.ResponseKindAck {
 		t.Errorf("kind = %q, want ack", resp.Kind)
 	}
-	if resp.Status != envelopes.ResponseStatusCancelled { //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+	if resp.Status != envelopes.ResponseStatusCanceled {
 		t.Errorf("status = %q, want cancelled", resp.Status)
 	}
 }

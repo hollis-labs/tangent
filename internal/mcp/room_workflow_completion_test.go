@@ -375,7 +375,7 @@ func TestRoomWorkflow_BrowserDisconnectDoesNotTerminalize(t *testing.T) {
 
 // TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer asserts an
 // explicit cancellation is terminal, replayable, and preserves the v0.12
-// ack/cancelled response shape.
+// ack/canceled response shape.
 func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
 	rg := newFastPathRig(t)
 	defer rg.cleanup()
@@ -411,8 +411,12 @@ func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
 	if err := json.Unmarshal([]byte(extractText(t, result.result)), &cancelled); err != nil {
 		t.Fatalf("unmarshal cancel result: %v", err)
 	}
-	if cancelled.Kind != "ack" || cancelled.Status != "cancelled" || cancelled.EnvelopeID != envelopeID {
-		t.Fatalf("cancel response = %+v, want the v0.12 ack/cancelled shape", cancelled)
+	// Deliberately a literal, not envelopes.ResponseStatusCanceled. This
+	// asserts the bytes an MCP client actually receives; pinning it to the
+	// constant would make the test follow the next value change instead of
+	// catching it, which is the whole reason it caught this one.
+	if cancelled.Kind != "ack" || cancelled.Status != "canceled" || cancelled.EnvelopeID != envelopeID {
+		t.Fatalf("cancel response = %+v, want the v0.12 ack/canceled shape", cancelled)
 	}
 
 	// The immutable cancellation replays identically, including its instant.

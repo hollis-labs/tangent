@@ -153,7 +153,7 @@ func (s *Server) handleTriage(
 //   - room.ErrRoomDisconnected /
 //     room.ErrRoomClosed          -> ROOM_DISCONNECTED
 //   - context.DeadlineExceeded    -> envelopes.ErrorCodeTimeout
-//   - context.Canceled            -> user-cancelled
+//   - context.Canceled            -> user-canceled
 //   - ErrSchemaValidation         -> validation-failed
 //   - everything else             -> host-error (with the verbatim message)
 func triageErrorResult(err error) *mcpsdk.CallToolResult {
@@ -167,7 +167,7 @@ func triageErrorResult(err error) *mcpsdk.CallToolResult {
 	case errors.Is(err, context.DeadlineExceeded):
 		return toolErrorResult(envelopes.ErrorCodeTimeout, err.Error())
 	case errors.Is(err, context.Canceled):
-		return toolErrorResult(envelopes.ErrorCodeUserCancelled, err.Error()) //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+		return toolErrorResult(envelopes.ErrorCodeUserCanceled, err.Error())
 	case errors.Is(err, envelopes.ErrSchemaValidation):
 		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	default:

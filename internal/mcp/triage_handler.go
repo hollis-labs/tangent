@@ -86,7 +86,7 @@ func NewTriageHandler(manager *room.Manager, logger *slog.Logger, roomURLBase st
 // Errors map to high-level cases:
 //
 //   - context deadline → fmt.Errorf wrapping ctx.Err()
-//   - user cancel → kind=ack, status=cancelled response (synthesized
+//   - user cancel → kind=ack, status=canceled response (synthesized
 //     here so the dispatcher's response-validation gate sees a valid
 //     envelope shape)
 //   - room disconnect → fmt.Errorf wrapping ErrRoomDisconnected;
@@ -155,7 +155,7 @@ func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, 
 // dispatch-layer return. Cancel becomes a synthesized cancelled
 // Response; everything else propagates as an error.
 func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (*envelopes.Response, error) {
-	// User cancel is synthesized into an ack/cancelled response so MCP
+	// User cancel is synthesized into an ack/canceled response so MCP
 	// clients see the protocol-level cancel shape rather than a tool
 	// failure.
 	if errors.Is(err, room.ErrUserCancelled) {
@@ -163,7 +163,7 @@ func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (
 			V:           envelopes.ProtocolVersion,
 			EnvelopeID:  env.ID,
 			Kind:        envelopes.ResponseKindAck,
-			Status:      envelopes.ResponseStatusCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+			Status:      envelopes.ResponseStatusCanceled,
 			CompletedAt: time.Now().UTC().Format(time.RFC3339),
 		}, nil
 	}

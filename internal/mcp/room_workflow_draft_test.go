@@ -185,7 +185,12 @@ func TestAppBoardDraft_StaysPendingAndIsReadableByTheCaller(t *testing.T) {
 	if len(after.Interactions) != 1 {
 		t.Fatalf("surface carries %d interactions, want 1", len(after.Interactions))
 	}
-	if state := after.Interactions[0].State; state == "resolved" || state == "cancelled" {
+	// "canceled", not "cancelled": InteractionState has always used the US
+	// spelling, so the British half of this comparison was dead from the day
+	// it was written and the test could not have caught a draft that canceled
+	// the interaction. Found by retiring the misspell ignore-rule in
+	// CW-20260904-0168.
+	if state := after.Interactions[0].State; state == "resolved" || state == "canceled" {
 		t.Errorf("interaction state = %q after a draft; the surface must stay open", state)
 	}
 }

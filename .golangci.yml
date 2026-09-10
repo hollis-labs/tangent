@@ -56,13 +56,27 @@ linters:
     misspell:
       locale: US
       ignore-rules:
-        # No longer the canonical spelling: go-envelopes v0.3.0 moved the
-        # protocol token to "canceled" and v0.4.0 finished the Go API, so
-        # "cancelled" is now the legacy compatibility value rather than the
-        # authority. Tangent still emits, persists and reads it (see the
-        # SA1019 suppressions), so flagging it as a misspelling would fail
-        # the gate on values the wire genuinely carries. Retire this rule
-        # with the vocabulary migration in CW-20260904-0168.
+        # NOT go-envelopes compatibility any more. CW-20260904-0168 finished
+        # that migration: the protocol's British constants are referenced
+        # nowhere, and nothing here emits or persists "user-cancelled".
+        #
+        # The rule survives because "cancelled" is still correct in three
+        # things go-envelopes does not own, and retiring it flags 48 sites in
+        # them:
+        #   * Tangent's own persisted vocabularies, whose values are data —
+        #     room.envelopeStatusCancelled, roomflow.StatusCancelled, the
+        #     progress-panel states. Changing a value here is a data
+        #     migration, not a spelling fix, and historyResponseStatus reads
+        #     one of them against Tangent's constant on purpose.
+        #   * Torque's status vocabulary, surfaced in the torqueboard plugin.
+        #     Another application owns that spelling; Tangent transcribes it.
+        #   * ordinary English prose in comments and Go identifiers built on
+        #     it (room.ErrUserCancelled), where British is a spelling
+        #     preference and not a protocol claim.
+        #
+        # So this is no longer debt with a deadline attached. Retiring it
+        # needs a decision about Tangent's own vocabulary, which is a
+        # different question from the one CW-20260904-0168 answered.
         - cancelled
 
     revive:

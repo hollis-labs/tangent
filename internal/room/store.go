@@ -226,7 +226,11 @@ ORDER BY created_at ASC, envelope_id ASC`,
 		); err != nil {
 			return nil, fmt.Errorf("scan room %q history: %w", roomID, err)
 		}
-		item.ErrorCode = nullableString(errorCode)
+		// Canonicalize on the way out. Rows written before the vocabulary
+		// migration carry "user-cancelled"; migration 0017 rewrites the ones
+		// this database holds, and this keeps a row restored from an older
+		// backup reading the same as a current one.
+		item.ErrorCode = envelopes.CanonicalErrorCode(nullableString(errorCode))
 		item.ErrorMsg = nullableString(errorMessage)
 
 		createdAt, err := parseSQLiteTimestampValue(createdRaw)
@@ -455,7 +459,7 @@ func (r *Room) persistCancelledEnvelope(envelopeID string, cancelErr error) erro
 		string(envelopes.ResponseKindAck),
 		nil,
 		envelopeStatusCancelled,
-		envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+		envelopes.ErrorCodeUserCanceled,
 		cancelErr.Error(),
 	)
 }
@@ -494,7 +498,7 @@ func (r *Room) persistTerminalEnvelopeError(envelopeID string, err error) error 
 		)
 	case errors.Is(err, context.Canceled):
 		payload := mustMarshalJSONText(map[string]any{
-			"code":    envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+			"code":    envelopes.ErrorCodeUserCanceled,
 			"message": err.Error(),
 		})
 		return r.persistEnvelopeFinalState(
@@ -502,7 +506,7 @@ func (r *Room) persistTerminalEnvelopeError(envelopeID string, err error) error 
 			string(envelopes.ResponseKindError),
 			&payload,
 			envelopeStatusError,
-			envelopes.ErrorCodeUserCancelled, //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+			envelopes.ErrorCodeUserCanceled,
 			err.Error(),
 		)
 	case errors.Is(err, ErrRoomDisconnected), errors.Is(err, ErrRoomClosed):
@@ -831,6 +835,9 @@ func envelopeHistoryResponse(
 			if err := json.Unmarshal([]byte(responseRaw.String), &responseErr); err != nil {
 				return nil, err
 			}
+			// The payload carries its own copy of the code, so it needs the
+			// same canonicalization the error_code column gets above.
+			responseErr.Code = envelopes.CanonicalErrorCode(responseErr.Code)
 			resp.Error = &responseErr
 		default:
 			var payload any
@@ -849,12 +856,33 @@ func envelopeHistoryResponse(
 	return resp, nil
 }
 
+// historyResponseStatus maps a persisted `envelopes.status` value onto a
+// canonical protocol status.
+//
+// The cancellation arm reads two vocabularies at once, and conflating them is
+// the specific way this function breaks. The column is written from two
+// places: persistCancelledEnvelope writes Tangent's OWN envelopeStatusCancelled
+// constant, while persistEnvelopeResponse writes string(resp.Status) — a
+// protocol value. Those two vocabularies are unrelated and only coincidentally
+// share the spelling "cancelled".
+//
+// So the arm is deliberately written as envelopeStatusCancelled rather than as
+// the protocol's legacy constant. Matching on the protocol constant would look
+// correct, type-check, and silently stop matching every row Tangent itself
+// wrote the moment the protocol value became "canceled". The two cannot be
+// listed as separate cases because they are equal constants and Go rejects a
+// duplicate case; one arm covering both is the intended reading, not an
+// oversight. The second listed value is the protocol's CURRENT spelling, which
+// persistEnvelopeResponse now writes.
+//
+// The return is always canonical, so a legacy row and a current row read back
+// identically.
 func historyResponseStatus(status string) envelopes.ResponseStatus {
 	switch status {
 	case string(envelopes.ResponseStatusSubmitted):
 		return envelopes.ResponseStatusSubmitted
-	case string(envelopes.ResponseStatusCancelled): //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
-		return envelopes.ResponseStatusCancelled //nolint:staticcheck // SA1019: legacy cancellation value; the US spelling changes persisted and emitted values, so it migrates as one piece in CW-20260904-0168
+	case envelopeStatusCancelled, string(envelopes.ResponseStatusCanceled):
+		return envelopes.ResponseStatusCanceled
 	case string(envelopes.ResponseStatusPartial):
 		return envelopes.ResponseStatusPartial
 	default:
