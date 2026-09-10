@@ -7,7 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Plugin host (`internal/pluginhost`, `internal/plugins`).** Tangent
+  implements the portfolio plugin framework's `Host` contract
+  (`github.com/hollis-labs/plugin-sdk`), so a new interaction kind can arrive
+  without editing Tangent's own registration table. The rule, from
+  [ADR 0007](docs/adr/0007-collaboration-surface-plugin-host-and-view-state.md)
+  §4: the SDK says what a plugin may offer, the ADR 0003 manifest says what the
+  host will let it do, and **a registration without a manifest is refused**. A
+  plugin names a kind; it cannot author that kind's trust class, capabilities,
+  assurance or digests, and a component that tries is refused by name rather
+  than silently downgraded. Compiled-in only — no subprocess spawn, no
+  signature verification, no runtime asset loading, and `RegisterCRUDHandler`
+  deliberately unimplemented. `register_all.go` keeps one row per kind with a
+  column saying which door it comes through, so the drift tests walk both.
+
+- **`tangent.app-board`.** A domain-free board: caller-supplied cards in
+  columns, a filter bar, and an optional detail pane composed inside the one
+  envelope rather than opening a second. The first kind contributed through the
+  plugin host, and the first whose `draft_custody` is `tangent-custodied` — its
+  view state is a durable revisioned draft record rather than `localStorage`.
+  Filters are a **view over the cards the caller supplied**, never a query the
+  host re-runs; the manifest, the tool description and the board itself all say
+  so. The owning application supplies the records and applies every
+  consequence: nothing in Tangent's process writes to it.
+
+- **Participant view state is readable by the caller.** `Service.SaveDraft` had
+  no callers; it now has one. A long-lived surface opened with
+  `completion: async` stays pending while the participant works in it, and what
+  they are looking at — filters, selection, whether a detail pane is open —
+  reaches the caller through `tangent.surface_get`'s `Drafts[]`. A draft never
+  takes the resolver lease, so opening a board in a second tab cannot steal the
+  right to answer from the first; a stale revision is refused rather than
+  merged; and reading view state is a pull, never a push. A caller must not
+  present a draft as a decision.
+
+### Known limitations
+
+- `stale_draft` is not recoverable in-session. The error frame echoes the
+  revision the client sent rather than the one the record expects, so a client
+  that falls behind cannot resynchronize without a reload. Single-tab drafting
+  is unaffected.
+- ADR 0007 §5 calls the custody value `host-custodied` in prose; the shipped
+  manifest enum spells it `tangent-custodied`, and the enum is what validates.
 
 ## [v0.13.0] - 2026-09-07
 

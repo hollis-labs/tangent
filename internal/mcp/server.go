@@ -442,6 +442,22 @@ func (s *Server) registerTools() error {
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
 
+	appBoardSchema, err := buildRoomWorkflowSchema(appBoardInputSchemaJSON, "app_board")
+	if err != nil {
+		return fmt.Errorf("build app-board input schema: %w", err)
+	}
+	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		Name: "tangent.app-board",
+		Description: "Dispatch an app-board envelope through Tangent: a board of the cards you supply, " +
+			"arranged in columns, with a filter bar and an optional detail pane. Domain-free — you " +
+			"supply the records and apply every consequence yourself; Tangent renders and records " +
+			"what the participant is looking at. Filters narrow the cards you sent and nothing else. " +
+			"Pass completion mode 'async' to keep the board open, update it with " +
+			"tangent.interaction_supersede, and read the participant's view state back with " +
+			"tangent.surface_get.",
+		InputSchema: appBoardSchema,
+	}, s.handleAppBoard)
+
 	dashboardSchema, err := buildRoomWorkflowSchema(dashboardInputSchemaJSON, "dashboard")
 	if err != nil {
 		return fmt.Errorf("build dashboard input schema: %w", err)

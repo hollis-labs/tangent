@@ -45,6 +45,28 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
+			tool: "tangent.app-board", envelopeType: "tangent.app-board",
+			data: map[string]any{
+				"board_id": "board-1",
+				"title":    "Active work",
+				"cards": []any{
+					map[string]any{
+						"id": "CW-1", "title": "First card",
+						"fields": map[string]any{"status": "doing"},
+					},
+				},
+				"columns": []any{
+					map[string]any{"id": "doing", "label": "Doing", "card_ids": []any{"CW-1"}},
+				},
+			},
+			response: map[string]any{
+				"kind": "data", "status": "submitted",
+				"payload": map[string]any{
+					"board_id": "board-1", "action_id": "open", "card_id": "CW-1",
+				},
+			},
+		},
+		{
 			tool: "tangent.session_advance", envelopeType: "tangent.triage", roomArgument: true,
 			data: map[string]any{"prompt": "advance the session", "items": []any{"item"}},
 			response: map[string]any{

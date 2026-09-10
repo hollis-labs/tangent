@@ -123,14 +123,18 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 30 {
+	if len(res.Tools) != 31 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 30 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 31 tools, got %d (%v)", len(res.Tools), names)
 	}
 
+	// tangent.app-board is the tool for the first plugin-contributed kind
+	// (ADR 0007 §4). It is registered unconditionally like every other room
+	// workflow: the plugin door decides whether the KIND is served, not whether
+	// the tool exists.
 	want := map[string]bool{
 		"tangent.list_workflows":           false,
 		"tangent.telemetry_query":          false,
@@ -144,6 +148,7 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 		"tangent.output_render":            false,
 		"tangent.whiteboard":               false,
 		"tangent.dashboard":                false,
+		"tangent.app-board":                false,
 		"tangent.file-picker":              false,
 		"tangent.progress-panel":           false,
 		"tangent.wizard":                   false,

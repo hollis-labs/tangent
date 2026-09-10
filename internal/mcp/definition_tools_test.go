@@ -3,6 +3,7 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -10,6 +11,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -25,6 +27,16 @@ func definitionToolsClient(t *testing.T) (*mcpsdk.ClientSession, func()) {
 	}
 	if registerErr := extensions.RegisterAll(envelopeService); registerErr != nil {
 		t.Fatalf("RegisterAll: %v", registerErr)
+	}
+	// And the plugin door (ADR 0007 §4). These tests compare the diagnostics
+	// against extensions.RegisteredTypes(), which counts both doors, so a
+	// server booted through only one of them would report a registry smaller
+	// than the one production serves and the assertions would be measuring the
+	// harness rather than the tool.
+	if _, pluginErr := plugins.LoadShipped(
+		context.Background(), slog.New(slog.DiscardHandler), envelopeService,
+	); pluginErr != nil {
+		t.Fatalf("LoadShipped: %v", pluginErr)
 	}
 	server, err := tangentmcp.New(
 		envelopeService, envelope.NewDispatcher(envelopeService), room.NewManager(nil), "")

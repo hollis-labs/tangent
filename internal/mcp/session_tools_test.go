@@ -23,6 +23,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
+	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -152,6 +153,15 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(db)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	// tangent.app-board arrives through the plugin host, not through a
+	// Register* call (ADR 0007 §4). Loading it the way production loads it
+	// keeps this rig from being the one place the second door is skipped —
+	// which would make every test here pass against a registry the server does
+	// not serve.
+	if _, pluginErr := plugins.LoadShipped(ctx, logger, envSvc); pluginErr != nil {
+		t.Fatalf("plugins.LoadShipped: %v", pluginErr)
+	}
 
 	wsHandler := tangentws.New(mgr, logger)
 	wsHandler.SetOriginPatterns([]string{"*"})
@@ -324,6 +334,11 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterAppBoardOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("RegisterAppBoardOnDispatcher: %v", regErr)
 	}
 
 	serverT, clientT := mcpsdk.NewInMemoryTransports()

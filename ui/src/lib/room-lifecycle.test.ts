@@ -36,6 +36,55 @@ function connectionState(role: "resolver" | "observer"): ConnectionState {
 }
 
 describe("room lifecycle", () => {
+  // The draft path. ADR 0007 §5: recording what a participant is looking at is
+  // a strictly lesser act than deciding, and the lifecycle has to keep it that
+  // way — a draft that cleared `pending` would blank the operator's pane the
+  // moment they touched a filter.
+  it("saves a draft against the pending envelope without settling it", () => {
+    const saveDraft = vi.fn(() => true);
+    const submitResponse = vi.fn(() => true);
+    const client = stubClient({ saveDraft, submitResponse });
+    const lifecycle = createRoomLifecycle("room-a", client);
+    lifecycle.receiveEnvelope("env-1", { type: "tangent.app-board" }, 4);
+
+    expect(lifecycle.saveDraft({ filters: { status: ["doing"] } })).toBe(true);
+
+    // The envelope id comes from the lifecycle, and the revision is NOT passed:
+    // ws-client owns that counter because the store computes MAX(revision) + 1
+    // and refuses anything else. A caller-supplied revision was a real defect
+    // and must not come back.
+    expect(saveDraft).toHaveBeenCalledWith("env-1", { filters: { status: ["doing"] } });
+    expect(saveDraft.mock.calls[0]).toHaveLength(2);
+    expect(submitResponse).not.toHaveBeenCalled();
+    expect(lifecycle.activeEnvelope()).toEqual({
+      envelopeId: "env-1",
+      envelope: { type: "tangent.app-board" },
+      revision: 4,
+    });
+  });
+
+  it("refuses a draft when nothing is pending", () => {
+    const saveDraft = vi.fn(() => true);
+    const lifecycle = createRoomLifecycle("room-a", stubClient({ saveDraft }));
+
+    // A draft has no interaction to belong to before an envelope arrives, and
+    // none after one is submitted.
+    expect(lifecycle.saveDraft({ filters: {} })).toBe(false);
+    lifecycle.receiveEnvelope("env-1", { type: "tangent.app-board" }, 1);
+    lifecycle.submit({ kind: "data" });
+    expect(lifecycle.saveDraft({ filters: {} })).toBe(false);
+    expect(saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("reports a draft the transport could not send", () => {
+    const lifecycle = createRoomLifecycle("room-a", stubClient({ saveDraft: vi.fn(() => false) }));
+    lifecycle.receiveEnvelope("env-1", { type: "tangent.app-board" }, 1);
+
+    expect(lifecycle.saveDraft({ filters: {} })).toBe(false);
+    // A failed draft still leaves the operator looking at their envelope.
+    expect(lifecycle.activeEnvelope()?.envelopeId).toBe("env-1");
+  });
+
   it("retains the active presentation when response or cancel cannot be sent", () => {
     const submitResponse = vi.fn(() => false);
     const cancel = vi.fn(() => false);

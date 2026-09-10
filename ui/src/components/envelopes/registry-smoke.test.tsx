@@ -43,6 +43,11 @@ const NO_TERMINAL_GATE: Record<string, string> = {
   "tangent.output-render": "read-only acknowledgement; no editable controls",
   "tangent.dashboard": "submitting an unchanged dashboard is a legitimate outcome",
   "tangent.spreadsheet-review": "submitting an empty review is a legitimate outcome",
+  // The board's terminal actions are the caller's own, with no required input
+  // in front of them: there is nothing the participant could fail to fill in,
+  // so there is no gate for a notice to explain. Its non-terminal state goes to
+  // a draft instead, which never blocks and is never a submission.
+  "tangent.app-board": "caller-supplied actions with no required input; view state is a draft",
 };
 
 function goEnvelopeTypes(): string[] {
@@ -85,9 +90,14 @@ describe("shipped room workflow registry", () => {
     expect([...roomWorkflows].sort()).toEqual([...spaTypes].sort());
   });
 
-  it("covers the seventeen Tangent-owned room workflows", () => {
+  it("covers every Tangent-owned room workflow exactly once", () => {
+    // The count is derived from the Go side rather than typed here. It moved
+    // the first time a workflow was added after this test was written, and a
+    // literal that has to be edited alongside the thing it checks is not a
+    // check. `hitl-item` is excluded for the reason given above.
+    const expected = goTypes.filter((type) => type !== "tangent.hitl-item").length;
     expect(new Set(spaTypes).size).toBe(spaTypes.length);
-    expect(spaTypes).toHaveLength(17);
+    expect(spaTypes).toHaveLength(expected);
   });
 
   it.each(

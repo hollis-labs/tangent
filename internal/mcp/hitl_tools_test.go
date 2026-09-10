@@ -71,13 +71,19 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	// 25 legacy + session tools, 11 generic durable interaction tools, 3
+	// 26 legacy + session tools, 11 generic durable interaction tools, 3
 	// definition-registry diagnostics, 4 HITL tools, tangent.health_report
 	// (CW-20260825-0066), tangent.telemetry_query (CW-20260825-0078), and
 	// tangent.retention_status (CW-20260825-0072). Changing this number is a
 	// public-API change.
-	if len(listed.Tools) != 46 {
-		t.Fatalf("production MCP topology = %d tools, want 46", len(listed.Tools))
+	//
+	// The 26th legacy tool is tangent.app-board (CW-20260909-0043), the first
+	// one whose kind arrives through the plugin host rather than RegisterAll.
+	// It is counted here like any other: a plugin-contributed kind is not a
+	// lesser member of the surface, and a tool the build serves that this
+	// number did not expect is exactly what this assertion is for.
+	if len(listed.Tools) != 47 {
+		t.Fatalf("production MCP topology = %d tools, want 47", len(listed.Tools))
 	}
 	want := map[string]bool{
 		"tangent.hitl_enqueue":   false,

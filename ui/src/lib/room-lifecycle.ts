@@ -14,6 +14,21 @@ export type RoomLifecycle = {
   switchRoom: (roomID: string) => boolean;
   submit: (response: unknown) => boolean;
   cancel: () => boolean;
+  /**
+   * Records what the participant is looking at inside the pending
+   * interaction, without settling it (ADR 0007 §5). Nothing about the
+   * presentation changes: `pending` is untouched, no resolver lease is taken,
+   * and the caller reads the result by pulling `tangent.surface_get`.
+   *
+   * Returns false when there is nothing pending — a draft for an envelope this
+   * tab is not looking at has no interaction to belong to.
+   *
+   * The revision is NOT passed here. `ws-client` owns the per-envelope counter
+   * because the store computes MAX(revision) + 1 and refuses anything else; a
+   * caller-supplied revision was a real defect (fixed in f2b0892) and must not
+   * come back.
+   */
+  saveDraft: (draft: unknown) => boolean;
   dispose: () => void;
 
   /** Connection lifecycle, tracked independently of any envelope. */
@@ -99,6 +114,12 @@ export function createRoomLifecycle(initialRoomID: string, client: WSClient): Ro
       }
       pending = null;
       return true;
+    },
+    saveDraft: (draft) => {
+      if (!pending) {
+        return false;
+      }
+      return client.saveDraft(pending.envelopeId, draft);
     },
     cancel: () => {
       if (!pending) {

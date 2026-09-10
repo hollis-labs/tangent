@@ -26,6 +26,18 @@ export type EnvelopeComponentProps = {
   onSubmit: (response: unknown) => void;
   onCancel: () => void;
   roomID?: string;
+  /**
+   * Records non-terminal view state — what the participant is looking at, not
+   * what they decided (ADR 0007 §5). Optional: most kinds settle in one act and
+   * have nothing to record between presentation and resolution, and the ones
+   * that keep local draft state keep it in localStorage.
+   *
+   * A component MUST NOT route view state through `onSubmit` instead. A
+   * response settles the interaction and takes the resolver lease; a draft does
+   * neither, which is why opening a long-lived surface in a second tab does not
+   * steal the right to answer from the first.
+   */
+  onDraft?: (draft: unknown) => void;
 };
 
 export type EnvelopeComponent = ComponentType<EnvelopeComponentProps>;

@@ -84,7 +84,7 @@ The ownership split, with each row stamped:
 | Channel identities, view state, subject associations, unread and disposition projections | Project and task identities, team topology, workflow state | Shipped: `internal/channel/records.go` (`Channel`, `Subject`, `Participant`, `Membership`, `RuntimeBinding`, `ViewFocus`), migration `0013_channels_and_participant_bindings` |
 | Locally accepted messages, drafts, routing bindings, receipts and recovery evidence, under explicit custody | External transcripts, agent identity and definitions, session lifecycle, long-term memory | Shipped: `internal/relay/records.go` (`Exchange`, `OutboxItem`, `DeliveryReceipt`, `ReadReceipt`, `Presence`), migrations `0014_relay_journal_and_outbox`, `0015_participant_presence` |
 | Validating and capturing interaction responses (ADR 0001, 0004) | Whether a response authorizes an external action, and whether that action occurred | Shipped: `internal/interaction`, `internal/definition`, `internal/authz` |
-| Host-defined capabilities, plugin registration points, schema validation (ADR 0003) | Plugin configuration, context recipes, rules and domain behaviour | Partly shipped: capabilities and schema validation are live (`internal/effect/capability.go`, `internal/definition`); the plugin registration point is **decided in §4 and not yet built** |
+| Host-defined capabilities, plugin registration points, schema validation (ADR 0003) | Plugin configuration, context recipes, rules and domain behaviour | Shipped: capabilities and schema validation (`internal/effect/capability.go`, `internal/definition`); the §4 plugin registration point (`internal/pluginhost/`, `internal/plugins/`) |
 | Bounded context projections and retrieval access through granted sources | Source content, application data, external context, runtime compaction | **Intended.** No context-projection type exists at `8702119` |
 
 ### 2. What this changes in ADR 0005, exactly
@@ -145,7 +145,10 @@ a draft payload, has made the mistake this section exists to prevent.
 
 ### 4. The plugin host boundary
 
-**New. Decided here; not yet built** (`CW-20260909-0042`).
+**New. Decided here.** Shipped: `internal/pluginhost/` (the `plugin_sdk.Host`
+implementation), `internal/plugins/` (the compiled-in set and its loader),
+`internal/plugins/appboard/` (the first plugin), and the `contributedByPlugin`
+column in `internal/envelope/extensions/register_all.go` (`CW-20260909-0042`).
 
 `libs/plugin-sdk` is the portfolio plugin framework. It is host-neutral,
 carries `UIComponentTypeEnvelope` as a first-class component type, and
@@ -202,7 +205,10 @@ live in-tree for convenience without that location becoming a permission.
 
 ### 5. Long-lived surfaces and host-custodied view state
 
-**New. Decided here; not yet built** (`CW-20260909-0041`).
+**New. Decided here.** Shipped: `interaction.Service.SaveDraft` reached through
+`roomDisposition.Draft` and `Room.HandleDraftFrom`, the `draft` WS frame, and
+`ws-client.saveDraft` (`CW-20260909-0041`). The round trip is held by
+`internal/mcp/room_workflow_draft_test.go` (`CW-20260909-0046`).
 
 A surface may stay open indefinitely while the participant works in it. This
 is already possible — `session_advance` with `completion: async` returns a
@@ -236,8 +242,14 @@ consequence of any action on them remains the owning application's to apply.
 
 ### 6. The app-plugin composition pattern
 
-**Intended.** The first instance is `CW-20260909-0043`; this section records
-the shape the pilot is testing, not a shipped guarantee.
+**Decided here.** The first instance is `tangent.app-board`
+(`CW-20260909-0043`): its manifest is at
+`internal/envelope/extensions/packages/tangent.appboard/app-board/`, its
+renderer at `ui/src/components/envelopes/AppBoard.tsx`, and its handler at
+`internal/mcp/app_board_handler.go`. This section records the shape the pilot
+tests. One instance is not yet a guarantee that the pattern generalizes; what it
+does establish is that the pattern is expressible without a host surface being
+added for it.
 
 An application gets an agent-facing surface in Tangent by composing four things
 that already have owners:
@@ -281,9 +293,12 @@ originates in Tangent's process.**
   0007 (this), and 0003 (the manifest). A reader needs 0005 §6 and 0003 §2 to
   apply §4 here. Consolidating them is not attempted; three accurate documents
   beat one document that has to be re-litigated to merge.
-- §4 and §5 decide things not yet built. They are labeled, but a decision
-  without an implementation is a claim about the future, and the labels are the
-  only thing preventing them from reading as description.
+- §4 and §5 were decisions before they were implementations. They are now
+  stamped against the files that implement them (`CW-20260909-0042`,
+  `0041`, `0043`, `0046`), which is what this document asks of every other
+  normative claim. The cost was real while it lasted: for the interval between
+  acceptance and implementation, the labels were the only thing preventing two
+  sections from reading as description.
 - Superseding a two-day-old ADR is a cost paid in reader confusion. It is paid
   deliberately: the alternative was a status section that would be wrong again
   by the next release.
@@ -345,7 +360,12 @@ unverifiable.
    manifest requirement turn out to need an escape hatch? If it needs one, that
    is a new ADR, not a patch to this one.
 3. Is `host-custodied` the right name, given ADR 0002 already uses "custody"
-   for a different axis?
+   for a different axis? **Still open, and now with a wrinkle**: this document
+   says `host-custodied` in prose, but the shipped enum in
+   `internal/definition/manifest.go` spells the value `tangent-custodied`, and
+   the enum is what validates a manifest. `tangent.app-board` therefore authors
+   `tangent-custodied`. Renaming either is a manifest-format change, not an
+   edit to this document.
 4. §6 claims no write originates in Tangent's process. Is that testable in CI,
    or only reviewable?
 

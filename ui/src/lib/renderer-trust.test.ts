@@ -19,12 +19,19 @@ import {
 /**
  * The trust class each shipped kind carries, as reviewed.
  *
- * Seventeen `core-trusted` React components in Tangent's own tree, one
+ * Mostly `core-trusted` React components in Tangent's own tree, one
  * `portfolio-trusted` (whiteboard embeds tldraw, a third-party editor, so it is
  * classed as a portfolio package rather than as host core), and one
  * `sandboxed-code` (design-iteration renders agent-authored HTML).
+ *
+ * `tangent.app-board` is core-trusted like the rest even though a plugin
+ * contributes it. Being plugin-contributed buys a kind nothing: core-trusted
+ * stays unreachable for a publisher that is not `tangent` or
+ * `hollis-labs/go-envelopes`, and the renderer ships compiled into this bundle
+ * like every other (ADR 0007 §4).
  */
 const SHIPPED_TRUST: Record<string, string> = {
+  "tangent.app-board": "core-trusted",
   "tangent.approval-queue": "core-trusted",
   "tangent.block-draft": "core-trusted",
   "tangent.dashboard": "core-trusted",
