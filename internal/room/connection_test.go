@@ -16,6 +16,17 @@ type stubDisposition struct {
 	revision DurableRevision
 	resolved chan *envelopes.Response
 	presents chan string
+	drafts   chan stubDraft
+	// draftErr, when set, is returned by every Draft call. Tests use it to
+	// drive the conflict path.
+	draftErr error
+}
+
+// stubDraft is one recorded non-terminal participant state.
+type stubDraft struct {
+	envelopeID string
+	revision   int64
+	payload    string
 }
 
 func newStubDisposition() *stubDisposition {
@@ -27,6 +38,7 @@ func newStubDisposition() *stubDisposition {
 		},
 		resolved: make(chan *envelopes.Response, 4),
 		presents: make(chan string, 16),
+		drafts:   make(chan stubDraft, 16),
 	}
 }
 
@@ -44,6 +56,27 @@ func (d *stubDisposition) Resolve(
 	_ context.Context, _ string, _ *envelopes.Envelope, resp *envelopes.Response,
 ) error {
 	d.resolved <- resp
+	return nil
+}
+
+func (d *stubDisposition) Draft(
+	_ context.Context,
+	_ string,
+	env *envelopes.Envelope,
+	revision int64,
+	payload json.RawMessage,
+) error {
+	if d.draftErr != nil {
+		return d.draftErr
+	}
+	envelopeID := ""
+	if env != nil {
+		envelopeID = env.ID
+	}
+	select {
+	case d.drafts <- stubDraft{envelopeID: envelopeID, revision: revision, payload: string(payload)}:
+	default:
+	}
 	return nil
 }
 
@@ -395,5 +428,126 @@ func TestConnectionStateIsIndependentOfInteractionState(t *testing.T) {
 	}
 	if len(frame.Connections) != 1 || !frame.Connections[0].Self {
 		t.Fatalf("connection frame did not mark the recipient: %+v", frame)
+	}
+}
+
+// TestObserverMayDraftWithoutTakingTheResolverLease is the property that makes
+// a long-lived board usable by more than one tab: recording what you are
+// looking at is not a claim on the right to answer.
+//
+// The observer here is refused a response — it holds no lease — and accepted
+// for a draft in the same breath, and the holder's lease survives both.
+func TestObserverMayDraftWithoutTakingTheResolverLease(t *testing.T) {
+	rm := NewManager(nil).Create(nil)
+	t.Cleanup(func() { rm.Close("test done") })
+	dial := newWSDialer(t)
+	disposition := newStubDisposition()
+
+	first := dial()
+	holder := attach(t, rm, first, AttachOptions{ClientID: "tab-a", Label: "tab a"})
+	if err := rm.Present(presentedEnvelope("board-1"), nil, disposition); err != nil {
+		t.Fatalf("present: %v", err)
+	}
+	readEnvelopeRevision(t, first, "board-1")
+
+	second := dial()
+	observer := attach(t, rm, second, AttachOptions{ClientID: "tab-b", Label: "tab b"})
+	observerRevision := readEnvelopeRevision(t, second, "board-1")
+
+	// The observer cannot answer.
+	if err := rm.HandleResponseFrom(
+		observer, "board-1", observerRevision, submittedResponse("board-1", "tab-b"),
+	); !errors.Is(err, ErrResolverLeaseHeld) {
+		t.Fatalf("observer response = %v, want ErrResolverLeaseHeld", err)
+	}
+
+	// It can still say what it is looking at.
+	if err := rm.HandleDraftFrom(
+		observer, "board-1", 1, json.RawMessage(`{"filters":["doing"]}`),
+	); err != nil {
+		t.Fatalf("observer draft: %v", err)
+	}
+	select {
+	case draft := <-disposition.drafts:
+		if draft.envelopeID != "board-1" || draft.revision != 1 {
+			t.Fatalf("draft = %+v, want board-1 at revision 1", draft)
+		}
+		if draft.payload != `{"filters":["doing"]}` {
+			t.Fatalf("draft payload = %s, want the filter state verbatim", draft.payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("draft never reached the canonical authority")
+	}
+
+	// And the lease is exactly where it was.
+	if role := rm.RoleOf(holder); role != RoleResolver {
+		t.Fatalf("holder role after an observer draft = %q, want resolver", role)
+	}
+	if role := rm.RoleOf(observer); role != RoleObserver {
+		t.Fatalf("drafting connection role = %q, want observer", role)
+	}
+	if !rm.IsPresenting("board-1") {
+		t.Fatal("a draft terminalized the presentation")
+	}
+}
+
+// TestDraftForASettledEnvelopeIsDroppedNotRefused covers the ordinary race: the
+// participant's last keystroke lands just after they answered. That is late,
+// not wrong, and it must not surface as an error the client has to handle.
+func TestDraftForASettledEnvelopeIsDroppedNotRefused(t *testing.T) {
+	rm := NewManager(nil).Create(nil)
+	t.Cleanup(func() { rm.Close("test done") })
+	dial := newWSDialer(t)
+	disposition := newStubDisposition()
+
+	pair := dial()
+	conn := attach(t, rm, pair, AttachOptions{ClientID: "tab-a", Label: "tab a"})
+	if err := rm.Present(presentedEnvelope("board-2"), nil, disposition); err != nil {
+		t.Fatalf("present: %v", err)
+	}
+	revision := readEnvelopeRevision(t, pair, "board-2")
+
+	if err := rm.HandleResponseFrom(
+		conn, "board-2", revision, submittedResponse("board-2", "tab-a"),
+	); err != nil {
+		t.Fatalf("response: %v", err)
+	}
+	<-disposition.resolved
+
+	if err := rm.HandleDraftFrom(
+		conn, "board-2", 2, json.RawMessage(`{"filters":[]}`),
+	); err != nil {
+		t.Fatalf("late draft = %v, want it silently dropped", err)
+	}
+	select {
+	case draft := <-disposition.drafts:
+		t.Fatalf("a draft reached the authority after settlement: %+v", draft)
+	default:
+	}
+}
+
+// TestDraftConflictSurfacesAndWritesNothing holds the rule from ADR 0007 §5:
+// a stale draft is refused rather than merged, because reconciling two views
+// produces a third that neither participant chose.
+func TestDraftConflictSurfacesAndWritesNothing(t *testing.T) {
+	rm := NewManager(nil).Create(nil)
+	t.Cleanup(func() { rm.Close("test done") })
+	dial := newWSDialer(t)
+	disposition := newStubDisposition()
+	disposition.draftErr = ErrDispositionDraftConflict
+
+	pair := dial()
+	conn := attach(t, rm, pair, AttachOptions{ClientID: "tab-a", Label: "tab a"})
+	if err := rm.Present(presentedEnvelope("board-3"), nil, disposition); err != nil {
+		t.Fatalf("present: %v", err)
+	}
+	readEnvelopeRevision(t, pair, "board-3")
+
+	err := rm.HandleDraftFrom(conn, "board-3", 1, json.RawMessage(`{"filters":["stale"]}`))
+	if !errors.Is(err, ErrDispositionDraftConflict) {
+		t.Fatalf("stale draft = %v, want ErrDispositionDraftConflict", err)
+	}
+	if !rm.IsPresenting("board-3") {
+		t.Fatal("a refused draft terminalized the presentation")
 	}
 }

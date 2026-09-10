@@ -119,6 +119,21 @@ type Disposition interface {
 	Resolve(ctx context.Context, roomID string, env *envelopes.Envelope, resp *envelopes.Response) error
 	// Cancel records an explicit participant cancellation.
 	Cancel(ctx context.Context, roomID string, env *envelopes.Envelope) error
+	// Draft records the participant's non-terminal state inside the
+	// interaction — what they are looking at, not what they decided. It never
+	// settles the presentation and never makes the interaction terminal.
+	//
+	// draftRevision is the participant's claim about which draft they are
+	// building on. A stale claim is refused rather than merged: the client
+	// resynchronizes and tries again. Losing a participant's view state to a
+	// lost race is a defect, not a tradeoff (ADR 0007 §5).
+	Draft(
+		ctx context.Context,
+		roomID string,
+		env *envelopes.Envelope,
+		draftRevision int64,
+		payload json.RawMessage,
+	) error
 	// DurableRevision reports the canonical record this presentation projects,
 	// so an attaching connection can be synchronized from durable state rather
 	// than from whatever the previous socket happened to hold.
@@ -1114,6 +1129,42 @@ func (r *Room) HandleResponseFrom(
 	}
 	defer p.presentationMu.Unlock()
 	return r.settleResponse(envelopeID, p, resp)
+}
+
+// HandleDraftFrom records one participant's non-terminal state for an
+// envelope this room is presenting.
+//
+// It deliberately does NOT go through authorizeDisposition. That helper takes
+// the resolver lease, because a response and a cancel are competitions —
+// exactly one connection may settle an envelope. A draft is not a competition:
+// it is one participant saying what they are looking at, and making it claim
+// the lease would mean opening a board in a second tab silently stole the
+// right to answer from the first.
+//
+// What it still checks is that this connection is attached to a live room and
+// that the envelope is genuinely pending here. A draft naming a settled
+// envelope is dropped rather than refused — the participant's view state for
+// something already answered is not an error, it is just late.
+func (r *Room) HandleDraftFrom(
+	c *Connection,
+	envelopeID string,
+	draftRevision int64,
+	payload json.RawMessage,
+) error {
+	if c == nil {
+		return ErrStaleConnection
+	}
+	if !r.IsAttached(c) {
+		return ErrStaleConnection
+	}
+	if r.closed.Load() {
+		return ErrRoomClosed
+	}
+	p := r.pendingByID(envelopeID)
+	if p == nil || p.settled.Load() || p.disposition == nil {
+		return nil
+	}
+	return p.disposition.Draft(r.lifetime, r.ID, p.Envelope, draftRevision, payload)
 }
 
 // authorizeDisposition runs the lease and revision checks shared by response

@@ -174,6 +174,15 @@ export default function Room() {
     setStatus("cancelled");
   };
 
+  // A draft is not a submission. Nothing here sets `submitting`, nothing clears
+  // `pending`, and no status line claims an outcome — the envelope is still
+  // open and the participant is still in it. Reporting a draft the way a
+  // response is reported would tell the operator they had answered when they
+  // had only looked.
+  const handleDraft = (draft: unknown) => {
+    lifecycleRef.current?.saveDraft(draft);
+  };
+
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
       <header className="mb-4 space-y-2">
@@ -216,6 +225,7 @@ export default function Room() {
             onSubmit={handleSubmit}
             onCancel={handleCancel}
             roomID={roomID}
+            onDraft={handleDraft}
           />
         </section>
       ) : null}

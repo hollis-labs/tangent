@@ -113,13 +113,21 @@ var responseSchemaBackfilled = []string{
 // list is what turns that rule into a failing build.
 func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 	t.Parallel()
-	// Seventeen kinds draw with React components reviewed and shipped in
-	// Tangent's own tree. `tangent.whiteboard` is portfolio-trusted because it
-	// embeds tldraw — a third-party editor whose code Tangent hosts but does
-	// not author — and `tangent.design-iteration` is the one renderer that
-	// executes agent-authored markup, so it is the only sandboxed-code class in
-	// the distribution.
+	// Most kinds draw with React components reviewed and shipped in Tangent's
+	// own tree. `tangent.whiteboard` is portfolio-trusted because it embeds
+	// tldraw — a third-party editor whose code Tangent hosts but does not
+	// author — and `tangent.design-iteration` is the one renderer that executes
+	// agent-authored markup, so it is the only sandboxed-code class in the
+	// distribution.
+	//
+	// `tangent.app-board` is core-trusted like the rest, and being contributed
+	// by a plugin buys it nothing: ADR 0007 §4 keeps core-trusted unreachable
+	// for a publisher that is not `tangent` or `hollis-labs/go-envelopes`, and
+	// its renderer is compiled into ui_dist with the release like every other.
+	// A plugin-contributed kind that could reach a higher class than a
+	// host-package one is the failure this line exists to make visible.
 	classified := map[string]definition.TrustClass{
+		"tangent.app-board":          definition.TrustCoreTrusted,
 		"tangent.approval-queue":     definition.TrustCoreTrusted,
 		"tangent.block-draft":        definition.TrustCoreTrusted,
 		"tangent.dashboard":          definition.TrustCoreTrusted,
@@ -199,6 +207,18 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 		"tangent.whiteboard", "tangent.wizard",
 	}
 
+	// The kinds whose drafts are Tangent's own durable records rather than a
+	// browser's localStorage. ADR 0007 §5 is the decision; Service.SaveDraft is
+	// the mechanism, and `tangent.surface_get` is how the caller reads them.
+	//
+	// This list being short is the point. `tangent-custodied` is a new class of
+	// retained participant content under ADR 0002 custody, so a kind joining it
+	// is a deliberate act and not a manifest edit nobody noticed. The value has
+	// been in the format since `2e2c48a`; what is new is a kind that means it.
+	tangentCustodied := []string{
+		"tangent.app-board",
+	}
+
 	svc := registeredService(t)
 	for _, item := range svc.MaterializedDefinitions() {
 		manifest := item.Manifest
@@ -218,8 +238,11 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 		}
 
 		wantCustody := definition.DraftCustodyDisabled
-		if slices.Contains(browserLocal, kind) {
+		switch {
+		case slices.Contains(browserLocal, kind):
 			wantCustody = definition.DraftCustodyBrowserLocal
+		case slices.Contains(tangentCustodied, kind):
+			wantCustody = definition.DraftCustodyTangentCustodied
 		}
 		if manifest.DraftCustody != wantCustody {
 			t.Errorf("%s draft_custody = %q, want %q", kind, manifest.DraftCustody, wantCustody)
@@ -278,6 +301,13 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		DashboardEnvelopeType:         {"tangent.canvas", definition.OwnershipHostPackage},
 		WizardEnvelopeType:            {"tangent.compound", definition.OwnershipHostPackage},
 		HITLItemEnvelopeType:          {HITLPackageID, definition.OwnershipHostPackage},
+
+		// Contributed by a plugin, and still a host package. ADR 0007 §4 is
+		// explicit that where a plugin's code lives is not the boundary: the
+		// kind's semantics — what a column, a card, a filter and a detail pane
+		// mean — are Tangent's, and the manifest that says so is Tangent's too.
+		// The application supplies content to it and owns none of it.
+		AppBoardEnvelopeType: {AppBoardPackageID, definition.OwnershipHostPackage},
 
 		// Publisher-owned editorial semantics, bundled only until a writing
 		// application exists to own them.
@@ -518,9 +548,11 @@ func registeredService(t *testing.T) *envelope.Service {
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	if err := RegisterAll(svc); err != nil {
-		t.Fatalf("RegisterAll: %v", err)
-	}
+	// Both doors. See registerEveryShippedKind in register_all_test.go for why
+	// this cannot go through internal/pluginhost from inside this package, and
+	// why testing only RegisterAll would take every plugin-contributed kind out
+	// of the drift gates below.
+	registerEveryShippedKind(t, svc)
 	return svc
 }
 

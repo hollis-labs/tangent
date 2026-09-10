@@ -264,6 +264,51 @@ describe("ws-client", () => {
   });
 });
 
+describe("ws-client draft revisions", () => {
+  it("advances the draft sequence per envelope so a caller never supplies one", () => {
+    const originalWS = globalThis.WebSocket;
+    Object.assign(MockWebSocket, {
+      OPEN: 1,
+      CONNECTING: 0,
+      CLOSING: 2,
+      CLOSED: 3,
+      instances: [],
+    });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    try {
+      const client = connect("room-a", {
+        wsURL: "ws://example.test/ws",
+        clientID: "tab-1",
+        heartbeatMs: 0,
+        onEnvelope: vi.fn(),
+      });
+      const socket = MockWebSocket.instances[0];
+      socket.emitOpen();
+      socket.sent.length = 0;
+
+      client.saveDraft("board-1", { filters: ["a"] });
+      client.saveDraft("board-1", { filters: ["a", "b"] });
+      // A second envelope keeps its own sequence — the store counts per
+      // interaction, so a shared counter would conflict on the first save.
+      client.saveDraft("board-2", { filters: [] });
+
+      const drafts = socket.sent
+        .map((raw: string) => JSON.parse(raw))
+        .filter((frame: { type: string }) => frame.type === "draft");
+
+      expect(drafts).toHaveLength(3);
+      expect(drafts[0]).toMatchObject({ envelopeId: "board-1", draftRevision: 1 });
+      expect(drafts[1]).toMatchObject({ envelopeId: "board-1", draftRevision: 2 });
+      expect(drafts[2]).toMatchObject({ envelopeId: "board-2", draftRevision: 1 });
+      expect(drafts[0].draft).toEqual({ filters: ["a"] });
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+});
+
 describe("shell client identity", () => {
   const ID_KEY = "tangent:v2:room:client-id";
   const KIND_KEY = "tangent:v2:room:client-kind";

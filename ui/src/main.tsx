@@ -2,6 +2,11 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import {
+  AppBoard,
+  type AppBoardEnvelope,
+  type AppBoardResponse,
+} from "./components/envelopes/AppBoard";
+import {
   ApprovalQueue,
   type ApprovalQueueEnvelope,
   type ApprovalQueueResponse,
@@ -199,6 +204,20 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
   );
 }
 
+// The one adapter that threads onDraft. The board is a long-lived surface, so
+// what the participant is looking at is recorded as it happens rather than only
+// at the moment they decide (ADR 0007 §5).
+function AppBoardAdapter({ envelope, onSubmit, onCancel, onDraft }: EnvelopeComponentProps) {
+  return (
+    <AppBoard
+      envelope={envelope as AppBoardEnvelope}
+      onSubmit={onSubmit as (response: AppBoardResponse) => void}
+      onCancel={onCancel}
+      onDraft={onDraft}
+    />
+  );
+}
+
 function DashboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
   return (
     <Dashboard
@@ -291,6 +310,7 @@ register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
 register("tangent.whiteboard", WhiteboardAdapter);
 register("tangent.dashboard", DashboardAdapter);
+register("tangent.app-board", AppBoardAdapter);
 register("tangent.file-picker", FilePickerAdapter);
 register("tangent.progress-panel", ProgressPanelAdapter);
 register("tangent.wizard", WizardAdapter);

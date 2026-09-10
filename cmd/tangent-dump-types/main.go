@@ -62,6 +62,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -69,6 +70,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/plugins"
 )
 
 // envelopesVersion is the version line printed in the JSON dump banner.
@@ -228,6 +230,15 @@ func run() error {
 	}
 	if regErr := extensions.RegisterAll(svc); regErr != nil {
 		return fmt.Errorf("register tangent extensions: %w", regErr)
+	}
+	// The plugin door too (ADR 0007 §4). Skipping it here would leave every
+	// plugin-contributed kind out of the generated TypeScript while the server
+	// served it — which is exactly the two-registries drift this tool going
+	// through the same registration path exists to prevent.
+	if _, pluginErr := plugins.LoadShipped(
+		context.Background(), slog.New(slog.DiscardHandler), svc,
+	); pluginErr != nil {
+		return fmt.Errorf("load shipped plugins: %w", pluginErr)
 	}
 	manifestFS := envelopes.EmbeddedFS()
 

@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:2fab55699564e31c452aba619a9220a570bb0bdde8b6e7d05e9534d2dd764b6e
+// @definition-source sha256:7a158a118d5fa7516a210fa99ef5c4a6621124054e468c1bbe086062e4ab5884
 // Run `make generate-envelopes` to regenerate.
 //
-// The renderer binding declared by each of the 18 manifests under
+// The renderer binding declared by each of the 19 manifests under
 // internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the
 // single answer to "what draws this kind"; ui/src/main.tsx is checked against
 // this table rather than being a second source of truth.
@@ -121,6 +121,23 @@ export interface RendererBinding {
 }
 
 export const RENDERER_BINDINGS: readonly RendererBinding[] = [
+  {
+    kind: "tangent.app-board",
+    version: "0.1",
+    rendererId: "tangent.renderer.app-board",
+    rendererClass: "react-component",
+    entry: "components/envelopes/AppBoard#AppBoard",
+    trustClass: "core-trusted",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
+    component: "AppBoardView",
+    packageId: "tangent.appboard",
+    state: "available",
+    contractDigest: "sha256:6dfa0b57e623e9cb967bfd73967a8ee721648e85fdfbd77546d85481f5066bf7",
+  },
   {
     kind: "tangent.approval-queue",
     version: "0.7",

@@ -1,0 +1,93 @@
+# Interaction definition manifest — tangent.app-board@0.1
+#
+# Authored per docs/adr/0003-definition-and-package-ownership.md §2. Every field
+# below is publisher-authored; Tangent derives the digests, the granted
+# capabilities, and the effective trust assurance and refuses a manifest that
+# tries to author them.
+#
+# THE FIRST PLUGIN-CONTRIBUTED KIND. It arrives through the ADR 0007 §4 plugin
+# path (internal/plugins/appboard registers it via internal/pluginhost) rather
+# than being installed directly by RegisterAll. That changes which door it comes
+# through and nothing else: this manifest is still what decides what the host
+# will let it do, and a registration the host cannot resolve a manifest for is
+# refused. See the `contributedByPlugin` column in register_all.go.
+#
+# ADR 0003 §6 T3: a presentation surface Tangent hosts inside its own React
+# tree. Domain-free on purpose — a board of filtered cards with a detail pane,
+# not a task model. The application supplies the content and applies every
+# consequence; Tangent ships the renderer. That is what keeps ADR 0005's
+# "Tangent is not a task tracker" true while a Torque board renders.
+#
+# Compatibility defaults under ADR 0003 §8 C4 — what the code actually does,
+# never something more permissive:
+#
+#   * response_schema is absent. ADR 0003 §9 S2 backfills it per kind from the
+#     handler's real behaviour; declaring `absent` preserves today's
+#     response-kind-only check rather than pretending a schema exists.
+#   * required_capabilities is empty. Nothing in this kind is capability-
+#     mediated today, and CW-20260825-0077 is what authors real grants. Note
+#     that the draft path is separately gated on authz.Draft at the WS frame,
+#     which is a host capability check and not a manifest grant.
+#   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
+#     (interaction, redacted 30 days after terminal) governs. ADR 0007's risk
+#     section is explicit that a tangent-custodied kind must not author a looser
+#     retention_class on the assumption that the ADR 0002 §3 precedence engine
+#     will tighten it later — that engine is still unimplemented
+#     (CW-20260905-0008).
+#
+# draft_custody: tangent-custodied is the FIRST USE of a value the manifest
+# format has carried since 2e2c48a (internal/definition/manifest.go:148). It was
+# waiting for a kind that meant it; nothing about the format changed to admit
+# this one. Like every draft_custody value it is a truthful description
+# (ADR 0003 §8 C4), never a grant.
+#
+# Every kind shipped before this one says browser-local, describing a
+# ui/src/lib/*-draft-storage.ts module backed by localStorage. This kind's view
+# state — which filters are applied, which card is selected, whether the detail
+# pane is open — is a durable revisioned draft record under ADR 0002 custody,
+# written through Service.SaveDraft and read back by the caller through
+# tangent.surface_get.
+
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.app-board
+version: "0.1"
+revision: 1
+title: "App board"
+description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
+package_id: tangent.appboard
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+compatibility_response_schema: absent
+
+renderer:
+  id: tangent.renderer.app-board
+  class: react-component
+  entry: "components/envelopes/AppBoard#AppBoard"
+  trust_class: core-trusted
+  component: AppBoardView
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: tangent-custodied
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

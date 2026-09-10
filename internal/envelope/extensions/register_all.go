@@ -1,11 +1,17 @@
 package extensions
 
 import (
+	"errors"
 	"fmt"
 	"path"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
+
+// ErrNotContributable reports that a kind cannot be installed through the
+// ADR 0007 §4 plugin door — either this host ships no manifest for it, or it is
+// a host-package kind that RegisterAll owns.
+var ErrNotContributable = errors.New("extensions: kind is not contributable by a plugin")
 
 // registration pairs a wire name with the package it ships in and the function
 // that installs it, so the ordered list below can be read as the catalog it is.
@@ -13,6 +19,16 @@ type registration struct {
 	name     string
 	pkg      string
 	register func(*envelope.Service) error
+	// contributedByPlugin marks a kind that arrives through the ADR 0007 §4
+	// plugin path instead of being installed directly by RegisterAll.
+	//
+	// It changes which door the kind comes through and nothing else. The row
+	// still appears in RegisteredTypes and PackagedKinds, so
+	// TestPackageTreeMatchesRegistrations covers both doors — ADR 0007 §4 is
+	// explicit that if the drift tests only walked one of them, the ownership
+	// guarantee ADR 0003 §6 makes mechanical would silently narrow to half the
+	// registry.
+	contributedByPlugin bool
 }
 
 // registrations is the single ordered list of every Tangent-owned interaction
@@ -30,24 +46,29 @@ type registration struct {
 // Order is registration order at boot and is otherwise insignificant —
 // Registry.All() sorts by name.
 var registrations = []registration{
-	{TriageEnvelopeType, "tangent.generic-candidate", RegisterTriage},
-	{FeedbackEnvelopeType, "tangent.generic-candidate", RegisterFeedback},
-	{FormCollectEnvelopeType, "tangent.generic-candidate", RegisterFormCollect},
-	{DesignIterationEnvelopeType, "tangent.canvas", RegisterDesignIteration},
-	{InterviewQuestionEnvelopeType, "tangent.generic-candidate", RegisterInterviewQuestion},
-	{BlockDraftEnvelopeType, "tangent.writing", RegisterBlockDraft},
-	{ProseRevisionEnvelopeType, "tangent.writing", RegisterProseRevision},
-	{OutputRenderEnvelopeType, "tangent.generic-candidate", RegisterOutputRender},
-	{WhiteboardEnvelopeType, "tangent.canvas", RegisterWhiteboard},
-	{DashboardEnvelopeType, "tangent.canvas", RegisterDashboard},
-	{FilePickerEnvelopeType, "tangent.workspace", RegisterFilePicker},
-	{ProgressPanelEnvelopeType, "tangent.generic-candidate", RegisterProgressPanel},
-	{WizardEnvelopeType, "tangent.compound", RegisterWizard},
-	{DiffReviewEnvelopeType, "tangent.review", RegisterDiffReview},
-	{SpreadsheetReviewEnvelopeType, "tangent.review", RegisterSpreadsheetReview},
-	{ApprovalQueueEnvelopeType, "tangent.review", RegisterApprovalQueue},
-	{SynthesisNotesEnvelopeType, "tangent.writing", RegisterSynthesisNotes},
-	{HITLItemEnvelopeType, HITLPackageID, RegisterHITLItem},
+	{TriageEnvelopeType, "tangent.generic-candidate", RegisterTriage, false},
+	{FeedbackEnvelopeType, "tangent.generic-candidate", RegisterFeedback, false},
+	{FormCollectEnvelopeType, "tangent.generic-candidate", RegisterFormCollect, false},
+	{DesignIterationEnvelopeType, "tangent.canvas", RegisterDesignIteration, false},
+	{InterviewQuestionEnvelopeType, "tangent.generic-candidate", RegisterInterviewQuestion, false},
+	{BlockDraftEnvelopeType, "tangent.writing", RegisterBlockDraft, false},
+	{ProseRevisionEnvelopeType, "tangent.writing", RegisterProseRevision, false},
+	{OutputRenderEnvelopeType, "tangent.generic-candidate", RegisterOutputRender, false},
+	{WhiteboardEnvelopeType, "tangent.canvas", RegisterWhiteboard, false},
+	{DashboardEnvelopeType, "tangent.canvas", RegisterDashboard, false},
+	{FilePickerEnvelopeType, "tangent.workspace", RegisterFilePicker, false},
+	{ProgressPanelEnvelopeType, "tangent.generic-candidate", RegisterProgressPanel, false},
+	{WizardEnvelopeType, "tangent.compound", RegisterWizard, false},
+	{DiffReviewEnvelopeType, "tangent.review", RegisterDiffReview, false},
+	{SpreadsheetReviewEnvelopeType, "tangent.review", RegisterSpreadsheetReview, false},
+	{ApprovalQueueEnvelopeType, "tangent.review", RegisterApprovalQueue, false},
+	{SynthesisNotesEnvelopeType, "tangent.writing", RegisterSynthesisNotes, false},
+	{HITLItemEnvelopeType, HITLPackageID, RegisterHITLItem, false},
+
+	// Contributed through the plugin host (ADR 0007 §4), not by RegisterAll.
+	// internal/plugins/appboard declares it; internal/pluginhost resolves this
+	// row's manifest and refuses the registration if it cannot.
+	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, true},
 }
 
 // RegisterAll registers every Tangent-owned interaction definition on svc. It
@@ -70,11 +91,65 @@ func RegisterAll(svc *envelope.Service) error {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
 	for _, reg := range registrations {
+		// A plugin-contributed kind is installed by the plugin host, through
+		// RegisterContributedKind, after the host has resolved its manifest.
+		// Registering it here as well would be a duplicate, which go-envelopes
+		// correctly rejects — and it would also route the kind around the
+		// manifest requirement ADR 0007 §4 exists to impose.
+		if reg.contributedByPlugin {
+			continue
+		}
 		if err := reg.register(svc); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// RegisterContributedKind installs one plugin-contributed kind by wire name.
+// It is the ADR 0007 §4 door, and internal/pluginhost is its only production
+// caller: a plugin declares an envelope UI component, the host resolves the
+// kind's ADR 0003 manifest, and this is what finally installs it.
+//
+// A kind this package does not ship a manifest for is refused with
+// ErrNotContributable. That is the whole point — "a registration without a
+// manifest is refused" is only a rule if the failure path exists — and it is
+// why the host cannot install a kind by handing over bytes of its own. The
+// manifest is the host's, always; a plugin names a kind, it does not author
+// what the host will let that kind do.
+//
+// Naming a kind that IS shipped but is not marked contributedByPlugin is also
+// refused. Those arrive through RegisterAll, and letting the plugin door
+// install one would mean the same kind could be registered by two paths with
+// no test able to say which one production used.
+func RegisterContributedKind(svc *envelope.Service, kind string) error {
+	if svc == nil {
+		return fmt.Errorf("extensions: envelope service is nil")
+	}
+	for _, reg := range registrations {
+		if reg.name != kind {
+			continue
+		}
+		if !reg.contributedByPlugin {
+			return fmt.Errorf(
+				"%w: %s is a host-package kind installed by RegisterAll, not a plugin contribution",
+				ErrNotContributable, kind)
+		}
+		return reg.register(svc)
+	}
+	return fmt.Errorf("%w: %s ships no manifest in this host", ErrNotContributable, kind)
+}
+
+// PluginContributedTypes returns the wire names that arrive through the plugin
+// host rather than through RegisterAll, in registration order.
+func PluginContributedTypes() []string {
+	names := make([]string, 0, 1)
+	for _, reg := range registrations {
+		if reg.contributedByPlugin {
+			names = append(names, reg.name)
+		}
+	}
+	return names
 }
 
 // RegisteredTypes returns the wire names RegisterAll installs, in registration

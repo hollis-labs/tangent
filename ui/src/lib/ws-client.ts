@@ -8,6 +8,15 @@
 //   server → client : {type:"error", code, message, envelopeId, revision, lease}
 //   client → server : {type:"response", envelopeId, revision, response}
 //   client → server : {type:"cancel", envelopeId, revision}
+//   client → server : {type:"draft", envelopeId, draftRevision, draft}
+//
+// Known limitation — `stale_draft` is not yet recoverable in-session. The
+// error frame echoes the revision the client sent, not the one the record
+// expects, so a client that falls behind (a second tab drafting the same
+// envelope, or a reconnect that resets this sequence) cannot resynchronize
+// without a reload. Single-tab drafting is unaffected. Closing it means
+// carrying the expected revision out of interaction.SaveDraftRevision, which
+// is where the value already exists.
 //   client → server : {type:"claim_resolver", takeover}
 //   client → server : {type:"release_resolver"}
 //   client → server : {type:"resync"}
@@ -222,6 +231,21 @@ export type WSClient = {
   cancel: (envelopeId: string, revision?: number) => boolean;
 
   /**
+   * Records non-terminal participant state for the given envelope — what the
+   * participant is looking at, not what they decided.
+   *
+   * The draft revision is tracked per envelope by the client and is not a
+   * caller's concern. Its sequence is the draft's own, not the presentation's.
+   *
+   * A stale revision comes back as a `stale_draft` error frame: nothing was
+   * written and nothing was merged, and the envelope is NOT re-presented.
+   * Recovering from that needs the current revision, which the frame does not
+   * yet carry — see the known limitation on `stale_draft` in ws-client's
+   * header comment.
+   */
+  saveDraft: (envelopeId: string, draft: unknown) => boolean;
+
+  /**
    * Asks for the resolver lease. `takeover` revokes it from a live peer and
    * is only ever sent from an explicit operator action.
    */
@@ -259,6 +283,12 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   let connected = false;
   let currentRoomID = roomID;
+  // The next draft revision per envelope. The store computes
+  // MAX(revision) + 1 and refuses anything else, so this sequence is a
+  // contract, not a hint — a caller that sent a constant would succeed once
+  // and conflict forever after. Keeping it here means no consumer has to know
+  // that, which is the whole reason it is not a required argument.
+  const nextDraftRevision = new Map<string, number>();
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let ws = openSocket(currentRoomID);
 
@@ -369,6 +399,17 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
     },
     cancel: (envelopeId, revision = 0) => {
       return send(ws, { type: "cancel", envelopeId, revision });
+    },
+    saveDraft: (envelopeId, draft) => {
+      const draftRevision = nextDraftRevision.get(envelopeId) ?? 1;
+      const sent = send(ws, { type: "draft", envelopeId, draftRevision, draft });
+      if (sent) {
+        // Optimistic. A refusal arrives asynchronously as a `stale_draft`
+        // frame, and re-sending the same revision after one would conflict
+        // just as surely as never advancing.
+        nextDraftRevision.set(envelopeId, draftRevision + 1);
+      }
+      return sent;
     },
     claimResolver: (takeover = false) => {
       return send(ws, { type: "claim_resolver", takeover });

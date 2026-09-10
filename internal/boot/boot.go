@@ -45,6 +45,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
@@ -266,6 +267,22 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
 
+	// The second door for interaction kinds (ADR 0007 §4). A compiled-in plugin
+	// names a kind; internal/pluginhost resolves the ADR 0003 manifest this host
+	// ships for that name and refuses the registration if there is none. The
+	// plugin authors nothing about what the kind may do — not its trust class,
+	// not its capabilities, not its assurance.
+	//
+	// It runs after RegisterAll because a plugin-contributed kind is additive:
+	// the host-package registry is complete before any plugin is consulted, and
+	// a plugin failing to load cannot leave a host kind unregistered.
+	pluginHost, pluginErr := plugins.LoadShipped(context.Background(), logger, envSvc)
+	if pluginErr != nil {
+		return release(fmt.Errorf("load shipped plugins: %w", pluginErr))
+	}
+	logger.Info("loaded shipped plugins",
+		"kinds", pluginHost.ContributedKinds(), "count", envSvc.Len())
+
 	// Dispatcher is shared across transports. The MCP triage handler below
 	// bridges it to a WebSocket-connected room.
 	dispatcher := envelope.NewDispatcher(envSvc)
@@ -468,6 +485,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		{"output-render", mcp.RegisterOutputRenderOnDispatcher},
 		{"whiteboard", mcp.RegisterWhiteboardOnDispatcher},
 		{"dashboard", mcp.RegisterDashboardOnDispatcher},
+		{"app-board", mcp.RegisterAppBoardOnDispatcher},
 		{"file-picker", mcp.RegisterFilePickerOnDispatcher},
 		{"progress-panel", mcp.RegisterProgressPanelOnDispatcher},
 		{"wizard", mcp.RegisterWizardOnDispatcher},

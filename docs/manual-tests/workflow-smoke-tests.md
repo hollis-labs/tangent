@@ -99,6 +99,15 @@ Workflows with no terminal gate by design — `tangent.synthesis-notes` and
 `tangent.spreadsheet-review` (submitting an unchanged view is a legitimate
 outcome) — have no blocked state to check. That is correct, not a gap.
 
+`tangent.app-board` is the one workflow whose interesting behaviour happens
+**before** any terminal action, so smoke it with `completion: async` and check
+the pending state rather than the resolution. What you are looking for is that
+filtering and selecting change what `tangent.surface_get` reports in `Drafts[]`
+while `status` stays pending and no resolution is recorded. If a filter settles
+the envelope, the board has been wired through the response path instead of the
+draft path, and opening it in a second tab will silently steal the right to
+answer from the first.
+
 ## Payload-sensitive workflows
 
 These workflows are easy to launch incorrectly if the agent improvises
@@ -115,6 +124,12 @@ the envelope shape:
 - `tangent.dashboard` needs seeded `tiles`. `layout` and
   `saved_layouts` are strongly recommended or the workflow has little to
   exercise.
+- `tangent.app-board` needs seeded `cards`, and every `card_ids` entry in a
+  column must name one of them — a column referencing a card you did not send
+  renders as a shorter column, not an error. `filters[].field` must name a key
+  in a card's `fields` object or the filter matches nothing. Remember the
+  filters are a view over the cards you sent: if a filter appears to lose rows
+  that "should" be there, check what you supplied before checking the renderer.
 - `tangent.wizard` needs real `steps` objects plus a `current_step_id`
   that matches one of those `step_id` values. If a step exposes
   branches, every `target_step_id` must also point at a real step.
@@ -155,6 +170,7 @@ workflow with the full seeded example from the linked doc.
 | `tangent.progress-panel` | [`progress-panel-e2e.md`](./progress-panel-e2e.md) | Add one update, checkpoint, or log entry, then submit. | Agent receives the appended progress state and reopening shows the accepted timeline. |
 | `tangent.dashboard` | [`dashboard-e2e.md`](./dashboard-e2e.md) | Open the dashboard, trigger one refresh or update action, then submit. | Agent receives the updated dashboard payload and reopening shows the accepted layout/state. |
 | `tangent.wizard` | [`wizard-e2e.md`](./wizard-e2e.md) | Fill the first step, choose any branch if present, save once, then complete the final step. | Agent sees partial progress first, then a submitted completion response; reopening shows accepted wizard progress. |
+| `tangent.app-board` | *(no deep recipe yet)* | Open the board with `completion: async`, toggle one filter, click one card to open the detail pane, then press one action. | Agent's `tangent.surface_get` shows the filter and selection in `Drafts[]` **while the envelope is still pending**; the action arrives as a `data` response. |
 
 This table lists the bundled room workflows. It is a runbook, not the registry:
 ask `tangent.list_workflows` for what the build actually dispatches, and

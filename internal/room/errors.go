@@ -16,7 +16,13 @@ var (
 	// ErrDispositionTerminal reports that the canonical interaction behind a
 	// presentation is already terminal. The presentation is stale; the
 	// immutable outcome is unchanged and no second result is recorded.
-	ErrDispositionTerminal                = errors.New("room: interaction already terminal")
+	ErrDispositionTerminal = errors.New("room: interaction already terminal")
+	// ErrDispositionDraftConflict reports that a participant's draft named a
+	// revision the canonical record has moved past. Nothing was written and
+	// nothing was merged — a draft carries view state, and silently reconciling
+	// two views produces a third that neither participant chose. The client
+	// resynchronizes and retries (ADR 0007 §5).
+	ErrDispositionDraftConflict           = errors.New("room: draft revision conflict")
 	ErrRoomNotFound                       = errors.New("room: not found")
 	ErrInvalidPhaseID                     = errors.New("room: invalid phase id")
 	ErrInvalidPhaseKey                    = errors.New("room: invalid phase output key")

@@ -25,9 +25,11 @@ type Props = {
   onSubmit: (response: unknown) => void;
   onCancel: () => void;
   roomID?: string;
+  /** Records non-terminal view state. See EnvelopeComponentProps.onDraft. */
+  onDraft?: (draft: unknown) => void;
 };
 
-export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID }: Props) {
+export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID, onDraft }: Props) {
   const type = readType(envelope);
   const Component = type ? lookup(type) : null;
 
@@ -63,7 +65,13 @@ export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID }: Props) 
       );
     }
     return (
-      <Component envelope={envelope} onSubmit={onSubmit} onCancel={onCancel} roomID={roomID} />
+      <Component
+        envelope={envelope}
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+        roomID={roomID}
+        onDraft={onDraft}
+      />
     );
   }
 

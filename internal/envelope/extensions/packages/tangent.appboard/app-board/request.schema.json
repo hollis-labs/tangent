@@ -1,0 +1,111 @@
+{
+  "type": "object",
+  "properties": {
+    "board_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "source": {
+      "type": "object",
+      "properties": {
+        "app": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "columns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "card_ids": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "label"]
+      }
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "subtitle": { "type": "string" },
+          "badges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string", "minLength": 1 },
+                "tone": { "type": "string", "enum": ["neutral", "info", "success", "warning", "danger"] }
+              },
+              "required": ["label"]
+            }
+          },
+          "body": { "type": "string" },
+          "fields": { "type": "object" }
+        },
+        "required": ["id", "title"]
+      }
+    },
+    "filters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["single", "multi", "text"] },
+          "field": { "type": "string" },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": { "type": "string", "minLength": 1 },
+                "label": { "type": "string" },
+                "count": { "type": "integer", "minimum": 0 }
+              },
+              "required": ["value"]
+            }
+          },
+          "selected": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["id", "label", "kind"]
+      }
+    },
+    "detail": {
+      "type": "object",
+      "properties": {
+        "card_id": { "type": "string" },
+        "open": { "type": "boolean" },
+        "raised_by": { "type": "string", "enum": ["agent", "user"] },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string", "minLength": 1 },
+              "markdown": { "type": "string" }
+            },
+            "required": ["label"]
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "label": { "type": "string", "minLength": 1 },
+              "tone": { "type": "string", "enum": ["neutral", "primary", "danger"] }
+            },
+            "required": ["id", "label"]
+          }
+        }
+      }
+    },
+    "updated_at": { "type": "string" }
+  },
+  "required": ["board_id", "cards"]
+}

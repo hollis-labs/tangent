@@ -16,7 +16,8 @@ something new.
 - `docs/architecture.md` — system shape and layers, and the canonical
   **Current limitations** list. Read it before designing anything.
 - `docs/adr/` — accepted decision records. `0005` owns the product boundary,
-  `0006` the collaboration-surface direction.
+  `0007` the collaboration surface, the plugin host and where view state
+  lives. `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
   `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
@@ -24,7 +25,12 @@ something new.
   package.
 - `internal/envelope/extensions/register_all.go` — the single table binding
   every envelope wire name; authored manifests live beside it under
-  `packages/<package-id>/<kind>/`.
+  `packages/<package-id>/<kind>/`. One table, **two doors**: a row marked
+  `contributedByPlugin` is installed by the plugin host, not by `RegisterAll`.
+- `internal/pluginhost/` + `internal/plugins/` — the ADR 0007 §4 plugin host and
+  the compiled-in plugins this build ships. The host resolves an ADR 0003
+  manifest for the kind a plugin names and refuses the registration without
+  one; a plugin authors nothing about what its kind may do.
 - `internal/interaction/` + `internal/roomflow/` — the durable substrate and
   the compatibility adapter every room workflow routes through. The
   interaction is the canonical record; `rooms`/`envelopes` are a projection.
@@ -74,6 +80,21 @@ authorities, and nothing downstream may present a partition as isolation.
 holds the consumer-facing launcher skills for Tangent's own workflows, and
 `README.md` and four documents link into it. A sweep that clears project-level
 agent directories must not take it.
+
+A kind contributed by a plugin is not a privileged kind. It goes through the
+same manifest, trust classification and renderer isolation as every other, and
+both doors must stay inside the drift tests — `TestPackageTreeMatchesRegistrations`
+covering only `RegisterAll` would narrow ADR 0003 §6's ownership guarantee to
+half the registry without failing. `RegisterCRUDHandler` is deliberately
+unimplemented: the owning application's agent is its client, and no write to an
+application may originate in Tangent's process. Implementing a host surface
+because the SDK offers it, rather than because a consumer needs it, is the
+specific way ADR 0007 says this boundary rots.
+
+`tangent.app-board` is the first kind whose drafts are Tangent's own records
+(`draft_custody: tangent-custodied`) rather than `localStorage`. Its view state
+goes through the draft path — never the response path, which takes the resolver
+lease and would let a second tab steal the right to answer from the first.
 
 Keep the HTTP layer separate from app logic, and never import `cmd/tangent`
 from `internal/...` — the dependency is one-way. Wails is a real dependency

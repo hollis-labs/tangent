@@ -288,8 +288,9 @@ separate from both per-room `/ws` and the four caller-facing
 ### Cooperative relay inbox
 
 `internal/channel/` + `internal/relay/` back seven relay MCP tools
-implementing ADR 0006's collaboration-surface boundary
-(`docs/adr/0006-collaboration-surface-and-relay-boundary.md`):
+implementing the collaboration-surface boundary of
+`docs/adr/0007-collaboration-surface-plugin-host-and-view-state.md`
+(which supersedes ADR 0006):
 `tangent.relay_open_channel`, `tangent.relay_attach`, `tangent.relay_detach`,
 `tangent.relay_send`, `tangent.relay_receive`, `tangent.relay_ack`, and
 `tangent.relay_capabilities`. Every input carries `contract_version` and
@@ -591,6 +592,16 @@ package id is the ADR 0003 §6 ownership assignment made mechanical, and
 `internal/envelope/extensions/register_all.go` is the single table that binds
 a wire name to it.
 
+That table has one row per kind and a column saying which of **two doors** the
+kind arrives through. Most are installed directly by `extensions.RegisterAll`.
+A row marked `contributedByPlugin` is installed by the plugin host instead (see
+[the plugin host](#plugin-host), below), and `RegisterAll` skips it — a kind
+registered twice is an error, and routing one around the manifest requirement
+would defeat the point of having it. Both doors appear in `RegisteredTypes()`
+and `PackagedKinds()`, so `TestPackageTreeMatchesRegistrations` walks both;
+if it walked only one, the ownership guarantee would silently narrow to half
+the registry.
+
 `envelope.Service` holds the **version-indexed registry** — `kind -> version ->
 material` — beside the upstream go-envelopes registry, which stays the
 single-current-version validator. `Service.RegisterDefinition` builds the
@@ -616,20 +627,98 @@ when the manifest declares one whose `preserves_meaning` is true.
 `tangent.definition_get` and `tangent.definition_registry_diagnostics` complete
 the payload-bounded diagnostics surface.
 
+### Plugin host
+
+`internal/pluginhost/` implements the portfolio plugin framework's `Host`
+contract (`github.com/hollis-labs/plugin-sdk`), and it is how a new interaction
+kind can arrive without editing Tangent's own registration table.
+[ADR 0007](adr/0007-collaboration-surface-plugin-host-and-view-state.md) §4 is
+the decision; the rule is one sentence:
+
+> The SDK says what a plugin may offer. The ADR 0003 manifest says what the
+> host will let it do. A registration without a manifest is refused.
+
+So `RegisterUIComponent` for an envelope component does not accept a
+description of a kind — it accepts a **name**. The host resolves the manifest
+this build ships for that name and refuses the registration when there is none.
+A plugin cannot supply manifest bytes of its own, because a manifest a plugin
+authored would be a plugin deciding its own trust class. It also cannot author
+a trust class, capability set, assurance or digest through `UIComponent.Props`:
+those keys are refused by name rather than ignored, so a plugin that thinks it
+raised its own trust class fails to load instead of being silently downgraded.
+
+`internal/plugins/` lists what this build ships and loads it. There is no
+discovery, no directory scan and no subprocess spawn — compiled-in only — so
+"which plugins does this binary have" is answered by reading one file.
+`internal/plugins/appboard/` is the first and only one; it lives in-tree, which
+ADR 0007 §4 is explicit is convenience rather than permission.
+
+Deliberately not implemented, and each returns an error rather than `nil` so a
+registration cannot silently succeed and do nothing: `RegisterCRUDHandler`
+(the owning application's agent is its client — no write to an application
+originates in Tangent's process), `RegisterEventHook`, `GetService`,
+`GetConfig`/`SetConfig`, `RegisterConfigSchema`, `RegisterConnector`,
+`RegisterProvider`, `RegisterCLIAdapter`. Subprocess plugins, signature
+verification and runtime asset loading are excluded by the same ADR.
+
+**A plugin-contributed kind is not a privileged one.** It goes through the same
+manifest, the same trust classification and the same renderer isolation as
+every host-package kind, and `core-trusted` stays unreachable for a publisher
+that is not `tangent` or `hollis-labs/go-envelopes`.
+
+### Long-lived surfaces and `tangent-custodied` view state
+
+Some surfaces stay open while the participant works in them rather than
+settling in one act. `tangent.session_advance` with `completion: async` returns
+a durable pending receipt and cancels nothing, so an interaction can stay
+pending indefinitely; what was missing was a way to record anything from such a
+surface short of resolving it.
+
+A participant's non-terminal state — which filters are applied, which record is
+selected, whether a detail pane is open — is recorded as a **draft revision**
+under host custody (ADR 0007 §5). The path is
+`ws-client.saveDraft` → a `draft` frame → `Room.HandleDraftFrom` →
+`roomDisposition.Draft` → `interaction.Service.SaveDraft`, and the caller reads
+it back by pulling `tangent.surface_get`, which projects `Drafts[]`.
+
+Three properties hold it in place:
+
+- **A draft never takes the resolver lease.** `HandleDraftFrom` deliberately
+  bypasses `authorizeDisposition`, because a response and a cancel are
+  competitions — exactly one connection may settle an envelope — and a draft is
+  not. If it took the lease, opening a board in a second tab would silently
+  steal the right to answer from the first.
+- **A stale revision is refused, never merged.** The store computes
+  `MAX(revision) + 1` and rejects anything else; `ws-client` owns the counter
+  per envelope so a caller cannot supply one.
+- **Reading view state is a pull.** Tangent does not push a participant's
+  in-progress state at a caller, and a caller must not present a draft as a
+  decision. A draft is what the user is looking at; only a resolution is what
+  they decided.
+
+`tangent.app-board` is the first kind whose manifest declares
+`draft_custody: tangent-custodied` — a value the manifest format has carried
+since `2e2c48a` and that had been waiting for a kind that meant it. Every kind
+shipped before it says `browser-local`, truthfully describing a
+`ui/src/lib/*-draft-storage.ts` module backed by `localStorage`.
+
 ### go-envelopes registry
 
 `github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared
-envelope catalog. Tangent loads 26 core definitions, then registers its own
-extensions—including the non-renderer `tangent.hitl-item` interaction
-definition—for 44 definitions in the shipped process. Extensions use the
-plugin API rather than forking the registry.
+envelope catalog. Tangent loads the go-envelopes core definitions, then
+registers its own extensions—including the non-renderer `tangent.hitl-item`
+interaction definition. Extensions use the plugin API rather than forking the
+registry. Ask `tangent.definition_registry_list` how many there are; the number
+is not written down here, for the same reason the tool count is not.
 
 `ui/src/generated/envelope-types.ts` and
-`ui/src/generated/renderer-bindings.ts` are generated from all 44 shipped
-definitions (`make generate-envelopes`) and CI gates them with
-`make check-envelopes`. The dump tool builds its registry through the same
-`extensions.RegisterAll` the server calls, so the staleness gate watches the
-kinds Tangent actually renders (ADR 0003 §9 S1). Tangent-owned workflow
+`ui/src/generated/renderer-bindings.ts` are generated from every shipped
+definition (`make generate-envelopes`) and CI gates them with
+`make check-envelopes`. The dump tool builds its registry through the same two
+doors the server uses — `extensions.RegisterAll` and then
+`plugins.LoadShipped` — so the staleness gate watches the kinds Tangent
+actually renders (ADR 0003 §9 S1). A generator that walked only the first door
+would silently omit every plugin-contributed kind while the server served it. Tangent-owned workflow
 schemas remain alongside their extension registrations; the generated types
 are a typed mirror of them, not a replacement for the hand-written component
 props.
