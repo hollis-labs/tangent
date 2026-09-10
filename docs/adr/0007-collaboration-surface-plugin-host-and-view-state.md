@@ -203,7 +203,7 @@ read as decision:**
 plugins are subject to identical manifest and trust rules. The first one may
 live in-tree for convenience without that location becoming a permission.
 
-### 5. Long-lived surfaces and host-custodied view state
+### 5. Long-lived surfaces and `tangent-custodied` view state
 
 **New. Decided here.** Shipped: `interaction.Service.SaveDraft` reached through
 `roomDisposition.Draft` and `Room.HandleDraftFrom`, the `draft` WS frame, and
@@ -230,10 +230,19 @@ a draft revision under host custody, and is readable by the caller.**
   decision. A draft is what the user is looking at; only a resolution is what
   the user decided.
 
-`draft_custody` in the manifest gains a second honest value. `browser-local`
-truthfully describes today's kinds, whose drafts live in `localStorage`;
-`host-custodied` describes a kind whose drafts are Tangent's records under
+`draft_custody` gains nothing. The manifest format has carried five values
+since `2e2c48a` — `disabled`, `ephemeral`, `browser-local`, `tangent-custodied`,
+`external` (`internal/definition/manifest.go:145`) — and `tangent-custodied` has
+been waiting for a kind that meant it. `browser-local` truthfully describes
+every kind shipped before now, whose drafts live in `localStorage`;
+`tangent-custodied` describes a kind whose drafts are Tangent's records under
 ADR 0002. The field continues to describe what the code does, never to grant.
+
+An earlier revision of this section called the value `host-custodied` and said
+the format gained it. Both were wrong, and the error is recorded rather than
+quietly corrected because this document's whole claim is that its statements
+are checkable against the tree: an unstamped value name is exactly the defect
+§Context faults ADR 0006 for.
 
 **This does not make Tangent a state authority for the application.** A board's
 filter selection is state *about the surface*, owned by ADR 0006 §1's first
@@ -310,9 +319,9 @@ originates in Tangent's process.**
   offered*, rather than because a consumer needs it, is a widening. `§4`'s rule
   is the mitigation; `CW-20260909-0042` carries the specific instance
   (`RegisterCRUDHandler` is deliberately left unimplemented).
-- **`host-custodied` drafts are a new class of retained participant content.**
+- **`tangent-custodied` drafts are a new class of retained participant content.**
   ADR 0002's custody model governs it, and the ADR 0002 §3 precedence engine is
-  still unimplemented (`CW-20260905-0008`). Until it lands, a `host-custodied`
+  still unimplemented (`CW-20260905-0008`). Until it lands, a `tangent-custodied`
   kind's retention is the host default, and no kind should author a looser
   `retention_class` on the assumption that precedence will tighten it later.
 
@@ -359,13 +368,17 @@ unverifiable.
 2. Does §4's rule survive contact with the first real plugin, or does the
    manifest requirement turn out to need an escape hatch? If it needs one, that
    is a new ADR, not a patch to this one.
-3. Is `host-custodied` the right name, given ADR 0002 already uses "custody"
-   for a different axis? **Still open, and now with a wrinkle**: this document
-   says `host-custodied` in prose, but the shipped enum in
-   `internal/definition/manifest.go` spells the value `tangent-custodied`, and
-   the enum is what validates a manifest. `tangent.app-board` therefore authors
-   `tangent-custodied`. Renaming either is a manifest-format change, not an
-   edit to this document.
+3. **Resolved 2026-09-09, against this document.** There was never a naming
+   choice to make: `tangent-custodied` shipped in the manifest format at
+   `2e2c48a`, long before this ADR, and the enum is what validates. This
+   document said `host-custodied`, which never existed. Prose corrected; no
+   manifest-format change, and `tangent.app-board` authors the real value.
+
+   What remains genuinely open is narrower: ADR 0002 uses "custody" for the
+   retention axis, and `draft_custody` uses it for a location axis. Two
+   meanings, one word, in adjacent documents. Worth a rename only if a reader
+   is actually observed conflating them — the discrepancy above cost one
+   session a paragraph, not an outage.
 4. §6 claims no write originates in Tangent's process. Is that testable in CI,
    or only reviewable?
 
