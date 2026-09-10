@@ -666,7 +666,7 @@ manifest, the same trust classification and the same renderer isolation as
 every host-package kind, and `core-trusted` stays unreachable for a publisher
 that is not `tangent` or `hollis-labs/go-envelopes`.
 
-### Long-lived surfaces and host-custodied view state
+### Long-lived surfaces and `tangent-custodied` view state
 
 Some surfaces stay open while the participant works in them rather than
 settling in one act. `tangent.session_advance` with `completion: async` returns
@@ -697,9 +697,10 @@ Three properties hold it in place:
   they decided.
 
 `tangent.app-board` is the first kind whose manifest declares
-`draft_custody: tangent-custodied`. Every other kind says `browser-local`,
-truthfully describing a `ui/src/lib/*-draft-storage.ts` module backed by
-`localStorage`.
+`draft_custody: tangent-custodied` — a value the manifest format has carried
+since `2e2c48a` and that had been waiting for a kind that meant it. Every kind
+shipped before it says `browser-local`, truthfully describing a
+`ui/src/lib/*-draft-storage.ts` module backed by `localStorage`.
 
 ### go-envelopes registry
 

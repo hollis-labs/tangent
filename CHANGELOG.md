@@ -49,8 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   revision the client sent rather than the one the record expects, so a client
   that falls behind cannot resynchronize without a reload. Single-tab drafting
   is unaffected.
-- ADR 0007 §5 calls the custody value `host-custodied` in prose; the shipped
-  manifest enum spells it `tangent-custodied`, and the enum is what validates.
+- ADR 0002 uses "custody" for the retention axis and `draft_custody` uses it
+  for a location axis — two meanings, one word, in adjacent documents. Not
+  renamed; recorded so a reader who trips on it knows it is known.
 
 ## [v0.13.0] - 2026-09-07
 

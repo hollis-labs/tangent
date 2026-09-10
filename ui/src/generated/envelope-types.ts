@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:e3ddfb36f2c870b0d140724c7db209d1b0d1f8181fb5c145dcb852c28ac71d87
+// @definition-source sha256:7a158a118d5fa7516a210fa99ef5c4a6621124054e468c1bbe086062e4ab5884
 // Generated from go-envelopes v0.1.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -627,7 +627,7 @@ export interface TableCardData {
   title?: string;
 }
 
-/** Envelope data for "tangent.app-board" — App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as host-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it. */
+/** Envelope data for "tangent.app-board" — App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it. */
 export interface TangentAppBoardData {
   board_id: string;
   cards: { badges?: { id?: string; label: string; tone?: "neutral" | "info" | "success" | "warning" | "danger" }[]; body?: string; fields?: Record<string, unknown>; id: string; subtitle?: string; title: string }[];
@@ -1170,7 +1170,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:e3ddfb36f2c870b0d140724c7db209d1b0d1f8181fb5c145dcb852c28ac71d87";
+export const DEFINITION_SOURCE_DIGEST = "sha256:7a158a118d5fa7516a210fa99ef5c4a6621124054e468c1bbe086062e4ab5884";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.13.0";
@@ -1186,7 +1186,7 @@ export interface DefinitionSourceEntry {
 
 /** Per-kind manifest identity, so drift can name the kind that moved. */
 export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
-  { kind: "tangent.app-board", version: "0.1", revision: 1, manifestDigest: "sha256:1d60111eb938f32fadfc29aa40f5c54ced1161bead908d69ab46c42d1ba46446", contractDigest: "sha256:6dfa0b57e623e9cb967bfd73967a8ee721648e85fdfbd77546d85481f5066bf7" },
+  { kind: "tangent.app-board", version: "0.1", revision: 1, manifestDigest: "sha256:2b412740b4ed574a9b6dbedc3ce6c74bccf03e8469ec3579e9160c33fc737e31", contractDigest: "sha256:6dfa0b57e623e9cb967bfd73967a8ee721648e85fdfbd77546d85481f5066bf7" },
   { kind: "tangent.approval-queue", version: "0.7", revision: 1, manifestDigest: "sha256:f6cc05239c2acf08167587fcb008781bf870c7afeb2a74c46d157e89c6adde01", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
   { kind: "tangent.block-draft", version: "0.3", revision: 1, manifestDigest: "sha256:d5152653f4dba5f2a67695329cbb5fc4e56116b2d2bde0cb9065991681fd46a5", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
   { kind: "tangent.dashboard", version: "0.11", revision: 1, manifestDigest: "sha256:0428fe0d6b1118ed2d38059de52b38b172b1b0d46b512c0a72420f16816b6847", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },

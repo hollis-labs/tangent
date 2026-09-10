@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:e3ddfb36f2c870b0d140724c7db209d1b0d1f8181fb5c145dcb852c28ac71d87
+// @definition-source sha256:7a158a118d5fa7516a210fa99ef5c4a6621124054e468c1bbe086062e4ab5884
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 19 manifests under

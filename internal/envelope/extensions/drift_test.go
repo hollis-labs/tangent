@@ -213,9 +213,8 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 	//
 	// This list being short is the point. `tangent-custodied` is a new class of
 	// retained participant content under ADR 0002 custody, so a kind joining it
-	// is a deliberate act and not a manifest edit nobody noticed. ADR 0007 §5
-	// calls the value "host-custodied" in prose; the shipped enum spells it
-	// `tangent-custodied`, and the enum is what validates.
+	// is a deliberate act and not a manifest edit nobody noticed. The value has
+	// been in the format since `2e2c48a`; what is new is a kind that means it.
 	tangentCustodied := []string{
 		"tangent.app-board",
 	}

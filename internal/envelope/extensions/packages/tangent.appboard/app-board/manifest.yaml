@@ -30,24 +30,23 @@
 #     which is a host capability check and not a manifest grant.
 #   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
 #     (interaction, redacted 30 days after terminal) governs. ADR 0007's risk
-#     section is explicit that a host-custodied kind must not author a looser
+#     section is explicit that a tangent-custodied kind must not author a looser
 #     retention_class on the assumption that the ADR 0002 §3 precedence engine
 #     will tighten it later — that engine is still unimplemented
 #     (CW-20260905-0008).
 #
-# draft_custody: tangent-custodied is the first use of that value, and it is a
-# truthful description (ADR 0003 §8 C4), not a grant. Every other shipped kind
-# says browser-local, describing a ui/src/lib/*-draft-storage.ts module backed
-# by localStorage. This kind's view state — which filters are applied, which
-# card is selected, whether the detail pane is open — is a durable revisioned
-# draft record under ADR 0002 custody, written through Service.SaveDraft and
-# read back by the caller through tangent.surface_get.
+# draft_custody: tangent-custodied is the FIRST USE of a value the manifest
+# format has carried since 2e2c48a (internal/definition/manifest.go:148). It was
+# waiting for a kind that meant it; nothing about the format changed to admit
+# this one. Like every draft_custody value it is a truthful description
+# (ADR 0003 §8 C4), never a grant.
 #
-# ADR 0007 §5 calls this value "host-custodied" in prose. The shipped enum in
-# internal/definition/manifest.go spells it `tangent-custodied`, and the enum is
-# what validates, so that is what is authored here. ADR 0007's own review
-# question 3 already asks whether the name is right; this manifest does not
-# answer it, it just uses the name that exists.
+# Every kind shipped before this one says browser-local, describing a
+# ui/src/lib/*-draft-storage.ts module backed by localStorage. This kind's view
+# state — which filters are applied, which card is selected, whether the detail
+# pane is open — is a durable revisioned draft record under ADR 0002 custody,
+# written through Service.SaveDraft and read back by the caller through
+# tangent.surface_get.
 
 manifest_version: "1.0.0"
 publisher: tangent
@@ -55,7 +54,7 @@ kind: tangent.app-board
 version: "0.1"
 revision: 1
 title: "App board"
-description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as host-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
+description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
 package_id: tangent.appboard
 package_version: "1.0.0"
 ownership_class: host-package
