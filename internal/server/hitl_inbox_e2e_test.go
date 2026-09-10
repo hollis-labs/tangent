@@ -892,7 +892,7 @@ func runJoinedProductionBrowser(
 	if pathErr != nil {
 		t.Fatalf("resolve repository root: %v", pathErr)
 	}
-	viteNode := filepath.Join(repoRoot, "ui", "node_modules", "vite-node", "vite-node.mjs")
+	viteNode := viteNodeCLIPath(repoRoot)
 	if _, statErr := os.Stat(viteNode); statErr != nil {
 		t.Fatalf("production HITL browser driver requires ui/node_modules: %v", statErr)
 	}
