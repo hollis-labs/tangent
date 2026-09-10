@@ -256,6 +256,16 @@ type guardedApp struct {
 
 func startGuardedApp(t *testing.T) *guardedApp {
 	t.Helper()
+	return startGuardedAppWith(t, nil)
+}
+
+// startGuardedAppWith is startGuardedApp with a hook that can adjust the
+// server.Config just before New reads it. It exists so a test can add a
+// plugin-served route (CW-20260910-0030) to an otherwise real, fully guarded
+// process: a plugin route's whole claim is that it goes through the same
+// guards as every other browser route, and only a real harness can check that.
+func startGuardedAppWith(t *testing.T, adjust func(*server.Config)) *guardedApp {
+	t.Helper()
 	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "guarded.db"))
 	if err != nil {
 		t.Fatalf("open database: %v", err)
@@ -321,12 +331,16 @@ func startGuardedApp(t *testing.T) *guardedApp {
 	}
 
 	logs := &lockedBuffer{}
-	httpServer, err := server.New(server.Config{
+	serverConfig := server.Config{
 		Port: 0, Logger: slog.New(slog.NewTextHandler(logs, nil)),
 		Envelope: envelopeService, MCP: mcpServer, WSHandler: wsHandler,
 		RoomManager: manager, HITL: hitlService, Rooms: mcpServer, Channels: channelPane,
 		Participants: gate,
-	})
+	}
+	if adjust != nil {
+		adjust(&serverConfig)
+	}
+	httpServer, err := server.New(serverConfig)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
 	}

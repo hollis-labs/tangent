@@ -18,6 +18,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
@@ -106,6 +107,13 @@ type Config struct {
 	// server without a database — production main always passes it, and
 	// leaving it nil is what the pre-ADR-0004 behavior was.
 	Participants *participant.Gate
+
+	// PluginRoutes are the ADR 0007 §4 plugin-served browser routes
+	// (CW-20260910-0030), as the plugin host recorded them at load. When
+	// non-empty the server mounts each one under the reserved
+	// /api/plugins/ prefix, behind the same guards every other browser API
+	// route uses. Empty is the normal state; see plugin_routes.go.
+	PluginRoutes []pluginhost.HTTPRoute
 
 	// Telemetry records correlation-bearing observations for the browser
 	// transports this package owns: an object-access refusal at the
@@ -338,6 +346,14 @@ func New(cfg Config) (*Server, error) {
 		// acts.
 		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext, cfg.Telemetry)
 		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/effects", authz.View, effectHandler.request)
+	}
+
+	// Plugin-served routes (ADR 0007 §4, CW-20260910-0030). Mounted last, so
+	// every route this package writes by hand has already claimed its pattern
+	// and a plugin cannot take one; the reserved prefix makes that structural
+	// rather than a matter of ordering, and the ordering makes it obvious.
+	if err := registerPluginRoutes(mux, &participantRoutes, cfg, logger); err != nil {
+		return nil, err
 	}
 
 	rootHandler, err := buildRootHandler(cfg, logger)

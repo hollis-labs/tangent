@@ -137,7 +137,7 @@ func (s *Server) addInteractionAwaitTool() error {
 	}
 	waitSchema.Minimum = jsonschema.Ptr(1.0)
 	waitSchema.Maximum = jsonschema.Ptr(50_000.0)
-	mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+	addTool(s, &mcpsdk.Tool{
 		Name:        "tangent.interaction_await",
 		Description: "Wait up to 50 seconds for a durable interaction terminal outcome; timeout never changes interaction lifecycle.",
 		InputSchema: schema,
@@ -155,7 +155,7 @@ func addInteractionTool[Input any](
 	if err != nil {
 		return fmt.Errorf("build %s input schema: %w", name, err)
 	}
-	mcpsdk.AddTool(server.mcp, &mcpsdk.Tool{Name: name, Description: description, InputSchema: schema}, handler)
+	addTool(server, &mcpsdk.Tool{Name: name, Description: description, InputSchema: schema}, handler)
 	return nil
 }
 

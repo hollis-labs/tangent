@@ -58,7 +58,7 @@ func (s *Server) registerHITLTools() error {
 		if err != nil {
 			return fmt.Errorf("build %s output schema: %w", tool.name, err)
 		}
-		mcpsdk.AddTool(s.mcp, &mcpsdk.Tool{
+		addTool(s, &mcpsdk.Tool{
 			Name: tool.name, Description: tool.description,
 			InputSchema: schema, OutputSchema: outputSchema,
 		}, tool.handler)

@@ -653,6 +653,46 @@ discovery, no directory scan and no subprocess spawn — compiled-in only — so
 `internal/plugins/appboard/` is the first and only one; it lives in-tree, which
 ADR 0007 §4 is explicit is convenience rather than permission.
 
+**Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
+`internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
+many words that a host application may add its own; a plugin implements the
+SDK's own `subprocess.MCPHandler` / `subprocess.HTTPHandler` for dispatch, so
+nothing a plugin author writes is Tangent-shaped.
+
+- **`RegisterMCPTool`** contributes an agent-callable tool, which is what lets
+  one agent call reach plugin code instead of a model shaping a payload by
+  hand. A plugin tool is an ordinary tool: it appears in `tools/list` on both
+  transports, its arguments are validated against its own declared schema
+  before dispatch, and **the documentation gate covers it** — the gate asks the
+  shipped binary what it serves, so a plugin tool documented nowhere fails
+  `make smoke`, deliberately. What a plugin cannot do is shadow: a name already
+  claimed by a host tool or another plugin is refused by name, because the MCP
+  SDK's registry is keyed by name and would otherwise have kept the plugin's
+  handler silently. Names must be `tangent.<name>`, which is the spelling the
+  documentation gate matches.
+- **`RegisterHTTPRoute`** contributes a browser route under the reserved
+  `/api/plugins/<plugin>/` prefix, so a button in a room can do work with no
+  agent turn at all. It is not a side door: `internal/server/plugin_routes.go`
+  mounts it through the same `registerParticipantRoute` every other browser API
+  route uses, so it carries the same-origin guard, the participant-session
+  requirement and the ADR 0004 §7 capability check by construction — and it
+  appears in `ParticipantRoutes()`, which is what puts it inside
+  `TestEveryParticipantGuardedRouteUsesACapabilityParticipantsHold`. A route
+  gated on a capability the participant row never holds is refused at
+  registration rather than answering 403 forever. Streaming is unsupported per
+  the SDK's own contract. The participant's session cookie never crosses the
+  boundary inbound (ADR 0004 §6.1 makes it capability material) and
+  `Set-Cookie` never crosses it outbound; both directions are allowlisted, and
+  a dropped response header is logged by name.
+
+Both surfaces are recorded at plugin load and installed later —
+`mcp.WithPluginTools`, `server.Config.PluginRoutes` — because plugins load
+before the MCP and HTTP servers exist: a plugin-contributed envelope kind has
+to be in the registry `mcp.New` reads. A plugin handler that errors or panics
+is contained and reported (`PLUGIN_FAILED` / `PLUGIN_PANICKED` on a tool, a
+`plugin_error` refusal body on a route); one plugin's defect is not every
+caller's outage.
+
 Deliberately not implemented, and each returns an error rather than `nil` so a
 registration cannot silently succeed and do nothing: `RegisterCRUDHandler`
 (the owning application's agent is its client — no write to an application

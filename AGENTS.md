@@ -30,7 +30,12 @@ something new.
 - `internal/pluginhost/` + `internal/plugins/` — the ADR 0007 §4 plugin host and
   the compiled-in plugins this build ships. The host resolves an ADR 0003
   manifest for the kind a plugin names and refuses the registration without
-  one; a plugin authors nothing about what its kind may do.
+  one; a plugin authors nothing about what its kind may do. Two surfaces extend
+  the SDK's base contract, and both refuse by name rather than accommodate:
+  `RegisterMCPTool` (`mcp.go`) contributes an agent-callable tool, and
+  `RegisterHTTPRoute` (`http.go`) contributes a browser route under
+  `/api/plugins/`. Both are recorded at load and installed later — plugins load
+  before the MCP and HTTP servers exist.
 - `internal/interaction/` + `internal/roomflow/` — the durable substrate and
   the compatibility adapter every room workflow routes through. The
   interaction is the canonical record; `rooms`/`envelopes` are a projection.
@@ -81,9 +86,16 @@ holds the consumer-facing launcher skills for Tangent's own workflows, and
 `README.md` and four documents link into it. A sweep that clears project-level
 agent directories must not take it.
 
-A kind contributed by a plugin is not a privileged kind. It goes through the
-same manifest, trust classification and renderer isolation as every other, and
-both doors must stay inside the drift tests — `TestPackageTreeMatchesRegistrations`
+Nothing a plugin contributes is privileged. A kind goes through the same
+manifest, trust classification and renderer isolation as every other; a
+plugin-contributed **tool** is a shipped tool, so the documentation gate covers
+it and a name it already serves is refused rather than shadowed; a plugin
+**route** goes through `registerParticipantRoute` like every other browser API
+route, so it carries the origin guard, the participant session and the ADR 0004
+§7 capability check, and it appears in `ParticipantRoutes()` where the
+capability check can see it. The participant's session cookie does not cross
+into a plugin and `Set-Cookie` does not cross back out. Both kind doors must
+stay inside the drift tests — `TestPackageTreeMatchesRegistrations`
 covering only `RegisterAll` would narrow ADR 0003 §6's ownership guarantee to
 half the registry without failing. `RegisterCRUDHandler` is deliberately
 unimplemented: the owning application's agent is its client, and no write to an

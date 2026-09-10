@@ -282,6 +282,14 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 	logger.Info("loaded shipped plugins",
 		"kinds", pluginHost.ContributedKinds(), "count", envSvc.Len())
+	// What the plugins registered is installed further down, once the surfaces
+	// that host them exist: MCP tools through mcp.WithPluginTools, HTTP routes
+	// through server.Config.PluginRoutes. The two steps are not an accident of
+	// ordering — a plugin-contributed envelope kind has to be in the registry
+	// before mcp.New reads it, so plugins necessarily load first and the host
+	// holds their declarations until there is something to install them onto.
+	pluginTools := pluginHost.MCPTools()
+	pluginRoutes := pluginHost.HTTPRoutes()
 
 	// Dispatcher is shared across transports. The MCP triage handler below
 	// bridges it to a WebSocket-connected room.
@@ -463,6 +471,9 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithMaintenance(sqlDB, cfg.DBPath),
 		// tangent.relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
+		// Whatever the shipped plugins contributed (ADR 0007 §4). Empty is
+		// normal; a name colliding with a host tool fails this call.
+		mcp.WithPluginTools(pluginTools),
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
@@ -530,6 +541,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		EffectContext:  interactionService,
 		Health:         healthReporter,
 		Telemetry:      recorder,
+		PluginRoutes:   pluginRoutes,
 	})
 	if err != nil {
 		return release(err)

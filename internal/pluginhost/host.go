@@ -17,6 +17,21 @@
 // cannot hand over manifest bytes of its own, because a manifest a plugin
 // authored would be a plugin deciding its own trust class.
 //
+// # The three surfaces this host honors
+//
+// RegisterUIComponent (this file) contributes an interaction kind.
+// RegisterMCPTool (mcp.go) contributes an agent-callable tool.
+// RegisterHTTPRoute (http.go) contributes a browser route, so a button in a
+// room can do work without spending an agent turn.
+//
+// The last two are Tangent extensions to the SDK's base Host contract, which
+// the SDK itself names as the intended path — it carries no tool or route
+// registration method, and says host applications may add their own. Each one
+// refuses by name rather than accommodating: a plugin cannot shadow a tool, sit
+// outside the tool namespace, mount outside the reserved route prefix, or gate
+// a route on a capability no participant can hold. The reasoning for each lives
+// beside the code that enforces it.
+//
 // # What a plugin cannot author
 //
 // Trust class, granted capabilities, effective assurance, and asset digest are
@@ -123,6 +138,13 @@ type Host struct {
 	// exists so a second claim on the same kind is refused here, with a
 	// readable message, rather than racing the registry's duplicate check.
 	kinds map[string]string
+	// tools is every plugin-contributed MCP tool, by wire name. See mcp.go —
+	// the host records them and internal/mcp installs them, because plugins
+	// load before the MCP server exists.
+	tools map[string]MCPTool
+	// routes is every plugin-contributed HTTP route, by ServeMux pattern. See
+	// http.go, and the same two-step reason.
+	routes map[string]HTTPRoute
 }
 
 // New builds a Host over the envelope service that plugin-contributed kinds
@@ -145,6 +167,8 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 		envSvc: envSvc,
 		loaded: map[string]plugin.Plugin{},
 		kinds:  map[string]string{},
+		tools:  map[string]MCPTool{},
+		routes: map[string]HTTPRoute{},
 	}, nil
 }
 
@@ -191,6 +215,13 @@ func (h *Host) Load(p plugin.Plugin) error {
 		// is LoadShipped, and a plugin that fails to load fails the boot — but
 		// a reader deserves the real reason rather than a cleanup loop that
 		// looks like it undoes something.
+		//
+		// Any tool or route it registered stays recorded for a second reason,
+		// and it is worth stating rather than leaving to be inferred: this host
+		// cannot attribute a registration to a plugin at all (the SDK passes no
+		// caller identity), so there is nothing to select for removal. Both
+		// maps are drained by a caller that only ever runs after a successful
+		// LoadShipped, so an entry from a failed load is never installed.
 		h.mu.Lock()
 		delete(h.loaded, id)
 		h.mu.Unlock()
@@ -200,7 +231,8 @@ func (h *Host) Load(p plugin.Plugin) error {
 	return nil
 }
 
-// RegisterUIComponent is the one registration surface this host implements.
+// RegisterUIComponent is the registration surface for an interaction kind, and
+// the only one of the three that the SDK's base Host contract declares.
 //
 // For an envelope component, component.ID is the kind's wire name. The host
 // resolves the ADR 0003 manifest this host ships for that name and refuses the
