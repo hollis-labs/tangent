@@ -159,7 +159,8 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	// keeps this rig from being the one place the second door is skipped —
 	// which would make every test here pass against a registry the server does
 	// not serve.
-	if _, pluginErr := plugins.LoadShipped(ctx, logger, envSvc); pluginErr != nil {
+	pluginHost, pluginErr := plugins.LoadShipped(ctx, logger, envSvc)
+	if pluginErr != nil {
 		t.Fatalf("plugins.LoadShipped: %v", pluginErr)
 	}
 
@@ -230,11 +231,29 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	}
 	serverOptions = append(serverOptions, tangentmcp.WithInteractionPackages(interactionPackages))
 
+	// Plugin-contributed tools reach the surface the way production installs
+	// them, and the plugin host gets the tool caller it drives Tangent through
+	// (CW-20260910-0029, -0031). Skipping either here would make this rig the
+	// one place the plugin path is absent, which is the same reason LoadShipped
+	// is called above rather than the kinds being registered directly.
+	serverOptions = append(serverOptions, tangentmcp.WithPluginTools(pluginHost.MCPTools()))
 	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "", serverOptions...)
 	if err != nil {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("mcp.New: %v", err)
+	}
+	loopback, loopbackErr := mcpSrv.NewLoopbackCaller(ctx)
+	if loopbackErr != nil {
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("NewLoopbackCaller: %v", loopbackErr)
+	}
+	if attachErr := pluginHost.AttachToolCaller(loopback); attachErr != nil {
+		_ = loopback.Close()
+		wsSrv.Close()
+		_ = tangentdb.Close(db)
+		t.Fatalf("AttachToolCaller: %v", attachErr)
 	}
 	if options.durable {
 		if hydrateErr := mgr.Hydrate(ctx); hydrateErr != nil {
@@ -369,6 +388,7 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 		mcpClient: clientSession,
 		httpURL:   wsSrv.URL,
 		cleanup: func() {
+			_ = loopback.Close()
 			_ = clientSession.Close()
 			_ = serverSession.Close()
 			mgr.CloseAll("test cleanup")
@@ -376,6 +396,7 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 			_ = tangentdb.Close(db)
 		},
 		shutdown: func() {
+			_ = loopback.Close()
 			_ = clientSession.Close()
 			_ = serverSession.Close()
 			wsSrv.Close()

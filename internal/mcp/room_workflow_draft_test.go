@@ -44,6 +44,10 @@ type surfaceSnapshot struct {
 	Interactions []struct {
 		ID    string `json:"interaction_id"`
 		State string `json:"state"`
+		// Revision is what a caller-side terminal disposition has to pin. A
+		// board refresh reads it back here rather than assuming it, because
+		// presentation bumps it and an assumed 1 is a stale_revision refusal.
+		Revision int64 `json:"revision"`
 	} `json:"interactions"`
 	Drafts      []interaction.DraftRevision `json:"drafts"`
 	Resolutions []struct {

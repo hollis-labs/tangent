@@ -1,7 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AppBoard, type AppBoardEnvelope, applyFilters, type BoardCardData } from "./AppBoard";
+import {
+  AppBoard,
+  type AppBoardEnvelope,
+  applyFilters,
+  applyStagedColumns,
+  type BoardCardData,
+  isPluginRoutePath,
+} from "./AppBoard";
 
 const cards: BoardCardData[] = [
   {
@@ -278,5 +285,199 @@ describe("<AppBoard>", () => {
     render(<AppBoard envelope={envelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
     expect(() => fireEvent.click(screen.getByRole("button", { name: /Doing 1/ }))).not.toThrow();
     expect(screen.queryByTestId("app-board-card-CW-2")).toBeNull();
+  });
+});
+
+// ── Staged changes and the sync button (CW-20260910-0031) ───────────────────
+//
+// The claim these hold: staging is not applying. A board a participant moved
+// cards around in and then abandoned changes nothing anywhere, because the
+// press is the decision and the draft is only where the intent accumulated
+// (ADR 0007 §5).
+
+const syncBlock = {
+  enabled: true,
+  endpoint: "/api/plugins/torque-board/sync",
+  label: "Sync",
+  stage_label: "Move to",
+  scope: "3 task(s) in todo, doing.",
+};
+
+function syncEnvelope(): AppBoardEnvelope {
+  return envelope({ sync: syncBlock });
+}
+
+describe("isPluginRoutePath", () => {
+  it("accepts a same-origin path under the reserved plugin prefix", () => {
+    expect(isPluginRoutePath("/api/plugins/torque-board/sync")).toBe(true);
+  });
+
+  it("refuses anything that could aim the board somewhere else", () => {
+    // A board is not a general fetch surface; the effect broker is what
+    // mediates a renderer acting on the world.
+    for (const endpoint of [
+      undefined,
+      "",
+      "https://evil.test/steal",
+      "//evil.test/steal",
+      "/api/hitl/items/1/resolve",
+      "/api/plugins/../hitl",
+      "/api/plugins/x/sync?to=elsewhere",
+      "/api/plugins/x/sync#frag",
+    ]) {
+      expect(isPluginRoutePath(endpoint)).toBe(false);
+    }
+  });
+});
+
+describe("applyStagedColumns", () => {
+  const columns = [
+    { id: "todo", label: "Todo", card_ids: ["CW-2", "CW-3"] },
+    { id: "doing", label: "Doing", card_ids: ["CW-1"] },
+  ];
+
+  it("moves a staged card into its target column and out of its old one", () => {
+    const staged = applyStagedColumns(columns, { "CW-2": "doing" });
+    expect(staged[0].card_ids).toEqual(["CW-3"]);
+    expect(staged[1].card_ids).toEqual(["CW-1", "CW-2"]);
+  });
+
+  it("leaves a card alone when it was staged into a column the board lacks", () => {
+    // Losing a card to a control that looked like it worked is worse than the
+    // control doing nothing.
+    const staged = applyStagedColumns(columns, { "CW-2": "archived" });
+    expect(staged[0].card_ids).toEqual(["CW-2", "CW-3"]);
+  });
+
+  it("returns the columns untouched when nothing is staged", () => {
+    expect(applyStagedColumns(columns, {})).toBe(columns);
+  });
+});
+
+describe("<AppBoard> staging", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("offers no staging control and no sync button when the caller sends no sync block", () => {
+    render(<AppBoard envelope={envelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByTestId("app-board-sync")).toBeNull();
+    expect(screen.getByTestId("app-board-refresh")).toBeInTheDocument();
+  });
+
+  it("stages a card into another column without submitting or fetching anything", () => {
+    const onSubmit = vi.fn();
+    const onDraft = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.click(screen.getByTestId("app-board-stage-doing"));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_changes: { "CW-2": { column_id: "doing" } } }),
+    );
+    // The card renders where the participant put it, marked as not yet applied.
+    expect(screen.getByTestId("app-board-column-doing")).toHaveTextContent("Ship the board");
+    expect(screen.getByTestId("app-board-staged-CW-2")).toBeInTheDocument();
+    expect(screen.getByTestId("app-board-staged-count")).toHaveTextContent("1 staged");
+    expect(screen.getByTestId("app-board-stage-note")).toHaveTextContent("until you press Sync");
+  });
+
+  it("unstages a card moved back into the column it came from", () => {
+    const onDraft = vi.fn();
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.click(screen.getByTestId("app-board-stage-doing"));
+    fireEvent.click(screen.getByTestId("app-board-stage-todo"));
+
+    expect(onDraft).toHaveBeenLastCalledWith(expect.objectContaining({ staged_changes: {} }));
+    expect(screen.queryByTestId("app-board-staged-CW-2")).toBeNull();
+  });
+
+  it("posts the staged draft to the caller's plugin route when Sync is pressed", async () => {
+    const onDraft = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+        roomID="room-1"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.click(screen.getByTestId("app-board-stage-doing"));
+    fireEvent.click(screen.getByTestId("app-board-sync"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/plugins/torque-board/sync");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ board_id: "board-1", room_id: "room-1" });
+    // The draft is written before the request, because the draft is what the
+    // server reads to learn what was staged.
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_changes: { "CW-2": { column_id: "doing" } } }),
+    );
+  });
+
+  it("shows the server's refusal rather than pretending the sync worked", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => ({ code: "plugin_error", message: "torque is unavailable" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AppBoard envelope={syncEnvelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("app-board-sync"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("app-board-sync-error")).toHaveTextContent("torque is unavailable"),
+    );
+  });
+
+  it("refuses to point the board at an endpoint outside the plugin prefix", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AppBoard
+        envelope={envelope({ sync: { ...syncBlock, endpoint: "https://evil.test/steal" } })}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    // No button at all: an endpoint the board may not call is a board with no
+    // sync, not a board that tries and fails.
+    expect(screen.queryByTestId("app-board-sync")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the caller's own scope sentence alongside the filter-bar one", () => {
+    render(<AppBoard envelope={syncEnvelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    const scope = screen.getByTestId("app-board-scope");
+    expect(scope).toHaveTextContent("Filters narrow what the caller sent");
+    expect(scope).toHaveTextContent("3 task(s) in todo, doing.");
   });
 });

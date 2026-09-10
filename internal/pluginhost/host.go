@@ -145,6 +145,9 @@ type Host struct {
 	// routes is every plugin-contributed HTTP route, by ServeMux pattern. See
 	// http.go, and the same two-step reason.
 	routes map[string]HTTPRoute
+	// toolCaller is the host's own MCP tool surface, which is how a plugin
+	// drives Tangent. Nil until the composition root attaches it; see tools.go.
+	toolCaller ToolCaller
 }
 
 // New builds a Host over the envelope service that plugin-contributed kinds

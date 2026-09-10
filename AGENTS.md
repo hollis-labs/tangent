@@ -36,6 +36,12 @@ something new.
   `RegisterHTTPRoute` (`http.go`) contributes a browser route under
   `/api/plugins/`. Both are recorded at load and installed later — plugins load
   before the MCP and HTTP servers exist.
+- `internal/plugins/torqueboard/` — the first application plugin, and the only
+  file tree here that knows Torque exists. It is the ADR 0007 §6 pattern
+  working: a domain-free kind, a mechanical mapping in userland, one agent call
+  in, and a sync button that costs no agent turn. Its compiled-in Torque writes
+  are a knowingly recorded exception to §6, amended there rather than left
+  quietly false; `CW-20260910-0034` is the fix.
 - `internal/interaction/` + `internal/roomflow/` — the durable substrate and
   the compatibility adapter every room workflow routes through. The
   interaction is the canonical record; `rooms`/`envelopes` are a projection.
@@ -106,7 +112,16 @@ specific way ADR 0007 says this boundary rots.
 `tangent.app-board` is the first kind whose drafts are Tangent's own records
 (`draft_custody: tangent-custodied`) rather than `localStorage`. Its view state
 goes through the draft path — never the response path, which takes the resolver
-lease and would let a second tab steal the right to answer from the first.
+lease and would let a second tab steal the right to answer from the first. A
+staged card move is view state as well: it lives in the draft and changes
+nothing in the owning application until the participant presses Sync, so a
+board abandoned with staged changes has changed nothing. The press is the
+decision; do not make a draft into one.
+
+A plugin drives Tangent through `pluginhost.ToolCaller` — an in-process MCP
+client session against Tangent's own tool surface, with the same authority any
+local MCP caller has and no more. Reach for a new typed host method only when a
+tool genuinely cannot express the need; `GetService` stays unimplemented.
 
 Keep the HTTP layer separate from app logic, and never import `cmd/tangent`
 from `internal/...` — the dependency is one-way. Wails is a real dependency

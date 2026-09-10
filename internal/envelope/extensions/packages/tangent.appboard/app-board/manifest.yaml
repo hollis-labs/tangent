@@ -44,15 +44,26 @@
 # Every kind shipped before this one says browser-local, describing a
 # ui/src/lib/*-draft-storage.ts module backed by localStorage. This kind's view
 # state — which filters are applied, which card is selected, whether the detail
-# pane is open — is a durable revisioned draft record under ADR 0002 custody,
-# written through Service.SaveDraft and read back by the caller through
-# tangent.surface_get.
+# pane is open, and which cards have been staged into another column — is a
+# durable revisioned draft record under ADR 0002 custody, written through
+# Service.SaveDraft and read back by the caller through tangent.surface_get.
+#
+# A staged change is still view state, not a decision. It says where the
+# participant put a card, and the caller does not act on it until the
+# participant presses the sync control — which is an explicit act with its own
+# route and its own capability check. A board abandoned with staged changes
+# changes nothing anywhere, which is the property that keeps ADR 0007 §5's
+# "a caller must not present a draft as a decision" true rather than verbal.
 
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.app-board
 version: "0.1"
-revision: 1
+# revision 2 adds the optional `sync` block (CW-20260910-0031): a same-origin
+# plugin route the board may POST to, and the label of the control that stages a
+# card into another column. Additive, per compatibility_class below — a board
+# sent without it renders exactly as it did before, read-only.
+revision: 2
 title: "App board"
 description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
 package_id: tangent.appboard

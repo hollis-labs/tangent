@@ -207,13 +207,24 @@ function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeCom
 // The one adapter that threads onDraft. The board is a long-lived surface, so
 // what the participant is looking at is recorded as it happens rather than only
 // at the moment they decide (ADR 0007 §5).
-function AppBoardAdapter({ envelope, onSubmit, onCancel, onDraft }: EnvelopeComponentProps) {
+//
+// roomID rides along too: a board whose caller offers a sync route names the
+// room in the request, because the route's whole job is to find that room's
+// open board and replace it (CW-20260910-0031).
+function AppBoardAdapter({
+  envelope,
+  onSubmit,
+  onCancel,
+  onDraft,
+  roomID,
+}: EnvelopeComponentProps) {
   return (
     <AppBoard
       envelope={envelope as AppBoardEnvelope}
       onSubmit={onSubmit as (response: AppBoardResponse) => void}
       onCancel={onCancel}
       onDraft={onDraft}
+      roomID={roomID}
     />
   );
 }

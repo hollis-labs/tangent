@@ -650,8 +650,9 @@ raised its own trust class fails to load instead of being silently downgraded.
 `internal/plugins/` lists what this build ships and loads it. There is no
 discovery, no directory scan and no subprocess spawn — compiled-in only — so
 "which plugins does this binary have" is answered by reading one file.
-`internal/plugins/appboard/` is the first and only one; it lives in-tree, which
-ADR 0007 §4 is explicit is convenience rather than permission.
+`internal/plugins/appboard/` contributes the board kind and
+`internal/plugins/torqueboard/` fills it with Torque tasks; both live in-tree,
+which ADR 0007 §4 is explicit is convenience rather than permission.
 
 **Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
 `internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
@@ -693,10 +694,23 @@ is contained and reported (`PLUGIN_FAILED` / `PLUGIN_PANICKED` on a tool, a
 `plugin_error` refusal body on a route); one plugin's defect is not every
 caller's outage.
 
+**How a plugin drives Tangent** is one method, `pluginhost.ToolCaller`, and
+that narrowness is the decision. A plugin opening a room and keeping it fresh
+is doing what an agent does, so it is the same kind of caller: `mcp.LoopbackCaller`
+connects an in-process MCP client session over the SDK's in-memory transport,
+which means a plugin's calls go through the real tool surface, the real
+middleware, the real schema validation and the same host-assigned caller
+identity as any local MCP caller — no authority an agent does not already have.
+A typed facade per need would grow the host one method at a time; `GetService`
+stays unimplemented for the opposite reason, being untyped and unbounded. The
+composition root closes the session alongside the database.
+
 Deliberately not implemented, and each returns an error rather than `nil` so a
 registration cannot silently succeed and do nothing: `RegisterCRUDHandler`
-(the owning application's agent is its client — no write to an application
-originates in Tangent's process), `RegisterEventHook`, `GetService`,
+(a host surface that writes to applications on a plugin's behalf is Tangent
+growing an application dependency; a plugin holding its own client is userland
+choosing one — see ADR 0007 §6's 2026-09-10 amendment for where that line now
+sits), `RegisterEventHook`, `GetService`,
 `GetConfig`/`SetConfig`, `RegisterConfigSchema`, `RegisterConnector`,
 `RegisterProvider`, `RegisterCLIAdapter`. Subprocess plugins, signature
 verification and runtime asset loading are excluded by the same ADR.
@@ -741,6 +755,49 @@ Three properties hold it in place:
 since `2e2c48a` and that had been waiting for a kind that meant it. Every kind
 shipped before it says `browser-local`, truthfully describing a
 `ui/src/lib/*-draft-storage.ts` module backed by `localStorage`.
+
+**A staged change is view state too, and that is a boundary rather than a
+convenience.** When a board's caller supplies a `sync` block, the participant
+can move a card into another column; the move is recorded in the draft, the
+card renders where they put it with a marker, and **nothing has happened to
+the caller's records**. Pressing the board's Sync button is what applies it,
+and that press is an explicit act with its own route and its own capability
+check. So a board abandoned with staged changes changes nothing anywhere —
+which is what keeps "a caller must not present a draft as a decision" a
+property rather than a slogan. The draft is where intent accumulated; the press
+is the decision.
+
+### The app-plugin composition pattern
+
+`tangent.torque_board` (`internal/plugins/torqueboard/`) is ADR 0007 §6's
+pattern working end to end, and the shape is worth stating because it is meant
+to generalize:
+
+1. **A domain-free kind, contributed by a plugin.** `tangent.app-board`
+   describes a board of filtered cards with a detail pane. Torque supplies
+   content to it; it is not a Torque type.
+2. **The mapping lives in the plugin.** A Torque status becomes a column, a tag
+   becomes a badge, a description becomes the card body. All of it is a `for`
+   loop, which is the point — a model asked to shape this payload would be
+   doing mechanical work expensively and occasionally wrong.
+3. **One agent call.** The agent passes filters and receives a room URL. It
+   never shapes a payload, and it is the caller: an agent running anywhere,
+   including inside Torque, drives Tangent, while Torque stays an engine that
+   is called and returns.
+4. **A sync that costs no agent turn.** The board's Sync button reaches the
+   plugin's own HTTP route, which applies the staged changes through Torque's
+   API, re-queries with the board's originating filters, and replaces the
+   board. Refreshing a long-lived board means withdrawing the pending
+   interaction and advancing a fresh one onto the same room — the withdrawal
+   retires the room's presentation, which is what `Room.Release` always
+   documented itself for and which nothing called until `CW-20260910-0031`.
+
+The costs are recorded rather than absorbed. Compiled in, the plugin's Torque
+writes originate in Tangent's process; ADR 0007 §6's 2026-09-10 amendment says
+so explicitly and names `CW-20260910-0034` (subprocess mode) as the fix. What
+the amendment does not relax: Tangent core still holds no application
+dependency, `RegisterCRUDHandler` is still refused, and the plugin still
+reaches Tangent only through the tool surface an agent uses.
 
 ### go-envelopes registry
 

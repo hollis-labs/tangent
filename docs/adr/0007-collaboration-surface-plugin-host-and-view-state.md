@@ -278,7 +278,40 @@ that already have owners:
    limitation is respected by composition rather than contested.
 
 The test this pattern must keep passing: **no write to the owning application
-originates in Tangent's process.**
+originates in Tangent core, and a plugin that writes to one is a knowingly
+recorded exception with a tracked end date.**
+
+**Amended 2026-09-10 (`CW-20260910-0031`), because the first real app plugin
+crossed the line the original sentence drew.** As written, the test was "no
+write to the owning application originates in Tangent's *process*". The Torque
+board plugin makes Torque writes from inside that process, because this host
+compiles its plugins in. Chrispian accepted that tradeoff knowingly for the
+prototype — using it sooner outweighs the purity — and `CW-20260910-0034`
+(plugin-sdk subprocess mode) is the real fix, with this workload as its first
+motivating case (Tesseract `agents_drive_tangent_apps_are_called`).
+
+The amendment is deliberately narrow, and the parts it does not relax are the
+parts that were doing the work:
+
+- **Tangent core still holds no application dependency.** `internal/plugins/torqueboard/torque.go`
+  is the only file in the repository that knows Torque exists. Nothing in
+  `internal/mcp`, `internal/room`, `internal/interaction` or the renderer
+  learns a Torque concept, which is what keeps ADR 0005's *"Tangent is not a
+  task tracker"* true while a Torque board renders.
+- **`RegisterCRUDHandler` stays unimplemented.** A plugin holding its own
+  application's client is userland taking a dependency it chose. A *host*
+  surface that writes to applications on a plugin's behalf is Tangent growing
+  one, and that is still refused.
+- **The plugin is a caller, not an insider.** It drives Tangent through
+  `pluginhost.ToolCaller` — the same MCP tool surface an agent calls, resolving
+  to the same host-assigned caller identity every local MCP caller gets. It
+  holds no handle to the database, the room manager or the interaction service,
+  and `GetService` remains unimplemented so it cannot acquire one.
+
+Recording the exception here rather than leaving the sentence quietly false is
+the point. A document whose claims are checkable against the tree is this ADR's
+whole argument for existing (see §Context on ADR 0006); an absolute that the
+tree contradicts would be the same defect one section later.
 
 ## Consequences
 

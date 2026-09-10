@@ -105,6 +105,27 @@
         }
       }
     },
+    "sync": {
+      "type": "object",
+      "description": "What the board may use to talk back to the caller without an agent turn. Absent means the board is a read-only view.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^/api/plugins/[^/]+/",
+          "description": "Same-origin path under the host's reserved plugin route prefix. The renderer refuses anything else: a board is not a general fetch surface."
+        },
+        "label": { "type": "string" },
+        "stage_label": {
+          "type": "string",
+          "description": "Names the control that stages a card into another column. Empty means staging is not offered even when enabled is true."
+        },
+        "scope": {
+          "type": "string",
+          "description": "What the caller sent, in its own words, so a filter that finds nothing reads as a scope rather than a defect."
+        }
+      }
+    },
     "updated_at": { "type": "string" }
   },
   "required": ["board_id", "cards"]

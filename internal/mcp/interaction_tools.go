@@ -261,10 +261,12 @@ func (s *Server) handleInteractionCancel(
 		input.Cause != interaction.TerminalCauseCallerCanceled {
 		return s.interactionError(interaction.ErrUnauthorized)
 	}
-	return s.interactionResult(s.interactions.CancelInteraction(ctx, interaction.CancelInteractionInput{
+	result, err := s.interactions.CancelInteraction(ctx, interaction.CancelInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		Requester: directMCPActor(input.Requester), Cause: input.Cause, Reason: input.Reason,
-	}))
+	})
+	s.retireRoomPresentation(err, result)
+	return s.interactionResult(result, err)
 }
 
 func (s *Server) handleInteractionSupersede(
@@ -272,11 +274,37 @@ func (s *Server) handleInteractionSupersede(
 	_ *mcpsdk.CallToolRequest,
 	input interactionSupersedeInput,
 ) (*mcpsdk.CallToolResult, any, error) {
-	return s.interactionResult(s.interactions.SupersedeInteraction(ctx, interaction.SupersedeInteractionInput{
+	result, err := s.interactions.SupersedeInteraction(ctx, interaction.SupersedeInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		ReplacementInteractionID: input.ReplacementInteractionID,
 		Requester:                directMCPActor(input.Requester), Reason: input.Reason,
-	}))
+	})
+	s.retireRoomPresentation(err, result)
+	return s.interactionResult(result, err)
+}
+
+// retireRoomPresentation drops the room's view of an interaction a caller just
+// terminalized.
+//
+// Room.Release exists for exactly this — its own doc says "a caller withdrawal
+// or a surface policy disposition" — and until now nothing called it for one.
+// A participant's own resolve or cancel already drops the durable pending
+// entry on its way through Room; a caller's did not, so the browser kept
+// rendering an envelope whose interaction was terminal, and the room stayed
+// "busy" against the next advance. That is the difference between a board that
+// can be refreshed and one that can only be abandoned.
+//
+// It writes nothing. The canonical outcome is already recorded and immutable;
+// this is the view catching up to it.
+func (s *Server) retireRoomPresentation(err error, result interaction.TerminalizeInteractionResult) {
+	if err != nil || s.roomflow == nil {
+		return
+	}
+	record := result.Interaction
+	if record.LegacyRoomID == "" || record.LegacyEnvelopeID == "" {
+		return
+	}
+	s.roomflow.RetirePresentation(record.LegacyRoomID, record.LegacyEnvelopeID)
 }
 
 func (s *Server) interactionResult(value any, err error) (*mcpsdk.CallToolResult, any, error) {

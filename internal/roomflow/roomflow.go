@@ -607,6 +607,19 @@ func (s *Service) retirePresentation(roomID, envelopeID string) {
 	}
 }
 
+// RetirePresentation is retirePresentation for a caller-side terminal
+// disposition — a withdrawal or a supersession issued through the generic
+// interaction tools rather than observed on the room's own path.
+//
+// It is exported for one caller (internal/mcp's cancel and supersede handlers)
+// rather than left to be rediscovered, because the alternative is a room that
+// keeps showing an envelope nobody can answer and refuses the next advance as
+// busy. A missing room is not an error here: the durable outcome is already
+// recorded, and a view that is gone has nothing to catch up on.
+func (s *Service) RetirePresentation(roomID, envelopeID string) {
+	s.retirePresentation(roomID, envelopeID)
+}
+
 func (s *Service) handleFor(
 	record interaction.InteractionRecord,
 	roomID string,

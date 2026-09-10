@@ -19,6 +19,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/plugins/appboard"
+	"github.com/hollis-labs/tangent/internal/plugins/torqueboard"
 )
 
 // Shipped returns the compiled-in plugins in load order.
@@ -29,7 +30,12 @@ import (
 // by reading one file.
 func Shipped() []plugin.Plugin {
 	return []plugin.Plugin{
+		// Order is load order, and it is a dependency order: torqueboard
+		// declares appboard as a dependency because it supplies content to the
+		// kind appboard contributes, and the host refuses a plugin whose stated
+		// dependency is not already loaded.
 		appboard.New(),
+		torqueboard.New(),
 	}
 }
 

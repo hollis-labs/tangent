@@ -132,10 +132,21 @@ type Services struct {
 type ownedCloser struct {
 	db        *sql.DB
 	ownership *tangentdb.Ownership
+	// loopback is the plugin host's in-process MCP session. It is closed
+	// before the database because it can still be serving a plugin's tool
+	// call, and it holds the SDK's reader goroutines — a process that forgot
+	// it would leak them silently, which is exactly the class internal/mcp's
+	// goleak tests exist to catch.
+	loopback io.Closer
 }
 
 func (c *ownedCloser) Close() error {
 	var errs []error
+	if c.loopback != nil {
+		if err := c.loopback.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close plugin tool caller: %w", err))
+		}
+	}
 	if err := tangentdb.Close(c.db); err != nil {
 		errs = append(errs, fmt.Errorf("close db: %w", err))
 	}
@@ -481,6 +492,23 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// would silently strip a documented capability.
 		return release(fmt.Errorf("build mcp server: %w", err))
 	}
+	// The plugin host's tool caller (CW-20260910-0031). A plugin drives Tangent
+	// by calling the same tools an agent calls, in process, with the same
+	// host-assigned caller identity — see internal/mcp/loopback.go for why it
+	// goes over a real session rather than straight to a handler.
+	//
+	// It is attached here, after mcp.New, because that is the first moment the
+	// tool surface exists; a plugin resolves it at dispatch time, so a plugin
+	// that loaded earlier is not holding a nil.
+	loopback, err := mcpSrv.NewLoopbackCaller(context.Background())
+	if err != nil {
+		return release(fmt.Errorf("build plugin tool caller: %w", err))
+	}
+	closer.loopback = loopback
+	if attachErr := pluginHost.AttachToolCaller(loopback); attachErr != nil {
+		return release(fmt.Errorf("attach plugin tool caller: %w", attachErr))
+	}
+
 	triageHandler := mcp.NewTriageHandler(roomMgr, logger, roomURLBase)
 	registrations := []struct {
 		name string

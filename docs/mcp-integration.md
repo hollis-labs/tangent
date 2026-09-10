@@ -380,6 +380,37 @@ metadata becomes previewable only through an explicitly registered
 authority/capability adapter; a path, `file:` URI, or agent's ambient access is
 never retrieval authority.
 
+## The Torque board
+
+The first application plugin (`CW-20260910-0031`), and the pilot for the ADR
+0007 §6 app-plugin pattern. It contributes two tools:
+
+- `tangent.torque_board` takes Torque list filters — statuses, project, sprint,
+  epic, kind, executor, tags, search, limit — queries Torque, shapes the tasks
+  into a `tangent.app-board` envelope, opens a room, and returns the room URL
+  and a board handle. **The agent passes filters and nothing else.** It shapes
+  no payload; the mapping from a Torque status to a board column is a `for`
+  loop in the plugin.
+- `tangent.torque_board_sync` syncs an open board both ways in one call:
+  applies the status changes the participant staged, re-queries Torque with the
+  board's own originating filters, and replaces the board with fresh cards.
+
+The board's own **Sync** button performs exactly that second call over a
+plugin-served route, with no agent turn at all — which is the whole reason the
+route surface exists. Staging a card into another column records the move in
+the interaction's draft revision and changes nothing anywhere; pressing Sync is
+what applies it. A board abandoned with staged changes has changed nothing in
+Torque.
+
+Filters on the board narrow the cards the plugin sent; they are not a query
+Tangent re-runs, and the board says so in its own words. Reaching a task
+outside the sent set needs a sync.
+
+Torque is reached over its HTTP API at `http://127.0.0.1:8990` by default, or
+`TANGENT_TORQUE_API_URL`. The plugin is the only thing in this repository that
+knows Torque exists — Tangent core stays domain-free. **If Torque is down, the
+plugin reports it and every other Tangent surface keeps working.**
+
 ## Cursor
 
 Cursor reads MCP servers from a JSON config at `~/.cursor/mcp.json`.

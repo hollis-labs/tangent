@@ -23,8 +23,26 @@
 //     lease. The caller reads it by pulling `tangent.surface_get`.
 //   - `onSubmit` — the participant pressed one of the caller's actions. That
 //     settles the interaction, and the caller applies whatever the action means
-//     using its own tools. Nothing in Tangent's process writes to the owning
-//     application.
+//     using its own tools.
+//
+// # Staged changes, and why they are not decisions
+//
+// When the caller supplies a `sync` block, the detail pane offers a control
+// that moves a card into another column. That move is **staged**: it is
+// recorded in the draft and the card renders in its new column with a marker,
+// and nothing has happened to the caller's records. Pressing Sync is what
+// applies it — the caller's own plugin route reads the draft, applies the
+// changes with the owning application's API, and replaces the board.
+//
+// This preserves ADR 0007 §5's rule rather than bending it. A draft is still
+// what the participant is looking at, and a board closed with staged changes
+// and never synced changes nothing. The press is the decision; the draft is
+// only where the intent was accumulated.
+//
+// The board never fetches its own content. `sync.endpoint` is a same-origin
+// path under `/api/plugins/`, checked below, so this is not a general fetch
+// surface a caller could point anywhere — that is what the host-mediated
+// effect broker exists for, and this is deliberately not a second one.
 //
 // The detail pane is a pane in THIS envelope, never a second one. Tangent
 // allows one pending envelope per room, and composing the detail inside the
@@ -98,6 +116,22 @@ export interface BoardDetail {
   actions?: BoardDetailAction[];
 }
 
+/**
+ * What the caller offers for talking back to it without an agent turn.
+ *
+ * `endpoint` is a same-origin path under `/api/plugins/`; see isPluginRoutePath
+ * for why that is checked here rather than trusted.
+ */
+export interface BoardSync {
+  enabled?: boolean;
+  endpoint?: string;
+  label?: string;
+  /** Names the staging control. Empty means staging is not offered. */
+  stage_label?: string;
+  /** What the caller sent, in its own words, so a filter that finds nothing reads as a scope rather than a bug. */
+  scope?: string;
+}
+
 export interface AppBoardEnvelope {
   v: number;
   id: string;
@@ -114,6 +148,7 @@ export interface AppBoardEnvelope {
     cards?: BoardCardData[];
     filters?: BoardFilter[];
     detail?: BoardDetail;
+    sync?: BoardSync;
     updated_at?: string;
   };
   meta?: Record<string, unknown>;
@@ -135,6 +170,14 @@ export interface AppBoardDraft {
    * pushed, and nothing here re-queries anything.
    */
   refresh_requested: boolean;
+  /**
+   * Cards the participant moved into another column but has not synced.
+   *
+   * Staged intent, not a decision: the caller reads it when the participant
+   * presses Sync and not before, and a board abandoned with staged changes
+   * changes nothing. Absent on a board whose caller offers no sync.
+   */
+  staged_changes?: Record<string, { column_id: string }>;
 }
 
 export interface AppBoardResponse {
@@ -221,7 +264,64 @@ export function applyFilters(
   );
 }
 
-export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProps) {
+/**
+ * Whether a caller-supplied sync endpoint is one this board may POST to.
+ *
+ * A same-origin path under the host's reserved plugin prefix, and nothing else:
+ * no scheme, no host, no protocol-relative `//`, no `..`. A board is not a
+ * general fetch surface — the effect broker is what mediates a renderer acting
+ * on the world, and letting an envelope name an arbitrary URL here would be a
+ * second, unreviewed one. Whether the named route will *accept* the request is
+ * still the server's decision; this only stops the request being aimed
+ * somewhere else entirely.
+ *
+ * Exported for its tests, because "a caller cannot point the board at an
+ * arbitrary URL" is a claim about this function.
+ */
+export function isPluginRoutePath(endpoint: string | undefined): endpoint is string {
+  if (!endpoint) return false;
+  if (!endpoint.startsWith("/api/plugins/")) return false;
+  if (endpoint.startsWith("//")) return false;
+  if (endpoint.includes("..")) return false;
+  return !/[\s?#]/.test(endpoint);
+}
+
+/**
+ * Rewrites the columns so a staged card renders where the participant put it.
+ *
+ * The caller's own column assignment is left alone in the data — staging is the
+ * participant's, not the caller's, and the two must not be conflated. This is
+ * the projection the participant sees until they sync.
+ *
+ * Exported for its tests.
+ */
+export function applyStagedColumns(
+  columns: BoardColumn[],
+  staged: Record<string, string>,
+): BoardColumn[] {
+  if (Object.keys(staged).length === 0) return columns;
+  const known = new Set(columns.map((column) => column.id));
+  return columns.map((column) => ({
+    ...column,
+    card_ids: (column.card_ids ?? [])
+      // Out of this column if it was staged elsewhere...
+      .filter((id) => {
+        const target = staged[id];
+        // A staged column the board does not have is ignored rather than
+        // vanishing the card: the participant would otherwise lose a card to a
+        // control that looked like it worked.
+        return target === undefined || !known.has(target) || target === column.id;
+      })
+      // ...and into this one if it was staged here.
+      .concat(
+        Object.entries(staged)
+          .filter(([id, target]) => target === column.id && !(column.card_ids ?? []).includes(id))
+          .map(([id]) => id),
+      ),
+  }));
+}
+
+export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppBoardProps) {
   const data = envelope.data ?? {};
   const boardID = data.board_id ?? "";
   const cards = useMemo(() => data.cards ?? [], [data.cards]);
@@ -242,13 +342,24 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProp
   });
   const [selectedCardID, setSelectedCardID] = useState<string | null>(detail?.card_id ?? null);
   const [detailOpen, setDetailOpen] = useState<boolean>(detail?.open ?? false);
+  // Staged, not applied. Cleared by the next envelope rather than by this
+  // component: a sync replaces the board, and the replacement is a different
+  // envelope with a fresh draft sequence, so there is nothing to reset.
+  const [staged, setStaged] = useState<Record<string, string>>({});
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const sync = data.sync;
+  const syncEndpoint = sync?.enabled && isPluginRoutePath(sync.endpoint) ? sync.endpoint : null;
+  const canStage = syncEndpoint !== null && (sync?.stage_label ?? "") !== "" && columns.length > 0;
 
   const visible = useMemo(
     () => applyFilters(cards, filters, selection),
     [cards, filters, selection],
   );
+  const stagedColumns = useMemo(() => applyStagedColumns(columns, staged), [columns, staged]);
 
-  const publishDraft = (next: Partial<AppBoardDraft>) => {
+  const publishDraft = (next: Partial<AppBoardDraft>, stagedNext = staged) => {
     if (!onDraft) return;
     onDraft({
       board_id: boardID,
@@ -256,6 +367,9 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProp
       selected_card_id: selectedCardID,
       detail_open: detailOpen,
       refresh_requested: false,
+      staged_changes: Object.fromEntries(
+        Object.entries(stagedNext).map(([id, column]) => [id, { column_id: column }]),
+      ),
       ...next,
     } satisfies AppBoardDraft);
   };
@@ -287,6 +401,52 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProp
     // Explicit and pull-based. The flag rides in the draft until the caller
     // looks; nothing here re-queries anything and nothing is pushed.
     publishDraft({ refresh_requested: true });
+  };
+
+  const stageCard = (cardID: string, columnID: string) => {
+    const next = { ...staged };
+    // Staging a card back into the column it came from is unstaging it, not a
+    // no-op change to push: a participant undoing a move should leave nothing
+    // behind for the sync to apply.
+    const home = columns.find((column) => (column.card_ids ?? []).includes(cardID));
+    if (home?.id === columnID) {
+      delete next[cardID];
+    } else {
+      next[cardID] = columnID;
+    }
+    setStaged(next);
+    publishDraft({}, next);
+  };
+
+  const runSync = async () => {
+    if (!syncEndpoint || syncing) return;
+    setSyncing(true);
+    setSyncError(null);
+    try {
+      // The draft is what the server reads, so it has to be written before the
+      // request is sent. publishDraft is synchronous into ws-client's send
+      // path; a sync issued from a board with nothing staged is a plain
+      // refresh, which is the other half of "both ways".
+      publishDraft({});
+      const response = await fetch(syncEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ board_id: boardID, room_id: roomID ?? "" }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        setSyncError(body.message ?? `Sync failed (${response.status}).`);
+        return;
+      }
+      // Nothing is applied to this component's state on success. The server
+      // replaces the board, and the replacement arrives over the WebSocket as
+      // the next envelope — reconciling here would mean two sources for what
+      // the participant is looking at.
+    } catch (error) {
+      setSyncError(error instanceof Error ? error.message : "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const submitAction = (actionID: string) => {
@@ -329,14 +489,29 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProp
         selection={selection}
         onToggle={toggleFilterValue}
         onRefresh={requestRefresh}
+        onSync={syncEndpoint ? runSync : undefined}
+        syncLabel={sync?.label ?? "Sync"}
+        syncing={syncing}
+        stagedCount={Object.keys(staged).length}
+        scope={sync?.scope}
         showing={visible.length}
         supplied={cards.length}
       />
 
+      {syncError ? (
+        <p
+          className="rounded border border-red-900 bg-red-950/40 px-3 py-2 text-xs text-red-300"
+          data-testid="app-board-sync-error"
+        >
+          {syncError}
+        </p>
+      ) : null}
+
       <BoardColumns
-        columns={columns}
+        columns={stagedColumns}
         cards={visible}
         selectedCardID={selectedCardID}
+        staged={staged}
         onSelect={selectCard}
       />
 
@@ -344,6 +519,10 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft }: AppBoardProp
         <BoardDetailPane
           card={selectedCard}
           detail={detail}
+          columns={canStage ? columns : []}
+          stageLabel={sync?.stage_label ?? ""}
+          stagedColumnID={staged[selectedCard.id] ?? null}
+          onStage={stageCard}
           onAction={submitAction}
           onClose={() => {
             setDetailOpen(false);
@@ -366,6 +545,11 @@ function BoardFilterBar({
   selection,
   onToggle,
   onRefresh,
+  onSync,
+  syncLabel,
+  syncing,
+  stagedCount,
+  scope,
   showing,
   supplied,
 }: {
@@ -373,6 +557,12 @@ function BoardFilterBar({
   selection: Record<string, string[]>;
   onToggle: (filter: BoardFilter, value: string) => void;
   onRefresh: () => void;
+  /** Absent when the caller offers no sync route; the board is then read-only. */
+  onSync?: () => void;
+  syncLabel: string;
+  syncing: boolean;
+  stagedCount: number;
+  scope?: string;
   showing: number;
   supplied: number;
 }) {
@@ -409,21 +599,45 @@ function BoardFilterBar({
           })}
         </div>
       ))}
-      <div className="flex items-center justify-between pt-1">
+      <div className="flex items-center justify-between gap-3 pt-1">
         {/* Says out loud what the filter bar is. A reader who thinks this is a
-            query will expect rows the caller never sent. */}
+            query will expect rows the caller never sent. The caller may add its
+            own sentence about what it sent; both are shown, because "what was
+            sent" and "what this bar does" are different facts. */}
         <p className="text-[11px] text-zinc-500" data-testid="app-board-scope">
-          Showing {showing} of {supplied} supplied. Filters narrow what the caller sent — ask for a
-          refresh to see more.
+          Showing {showing} of {supplied} supplied. Filters narrow what the caller sent
+          {onSync ? " — press " : " — ask for a refresh"}
+          {onSync ? <span className="text-zinc-400">{syncLabel}</span> : null}
+          {onSync ? " to re-query." : " to see more."}
+          {scope ? <span className="block pt-0.5 text-zinc-600">{scope}</span> : null}
         </p>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-700"
-          data-testid="app-board-refresh"
-        >
-          Ask for fresh data
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {stagedCount > 0 ? (
+            <span className="text-[11px] text-amber-400" data-testid="app-board-staged-count">
+              {stagedCount} staged
+            </span>
+          ) : null}
+          {onSync ? (
+            <button
+              type="button"
+              onClick={onSync}
+              disabled={syncing}
+              className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-50"
+              data-testid="app-board-sync"
+            >
+              {syncing ? "Syncing…" : syncLabel}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-700"
+              data-testid="app-board-refresh"
+            >
+              Ask for fresh data
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -433,11 +647,14 @@ export function BoardColumns({
   columns,
   cards,
   selectedCardID,
+  staged,
   onSelect,
 }: {
   columns: BoardColumn[];
   cards: BoardCardData[];
   selectedCardID: string | null;
+  /** Card id → the column the participant staged it into, for the marker. */
+  staged?: Record<string, string>;
   onSelect: (cardID: string) => void;
 }) {
   const byID = new Map(cards.map((card) => [card.id, card]));
@@ -476,6 +693,7 @@ export function BoardColumns({
                 key={card.id}
                 card={card}
                 selected={card.id === selectedCardID}
+                staged={staged?.[card.id] !== undefined}
                 onSelect={onSelect}
               />
             ))}
@@ -489,10 +707,13 @@ export function BoardColumns({
 export function BoardCard({
   card,
   selected,
+  staged,
   onSelect,
 }: {
   card: BoardCardData;
   selected: boolean;
+  /** Moved by the participant and not yet synced. */
+  staged?: boolean;
   onSelect: (cardID: string) => void;
 }) {
   return (
@@ -508,7 +729,20 @@ export function BoardCard({
           : "border-zinc-800 bg-zinc-900 hover:border-zinc-700",
       )}
     >
-      <div className="text-sm text-zinc-100">{card.title}</div>
+      <div className="flex items-start gap-1.5 text-sm text-zinc-100">
+        {staged ? (
+          // A card that moved but has not been pushed anywhere. Without this
+          // the board would claim a change the owning application has not seen.
+          <span
+            className="pt-0.5 text-amber-400"
+            title="Staged — press Sync to apply"
+            data-testid={`app-board-staged-${card.id}`}
+          >
+            •
+          </span>
+        ) : null}
+        <span>{card.title}</span>
+      </div>
       {card.subtitle ? <div className="text-xs text-zinc-400">{card.subtitle}</div> : null}
       {card.badges && card.badges.length > 0 ? (
         <div className="flex flex-wrap gap-1 pt-0.5">
@@ -538,16 +772,32 @@ export function BoardCard({
 export function BoardDetailPane({
   card,
   detail,
+  columns,
+  stageLabel,
+  stagedColumnID,
+  onStage,
   onAction,
   onClose,
 }: {
   card: BoardCardData;
   detail?: BoardDetail;
+  /** The columns this card may be staged into. Empty means staging is off. */
+  columns?: BoardColumn[];
+  stageLabel?: string;
+  stagedColumnID?: string | null;
+  onStage?: (cardID: string, columnID: string) => void;
   onAction: (actionID: string) => void;
   onClose: () => void;
 }) {
   const sections = detail?.card_id === card.id ? (detail?.sections ?? []) : [];
   const actions = detail?.actions ?? [];
+  const stageColumns = columns ?? [];
+  // The column the card is in right now, staged or not, so the control shows
+  // the participant's own last answer rather than resetting to the caller's.
+  const currentColumnID =
+    stagedColumnID ??
+    stageColumns.find((column) => (column.card_ids ?? []).includes(card.id))?.id ??
+    null;
   return (
     <section
       className="space-y-3 rounded border border-zinc-700 bg-zinc-900 p-3"
@@ -580,6 +830,43 @@ export function BoardDetailPane({
           {section.markdown ? <Markdown content={section.markdown} tone="default" /> : null}
         </div>
       ))}
+
+      {stageColumns.length > 0 && onStage ? (
+        <div className="space-y-1" data-testid="app-board-stage">
+          <h4 className="text-xs uppercase tracking-wide text-zinc-500">
+            {stageLabel || "Move to"}
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {stageColumns.map((column) => {
+              const active = currentColumnID === column.id;
+              return (
+                <button
+                  key={column.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onStage(card.id, column.id)}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-xs",
+                    active
+                      ? "bg-zinc-200 text-zinc-900"
+                      : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700",
+                  )}
+                  data-testid={`app-board-stage-${column.id}`}
+                >
+                  {column.label}
+                </button>
+              );
+            })}
+          </div>
+          {stagedColumnID ? (
+            // Says what has and has not happened. A control that looked like it
+            // saved would be worse than no control.
+            <p className="text-[11px] text-amber-400" data-testid="app-board-stage-note">
+              Staged. Nothing has changed in the source until you press Sync.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {actions.length > 0 ? (
         <div className="flex flex-wrap justify-end gap-2 pt-1">
