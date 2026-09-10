@@ -52,7 +52,11 @@ describe("<HITLInboxRoute>", () => {
     renderRoute("/hitl");
 
     expect(await screen.findByRole("heading", { name: "Human input" })).toBeInTheDocument();
-    expect(screen.getByText("No pending requests")).toBeInTheDocument();
+    // The heading is static header markup, so awaiting it proves only that the
+    // route mounted — not that the inbox fetch settled. Until it does, the list
+    // is a QueueSkeleton and the empty state has not rendered, so this has to
+    // wait for the empty state itself rather than assume the line above did.
+    expect(await screen.findByText("No pending requests")).toBeInTheDocument();
     expect(
       screen.getByText("This surface is always available, even when no agent room is open."),
     ).toBeInTheDocument();
@@ -852,11 +856,10 @@ describe("<HITLInboxRoute>", () => {
     });
     expect(
       (
-        requests.find((request) => request.path.endsWith("/resolve"))?.body?.response as Record<
-          string,
-          unknown
-        >
-      ).reply,
+        requests.find((request) => request.path.endsWith("/resolve"))?.body?.response as
+          | Record<string, unknown>
+          | undefined
+      )?.reply,
     ).toBeUndefined();
   });
 
