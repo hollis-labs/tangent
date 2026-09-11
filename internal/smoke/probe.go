@@ -206,6 +206,11 @@ type HealthReport struct {
 	Readiness         health.ReadinessReport          `json:"readiness"`
 	CapabilitySummary *health.CapabilitySummaryReport `json:"capability_summary,omitempty"`
 	Capability        *health.CapabilityReport        `json:"capability,omitempty"`
+	// Plugins is the inventory CW-20260910-0036 added: which plugins loaded,
+	// which refused and why. Read here so the shipped binary answers it rather
+	// than an operator inferring it from a tool list — which cannot see a
+	// plugin that contributes a kind and no tool, and this build ships one.
+	Plugins health.PluginInventory `json:"plugins"`
 }
 
 func decodeHealthReport(where string, rawResult json.RawMessage) (HealthReport, *Finding) {

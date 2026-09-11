@@ -23,9 +23,16 @@
 // This kind must describe a SHAPE, never an application's concepts. The
 // pressure runs the other way in practice: an application plugin discovers its
 // board cannot express something, and the shortest path is to add the field
-// where the author is already typing. The field belongs here, additively, with a
-// manifest `revision` bump — and if it can only be described in one
-// application's vocabulary, it does not belong here at all.
+// where the author is already typing. The field belongs here — and if it can
+// only be described in one application's vocabulary, it does not belong here at
+// all.
+//
+// Adding one is a manifest `version` bump, not a `revision` bump. An optional
+// field still moves `contract_digest`, and ADR 0003 §3 makes any contract move
+// a version. `TestNoRevisionAdvancedWhileTheContractMoved` fails the build
+// otherwise (CW-20260911-0008), and §8 C1 means the bump takes pending
+// interactions of the kind out of service — so widening a shared kind is a
+// decision with a cost, not a convenience.
 //
 // Nothing in this package may import an application client, and nothing in it
 // may learn which application supplies its content.
@@ -90,11 +97,12 @@ func (p *Plugin) Load(host plugin.Host) error {
 	return nil
 }
 
-// Unload drops the plugin's own status. It does NOT unregister the kind:
-// go-envelopes' registry is boot-time and has no removal, and a definition that
-// vanished from a running registry would leave live interactions referring to a
-// kind the host could no longer explain. A plugin that should not be present is
-// one that is not loaded at boot.
+// Unload drops the plugin's own status. It does NOT unregister the kind, and
+// that is the host's contract rather than this plugin's choice: see
+// internal/pluginhost/lifecycle.go. go-envelopes' registry is boot-time and has
+// no removal, and a definition that vanished from a running registry would
+// leave live interactions referring to a kind the host could no longer explain.
+// A plugin that should not be present is one that is not loaded at boot.
 func (p *Plugin) Unload() error {
 	p.status = plugin.PluginStatus{}
 	return nil

@@ -97,7 +97,9 @@ const SyncPath = pluginhost.RoutePrefix + "almanac-board/sync"
 // load-bearing. When this board needs something the kind cannot express, the
 // shortest path is to add it here — where you are already typing — and a
 // domain-free kind quietly acquires one application's concept. The change
-// belongs in the kind's own plugin, additively, with a manifest revision bump.
+// belongs in the kind's own plugin, additively, with a manifest VERSION bump —
+// an optional field still moves contract_digest, and ADR 0003 §3 makes that a
+// version rather than a revision.
 const EnvelopeType = "tangent.app-board"
 
 // Plugin is the Almanac board adapter.
@@ -207,9 +209,10 @@ func (p *Plugin) failLoad(err error) error {
 	return err
 }
 
-// Unload drops the plugin's own state. It unregisters nothing: this host's
-// registries are boot-time, and a plugin that should not be present is one that
-// is not loaded at boot.
+// Unload drops the plugin's own state. It unregisters nothing, which is the
+// host's stated contract (internal/pluginhost/lifecycle.go) and not a choice
+// each plugin makes: this host's registries are boot-time, and a plugin that
+// should not be present is one that is not loaded at boot.
 func (p *Plugin) Unload() error {
 	p.mu.Lock()
 	p.host = nil

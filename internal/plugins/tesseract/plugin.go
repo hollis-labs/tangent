@@ -215,9 +215,10 @@ func (p *Plugin) failLoad(err error) error {
 	return err
 }
 
-// Unload drops the plugin's own state. It unregisters nothing, for the reason
-// appboard's Unload gives: this host's registries are boot-time, and a plugin
-// that should not be present is one that is not loaded at boot.
+// Unload drops the plugin's own state. It unregisters nothing, which is the
+// host's stated contract (internal/pluginhost/lifecycle.go) and not this
+// plugin's decision: this host's registries are boot-time, and a plugin that
+// should not be present is one that is not loaded at boot.
 func (p *Plugin) Unload() error {
 	p.mu.Lock()
 	p.host = nil

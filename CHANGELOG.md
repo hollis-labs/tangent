@@ -43,8 +43,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   merged; and reading view state is a pull, never a push. A caller must not
   present a draft as a decision.
 
+- **A versioning gate (`CW-20260911-0008`).** ADR 0003 §3 has said since it was
+  accepted that a `revision` may advance within a `version` only while
+  `contract_digest`, `renderer.class`, `renderer.trust_class` and
+  `required_capabilities` all hold. Nothing compared them, so a year of
+  divergence surfaced in one sitting. `definition.CheckRevisionAdvance` is the
+  rule as code, honoring the one granted exception — the once-per-kind
+  response-schema backfill — rather than hard-failing it, and `contractLock` in
+  `internal/envelope/extensions` is the committed record that turns it into a
+  gate. **`tangent.app-board` is `0.2`, `revision: 1`**: one minor bump covering
+  the `sync` block, `sync.note_label` and `cards[].note`, which were each added
+  under a revision bump and each moved the contract. Semver versions mark
+  releases and none of the three were released separately, so the compressed
+  history is deliberate. §3 was not amended — it was right.
+
+- **Plugin lifecycle, failure isolation and legibility (`CW-20260910-0036`).**
+  `Unload` is now the host's stated contract instead of a decision each plugin
+  made in a comment: a plugin drops its own state and comes off the roster, and
+  **nothing it registered is removed** — the envelope registry has no removal,
+  and a tool or route cannot be attributed to the plugin that registered it. The
+  host refuses honestly rather than performing a rollback it cannot do, and
+  `UnloadAll` runs on the shutdown path. Every contributed tool and route is
+  bounded and panic-contained at registration, so one plugin's defect cannot
+  take down the tool surface or hold graceful shutdown past its deadline the way
+  an unbounded `/sse` stream did (`CW-20260909-0045`). `tangent.health_report`
+  carries a plugin inventory — which loaded, which refused and why — because a
+  tool list cannot answer it: the plugin contributing `tangent.app-board`
+  registers no tool at all.
+
 ### Known limitations
 
+- **The host holds no plugin configuration, and that is the answer**
+  (`CW-20260910-0036`). `GetConfig`, `SetConfig` and `RegisterConfigSchema` stay
+  unimplemented; a plugin reads its own environment. It keeps ADR 0005 §3.1's
+  secret boundary true by construction rather than by policy — there is no store
+  to leak, migrate or redact. Reopening it needs a plugin with no environment to
+  read, which in practice means subprocess mode (`CW-20260910-0034`).
+- **There is no runtime plugin enable/disable.** `internal/plugins/shipped.go`
+  is the enable set and changing it is a rebuild. Deferred with the reason:
+  nothing has a caller for a toggle, and not building it is how Tangent avoids
+  inheriting Tether's enabled-but-unreachable proxy stall.
+- **A plugin handler that ignores its context leaks a goroutine.** The dispatch
+  budget releases the *caller*; it cannot stop the plugin, because Go cannot
+  interrupt a goroutine that will not yield. Compiled-in plugins share this
+  process by design.
+- **An additive version bump takes pending interactions of that kind out of
+  service** (ADR 0003 §8 C1). The old payloads are still valid by construction,
+  but the pinned definition goes `unavailable` for new submissions anyway.
+  Narrowing C1 for an `additive` compatibility class is the honest fix and is
+  deliberately not in this change; proceed and fix the breakage as it is felt.
 - `stale_draft` is not recoverable in-session. The error frame echoes the
   revision the client sent rather than the one the record expects, so a client
   that falls behind cannot resynchronize without a reload. Single-tab drafting

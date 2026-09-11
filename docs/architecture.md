@@ -1196,6 +1196,55 @@ trusting it.
 - **No desktop shell and no Nanite-native channel.** MCP is the only
   agent-facing transport. See the Wails note above.
 
+### The plugin host: what unload, config and a hung handler actually do
+
+Three of these are scope decisions (`CW-20260910-0036`) and the fourth is a
+bounded cost that has a task.
+
+- **Unloading a plugin removes nothing it registered.** An envelope kind cannot
+  be removed — go-envelopes' registry is boot-time and has no removal — and a
+  contributed tool or route cannot be removed either, because the plugin SDK
+  passes no caller identity to a registration call, so the host does not know
+  which plugin registered which surface. `Unload` therefore means the plugin
+  drops its own state and comes off the roster. A tool whose plugin has
+  unloaded still dispatches, into a plugin that answers "not loaded". The host
+  refuses honestly rather than performing a removal it cannot do.
+- **The host holds no plugin configuration.** `GetConfig`, `SetConfig` and
+  `RegisterConfigSchema` are unimplemented and ratified as such: a plugin reads
+  its own process environment. This is what keeps ADR 0005 §3.1's secret
+  boundary true by construction rather than by policy — there is no store to
+  leak, migrate, or redact. A subprocess plugin with no environment to read
+  (`CW-20260910-0034`) is what would reopen it.
+- **There is no runtime enable/disable.** `internal/plugins/shipped.go` is the
+  enable set and changing it is a rebuild. Deferred with the reason rather than
+  omitted: Tether's equivalent flag carries a documented enabled-but-unreachable
+  stall, and nothing here has a caller for a toggle.
+- **A plugin handler that ignores its context leaks a goroutine.** Every
+  contributed tool and route is bounded at registration, and a blown budget
+  releases the *caller* — it does not stop the plugin, because Go cannot
+  interrupt a goroutine that will not yield. The leak lasts as long as the
+  process and nothing reports it. Compiled-in plugins share this process by
+  design; `CW-20260910-0034`'s subprocess mode is what turns "the goroutine
+  leaked" into "the process was killed".
+
+### An additive version bump takes pending interactions out of service
+
+ADR 0003 §3 makes any change that moves `contract_digest` a `version` bump, and
+§8 C1 makes a registry change that alters the current binding render the pinned
+definition `unavailable` for **new submissions**. Adding an optional field to a
+shared kind therefore takes live interactions of that kind out of service, even
+though the old payloads are still valid by construction.
+
+The conservatism exists because the host cannot generally prove a pending
+payload still satisfies a moved contract. For a `compatibility_class: additive`
+change with the new fields optional it demonstrably can, so narrowing C1 for
+that case is the honest fix. Chrispian's call (`CW-20260911-0008`) is to proceed
+and fix the breakage as it is felt rather than pre-emptively, which is
+reasonable at 0.x with one user — and it is why
+`docs/writing-a-plugin.md` tells an author to budget for the blast radius before
+widening a shared kind. File the narrowing as its own task when the churn is
+felt.
+
 ### `standalone-local` partitions are advisory, not a security boundary
 
 Any local caller can assert any partition, because the partition is the

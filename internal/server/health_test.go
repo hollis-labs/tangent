@@ -171,6 +171,14 @@ func TestReadinessAnswers200WhenEveryDependencyIsPresent(t *testing.T) {
 		health.WithDeliveryWorker(func() health.DeliveryWorker {
 			return health.DeliveryWorker{Authorized: true}
 		}),
+		// The plugin probe is a dependency like the others: a reporter without
+		// one warns, and this test is the "every dependency present" baseline.
+		health.WithPlugins(func() health.PluginInventory {
+			return health.PluginInventory{
+				Loaded:  1,
+				Plugins: []health.PluginRecord{{ID: "tangent.plugin.fixture", Loaded: true}},
+			}
+		}),
 	))
 
 	recorder := get(t, mux, "/readyz")

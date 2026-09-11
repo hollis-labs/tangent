@@ -76,11 +76,12 @@ func (p *Plugin) Load(host plugin.Host) error {
 	return nil
 }
 
-// Unload drops the plugin's own status. It does NOT unregister the kind:
-// go-envelopes' registry is boot-time and has no removal, and a definition that
-// vanished from a running registry would leave live interactions referring to a
-// kind the host could no longer explain. A plugin that should not be present is
-// one that is not loaded at boot.
+// Unload drops the plugin's own status. It does NOT unregister the kind, and
+// that is the host's contract rather than this plugin's choice: see
+// internal/pluginhost/lifecycle.go. go-envelopes' registry is boot-time and has
+// no removal, and a definition that vanished from a running registry would
+// leave live interactions referring to a kind the host could no longer explain.
+// A plugin that should not be present is one that is not loaded at boot.
 func (p *Plugin) Unload() error {
 	p.status = plugin.PluginStatus{}
 	return nil

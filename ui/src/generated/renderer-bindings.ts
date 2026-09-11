@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:8c5495ea31de62dd586e9b027139018c8ae6c07dc650942ee3b53257c0c4d3ff
+// @definition-source sha256:7e1e5460af713b0cb162f35c05627e6467b1567293ba4a645cde8b62d8e93fc3
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 19 manifests under
@@ -123,7 +123,7 @@ export interface RendererBinding {
 export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   {
     kind: "tangent.app-board",
-    version: "0.1",
+    version: "0.2",
     rendererId: "tangent.renderer.app-board",
     rendererClass: "react-component",
     entry: "components/envelopes/AppBoard#AppBoard",

@@ -128,6 +128,27 @@ client session against Tangent's own tool surface, with the same authority any
 local MCP caller has and no more. Reach for a new typed host method only when a
 tool genuinely cannot express the need; `GetService` stays unimplemented.
 
+**The host holds no plugin configuration, so it can never hold a plugin's
+secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
+unimplemented (`CW-20260910-0036`): a plugin reads its own environment, which
+keeps ADR 0005 §3.1's secret boundary true by construction instead of by policy.
+`Unload` is the same posture — it drops the plugin's own state and unregisters
+nothing, because neither the envelope registry nor an unattributable tool
+registration can be removed, and a pretend unload is what the first host shipped.
+`internal/pluginhost/lifecycle.go` and `isolation.go` carry both, plus the
+dispatch guard: a contributed tool or route is bounded and panic-contained at
+registration, and shutdown releases in-flight dispatches rather than waiting on
+them.
+
+A change that moves a manifest's `contract_digest` is a **version** bump, never
+a `revision` bump — ADR 0003 §3, and `revision` is a non-semantic edit counter
+within a version. `contractLock` in
+`internal/envelope/extensions/contract_lock_test.go` is the committed record
+that makes it a gate rather than a rule nobody checks; do not edit it to silence
+a §3 finding. `docs/developing.md` carries the procedure, and
+`docs/architecture.md#current-limitations` carries the §8 C1 blast radius a bump
+still has.
+
 Keep the HTTP layer separate from app logic, and never import `cmd/tangent`
 from `internal/...` — the dependency is one-way. Wails is a real dependency
 today, confined to `cmd/tangent-app` and `internal/appshell`; that binary

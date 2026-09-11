@@ -144,6 +144,15 @@ func healthyReporter(t *testing.T) *Reporter {
 		WithDeliveryWorker(func() DeliveryWorker {
 			return DeliveryWorker{Authorized: true, Scope: "tangent:room-workflow-delivery"}
 		}),
+		WithPlugins(func() PluginInventory {
+			return PluginInventory{
+				Loaded:           1,
+				Plugins:          []PluginRecord{{ID: "tangent.plugin.example", Loaded: true, Enabled: true}},
+				ContributedKinds: []string{"tangent.app-board"},
+				Tools:            []string{},
+				Routes:           []string{},
+			}
+		}),
 		WithRuntime(Runtime{ManagedResource: "tangent-dev"}),
 	)
 }
@@ -201,8 +210,8 @@ func TestReadinessPassesWithEveryDependencyPresent(t *testing.T) {
 			t.Errorf("check %q recommends an action while passing: %q", check.Name, check.Action)
 		}
 	}
-	if len(report.Checks) != 5 {
-		t.Fatalf("readiness reported %d checks, want the fixed five", len(report.Checks))
+	if len(report.Checks) != 6 {
+		t.Fatalf("readiness reported %d checks, want the fixed six", len(report.Checks))
 	}
 }
 

@@ -29,6 +29,25 @@ import (
 // directory scan and no subprocess spawn: what a build ships is what is in this
 // slice, which is what makes "which plugins does this binary have" answerable
 // by reading one file.
+//
+// # This slice IS the enable set, and that is a recorded decision
+//
+// CW-20260910-0036 asked whether plugins need an enable/disable flag, and the
+// answer for this build is no — deferred with the reason, so its absence is not
+// read later as an oversight.
+//
+// Nothing here has a caller for a runtime toggle: a compiled-in plugin is
+// enabled by being in this slice and disabled by not being, and changing that
+// is a rebuild, which is also what changing its code is. Tether's catalog has
+// the flag and a documented failure mode that came with it — an entry marked
+// enabled but unreachable stalls its proxy for 120 seconds — and the way not to
+// inherit that trap is not to build the flag until something needs it, which is
+// the same test ADR 0007 §4 applies to every host surface the SDK offers.
+//
+// What would change the answer is a plugin whose absence must be survivable at
+// runtime rather than at build time. Subprocess mode (CW-20260910-0034) is the
+// first candidate, because a spawned plugin can be unreachable in ways a
+// compiled-in one cannot.
 func Shipped() []plugin.Plugin {
 	return []plugin.Plugin{
 		// Order is load order, and it is a dependency order: both application

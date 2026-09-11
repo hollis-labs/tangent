@@ -65,6 +65,13 @@ func TestReadinessObservesTransitionsRatherThanSamples(t *testing.T) {
 		WithDatabase(migratedDB(t)),
 		WithDefinitionRegistry(availableRegistry(t)),
 		WithDeliveryWorker(func() DeliveryWorker { return DeliveryWorker{Authorized: true} }),
+		// Wired so the renderer host is the only unwired dependency. Leaving
+		// the plugin probe out too would make this assert "two transitions
+		// collapse to one observation", which is a different claim than the one
+		// the test is named for.
+		WithPlugins(func() PluginInventory {
+			return PluginInventory{Loaded: 1, Plugins: []PluginRecord{{ID: "x", Loaded: true}}}
+		}),
 		WithTelemetry(telemetry.New(telemetry.WithSink(sink))),
 	)
 	for range 5 {

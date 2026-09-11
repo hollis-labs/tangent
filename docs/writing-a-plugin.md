@@ -99,8 +99,15 @@ before widening a shared kind — not a mechanism.
 A trap, because the shortest path is the wrong one. When a board cannot express
 something, the consuming plugin is where you are already typing, so that is
 where the field gets added — and a domain-free kind quietly acquires one
-application's concept. `tangent.app-board` needed two additive revisions for the
-second plugin, and both of them landed in the kind's own plugin.
+application's concept. `tangent.app-board` needed two additive field additions
+for the second plugin, and both of them landed in the kind's own plugin.
+
+Widening a shared kind is also not free. Every one of those additions moved
+`contract_digest`, which ADR 0003 §3 makes a **version** bump rather than a
+revision bump — `tangent.app-board` is at `0.2` because CW-20260911-0008
+reconciled three of them at once — and a version bump takes pending interactions
+of the kind out of service under §8 C1. `docs/developing.md`'s *Changing a kind
+that already ships* is the procedure and the gate that enforces it.
 
 The template keeps the presets apart, and the generated `EnvelopeType` constant
 carries the rule at the point where the temptation appears.
@@ -201,6 +208,77 @@ plugin that builds and does not load.
    with `-hands-back-work`.
 
 Then `make verify-supported` and `make smoke`.
+
+## Configuration, secrets, lifecycle and enable/disable
+
+Four questions every plugin author asks. All four are answered, and three of the
+answers are a refusal with a reason (`CW-20260910-0036`).
+
+### Your plugin reads its own environment. The host holds no config.
+
+`GetConfig`, `SetConfig` and `RegisterConfigSchema` are unimplemented, and that
+is the ratified answer rather than a gap waiting to be filled. **The host holds
+no plugin configuration, so it can never hold a plugin's secret.** ADR 0005
+§3.1 keeps a secret boundary — Tangent does not store or rotate provider
+secrets — and a config surface here would be the obvious place to put a
+credential. Holding nothing keeps that boundary true by construction: there is
+no store to leak, none to migrate, and none to redact out of a health report.
+
+So read a base URL and, where one is needed, a token from your own process
+environment. Both shipped plugins do; the scaffold writes it for you. Name the
+variables after your plugin and document them where an operator will look.
+
+What would reopen it is a plugin with no process environment to read — in
+practice a subprocess plugin under `CW-20260910-0034` — and the secret question
+gets answered before the surface gets built.
+
+### Unload drops your state and unregisters nothing
+
+That is the host's contract, in `internal/pluginhost/lifecycle.go`, and not a
+decision each plugin makes. An envelope kind cannot be removed because
+go-envelopes' registry is boot-time and has no removal at all; a contributed
+tool or route cannot be removed because the SDK passes no caller identity to a
+registration call, so the host does not know which plugin registered which
+surface and has nothing to select.
+
+Your `Unload` therefore drops what you hold — a cached host handle, a client, a
+status — and nothing else. A tool whose plugin has unloaded still dispatches,
+into a plugin that now answers "not loaded"; a readable refusal beats a surface
+that answers nothing. The host calls `UnloadAll` on the way out of the process.
+
+The first host shipped a load-failure cleanup path that could not have worked —
+it looked like a rollback and removed nothing. Refusing honestly is what
+replaced it.
+
+### There is no enable/disable flag, deliberately
+
+For a compiled-in plugin the enable set is `internal/plugins/shipped.go`:
+in the slice is enabled, out of it is disabled, and changing that is a rebuild.
+Nothing has a caller for a runtime toggle. Tether's catalog has the flag and the
+failure mode that came with it — an entry marked enabled but unreachable stalls
+its proxy for 120 seconds — and the way not to inherit that is not to build the
+flag until something needs it.
+
+### A defect in your plugin is contained, not tolerated
+
+Every contributed tool and route is wrapped at registration
+(`internal/pluginhost/isolation.go`). A panic comes back as a named refusal
+rather than taking the process down, and a handler that does not return within
+its dispatch budget is abandoned — the *caller* is released, which is the only
+promise a compiled-in host can honestly make, because Go cannot interrupt a
+goroutine that ignores its context. Shutdown releases every in-flight dispatch
+at once rather than waiting out the budget.
+
+None of that makes a hang cheap. The leaked goroutine is real, it lasts as long
+as the process does, and `tangent.health_report` will not tell you about it.
+Honor your context.
+
+### Being legible
+
+`tangent.health_report` carries a plugin inventory: which plugins loaded, which
+refused and why, and what was contributed between them. The contributed lists
+are host-wide and not attributed to a plugin, for the same reason `Unload`
+cannot unregister — the host does not know who registered what.
 
 ## Stop and report rather than working around
 

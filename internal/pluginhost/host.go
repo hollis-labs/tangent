@@ -59,6 +59,14 @@
 //   - Runtime asset loading. A plugin ships no renderer bundle into the
 //     browser; the React renderer is compiled into ui_dist with the release,
 //     which is what core-trusted's empty-asset_digest requirement assumes.
+//   - Plugin configuration (GetConfig, SetConfig, RegisterConfigSchema).
+//     Ratified by CW-20260910-0036: the host holds no plugin config, so it can
+//     never hold a plugin's secret. A plugin reads its own environment. The
+//     reasoning is at GetConfig.
+//   - An enable/disable flag. For compiled-in plugins the enable set is
+//     internal/plugins/shipped.go and nothing has a caller for a runtime
+//     toggle; see lifecycle.go for why not building it is the way not to
+//     inherit Tether's enabled-but-unreachable stall.
 //
 // Every unimplemented surface returns ErrSurfaceNotHonored rather than nil. A
 // registration that silently succeeds and does nothing is the failure mode
@@ -72,6 +80,7 @@ import (
 	"log/slog"
 	"sort"
 	"sync"
+	"time"
 
 	plugin "github.com/hollis-labs/plugin-sdk"
 
@@ -132,6 +141,22 @@ type Host struct {
 	mu sync.Mutex
 	// loaded is every plugin this host has loaded, by id.
 	loaded map[string]plugin.Plugin
+	// attempts is every Load call in the order it was made, refusals
+	// included. It is what makes "which plugins loaded, which refused and
+	// why" answerable (CW-20260910-0036) instead of inferred from a tool
+	// list. See lifecycle.go.
+	attempts []*loadAttempt
+	// release is closed by UnloadAll. Every in-flight plugin dispatch selects
+	// on it, so shutdown does not wait out a hung handler's budget. See
+	// isolation.go.
+	release chan struct{}
+	// unloaded records that UnloadAll has run, so a second call is a no-op
+	// rather than a second close of release.
+	unloaded bool
+	// budget is what one plugin dispatch is bounded to. New sets it to
+	// dispatchBudget and production never changes it; it is a field so a test
+	// can shrink it to something a test can wait for.
+	budget time.Duration
 	// kinds maps a contributed envelope kind to the NAME OF THE COMPONENT that
 	// claimed it — not to a plugin id, which this host cannot know because
 	// plugin_sdk.Host passes no caller identity to a registration call. It
@@ -165,13 +190,15 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 		return nil, fmt.Errorf("pluginhost: envelope service is required")
 	}
 	return &Host{
-		ctx:    ctx,
-		logger: logger,
-		envSvc: envSvc,
-		loaded: map[string]plugin.Plugin{},
-		kinds:  map[string]string{},
-		tools:  map[string]MCPTool{},
-		routes: map[string]HTTPRoute{},
+		ctx:     ctx,
+		logger:  logger,
+		envSvc:  envSvc,
+		loaded:  map[string]plugin.Plugin{},
+		kinds:   map[string]string{},
+		tools:   map[string]MCPTool{},
+		routes:  map[string]HTTPRoute{},
+		release: make(chan struct{}),
+		budget:  dispatchBudget,
 	}, nil
 }
 
@@ -179,13 +206,36 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 // the plugin can register what it offers. A registration failure fails the
 // load — a half-registered plugin is not a state this host keeps.
 //
+// Every call is recorded in attempt order, refusals included, so Inventory can
+// answer "which loaded, which refused and why" from the host's own bookkeeping
+// rather than from a plugin's self-report.
+//
+// A panic inside the plugin's own Load or identity methods is recovered and
+// returned as an error. The boot still fails — LoadShipped has no partial mode
+// — but it fails naming the plugin instead of crashing the process, which is
+// the difference between a line to read and a stack to decipher.
+//
 // There is no subprocess path here, and adding one is a separate decision with
 // its own isolation questions (ADR 0007 §4).
-func (h *Host) Load(p plugin.Plugin) error {
+func (h *Host) Load(p plugin.Plugin) (err error) {
 	if p == nil {
 		return fmt.Errorf("pluginhost: plugin is nil")
 	}
-	id := p.ID()
+	var id string
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("pluginhost: load %s: panicked: %v", identify(id), recovered)
+		}
+		if err != nil {
+			// The plugin itself, not nil: a refused attempt should still carry
+			// the name and version it managed to report, and safeString keeps a
+			// plugin that panics describing itself from taking the record with
+			// it. Inventory never reads a refused attempt's Status.
+			h.recordAttempt(p, id, err)
+		}
+	}()
+
+	id = p.ID()
 	if id == "" {
 		return fmt.Errorf("pluginhost: plugin has no id")
 	}
@@ -207,7 +257,7 @@ func (h *Host) Load(p plugin.Plugin) error {
 	h.loaded[id] = p
 	h.mu.Unlock()
 
-	if err := p.Load(h); err != nil {
+	if loadErr := p.Load(h); loadErr != nil {
 		// The plugin comes back off the host so GetPlugin cannot hand another
 		// plugin a dependency that never finished loading.
 		//
@@ -228,8 +278,9 @@ func (h *Host) Load(p plugin.Plugin) error {
 		h.mu.Lock()
 		delete(h.loaded, id)
 		h.mu.Unlock()
-		return fmt.Errorf("pluginhost: load %s: %w", id, err)
+		return fmt.Errorf("pluginhost: load %s: %w", id, loadErr)
 	}
+	h.recordAttempt(p, id, nil)
 	h.logger.Info("pluginhost: plugin loaded", "plugin", id, "version", p.Version())
 	return nil
 }
@@ -361,20 +412,41 @@ func (h *Host) GetService(name string) (interface{}, error) {
 	return nil, fmt.Errorf("%w: GetService(%q)", ErrSurfaceNotHonored, name)
 }
 
-// GetConfig is not implemented. Plugin configuration has no owner in Tangent
-// yet, and returning an empty string would be indistinguishable from a
-// configured empty value.
+// GetConfig is not implemented, and CW-20260910-0036 ratified that as the
+// answer rather than as a gap.
+//
+// **The host holds no plugin configuration, so it can never hold a plugin's
+// secret.** A plugin reads its own environment — the shipped ones read a base
+// URL and, where one is needed, a token — and the scaffold in
+// internal/plugintemplate writes that pattern for the next one.
+//
+// The reasoning is that ADR 0005 §3.1 keeps a secret boundary: Tangent does not
+// store or rotate provider secrets. A config surface here would be the obvious
+// place to put a plugin's credential, and the boundary would then hold only as
+// long as everyone remembered the policy. Holding nothing keeps it true by
+// construction — there is no store to leak, no store to migrate, and no store
+// to redact from a health report or a support bundle.
+//
+// It is also the ADR 0007 §4 test applied to itself: the SDK offers this
+// surface, no consumer has asked for it, and implementing a host surface
+// because the SDK offers it is exactly how that boundary rots. The day a plugin
+// genuinely needs host-held configuration — one with no process environment to
+// read, which in practice means a subprocess plugin under CW-20260910-0034 —
+// that is the decision to reopen, with the secret question answered first.
 func (h *Host) GetConfig(key string) (string, error) {
 	return "", fmt.Errorf("%w: GetConfig(%q)", ErrSurfaceNotHonored, key)
 }
 
-// SetConfig is not implemented, for the same reason as GetConfig.
+// SetConfig is not implemented, for the same reason as GetConfig — and more
+// sharply: a write surface is how a secret would get *in*.
 func (h *Host) SetConfig(key string, _ string) error {
 	return fmt.Errorf("%w: SetConfig(%q)", ErrSurfaceNotHonored, key)
 }
 
 // RegisterConfigSchema is not implemented. It exists so a frontend can render a
-// settings form; Tangent has no plugin settings surface to render one into.
+// settings form over host-held configuration; this host holds none, so the form
+// would edit nothing. Building it would create the store GetConfig exists to
+// not have.
 func (h *Host) RegisterConfigSchema(_ []plugin.ConfigFieldDef) error {
 	return fmt.Errorf("%w: RegisterConfigSchema", ErrSurfaceNotHonored)
 }

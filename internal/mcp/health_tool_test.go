@@ -95,6 +95,21 @@ func healthOptions(db *sql.DB) func(*envelope.Service) []tangentmcp.Option {
 			health.WithDeliveryWorker(func() health.DeliveryWorker {
 				return health.DeliveryWorker{Authorized: true}
 			}),
+			// A reporter with no plugin probe warns, which would make every
+			// readiness assertion in this file read `degraded`. The probe is a
+			// dependency like the others.
+			health.WithPlugins(func() health.PluginInventory {
+				return health.PluginInventory{
+					Loaded: 1,
+					Plugins: []health.PluginRecord{
+						{ID: "tangent.plugin.appboard", Loaded: true, Enabled: true},
+					},
+					ContributedKinds: []string{"tangent.app-board"},
+					Tools:            []string{},
+					Routes:           []string{},
+					Attribution:      "host-wide",
+				}
+			}),
 		))}
 	}
 }
@@ -120,15 +135,25 @@ func TestHealthReportAnswersAllThreeQuestions(t *testing.T) {
 			Usable             int    `json:"usable_definitions"`
 			EffectPostureNote  string `json:"effect_posture_note"`
 		} `json:"capability_summary"`
-		Capability map[string]any `json:"capability"`
+		Capability map[string]any         `json:"capability"`
+		Plugins    health.PluginInventory `json:"plugins"`
 	}
 	callDefinitionTool(t, client, "tangent.health_report", map[string]any{}, &report)
 
 	if report.Liveness.Status != "ok" || report.Liveness.Probe != health.ProbeLiveness {
 		t.Fatalf("liveness = %+v, want the frozen ok token", report.Liveness)
 	}
-	if report.Readiness.Probe != health.ProbeReadiness || len(report.Readiness.Checks) != 5 {
-		t.Fatalf("readiness = %+v, want the fixed five checks", report.Readiness)
+	if report.Readiness.Probe != health.ProbeReadiness || len(report.Readiness.Checks) != 6 {
+		t.Fatalf("readiness = %+v, want the fixed six checks", report.Readiness)
+	}
+	// CW-20260910-0036: which plugins loaded is read, not inferred from a tool
+	// list. A plugin that contributes a kind and no tool is invisible to that
+	// inference, which is exactly what the shipped app-board plugin is.
+	if report.Plugins.Loaded != 1 || len(report.Plugins.Plugins) != 1 {
+		t.Fatalf("plugin inventory = %+v, want the one loaded plugin the probe reports", report.Plugins)
+	}
+	if !report.Plugins.Plugins[0].Loaded {
+		t.Errorf("plugin %s reported not loaded", report.Plugins.Plugins[0].ID)
 	}
 	if report.CapabilitySummary.ManagedDefinitions == 0 {
 		t.Fatal("capability summary reported no managed definitions in a fully-registered build")

@@ -42,6 +42,13 @@ type healthReportResult struct {
 	// one kind should not have to page past eighteen others to find it.
 	Capability        *health.CapabilityReport        `json:"capability,omitempty"`
 	CapabilitySummary *health.CapabilitySummaryReport `json:"capability_summary,omitempty"`
+
+	// Plugins is which plugins the host loaded and which it refused
+	// (CW-20260910-0036). It rides on every report rather than behind a flag:
+	// it is three rows in this build, the readiness section already carries the
+	// pass/fail, and the whole point is that an operator should not have to
+	// infer the answer from a tool list.
+	Plugins health.PluginInventory `json:"plugins"`
 }
 
 func (s *Server) registerHealthTool() error {
@@ -49,9 +56,10 @@ func (s *Server) registerHealthTool() error {
 		"Report this host's operability as three distinct answers: liveness (is the process "+
 			"responding), readiness (database, migrations, definition registry, renderer host, "+
 			"delivery worker), and capability health for one requested interaction kind or, with "+
-			"no kind, a bounded summary over all of them. Every non-passing check carries the "+
-			"operator action that fixes it. Payload-bounded; carries no participant content, "+
-			"path, or session.",
+			"no kind, a bounded summary over all of them. Also reports which plugins loaded and "+
+			"which refused and why, so that is read rather than inferred from a tool list. Every "+
+			"non-passing check carries the operator action that fixes it. Payload-bounded; "+
+			"carries no participant content, path, or session.",
 		s.handleHealthReport)
 }
 
@@ -74,6 +82,7 @@ func (s *Server) handleHealthReport(
 		ProtocolVersion: envelope.ProtocolVersion,
 		Liveness:        health.Live(),
 		Readiness:       s.health.Readiness(ctx),
+		Plugins:         s.health.Plugins(),
 	}
 	if input.Kind != "" {
 		report := s.health.Capability(input.Kind)

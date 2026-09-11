@@ -236,7 +236,10 @@ running binary embeds, the definition registry, the renderer host, and the
 delivery worker, and returns 503 with a per-check `operator_action` when any
 of them fails. Per-kind answers are at `/healthz/capability/{kind}`, and the
 same three reports are available over MCP as `tangent.health_report` for a
-client that has no HTTP path to the host.
+client that has no HTTP path to the host. The MCP report additionally carries
+the plugin inventory — which plugins loaded, which refused and why — so that is
+read rather than inferred from a tool list, which cannot see a plugin that
+contributes a kind and no tool.
 
 A common real finding here is a schema behind the binary: `/healthz` answers,
 `/readyz` reports `migrations: fail`, and the fix is `tangent --migrate-only`
