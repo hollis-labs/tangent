@@ -32,6 +32,9 @@ resources:
     config:
       build_strategy:
         kind: make_standard
+        env_prefix: [mise, --no-config, exec, node@22.12.0, --]
+        rules:
+          output: ./tangent
       command:
         - ./tangent
       dir: /Users/chrispian/dev/hollis-labs/apps/tangent
