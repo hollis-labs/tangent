@@ -27,6 +27,11 @@ something new.
   every envelope wire name; authored manifests live beside it under
   `packages/<package-id>/<kind>/`. One table, **two doors**: a row marked
   `contributedByPlugin` is installed by the plugin host, not by `RegisterAll`.
+- `docs/writing-a-plugin.md` + `internal/plugintemplate/` — the scaffold every
+  plugin after the second one starts from, and the eight-item classification it
+  encodes. `go run ./cmd/tangent-new-plugin -package <name>` writes a plugin
+  that loads; `internal/plugintemplate/example/` holds two committed renders,
+  compiled and load-tested here but shipped in no build.
 - `internal/pluginhost/` + `internal/plugins/` — the ADR 0007 §4 plugin host and
   the compiled-in plugins this build ships. The host resolves an ADR 0003
   manifest for the kind a plugin names and refuses the registration without

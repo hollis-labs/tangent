@@ -837,6 +837,24 @@ the Tesseract plugin: a note is domain-free, and the kind neither interprets one
 nor sends it anywhere. Extending it there is plugin work rather than a core
 change, because app-board is itself plugin-contributed.
 
+#### The scaffold the third plugin starts from
+
+Two plugins is enough to tell what generalizes from what one application
+happened to need, so the pattern is now extracted into a scaffold rather than
+re-derived (`CW-20260910-0035`). `go run ./cmd/tangent-new-plugin -package
+<name>` writes a plugin that loads; `internal/plugintemplate/` holds the
+templates and two committed renders, and
+[`writing-a-plugin.md`](./writing-a-plugin.md) carries the reasoning — including
+which of the eight measured differences between the two plugins is essential,
+which was incidental to its application, and which is a trap the scaffold
+prevents.
+
+The two presets never mix. One fills an existing domain-free kind and knows
+about one application; the other contributes a kind and knows about none. A
+plugin that did both would be a domain-free kind with one application's concepts
+in it, which is how the boundary above rots — so the generator refuses the
+combination rather than trusting a reviewer to catch it.
+
 ### go-envelopes registry
 
 `github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared

@@ -49,6 +49,7 @@ var documentedToolFiles = []string{
 	"docs/architecture.md",
 	"docs/mcp-integration.md",
 	"docs/developing.md",
+	"docs/writing-a-plugin.md",
 	"docs/mcp-smoketest.md",
 	"docs/database-operations.md",
 }

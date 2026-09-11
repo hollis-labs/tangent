@@ -1,0 +1,109 @@
+// {{.Exported}} renders a `{{.Kind}}` envelope.
+//
+// # Keep it domain-free
+//
+// This component must know nothing about which application supplied its
+// content. Everything domain-shaped arrives as data — a label is a string, a
+// body is prose, an action is an id and a label — and the moment one
+// application's vocabulary appears here, every other application's board
+// inherits it. That is the specific way a shared kind rots.
+//
+// # The two ways state leaves a renderer
+//
+//   - `onDraft` — what the participant is LOOKING AT: filters, selection,
+//     whatever they have typed and not submitted. It is not a decision, it does
+//     not settle the interaction, and it does not take the resolver lease. A
+//     caller reads it by pulling `tangent.surface_get`.
+//   - `onSubmit` — the participant pressed one of the caller's actions. That
+//     settles the interaction, and the caller applies what the action means
+//     using its own tools.
+//
+// Never route view state through the response path. It takes the resolver
+// lease, which would let a second tab steal the right to answer from the first
+// (ADR 0007 §5).
+//
+// # Prose goes through the shared component
+//
+// Anywhere an agent's or an application's own words are displayed, render them
+// with <Markdown>. A second markdown path in one renderer is how one surface
+// starts disagreeing with the rest about what a list looks like. The exception
+// is evidence the reader compares character by character — a diff hunk, an exact
+// wording under review — which stays literal on purpose and is pinned by
+// `expectProseLiteral` so a later sweep cannot quietly render it.
+
+import { Markdown } from "@/components/markdown";
+import { Button } from "@/components/ui/button";
+
+export interface {{.Exported}}Item {
+  id: string;
+  label: string;
+  body?: string;
+}
+
+export interface {{.Exported}}Data {
+  surface_id: string;
+  title?: string;
+  items?: {{.Exported}}Item[];
+}
+
+export interface {{.Exported}}Envelope {
+  v: number;
+  id: string;
+  type: "{{.Kind}}";
+  title?: string;
+  presentation?: "inline" | "modal" | "drawer" | "sidecar" | "fullscreen";
+  data?: {{.Exported}}Data;
+  meta?: Record<string, unknown>;
+}
+
+export interface {{.Exported}}Response {
+  v: 1;
+  envelopeId: string;
+  kind: "ack";
+  status: "submitted";
+  completedAt: string;
+}
+
+export type {{.Exported}}Props = {
+  envelope: {{.Exported}}Envelope;
+  onSubmit: (response: {{.Exported}}Response) => void;
+  onCancel: () => void;
+  onDraft?: (draft: unknown) => void;
+};
+
+export function {{.Exported}}({ envelope, onSubmit, onCancel }: {{.Exported}}Props) {
+  const data = envelope.data;
+  const items = data?.items ?? [];
+
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      <h2 className="text-lg font-semibold">{data?.title ?? envelope.title}</h2>
+      <ul className="flex flex-col gap-3">
+        {items.map((item) => (
+          <li key={item.id} className="rounded-md border p-3">
+            <div className="font-medium">{item.label}</div>
+            {item.body ? <Markdown>{item.body}</Markdown> : null}
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Button
+          onClick={() =>
+            onSubmit({
+              v: 1,
+              envelopeId: envelope.id,
+              kind: "ack",
+              status: "submitted",
+              completedAt: new Date().toISOString(),
+            })
+          }
+        >
+          Done
+        </Button>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}

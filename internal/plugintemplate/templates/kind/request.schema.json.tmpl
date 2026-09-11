@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "{{.Kind}} request",
+  "description": "Replace this shape with the kind's own. Keep it domain-free: it describes a surface, not an application's records. It says nothing about which fields render as markdown — those bytes are hashed into contract_digest and binding_digest, so a description here moves the pin. Say it on the MCP tool schema of whatever emits this kind.",
+  "type": "object",
+  "required": ["surface_id"],
+  "properties": {
+    "surface_id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "body": { "type": "string" }
+        },
+        "required": ["id", "label"]
+      }
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,47 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import { {{.Exported}} } from "./{{.Exported}}";
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
+
+// The prose assertion observes a markdown FEATURE — a <strong> only `**`
+// produces — rather than the visible characters. A snapshot, or an assertion on
+// the text, would pass just as happily on a surface that printed the literal
+// asterisks, which is the bug it exists to catch.
+
+function envelope(body: string) {
+  return {
+    v: 1,
+    id: "env-1",
+    type: "{{.Kind}}" as const,
+    data: {
+      surface_id: "surface-1",
+      title: "Example",
+      items: [{ id: "one", label: "First", body }],
+    },
+  };
+}
+
+describe("{{.Exported}}", () => {
+  it("renders an item's prose as markdown", () => {
+    render(
+      <{{.Exported}}
+        envelope={envelope(proseProbe("body"))}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expectProseRendered("body");
+  });
+
+  it("submits an acknowledgement naming the envelope", () => {
+    const onSubmit = vi.fn();
+    render(
+      <{{.Exported}} envelope={envelope("plain")} onSubmit={onSubmit} onCancel={vi.fn()} />,
+    );
+    screen.getByRole("button", { name: "Done" }).click();
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ envelopeId: "env-1", kind: "ack" }),
+    );
+  });
+});

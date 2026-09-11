@@ -2,7 +2,8 @@
 
 Onboarding for contributors and future-you. For the system shape see
 [`architecture.md`](./architecture.md). For the user-facing MCP setup
-see [`mcp-integration.md`](./mcp-integration.md).
+see [`mcp-integration.md`](./mcp-integration.md). To add a plugin, start from
+the scaffold — [`writing-a-plugin.md`](./writing-a-plugin.md).
 
 ## Prerequisites
 
