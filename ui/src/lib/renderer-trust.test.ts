@@ -29,9 +29,14 @@ import {
  * owns and compiles it (CW-20260911-0036). The rule it was cited for still
  * stands and is what would matter if a kind were genuinely contributed: being
  * plugin-contributed buys a kind nothing, because core-trusted stays
- * unreachable for a publisher that is not `tangent` or
- * `hollis-labs/go-envelopes`, and every renderer ships compiled into this
- * bundle (ADR 0007 §4).
+ * unreachable for a publisher that is not `tangent` or `hollis-labs/go-envelopes`
+ * (ADR 0007 §4).
+ *
+ * Every renderer ships compiled into this bundle TODAY, and that is a statement
+ * about this build rather than about the model. ADR 0008 §3 adopts runtime
+ * bundle loading; its open question 1 is what has to be answered first, because
+ * core-trusted also requires an empty `asset_digest` and a separately served
+ * bundle has one.
  */
 const SHIPPED_TRUST: Record<string, string> = {
   "tangent.app-board": "core-trusted",

@@ -633,7 +633,9 @@ the payload-bounded diagnostics surface.
 contract (`github.com/hollis-labs/plugin-sdk`), and it is how a new interaction
 kind can arrive without editing Tangent's own registration table.
 [ADR 0007](adr/0007-collaboration-surface-plugin-host-and-view-state.md) §4 is
-the decision; the rule is one sentence:
+the boundary decision and [ADR 0008](adr/0008-the-plugin-model.md) is the model
+this host is moving toward. The rule is one sentence, and it is the half that
+has never moved:
 
 > The SDK says what a plugin may offer. The ADR 0003 manifest says what the
 > host will let it do. A registration without a manifest is refused.
@@ -649,7 +651,10 @@ raised its own trust class fails to load instead of being silently downgraded.
 
 `internal/plugins/` lists what this build ships and loads it. There is no
 discovery, no directory scan and no subprocess spawn — compiled-in only — so
-"which plugins does this binary have" is answered by reading one file.
+"which plugins does this binary have" is answered by reading one file. That is
+the **dogfood concession** rather than the target shape: it was authorized so
+the Torque integration could be used sooner, and ADR 0008 §5 records subprocess
+plus runtime UI loading as where this is going, tracked by `CW-20260910-0034`.
 `internal/plugins/torque/` and `internal/plugins/tesseract/` each fill the
 host's board kind with one application's records; both live in-tree, which
 ADR 0007 §4 is explicit is convenience rather than permission. Every plugin
@@ -715,8 +720,15 @@ growing an application dependency; a plugin holding its own client is userland
 choosing one — see ADR 0007 §6's 2026-09-10 amendment for where that line now
 sits), `RegisterEventHook`, `GetService`,
 `GetConfig`/`SetConfig`, `RegisterConfigSchema`, `RegisterConnector`,
-`RegisterProvider`, `RegisterCLIAdapter`. Subprocess plugins, signature
-verification and runtime asset loading are excluded by the same ADR.
+`RegisterProvider`, `RegisterCLIAdapter`.
+
+Subprocess plugins, runtime asset loading and signature verification are a
+different kind of absence and are recorded in a different place. They are not
+surfaces this host refuses — they are modes it does not run yet, and
+[ADR 0008](adr/0008-the-plugin-model.md) §5 records the first two as the target
+rather than as exclusions. ADR 0007 §4 listed all three as excluded, and two of
+the three have since been reversed; that is why the two lists are now separate.
+Signing stays out of scope, first-party only, unchanged.
 
 **A plugin-contributed kind is not a privileged one.** It goes through the same
 manifest, the same trust classification and the same renderer isolation as

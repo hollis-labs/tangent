@@ -120,12 +120,13 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 	// agent-authored markup, so it is the only sandboxed-code class in the
 	// distribution.
 	//
-	// `tangent.app-board` is core-trusted like the rest, and being contributed
-	// by a plugin buys it nothing: ADR 0007 §4 keeps core-trusted unreachable
-	// for a publisher that is not `tangent` or `hollis-labs/go-envelopes`, and
-	// its renderer is compiled into ui_dist with the release like every other.
-	// A plugin-contributed kind that could reach a higher class than a
-	// host-package one is the failure this line exists to make visible.
+	// `tangent.app-board` is core-trusted like the rest. It was listed here as
+	// the plugin-contributed exception until CW-20260911-0036 established it had
+	// never been one; the rule it was cited for is what matters and still holds.
+	// ADR 0007 §4 keeps core-trusted unreachable for a publisher that is not
+	// `tangent` or `hollis-labs/go-envelopes`, so a kind a plugin genuinely
+	// contributes cannot reach a higher class than a host-package one — which is
+	// the failure this line exists to make visible.
 	classified := map[string]definition.TrustClass{
 		"tangent.app-board":          definition.TrustCoreTrusted,
 		"tangent.approval-queue":     definition.TrustCoreTrusted,
@@ -302,11 +303,12 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		WizardEnvelopeType:            {"tangent.compound", definition.OwnershipHostPackage},
 		HITLItemEnvelopeType:          {HITLPackageID, definition.OwnershipHostPackage},
 
-		// Contributed by a plugin, and still a host package. ADR 0007 §4 is
-		// explicit that where a plugin's code lives is not the boundary: the
-		// kind's semantics — what a column, a card, a filter and a detail pane
-		// mean — are Tangent's, and the manifest that says so is Tangent's too.
-		// The application supplies content to it and owns none of it.
+		// Its own package, and a host package. It went through the plugin door
+		// until CW-20260911-0036, and this row is the reason that was always
+		// wrong: the kind's semantics — what a column, a card, a filter and a
+		// detail pane mean — are Tangent's, and the manifest that says so is
+		// Tangent's too. Two applications supply content to it and neither owns
+		// any of it.
 		AppBoardEnvelopeType: {AppBoardPackageID, definition.OwnershipHostPackage},
 
 		// Publisher-owned editorial semantics, bundled only until a writing

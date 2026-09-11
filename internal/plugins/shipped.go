@@ -24,10 +24,13 @@ import (
 
 // Shipped returns the compiled-in plugins in load order.
 //
-// Compiled-in is the only mode (ADR 0007 §4). There is no discovery here, no
-// directory scan and no subprocess spawn: what a build ships is what is in this
-// slice, which is what makes "which plugins does this binary have" answerable
-// by reading one file.
+// Compiled-in is the only mode this host runs, and it is a concession rather
+// than the shape (ADR 0008 §1 and §5): it was authorized so the Torque
+// integration could be dogfooded sooner, and the target is subprocess plus
+// runtime UI loading under CW-20260910-0034. Until then there is no discovery
+// here, no directory scan and no subprocess spawn: what a build ships is what
+// is in this slice, which is what makes "which plugins does this binary have"
+// answerable by reading one file.
 //
 // # This slice IS the enable set, and that is a recorded decision
 //

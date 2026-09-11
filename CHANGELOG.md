@@ -18,10 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   host will let it do, and **a registration without a manifest is refused**. A
   plugin names a kind; it cannot author that kind's trust class, capabilities,
   assurance or digests, and a component that tries is refused by name rather
-  than silently downgraded. Compiled-in only — no subprocess spawn, no
-  signature verification, no runtime asset loading, and `RegisterCRUDHandler`
-  deliberately unimplemented. `register_all.go` keeps one row per kind with a
-  column saying which door it comes through, so the drift tests walk both.
+  than silently downgraded. `RegisterCRUDHandler` is deliberately
+  unimplemented, and `register_all.go` keeps one row per kind with a column
+  saying which door it comes through, so the drift tests walk both.
+
+  This host is **compiled-in only** — no subprocess spawn, no runtime asset
+  loading — and that is the dogfood concession rather than the shape. See
+  [ADR 0008](docs/adr/0008-the-plugin-model.md) under *Changed*.
 
 - **`tangent.app-board`.** A domain-free board: caller-supplied cards in
   columns, a filter bar, and an optional detail pane composed inside the one
@@ -104,6 +107,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   | `tangent.torque_board_sync` | `tangent.torque_sync_board` |
 
   Both tool names are new in this unreleased cycle, so nothing published moves.
+
+- **ADR 0007 §4 is split, not replaced (`CW-20260911-0040`).** §4 was amended
+  twice in two days, and both times the same half moved: its *decisions* held
+  while its *instance stamps* and its *exclusions* rotted. Chrispian's call is
+  that the boundary rule and the plugin model have different lifetimes and
+  should not share a section.
+
+  §4 keeps what never moved — the SDK says what a plugin may offer, the ADR 0003
+  manifest says what the host will let it do, a registration without a manifest
+  is refused — plus the reserved-to-host list and the surfaces this host declines
+  to grow. It carries a note pointing at the rest.
+
+  [**ADR 0008**](docs/adr/0008-the-plugin-model.md) carries the model:
+  Nanite's manifest-authoritative registry adopted, runtime bundle loading,
+  first-party kinds with Tangent keeping a small core set, compiled-in as the
+  dogfood concession rather than the target, the extracted browser loader landing
+  as a TypeScript companion inside `libs/plugin-sdk` so the registry wire contract
+  is defined once, and four questions left explicitly open. **It reverses two of
+  §4's exclusions** — runtime asset loading and subprocess-as-a-separate-decision
+  — which were an agent's framing rather than a decision, and it corrects the
+  claim that `appboard` was the first plugin.
+
+  ADR 0007 stays Accepted and stays the collaboration-surface record. This is an
+  extraction, not a supersession.
+
+  ADR 0008 was drafted `Proposed` and approved the same day — read end-to-end by
+  Chrispian and ruled through a Tangent approval queue, the first ADR in this set
+  approved through Tangent rather than in chat. **An agent-drafted ADR landing
+  `Proposed` and promoting only on his approval is now the standing convention**;
+  an agent cannot write an approval line for a document he has not seen.
 
 ### Known limitations
 

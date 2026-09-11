@@ -44,21 +44,19 @@
 //
 // # Deliberately not implemented
 //
-// Each of these is recorded as excluded in ADR 0007 §4, so absence here is a
-// decision rather than an omission:
+// Each of these is a decision rather than an omission. They fall into two
+// groups with different lifetimes, and conflating them is what dated ADR 0007
+// §4 twice: a SURFACE this host refuses to grow is a boundary statement (§4),
+// while a MODE this host does not run yet is a question of the plugin model
+// (ADR 0008) and expected to change.
+//
+// Surfaces, refused (ADR 0007 §4):
 //
 //   - RegisterCRUDHandler. The agent is the owning application's client and
 //     applies every write itself, so nothing needs a CRUD surface in Tangent's
 //     process. ADR 0007's risk section names this exact instance: implementing
 //     a surface because the SDK offers it rather than because a consumer needs
 //     it is how the boundary rots.
-//   - Subprocess plugins. The SDK supports them; this host does not spawn them.
-//     Compiled-in, first-party plugins only.
-//   - Signature verification. Out of scope by Chrispian's direction,
-//     2026-09-09. trust.assurance is unchanged and nothing here relaxes it.
-//   - Runtime asset loading. A plugin ships no renderer bundle into the
-//     browser; the React renderer is compiled into ui_dist with the release,
-//     which is what core-trusted's empty-asset_digest requirement assumes.
 //   - Plugin configuration (GetConfig, SetConfig, RegisterConfigSchema).
 //     Ratified by CW-20260910-0036: the host holds no plugin config, so it can
 //     never hold a plugin's secret. A plugin reads its own environment. The
@@ -67,6 +65,21 @@
 //     internal/plugins/shipped.go and nothing has a caller for a runtime
 //     toggle; see lifecycle.go for why not building it is the way not to
 //     inherit Tether's enabled-but-unreachable stall.
+//
+// Not yet, per the model (ADR 0008) — these are the ones expected to move:
+//
+//   - Subprocess plugins. The SDK supports them; this host does not spawn them.
+//     Compiled-in is the dogfood concession, not the target shape (ADR 0008 §5),
+//     and CW-20260910-0034 is the migration.
+//   - Runtime asset loading. This host ships every renderer in ui_dist. ADR 0008
+//     §3 adopts Nanite's model, in which the browser dynamic-imports a plugin's
+//     own bundle, so this is a not-yet rather than a refusal — ADR 0007 §4 stated
+//     it as an exclusion and that was an agent's framing, reversed. Its open
+//     question 1 is the real constraint: core-trusted requires an empty
+//     asset_digest, and a separately served bundle has one.
+//   - Signature verification. Out of scope by Chrispian's direction,
+//     2026-09-09, unchanged. trust.assurance is unchanged and nothing here
+//     relaxes it. First-party only.
 //
 // Every unimplemented surface returns ErrSurfaceNotHonored rather than nil. A
 // registration that silently succeeds and does nothing is the failure mode
@@ -229,8 +242,9 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 // — but it fails naming the plugin instead of crashing the process, which is
 // the difference between a line to read and a stack to decipher.
 //
-// There is no subprocess path here, and adding one is a separate decision with
-// its own isolation questions (ADR 0007 §4).
+// There is no subprocess path here. That is the compiled-in concession, not a
+// choice about what this host should be: ADR 0008 §5 records subprocess plus
+// runtime UI loading as the target, and CW-20260910-0034 is the migration.
 func (h *Host) Load(p plugin.Plugin) (err error) {
 	if p == nil {
 		return fmt.Errorf("pluginhost: plugin is nil")

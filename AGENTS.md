@@ -17,7 +17,9 @@ something new.
   **Current limitations** list. Read it before designing anything.
 - `docs/adr/` — accepted decision records. `0005` owns the product boundary,
   `0007` the collaboration surface, the plugin host and where view state
-  lives. `0006` is superseded by `0007`; read `0007` instead.
+  lives. `0008` carries the plugin model — what the host is becoming, and what
+  is still open — after `0007` §4 was narrowed to the boundary rule alone.
+  `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
   `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
@@ -35,7 +37,10 @@ something new.
 - `internal/pluginhost/` + `internal/plugins/` — the ADR 0007 §4 plugin host and
   the compiled-in plugins this build ships. The host resolves an ADR 0003
   manifest for the kind a plugin names and refuses the registration without
-  one; a plugin authors nothing about what its kind may do. Two surfaces extend
+  one; a plugin authors nothing about what its kind may do. **Compiled-in is a
+  concession, not the shape** — ADR 0008 §5 records subprocess plus runtime UI
+  loading as the target, so read a not-yet here against `0008` and a refusal
+  against `0007` §4. Two surfaces extend
   the SDK's base contract, and both refuse by name rather than accommodate:
   `RegisterMCPTool` (`mcp.go`) contributes an agent-callable tool, and
   `RegisterHTTPRoute` (`http.go`) contributes a browser route under

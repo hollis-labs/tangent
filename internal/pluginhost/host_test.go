@@ -226,8 +226,15 @@ func TestOnlyEnvelopeComponentsAreHonored(t *testing.T) {
 }
 
 // TestServerRenderedHandlerIsRefused. A Handler would be a second rendering
-// path that no trust class describes. ADR 0007 §4 excludes runtime asset
-// loading; a plugin-served handler is the same hole with a different shape.
+// path that no trust class describes.
+//
+// This test used to cite §4's runtime-asset-loading exclusion, which ADR 0008 §3
+// reverses — so the reason is restated on its own terms rather than borrowed
+// from a rule that no longer holds. Tangent renders an envelope from the
+// manifest's renderer.entry, and a trust class is what says how. A server-rendered
+// handler is not a bundle the browser loads under a declared trust class; it is a
+// second path with no class at all, and adopting runtime bundle loading does not
+// make one appear.
 func TestServerRenderedHandlerIsRefused(t *testing.T) {
 	t.Parallel()
 	host, svc := newHost(t)
