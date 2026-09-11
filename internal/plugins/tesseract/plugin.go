@@ -111,8 +111,10 @@ const EnvelopeType = "tangent.app-board"
 type Plugin struct {
 	client *Client
 
-	mu     sync.Mutex
-	host   Host
+	mu   sync.Mutex
+	host Host
+	// caller is set only in subprocess mode; see WithToolCaller.
+	caller pluginhost.ToolCaller
 	status plugin.PluginStatus
 }
 
@@ -178,16 +180,16 @@ func (p *Plugin) Load(host plugin.Host) error {
 
 	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
 		Name:        OpenTool,
-		Description: openToolDescription,
-		InputSchema: openToolSchema,
+		Description: OpenToolDescription,
+		InputSchema: OpenToolSchema,
 		Handler:     p,
 	}); err != nil {
 		return p.failLoad(err)
 	}
 	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
 		Name:        SyncTool,
-		Description: syncToolDescription,
-		InputSchema: syncToolSchema,
+		Description: SyncToolDescription,
+		InputSchema: SyncToolSchema,
 		Handler:     p,
 	}); err != nil {
 		return p.failLoad(err)
@@ -245,12 +247,36 @@ func (p *Plugin) Status() plugin.PluginStatus {
 // reads. Holding a handle from Load would mean holding nil.
 func (p *Plugin) tools() (pluginhost.ToolCaller, error) {
 	p.mu.Lock()
-	host := p.host
+	host, caller := p.host, p.caller
 	p.mu.Unlock()
+	if caller != nil {
+		return caller, nil
+	}
 	if host == nil {
 		return nil, fmt.Errorf("tesseract: plugin is not loaded")
 	}
 	return host.Tools()
+}
+
+// WithToolCaller makes this plugin reach Tangent through the supplied caller
+// instead of through a host handle, which is how it runs OUT OF PROCESS.
+//
+// A subprocess plugin has no host handle: the plugin wire is host-initiated and
+// carries no way to ask Tangent for anything (`libs/plugin-sdk/subprocess`, "the
+// subprocess does not initiate requests"). So a child is given an
+// `internal/pluginpkg/hostclient` instead — an MCP client against Tangent's own
+// `/mcp`, which `internal/pluginhost/tools.go` already defines the in-process
+// caller as being equivalent to.
+//
+// Nothing else about this plugin changes between the two modes. The mapping,
+// the tools and the sync are the same code; only where the tool calls go
+// differs, which is what makes the migration a change of wiring rather than a
+// rewrite.
+func (p *Plugin) WithToolCaller(caller pluginhost.ToolCaller) *Plugin {
+	p.mu.Lock()
+	p.caller = caller
+	p.mu.Unlock()
+	return p
 }
 
 // MCPCallTool services both of this plugin's tools.

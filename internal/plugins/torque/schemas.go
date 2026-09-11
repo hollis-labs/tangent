@@ -13,8 +13,8 @@ import "encoding/json"
 // invents no filter vocabulary of its own — an agent that knows how to list
 // Torque tasks already knows how to open a board of them.
 
-// openToolSchema advertises the open tool's input.
-var openToolSchema = json.RawMessage(`{
+// OpenToolSchema advertises the open tool's input.
+var OpenToolSchema = json.RawMessage(`{
   "title": "tangent.torque_open_board input",
   "description": "Filters selecting which Torque tasks the board shows. Every field is optional.",
   "type": "object",
@@ -52,7 +52,7 @@ var openToolSchema = json.RawMessage(`{
   }
 }`)
 
-const openToolDescription = "Open a Torque board in Tangent: the tasks matching your filters, " +
+const OpenToolDescription = "Open a Torque board in Tangent: the tasks matching your filters, " +
 	"arranged in columns by status, in a browser room. Returns the room URL and a board handle. " +
 	"The board stays open — the participant can stage status changes and press Sync to apply them " +
 	"and pull fresh cards, with no agent turn. Filters narrow the tasks you asked for; the board's " +
@@ -60,8 +60,8 @@ const openToolDescription = "Open a Torque board in Tangent: the tasks matching 
 	"Torque held more matches than the board shows, and neither you nor the participant is looking " +
 	"at the whole set."
 
-// syncToolSchema advertises the sync tool's input.
-var syncToolSchema = json.RawMessage(`{
+// SyncToolSchema advertises the sync tool's input.
+var SyncToolSchema = json.RawMessage(`{
   "title": "tangent.torque_sync_board input",
   "description": "Apply what the participant staged on a Torque board and replace the board with fresh cards.",
   "type": "object",
@@ -79,7 +79,7 @@ var syncToolSchema = json.RawMessage(`{
   "required": ["room_id"]
 }`)
 
-const syncToolDescription = "Sync a Torque board both ways in one call: apply the status changes " +
+const SyncToolDescription = "Sync a Torque board both ways in one call: apply the status changes " +
 	"the participant staged, re-query Torque, and replace the board with fresh cards. Returns what " +
 	"moved on both sides. The board's own Sync button does exactly this without an agent turn; " +
 	"call this when you are already in a turn."

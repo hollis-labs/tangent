@@ -17,8 +17,8 @@ import "encoding/json"
 // is Tesseract's HTTP-door detail and not something a caller should have to
 // know; tesseract.go's RecallFilters is where that translation lives.
 
-// openToolSchema advertises the open tool's input.
-var openToolSchema = json.RawMessage(`{
+// OpenToolSchema advertises the open tool's input.
+var OpenToolSchema = json.RawMessage(`{
   "title": "tangent.tesseract_review input",
   "description": "Which Tesseract records the review board shows. Every field is optional.",
   "type": "object",
@@ -85,15 +85,15 @@ var openToolSchema = json.RawMessage(`{
   }
 }`)
 
-const openToolDescription = "Open a Tesseract review board in Tangent: the records matching your " +
+const OpenToolDescription = "Open a Tesseract review board in Tangent: the records matching your " +
 	"recall, in kanban columns by lifecycle status (draft, reviewed, canonical, deprecated), in a " +
 	"browser room. Returns the room URL and a board handle. The participant dispositions records by " +
 	"moving cards between columns and can leave a per-card note asking for different wording. " +
 	"Pressing Sync applies the deprecations with no agent turn and hands the rest back as a work " +
 	"list — promotions and rewords are new revisions with supersedes, so an author makes them."
 
-// syncToolSchema advertises the sync tool's input.
-var syncToolSchema = json.RawMessage(`{
+// SyncToolSchema advertises the sync tool's input.
+var SyncToolSchema = json.RawMessage(`{
   "title": "tangent.tesseract_review_sync input",
   "description": "Apply what the participant staged on a Tesseract review board, collect the work they asked for, and replace the board with fresh cards.",
   "type": "object",
@@ -107,7 +107,7 @@ var syncToolSchema = json.RawMessage(`{
   "required": ["room_id"]
 }`)
 
-const syncToolDescription = "Sync a Tesseract review board: deprecate what the participant staged " +
+const SyncToolDescription = "Sync a Tesseract review board: deprecate what the participant staged " +
 	"for retirement, re-recall, and replace the board with fresh cards. Returns what was deprecated " +
 	"and, in `requests`, the work handed back to you, each naming the revision to act on: a " +
 	"`promotion` up the lifecycle, a `reword` of a record that stays, or a `supersede` — a note on a " +

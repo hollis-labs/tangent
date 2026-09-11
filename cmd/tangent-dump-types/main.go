@@ -62,7 +62,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -71,7 +70,6 @@ import (
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
-	"github.com/hollis-labs/tangent/internal/plugins"
 )
 
 // envelopesModulePath is the module whose version the JSON dump banner
@@ -260,15 +258,28 @@ func run() error {
 	if regErr := extensions.RegisterAll(svc); regErr != nil {
 		return fmt.Errorf("register tangent extensions: %w", regErr)
 	}
-	// The plugin door too (ADR 0007 §4). Skipping it here would leave every
-	// plugin-contributed kind out of the generated TypeScript while the server
-	// served it — which is exactly the two-registries drift this tool going
-	// through the same registration path exists to prevent.
-	if _, pluginErr := plugins.LoadShipped(
-		context.Background(), slog.New(slog.DiscardHandler), svc,
-	); pluginErr != nil {
-		return fmt.Errorf("load shipped plugins: %w", pluginErr)
-	}
+	// THE PLUGIN DOOR IS DELIBERATELY NOT WALKED HERE, and that reversed with
+	// CW-20260911-0070.
+	//
+	// It used to be: this tool called plugins.LoadShipped so a
+	// plugin-contributed kind could not be served by the binary and missing from
+	// the generated TypeScript. That was right while plugins were COMPILED IN —
+	// the roster was part of the repository, so walking it kept two views of one
+	// fixed set in agreement.
+	//
+	// Plugins are installed now. Loading them here would make the generated
+	// artifacts a function of whatever happens to be installed on the machine
+	// running `make generate-envelopes` — so two developers would generate
+	// different files from the same commit, and `make check-envelopes` would
+	// fail for whoever had a plugin the other did not. That is a worse version
+	// of the drift this tool exists to prevent: not two registries disagreeing,
+	// but a committed artifact that no longer has a single correct value.
+	//
+	// So the generated types describe the REPOSITORY's kinds, which is what a
+	// committed artifact can honestly be. A kind an installed plugin
+	// contributes brings its own renderer with it (ADR 0008 §3's registry, and
+	// the browser loader being extracted under CW-20260911-0035); it does not
+	// arrive through this file.
 	manifestFS := envelopes.EmbeddedFS()
 
 	sourceDigest, digestErr := svc.DefinitionSourceDigest()

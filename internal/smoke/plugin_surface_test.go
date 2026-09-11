@@ -2,14 +2,11 @@ package smoke_test
 
 import (
 	"context"
-	"log/slog"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/tangent/internal/envelope"
-	"github.com/hollis-labs/tangent/internal/envelope/extensions"
-	"github.com/hollis-labs/tangent/internal/plugins"
+	"github.com/hollis-labs/tangent/internal/pluginpkg"
 )
 
 // This file is the plugin half of the derived-surface rule (CW-20260910-0029).
@@ -28,20 +25,21 @@ import (
 // Neither is written down here, and the check keeps meaning something as
 // plugins are added.
 //
-// When no shipped plugin contributes a tool the check is vacuous and says so
-// rather than passing quietly, because a vacuous check that reads as a passing
-// one is how this gate would rot.
+// An empty installed set is a FAILURE rather than a skip. This suite installs
+// the first-party plugins itself, so nothing to compare means the install broke
+// — and a gate that skipped on its own setup failing is how one rots.
 
 // TestEveryPluginContributedToolReachesTheShippedBinary derives the plugin
 // tool set from internal/plugins and asserts the binary advertises every one.
 func TestEveryPluginContributedToolReachesTheShippedBinary(t *testing.T) {
-	contributed := shippedPluginToolNames(t)
+	endpoint, pluginDir := bootShippedBinaryWithPluginDir(t)
+	contributed := installedPluginToolNames(t, pluginDir)
 	if len(contributed) == 0 {
-		t.Skip("no shipped plugin contributes an MCP tool; nothing to compare " +
-			"(this becomes a real check the moment one does)")
+		t.Fatal("no installed plugin declares an MCP tool: this suite installs the " +
+			"first-party plugins before booting, so an empty set means the install " +
+			"itself failed rather than that there is nothing to check")
 	}
 
-	endpoint := bootShippedBinary(t)
 	surface, finding := endpoint.StreamableSurface(context.Background())
 	if finding != nil {
 		t.Fatalf("derive shipped surface:\n%s", finding)
@@ -65,31 +63,36 @@ func TestEveryPluginContributedToolReachesTheShippedBinary(t *testing.T) {
 	}
 }
 
-// shippedPluginToolNames loads the compiled-in plugin set onto a throwaway
-// host and returns the tool names it contributed.
+// installedPluginToolNames reads the manifests of the plugins this suite
+// installed and returns the tool names they declare.
 //
-// It goes through plugins.LoadShipped rather than assembling a registry of its
-// own, for the same reason cmd/tangent-dump-types does: a second way to
-// enumerate the plugin set is a second thing that can describe a different
-// build from the one that ships.
-func shippedPluginToolNames(t *testing.T) []string {
+// # Both sides are still derived, from different places
+//
+// It used to load the compiled-in roster onto a throwaway host. There is no
+// roster now (CW-20260911-0070) — plugins are installed — so the expected set
+// comes from the install directory's own manifests, and the actual set from
+// asking the running binary for tools/list.
+//
+// That is a stronger comparison than the old one, not a weaker substitute. The
+// old check compared two views of one compiled artifact. This one compares what
+// was INSTALLED against what a separately spawned process ended up advertising,
+// so everything between — discovery, the protocol check, the spawn, the
+// handshake, the host's registration — is inside the assertion. A plugin that
+// installs and does not serve now fails here.
+func installedPluginToolNames(t *testing.T, root string) []string {
 	t.Helper()
-	ctx := context.Background()
-
-	envSvc, err := envelope.New(ctx)
+	installed, rejected, err := pluginpkg.Scan(root)
 	if err != nil {
-		t.Fatalf("envelope.New: %v", err)
+		t.Fatalf("pluginpkg.Scan: %v", err)
 	}
-	if regErr := extensions.RegisterAll(envSvc); regErr != nil {
-		t.Fatalf("extensions.RegisterAll: %v", regErr)
+	for _, reject := range rejected {
+		t.Errorf("%s did not install cleanly: %v", reject.Dir, reject.Reason)
 	}
-	host, err := plugins.LoadShipped(ctx, slog.New(slog.DiscardHandler), envSvc)
-	if err != nil {
-		t.Fatalf("plugins.LoadShipped: %v", err)
-	}
-	names := make([]string, 0, len(host.MCPTools()))
-	for _, tool := range host.MCPTools() {
-		names = append(names, tool.Name)
+	var names []string
+	for _, entry := range installed {
+		for _, tool := range entry.Manifest.Tools {
+			names = append(names, tool.Name)
+		}
 	}
 	sort.Strings(names)
 	return names

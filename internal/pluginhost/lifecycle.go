@@ -88,6 +88,29 @@ func (h *Host) recordAttempt(p plugin.Plugin, id string, err error) {
 	h.mu.Unlock()
 }
 
+// RecordUnusable records a plugin that was installed and never reached Load —
+// a manifest that would not parse, a protocol this host does not speak, an
+// entrypoint that is not there.
+//
+// It exists because those failures have no plugin object to attribute them to,
+// and the health inventory is where "which plugins loaded, which refused and
+// why" is answered (CW-20260910-0036). An install that cannot run is more
+// confusing than one that is absent: the operator put it there. Reporting it
+// as a refusal with a reason is the difference between "why is my plugin not
+// working" and one line that says.
+//
+// The id is the directory, because a plugin whose manifest would not parse has
+// not told us any other name.
+func (h *Host) RecordUnusable(dir string, reason error) {
+	attempt := &loadAttempt{id: dir, at: time.Now().UTC()}
+	if reason != nil {
+		attempt.err = reason.Error()
+	}
+	h.mu.Lock()
+	h.attempts = append(h.attempts, attempt)
+	h.mu.Unlock()
+}
+
 // identify renders a plugin id for an error message when the id may be empty.
 func identify(id string) string {
 	if id == "" {

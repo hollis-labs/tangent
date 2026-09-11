@@ -139,6 +139,14 @@ func run() int {
 		fmt.Println("tangent " + envelope.HostVersion)
 		return 0
 	}
+	// `tangent plugin ...` is handled before anything else acquires the
+	// database: installing a plugin neither reads nor writes it, and a
+	// maintenance command that took the single-writer lock to copy files would
+	// refuse to run while Tangent is serving.
+	if flagSet.NArg() > 0 && flagSet.Arg(0) == "plugin" {
+		return runPluginCommand(flagSet.Args()[1:])
+	}
+
 	maintenanceModes := maintenance.requested()
 	if maintenanceModes > 1 {
 		fmt.Fprintln(os.Stderr, "tangent: maintenance commands are one at a time")
