@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.prose-revision
-version: "0.3"
+version: "0.4"
 revision: 1
 title: "Prose revision"
 description: "Prose-revision envelope: review suggested edits through one unified review/copy/style lens and capture explicit per-suggestion outcomes."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.prose-revision
   class: react-component
   entry: "components/envelopes/ProseRevision#ProseRevision"
-  trust_class: core-trusted
+  isolation: main-origin
   component: ProseRevisionView
   fallback:
     preserves_meaning: false

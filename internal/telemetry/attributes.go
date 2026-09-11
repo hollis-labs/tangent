@@ -77,8 +77,6 @@ const (
 	AttrCapability = "capability"
 	// AttrMaterializationState is a definition's materialization state.
 	AttrMaterializationState = "materialization_state"
-	// AttrTrustClass is the renderer trust class Tangent granted.
-	AttrTrustClass = "renderer_trust_class"
 	// AttrIsolation is where the renderer runs.
 	AttrIsolation = "renderer_isolation"
 	// AttrRole is a connection's role on its surface.
@@ -207,7 +205,6 @@ var refusalVocabulary = []string{
 // names rather than a closed set this file can enumerate.
 var identifierKeys = map[string]bool{
 	AttrCapability: true,
-	AttrTrustClass: true,
 }
 
 // allowedStringKeys is derived rather than declared so a key can never be in

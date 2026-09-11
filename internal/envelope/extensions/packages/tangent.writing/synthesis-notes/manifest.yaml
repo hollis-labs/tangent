@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.synthesis-notes
-version: "0.3"
+version: "0.4"
 revision: 1
 title: "Synthesis notes"
 description: "Synthesis-notes envelope: persist private working notes, optionally carry an outline artifact, and expose only the phase-gated preview to the user."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.synthesis-notes
   class: react-component
   entry: "components/envelopes/SynthesisNotes#SynthesisNotes"
-  trust_class: core-trusted
+  isolation: main-origin
   component: SynthesisNotesView
   fallback:
     preserves_meaning: false

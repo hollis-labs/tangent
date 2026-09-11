@@ -731,9 +731,11 @@ the three have since been reversed; that is why the two lists are now separate.
 Signing stays out of scope, first-party only, unchanged.
 
 **A plugin-contributed kind is not a privileged one.** It goes through the same
-manifest, the same trust classification and the same renderer isolation as
-every host-package kind, and `core-trusted` stays unreachable for a publisher
-that is not `tangent` or `hollis-labs/go-envelopes`.
+manifest, the same validation and the same renderer isolation as every
+host-package kind. What used to be said here — that `core-trusted` stays
+unreachable for a publisher that is not `tangent` or `hollis-labs/go-envelopes`
+— was removed by ADR 0009 along with the class it gated; the equal treatment it
+was asserting survives it.
 
 ### Long-lived surfaces and `tangent-custodied` view state
 
@@ -986,17 +988,24 @@ does not use, and a `Content-Security-Policy`.
 
 ## Renderer trust classes and presentation sandboxing
 
-Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md).
-The full model is [`renderer-trust-classes.md`](renderer-trust-classes.md).
+Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md)
+as reduced by [ADR 0009](adr/0009-renderer-trust-reduced-to-isolation.md). The
+full model is [`renderer-trust-classes.md`](renderer-trust-classes.md).
 
-**A trust class decides two things**: an *isolation* — where the renderer's code
-runs — and a *capability ceiling* over the effect namespace, ordered
-`core-trusted ⊃ portfolio-trusted ⊃ sandboxed-code ⊃ declarative = external-surface = ∅`.
-The ceiling is evaluated before host policy's grant, so widening
-`GrantableCapabilities` widens nothing a class already closed. Isolation is the
-host's derivation from the granted class, never a manifest field.
+**A manifest declares `renderer.isolation`** — where the renderer's code runs —
+and Tangent validates it against the declared renderer shape, refusing a
+manifest whose two disagree in either direction. It never substitutes one, so a
+definition that materialized runs exactly where it said.
 
-**Untrusted code runs in an opaque origin.** A `sandboxed-code` renderer draws
+There is no capability ceiling. ADR 0009 removed the five-value trust class and
+the ordered ceiling with it: read against the distribution that exists, the
+class sorted seventeen first-party React components from one first-party React
+component that imports tldraw, and what blocked an out-of-tree publisher was a
+signature verifier that was never built. What refuses a capability now is host
+policy's grant and the mediation table behind it.
+
+**Untrusted code runs in an opaque origin, and that is untouched.** A
+`sandboxed-frame` renderer draws
 inside `sandbox="allow-scripts"` with no `allow-same-origin`, no
 `allow-downloads`, and no `allow-forms`, under a `default-src 'none'` frame
 policy whose `script-src` is a hash of Tangent's own shim — so agent-authored

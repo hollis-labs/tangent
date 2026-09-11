@@ -161,7 +161,6 @@ func (r *Reporter) ObserveDefinitions(ctx context.Context) {
 			},
 			Attrs: []telemetry.Attr{
 				telemetry.String(telemetry.AttrMaterializationState, string(materialized.State)),
-				telemetry.String(telemetry.AttrTrustClass, string(materialized.TrustClass)),
 				telemetry.String(telemetry.AttrIsolation, string(materialized.Isolation)),
 				telemetry.String(telemetry.AttrDeniedBy, deniedBy(materialized)),
 				telemetry.String(telemetry.AttrProbe, ProbeCapability),
@@ -179,9 +178,9 @@ func (r *Reporter) ObserveDefinitions(ctx context.Context) {
 // lets an operator see which of the two fixes applies without first
 // reproducing the failure through a caller.
 func deniedBy(materialized definition.Materialized) string {
-	if len(materialized.TrustDeniedCapabilities) > 0 {
-		return "trust-class"
-	}
+	// The class-based ceiling used to be a third answer here ("trust-class").
+	// ADR 0009 removed it, so host policy is the only thing left that denies a
+	// declared capability before the broker sees it.
 	if len(materialized.DeniedCapabilities) > 0 {
 		return "host-policy"
 	}

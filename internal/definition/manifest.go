@@ -73,27 +73,6 @@ func (c RendererClass) valid() bool {
 	return false
 }
 
-// TrustClass is the renderer trust level a manifest *requests*. Tangent policy
-// decides what is granted and never grants more than the trust evidence in
-// §2.7 supports. This is the field CW-20260825-0073 binds to.
-type TrustClass string
-
-const (
-	TrustCoreTrusted      TrustClass = "core-trusted"
-	TrustPortfolioTrusted TrustClass = "portfolio-trusted"
-	TrustDeclarative      TrustClass = "declarative"
-	TrustSandboxedCode    TrustClass = "sandboxed-code"
-	TrustExternalSurface  TrustClass = "external-surface"
-)
-
-func (c TrustClass) valid() bool {
-	switch c {
-	case TrustCoreTrusted, TrustPortfolioTrusted, TrustDeclarative, TrustSandboxedCode, TrustExternalSurface:
-		return true
-	}
-	return false
-}
-
 // Degradation describes how much of the interaction a fallback renderer can
 // still present (§2.3).
 type Degradation string
@@ -331,9 +310,20 @@ type Renderer struct {
 	// AssetDigest is the digest of a renderer bundle that ships separately
 	// from the host binary. Empty for in-tree renderers built with the
 	// release.
-	AssetDigest string     `yaml:"asset_digest,omitempty" json:"asset_digest,omitempty"`
-	TrustClass  TrustClass `yaml:"trust_class" json:"trust_class"`
-	Fallback    Fallback   `yaml:"fallback,omitempty" json:"fallback,omitzero"`
+	AssetDigest string `yaml:"asset_digest,omitempty" json:"asset_digest,omitempty"`
+	// Isolation is where this renderer's code runs, and what the browser will
+	// let it reach from there (ADR 0009). It replaces `trust_class`, which
+	// named a five-value provenance vocabulary whose distinctions this host
+	// stopped enforcing — see internal/definition/trust.go.
+	//
+	// It is publisher-declared and host-validated, which ADR 0003 §2.3's
+	// "requests / decides" split still describes. The name is nonetheless a
+	// statement of fact rather than of intent, because materialization never
+	// SUBSTITUTES a different value: a manifest whose declared isolation
+	// disagrees with its renderer shape is refused, so a definition that
+	// materialized has exactly the isolation it declared.
+	Isolation Isolation `yaml:"isolation" json:"isolation"`
+	Fallback  Fallback  `yaml:"fallback,omitempty" json:"fallback,omitzero"`
 	// Presentation carries non-authoritative accessibility and layout hints.
 	Presentation map[string]any `yaml:"presentation,omitempty" json:"presentation,omitempty"`
 	// Component is the legacy `ui.component` slug. It is retained because the
@@ -607,8 +597,8 @@ func (m *Manifest) validateRenderer() error {
 	if !m.Renderer.Class.valid() {
 		return fmt.Errorf("%w: %s: unknown renderer.class %q", ErrInvalidManifest, m.Kind, m.Renderer.Class)
 	}
-	if !m.Renderer.TrustClass.valid() {
-		return fmt.Errorf("%w: %s: unknown renderer.trust_class %q", ErrInvalidManifest, m.Kind, m.Renderer.TrustClass)
+	if !m.Renderer.Isolation.valid() {
+		return fmt.Errorf("%w: %s: unknown renderer.isolation %q", ErrInvalidManifest, m.Kind, m.Renderer.Isolation)
 	}
 	if m.Renderer.Fallback.Degradation != "" && !m.Renderer.Fallback.Degradation.valid() {
 		return fmt.Errorf("%w: %s: unknown renderer.fallback.degradation %q",
@@ -619,24 +609,28 @@ func (m *Manifest) validateRenderer() error {
 			"%w: %s: renderer.fallback.preserves_meaning is true but no fallback renderer_id is declared",
 			ErrInvalidManifest, m.Kind)
 	}
-	// ADR 0003 §7 T6, generalized. The narrow form of this rule was
-	// "sandboxed-frame cannot request core-trusted", which caught one pair out
-	// of twenty. The general rule is that a renderer's *shape* and its trust
-	// class have to describe the same thing: a `react-component` calling
-	// itself `sandboxed-code` is not sandboxed, it is mislabeled, and a
-	// `sandboxed-frame` calling itself `core-trusted` is untrusted markup
-	// claiming the host's own authority. Both are refused by the same table
-	// (see trust.go), so the trust decision cannot be smuggled in through a
-	// renderer convention in either direction.
-	profile, ok := TrustProfileFor(m.Renderer.TrustClass)
+	// ADR 0003 §7 T6, generalized — and since ADR 0009 this check carries more
+	// weight than it used to, not less.
+	//
+	// A renderer's *shape* and its *isolation* have to describe the same thing:
+	// a `react-component` calling itself `sandboxed-frame` is not sandboxed, it
+	// is mislabeled, and a `sandboxed-frame` calling itself `main-origin` is
+	// untrusted markup claiming the host's own authority. Both are refused by
+	// the same table (see trust.go), in both directions.
+	//
+	// It is now the ONLY thing standing between a declared isolation and the
+	// one in force, which is what makes `renderer.isolation` a truthful name
+	// rather than a record of what somebody asked for. Relaxing it because the
+	// trust model got simpler would quietly make the field a request again.
+	profile, ok := IsolationProfileFor(m.Renderer.Isolation)
 	if !ok {
-		return fmt.Errorf("%w: %s: renderer.trust_class %q has no profile in this build",
-			ErrInvalidManifest, m.Kind, m.Renderer.TrustClass)
+		return fmt.Errorf("%w: %s: renderer.isolation %q has no profile in this build",
+			ErrInvalidManifest, m.Kind, m.Renderer.Isolation)
 	}
 	if !profile.AdmitsRendererClass(m.Renderer.Class) {
 		return fmt.Errorf(
-			"%w: %s: renderer.class %q cannot request trust_class %q",
-			ErrInvalidManifest, m.Kind, m.Renderer.Class, m.Renderer.TrustClass)
+			"%w: %s: renderer.class %q cannot declare isolation %q",
+			ErrInvalidManifest, m.Kind, m.Renderer.Class, m.Renderer.Isolation)
 	}
 	return nil
 }

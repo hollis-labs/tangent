@@ -45,8 +45,8 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.form-collect
-version: "0.6"
-revision: 2
+version: "0.7"
+revision: 1
 title: "Form collect"
 description: "Generalized schema-driven form workflow with room-backed persistence."
 package_id: tangent.generic-candidate
@@ -62,7 +62,7 @@ renderer:
   id: tangent.renderer.form-collect
   class: react-component
   entry: "components/envelopes/FormCollect#FormCollect"
-  trust_class: core-trusted
+  isolation: main-origin
   component: FormCollectView
   fallback:
     preserves_meaning: false

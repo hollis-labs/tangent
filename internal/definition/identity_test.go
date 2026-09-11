@@ -18,9 +18,9 @@ func publication(version string, revision int64, contract string) definition.Pub
 		Version:  version,
 		Revision: revision,
 		Identity: definition.Identity{
-			ContractDigest:     contract,
-			RendererClass:      definition.RendererReactComponent,
-			RendererTrustClass: definition.TrustCoreTrusted,
+			ContractDigest:    contract,
+			RendererClass:     definition.RendererReactComponent,
+			RendererIsolation: definition.IsolationMainOrigin,
 		},
 		ResponseSchema: definition.ResponseSchemaAbsent,
 	}
@@ -85,12 +85,12 @@ func TestATrustClassChangeIsAVersionBumpToo(t *testing.T) {
 	// class under a revision bump is the change this clause is really about.
 	before := publication("0.2", 1, "sha256:aaa")
 	after := publication("0.2", 2, "sha256:aaa")
-	after.Identity.RendererTrustClass = definition.TrustPortfolioTrusted
+	after.Identity.RendererIsolation = definition.IsolationSandboxedFrame
 	err := definition.CheckRevisionAdvance(before, after)
 	if !errors.Is(err, definition.ErrIllegalRevisionAdvance) {
 		t.Fatalf("error = %v, want ErrIllegalRevisionAdvance", err)
 	}
-	if !strings.Contains(err.Error(), "renderer.trust_class") {
+	if !strings.Contains(err.Error(), "renderer.isolation") {
 		t.Errorf("the failure does not name the field that moved: %v", err)
 	}
 }
@@ -134,12 +134,12 @@ func TestTheBackfillExceptionCoversTheContractDigestAlone(t *testing.T) {
 	before := publication("0.6", 1, "sha256:aaa")
 	after := publication("0.6", 2, "sha256:bbb")
 	after.ResponseSchema = definition.ResponseSchemaPresent
-	after.Identity.RendererTrustClass = definition.TrustPortfolioTrusted
+	after.Identity.RendererIsolation = definition.IsolationSandboxedFrame
 	err := definition.CheckRevisionAdvance(before, after)
 	if !errors.Is(err, definition.ErrIllegalRevisionAdvance) {
 		t.Fatalf("error = %v, want ErrIllegalRevisionAdvance", err)
 	}
-	if !strings.Contains(err.Error(), "renderer.trust_class") {
+	if !strings.Contains(err.Error(), "renderer.isolation") {
 		t.Errorf("the failure does not name what moved beyond the exception: %v", err)
 	}
 }

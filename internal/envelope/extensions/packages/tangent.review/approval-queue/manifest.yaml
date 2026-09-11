@@ -29,7 +29,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.approval-queue
-version: "0.7"
+version: "0.8"
 revision: 1
 title: "Approval queue"
 description: "Approval queue envelope: serialized review of queued items with explicit accept, reject, or defer decisions, evidence panes, and durable audit export metadata."
@@ -45,7 +45,7 @@ renderer:
   id: tangent.renderer.approval-queue
   class: react-component
   entry: "components/envelopes/ApprovalQueue#ApprovalQueue"
-  trust_class: core-trusted
+  isolation: main-origin
   component: ApprovalQueueView
   fallback:
     preserves_meaning: false

@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.{{.KindSlug}}
   class: react-component
   entry: "components/envelopes/{{.Exported}}#{{.Exported}}"
-  trust_class: core-trusted
+  isolation: main-origin
   component: {{.Component}}
   fallback:
     preserves_meaning: false

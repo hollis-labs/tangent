@@ -285,9 +285,9 @@ func (c *EnvelopeDefinitionCatalog) RetainDefinitionMaterial(
 		OwnershipClass:     string(materialized.Manifest.OwnershipClass),
 		CompatibilityClass: string(materialized.Manifest.CompatibilityClass),
 
-		RendererID:         materialized.Manifest.Renderer.ID,
-		RendererClass:      string(materialized.Manifest.Renderer.Class),
-		RendererTrustClass: string(materialized.Manifest.Renderer.TrustClass),
+		RendererID:        materialized.Manifest.Renderer.ID,
+		RendererClass:     string(materialized.Manifest.Renderer.Class),
+		RendererIsolation: string(materialized.Manifest.Renderer.Isolation),
 
 		RequiredCapabilities: string(binding.RequiredCapabilities),
 		GrantedCapabilities:  string(binding.GrantedCapabilities),
@@ -509,7 +509,7 @@ type bindingDigestInputs struct {
 	ManifestDigest       string
 	RendererID           string
 	RendererClass        string
-	RendererTrustClass   string
+	RendererIsolation    string
 	RequiredCapabilities string
 	GrantedCapabilities  string
 	Assurance            string
@@ -535,7 +535,7 @@ func bindingDigest(inputs bindingDigestInputs) string {
 		inputs.Publisher, inputs.Kind, inputs.Version, fmt.Sprintf("%d", inputs.Revision),
 		inputs.Source, inputs.PluginID, inputs.ResponseKind,
 		inputs.ContractDigest, inputs.ManifestDigest,
-		inputs.RendererID, inputs.RendererClass, inputs.RendererTrustClass,
+		inputs.RendererID, inputs.RendererClass, inputs.RendererIsolation,
 		inputs.RequiredCapabilities, inputs.GrantedCapabilities,
 		inputs.Assurance, envelopeDefinitionValidatorRevision,
 	}
@@ -562,7 +562,7 @@ func (c *EnvelopeDefinitionCatalog) digestFor(
 		ResponseKind:   material.ResponseKind,
 		ContractDigest: binding.ContractDigest, ManifestDigest: binding.ManifestDigest,
 		RendererID: binding.RendererID, RendererClass: binding.RendererClass,
-		RendererTrustClass:   binding.RendererTrustClass,
+		RendererIsolation:    binding.RendererIsolation,
 		RequiredCapabilities: string(binding.RequiredCapabilities),
 		GrantedCapabilities:  string(binding.GrantedCapabilities),
 		Assurance:            binding.Assurance,
@@ -622,7 +622,7 @@ func (c *EnvelopeDefinitionCatalog) binding(
 		out.CompatibilityClass = string(manifest.CompatibilityClass)
 		out.RendererID = manifest.Renderer.ID
 		out.RendererClass = string(manifest.Renderer.Class)
-		out.RendererTrustClass = string(manifest.Renderer.TrustClass)
+		out.RendererIsolation = string(manifest.Renderer.Isolation)
 		out.RequiredCapabilities = required
 		out.GrantedCapabilities = granted
 		out.MaterializationState = string(materialized.State)
@@ -636,7 +636,7 @@ func (c *EnvelopeDefinitionCatalog) binding(
 		ResponseKind:   material.ResponseKind,
 		ContractDigest: out.ContractDigest, ManifestDigest: out.ManifestDigest,
 		RendererID: out.RendererID, RendererClass: out.RendererClass,
-		RendererTrustClass:   out.RendererTrustClass,
+		RendererIsolation:    out.RendererIsolation,
 		RequiredCapabilities: string(out.RequiredCapabilities),
 		GrantedCapabilities:  string(out.GrantedCapabilities),
 		Assurance:            out.Assurance,

@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.progress-panel
-version: "0.10"
+version: "0.11"
 revision: 1
 title: "Progress panel"
 description: "Progress-panel envelope: room-backed progress items, summary state, and explicit operator updates."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.progress-panel
   class: react-component
   entry: "components/envelopes/ProgressPanel#ProgressPanel"
-  trust_class: core-trusted
+  isolation: main-origin
   component: ProgressPanelView
   fallback:
     preserves_meaning: false

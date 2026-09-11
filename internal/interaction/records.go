@@ -117,7 +117,7 @@ type DefinitionBinding struct {
 	CompatibilityClass   string `json:"compatibility_class,omitempty"`
 	RendererID           string `json:"renderer_id,omitempty"`
 	RendererClass        string `json:"renderer_class,omitempty"`
-	RendererTrustClass   string `json:"renderer_trust_class,omitempty"`
+	RendererIsolation    string `json:"renderer_trust_class,omitempty"`
 	// RequiredCapabilities and GrantedCapabilities are the host-mediated
 	// *effect* capability namespace (ADR 0003 §2.5) — what the renderer may
 	// cause the host to do. They are not the object-access capabilities in

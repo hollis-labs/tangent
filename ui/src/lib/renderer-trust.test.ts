@@ -13,51 +13,49 @@ import {
   classifyRenderer,
   describeRendererRefusal,
   hasAmbientHostAuthority,
-  permittedCapabilities,
 } from "./renderer-trust";
 
 /**
- * The trust class each shipped kind carries, as reviewed.
+ * The isolation each shipped kind carries, as reviewed.
  *
- * Mostly `core-trusted` React components in Tangent's own tree, one
- * `portfolio-trusted` (whiteboard embeds tldraw, a third-party editor, so it is
- * classed as a portfolio package rather than as host core), and one
- * `sandboxed-code` (design-iteration renders agent-authored HTML).
+ * Everything Tangent draws in its own React tree is `main-origin`; one kind,
+ * `tangent.design-iteration`, is `sandboxed-frame` because it renders markup an
+ * agent produced.
  *
- * `tangent.app-board` is core-trusted like the rest. It used to be listed here
- * as the plugin-contributed exception, which it was not — the host publishes,
- * owns and compiles it (CW-20260911-0036). The rule it was cited for still
- * stands and is what would matter if a kind were genuinely contributed: being
- * plugin-contributed buys a kind nothing, because core-trusted stays
- * unreachable for a publisher that is not `tangent` or `hollis-labs/go-envelopes`
- * (ADR 0007 §4).
+ * ADR 0009 reduced this table. It used to carry five trust classes, and the
+ * distinction it spent the most words on — `core-trusted` versus
+ * `portfolio-trusted`, the whiteboard being "portfolio" because it embeds
+ * tldraw — described a supply chain Tangent does not have: both ran in the same
+ * origin, under the same release review, differing by a capability with no
+ * executor. A dependency choice inside a component Tangent ships is a
+ * code-review fact, not a runtime boundary.
  *
- * Every renderer ships compiled into this bundle TODAY, and that is a statement
- * about this build rather than about the model. ADR 0008 §3 adopts runtime
- * bundle loading; its open question 1 is what has to be answered first, because
- * core-trusted also requires an empty `asset_digest` and a separately served
- * bundle has one.
+ * What the reduction did NOT touch is the one entry that matters. The sandbox
+ * stays exactly as it was, for the reason ADR 0009 §2 states: the agent whose
+ * markup lands there is a conduit for content from a web page, a file or a
+ * model's output, not the adversary — so "the agent could already run code on
+ * the box" is true and does not reach this path.
  */
 const SHIPPED_TRUST: Record<string, string> = {
-  "tangent.app-board": "core-trusted",
-  "tangent.approval-queue": "core-trusted",
-  "tangent.block-draft": "core-trusted",
-  "tangent.dashboard": "core-trusted",
-  "tangent.design-iteration": "sandboxed-code",
-  "tangent.diff-review": "core-trusted",
-  "tangent.feedback": "core-trusted",
-  "tangent.file-picker": "core-trusted",
-  "tangent.form-collect": "core-trusted",
-  "tangent.hitl-item": "core-trusted",
-  "tangent.interview-question": "core-trusted",
-  "tangent.output-render": "core-trusted",
-  "tangent.progress-panel": "core-trusted",
-  "tangent.prose-revision": "core-trusted",
-  "tangent.spreadsheet-review": "core-trusted",
-  "tangent.synthesis-notes": "core-trusted",
-  "tangent.triage": "core-trusted",
-  "tangent.whiteboard": "portfolio-trusted",
-  "tangent.wizard": "core-trusted",
+  "tangent.app-board": "main-origin",
+  "tangent.approval-queue": "main-origin",
+  "tangent.block-draft": "main-origin",
+  "tangent.dashboard": "main-origin",
+  "tangent.design-iteration": "sandboxed-frame",
+  "tangent.diff-review": "main-origin",
+  "tangent.feedback": "main-origin",
+  "tangent.file-picker": "main-origin",
+  "tangent.form-collect": "main-origin",
+  "tangent.hitl-item": "main-origin",
+  "tangent.interview-question": "main-origin",
+  "tangent.output-render": "main-origin",
+  "tangent.progress-panel": "main-origin",
+  "tangent.prose-revision": "main-origin",
+  "tangent.spreadsheet-review": "main-origin",
+  "tangent.synthesis-notes": "main-origin",
+  "tangent.triage": "main-origin",
+  "tangent.whiteboard": "main-origin",
+  "tangent.wizard": "main-origin",
 };
 
 describe("the shipped renderers are classified", () => {
@@ -67,17 +65,18 @@ describe("the shipped renderers are classified", () => {
     );
   });
 
-  it("carries the reviewed trust class for each kind", () => {
+  it("carries the reviewed isolation for each kind", () => {
     for (const binding of RENDERER_BINDINGS) {
-      expect(`${binding.kind}=${binding.trustClass}`).toBe(
+      expect(`${binding.kind}=${binding.isolation}`).toBe(
         `${binding.kind}=${SHIPPED_TRUST[binding.kind]}`,
       );
     }
   });
 
-  it("derives isolation from the class rather than from the renderer shape", () => {
+  it("keeps the declared isolation coherent with the renderer shape", () => {
     for (const binding of RENDERER_BINDINGS) {
-      const expected = binding.trustClass === "sandboxed-code" ? "sandboxed-frame" : "main-origin";
+      const expected =
+        binding.rendererClass === "sandboxed-frame" ? "sandboxed-frame" : "main-origin";
       expect(`${binding.kind}=${binding.isolation}`).toBe(`${binding.kind}=${expected}`);
     }
   });
@@ -88,33 +87,22 @@ describe("the shipped renderers are classified", () => {
       expect(`${binding.kind}:${classification.admitted}`).toBe(`${binding.kind}:true`);
     }
   });
-
-  it("declares no host-mediated effect capability anywhere", () => {
-    // v0.x ships nothing capability-mediated. The ceiling is what a class *may*
-    // declare; the shipped set declares none of it, which is what makes every
-    // effect request refused with `effect_capability_undeclared` today.
-    for (const binding of RENDERER_BINDINGS) {
-      const ceiling = permittedCapabilities(binding.kind);
-      expect(ceiling.includes("process.exec")).toBe(binding.trustClass === "core-trusted");
-    }
-  });
 });
 
 describe("the trust model the SPA reads is the host's", () => {
-  it("implements all five classes, ordered from most authority to least", () => {
-    expect(RENDERER_TRUST_PROFILES.map((profile) => profile.class)).toEqual([
-      "core-trusted",
-      "portfolio-trusted",
-      "declarative",
-      "sandboxed-code",
+  it("implements all four isolations, ordered from most host authority to least", () => {
+    expect(RENDERER_TRUST_PROFILES.map((profile) => profile.isolation)).toEqual([
+      "main-origin",
+      "host-primitive",
+      "sandboxed-frame",
       "external-surface",
     ]);
   });
 
-  it("gives ambient host authority to exactly the two main-origin classes", () => {
+  it("gives ambient host authority to the main origin and nowhere else", () => {
     for (const profile of RENDERER_TRUST_PROFILES) {
-      expect(`${profile.class}=${profile.ambientHostAuthority}`).toBe(
-        `${profile.class}=${profile.isolation === "main-origin"}`,
+      expect(`${profile.isolation}=${profile.ambientHostAuthority}`).toBe(
+        `${profile.isolation}=${profile.isolation === "main-origin"}`,
       );
     }
     // The acceptance criterion, stated as a test: untrusted code never runs
@@ -123,26 +111,11 @@ describe("the trust model the SPA reads is the host's", () => {
     expect(hasAmbientHostAuthority("tangent.triage")).toBe(true);
   });
 
-  it("orders the capability ceilings strictly", () => {
-    const ceiling = (name: string) =>
-      new Set(RENDERER_TRUST_PROFILES.find((p) => p.class === name)?.capabilities ?? []);
-    const core = ceiling("core-trusted");
-    const portfolio = ceiling("portfolio-trusted");
-    const sandboxed = ceiling("sandboxed-code");
-
-    expect([...portfolio].every((id) => core.has(id))).toBe(true);
-    expect([...sandboxed].every((id) => portfolio.has(id))).toBe(true);
-    expect(core.size).toBeGreaterThan(portfolio.size);
-    expect(portfolio.size).toBeGreaterThan(sandboxed.size);
-    expect(ceiling("declarative").size).toBe(0);
-    expect(ceiling("external-surface").size).toBe(0);
-
-    // Untrusted code may read what the participant can already see; it may
-    // never author bytes into the operator's workspace through a host proxy.
-    expect(sandboxed.has("file.read_scoped")).toBe(true);
-    expect(sandboxed.has("file.write_scoped")).toBe(false);
-    expect(sandboxed.has("process.exec")).toBe(false);
-  });
+  // The strict capability-ceiling ordering this used to assert is gone: ADR
+  // 0009 removed the class-based ceiling rather than demoting it, so there is
+  // no ordered set of permitted capabilities left to check. What replaced it as
+  // the thing worth holding is the shape/isolation coherence above — the only
+  // check standing between a declared isolation and the one in force.
 });
 
 describe("an unclassified kind is refused, not dispatched", () => {

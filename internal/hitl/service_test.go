@@ -632,7 +632,7 @@ func TestEnqueueRejectsConcurrentGenericIdempotencyWinner(t *testing.T) {
 				SurfaceID: "generic-surface", Caller: caller,
 				IdempotencyKey: "shared-race-key",
 				Definition: interaction.DefinitionRef{
-					Kind: extensions.HITLItemEnvelopeType, Version: ContractVersion,
+					Kind: extensions.HITLItemEnvelopeType, Version: DefinitionVersion,
 				},
 				Request: request,
 			})
@@ -1029,7 +1029,7 @@ func TestHITLOperationsRejectStagedResolveAndNonHITLHandles(t *testing.T) {
 	}
 	generic, err := interactions.SubmitInteraction(context.Background(), interaction.SubmitInteractionInput{
 		SurfaceID: "generic-owned", Caller: caller, IdempotencyKey: "generic-item",
-		Definition: interaction.DefinitionRef{Kind: extensions.HITLItemEnvelopeType, Version: ContractVersion},
+		Definition: interaction.DefinitionRef{Kind: extensions.HITLItemEnvelopeType, Version: DefinitionVersion},
 		Request:    hitlRequest("membership", "agent", "generic-item", "Generic record"),
 	})
 	if err != nil {
@@ -1063,7 +1063,7 @@ func TestHITLOperationsRejectStagedResolveAndNonHITLHandles(t *testing.T) {
 	}
 
 	binding, err := interactions.ResolveInteractionDefinition(context.Background(), interaction.DefinitionRef{
-		Kind: extensions.HITLItemEnvelopeType, Version: ContractVersion,
+		Kind: extensions.HITLItemEnvelopeType, Version: DefinitionVersion,
 	})
 	if err != nil {
 		t.Fatalf("ResolveInteractionDefinition: %v", err)

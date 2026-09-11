@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.dashboard
-version: "0.11"
+version: "0.12"
 revision: 1
 title: "Dashboard"
 description: "Dashboard envelope: room-backed tiles, layouts, and explicit refresh or update turns."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.dashboard
   class: react-component
   entry: "components/envelopes/Dashboard#Dashboard"
-  trust_class: core-trusted
+  isolation: main-origin
   component: DashboardView
   fallback:
     preserves_meaning: false

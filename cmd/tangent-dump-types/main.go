@@ -163,13 +163,12 @@ type dumpDefinition struct {
 	// available still appears in the dump, and the generated artifact records
 	// the state rather than silently omitting the kind.
 	State string `json:"state"`
-	// RendererID / RendererClass / RendererEntry / RendererTrustClass replace
+	// RendererID / RendererClass / RendererEntry / RendererIsolation replace
 	// ui/src/main.tsx's string-literal registration as the authority for what
 	// draws a kind (ADR 0003 §4.5).
-	RendererID         string `json:"rendererId"`
-	RendererClass      string `json:"rendererClass"`
-	RendererEntry      string `json:"rendererEntry"`
-	RendererTrustClass string `json:"rendererTrustClass"`
+	RendererID    string `json:"rendererId"`
+	RendererClass string `json:"rendererClass"`
+	RendererEntry string `json:"rendererEntry"`
 	// RendererIsolation is where the *granted* trust class runs the renderer
 	// (CW-20260825-0073). It is derived by the host from the granted class and
 	// dumped rather than re-derived in TypeScript, because a second mapping is
@@ -218,19 +217,17 @@ type dumpDoc struct {
 // ambient authority, and the host-mediated effect capabilities the class may
 // ever declare.
 type dumpTrustProfile struct {
-	Class                 string   `json:"class"`
 	Isolation             string   `json:"isolation"`
 	ExecutesPublisherCode bool     `json:"executesPublisherCode"`
 	AmbientHostAuthority  bool     `json:"ambientHostAuthority"`
 	RendererClasses       []string `json:"rendererClasses"`
-	Capabilities          []string `json:"capabilities"`
 }
 
-// trustProfiles projects internal/definition's trust table for the dump.
+// trustProfiles projects internal/definition's isolation table for the dump.
 func trustProfiles() []dumpTrustProfile {
-	out := make([]dumpTrustProfile, 0, len(definition.TrustClasses()))
-	for _, class := range definition.TrustClasses() {
-		profile, ok := definition.TrustProfileFor(class)
+	out := make([]dumpTrustProfile, 0, len(definition.Isolations()))
+	for _, isolation := range definition.Isolations() {
+		profile, ok := definition.IsolationProfileFor(isolation)
 		if !ok {
 			continue
 		}
@@ -238,17 +235,11 @@ func trustProfiles() []dumpTrustProfile {
 		for _, rendererClass := range profile.RendererClasses {
 			rendererClasses = append(rendererClasses, string(rendererClass))
 		}
-		capabilities := profile.Capabilities
-		if capabilities == nil {
-			capabilities = []string{}
-		}
 		out = append(out, dumpTrustProfile{
-			Class:                 string(profile.Class),
 			Isolation:             string(profile.Isolation),
 			ExecutesPublisherCode: profile.ExecutesPublisherCode,
 			AmbientHostAuthority:  profile.Isolation.AmbientHostAuthority(),
 			RendererClasses:       rendererClasses,
-			Capabilities:          capabilities,
 		})
 	}
 	return out
@@ -379,11 +370,10 @@ func describeDefinition(materialized definition.Materialized, requestSchema []by
 		OwnershipClass: string(manifest.OwnershipClass),
 		State:          string(materialized.State),
 
-		RendererID:         manifest.Renderer.ID,
-		RendererClass:      string(manifest.Renderer.Class),
-		RendererEntry:      manifest.Renderer.Entry,
-		RendererTrustClass: string(materialized.TrustClass),
-		RendererIsolation:  string(materialized.Isolation),
+		RendererID:        manifest.Renderer.ID,
+		RendererClass:     string(manifest.Renderer.Class),
+		RendererEntry:     manifest.Renderer.Entry,
+		RendererIsolation: string(materialized.Isolation),
 
 		InlinePayloadLimitBytes:  materialized.EffectiveInlineLimitBytes,
 		FallbackPreservesMeaning: manifest.Renderer.Fallback.PreservesMeaning,

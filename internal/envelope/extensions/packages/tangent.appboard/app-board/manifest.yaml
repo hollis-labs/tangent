@@ -5,12 +5,21 @@
 # capabilities, and the effective trust assurance and refuses a manifest that
 # tries to author them.
 #
-# THE FIRST PLUGIN-CONTRIBUTED KIND. It arrives through the ADR 0007 §4 plugin
-# path (internal/plugins/appboard registers it via internal/pluginhost) rather
-# than being installed directly by RegisterAll. That changes which door it comes
-# through and nothing else: this manifest is still what decides what the host
-# will let it do, and a registration the host cannot resolve a manifest for is
-# refused. See the `contributedByPlugin` column in register_all.go.
+# HOST PLUMBING. RegisterAll installs it, like every other host-package kind.
+#
+# It was marked plugin-contributed from the day the plugin host landed until
+# CW-20260911-0036, and it never should have been: `publisher: tangent`,
+# `ownership_class: host-package`, a renderer compiled into ui_dist with the
+# release. The plugin holding it had no dependency to isolate and no behaviour.
+# Two application plugins supply content to this shape and neither owns it.
+#
+# These two comment blocks stayed knowingly false from `adca3ff` until now.
+# Correcting them moves the raw manifest bytes, which moves `binding_digest`
+# (internal/interaction/catalog.go hashes them), which under ADR 0003 §8 C1
+# takes pending interactions of this kind out of service for new submissions —
+# too much to pay for a comment. CW-20260911-0045 recorded the deferral and the
+# reasoning so it could ride the next change that moved these bytes anyway.
+# ADR 0009 is that change.
 #
 # ADR 0003 §6 T3: a presentation surface Tangent hosts inside its own React
 # tree. Domain-free on purpose — a board of filtered cards with a detail pane,
@@ -67,7 +76,10 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.app-board
-# 0.2, and it covers everything added since 0.1 at once (CW-20260911-0008).
+# 0.3 renames `renderer.trust_class` to `renderer.isolation` (ADR 0009), which
+# is semantic and therefore a version rather than a revision under §3.
+#
+# 0.2 covered everything added since 0.1 at once (CW-20260911-0008).
 #
 # This kind spent its first weeks at `version: "0.1"` while `revision` advanced
 # to 2, 3 and 4 — each time adding an optional field to request.schema.json.
@@ -82,8 +94,10 @@ kind: tangent.app-board
 # counter *within* a version, so a new version starts its count over.
 #
 # §8 C3 does not reach this kind. It freezes "the eighteen shipped kinds'" wire
-# names and versions, and `tangent.app-board` is the first plugin-contributed
-# kind — it arrived with ADR 0007 §4, after those eighteen.
+# names and versions, and this kind arrived after those eighteen, with the
+# plugin host in `7b4803e`. (It was described here as "the first
+# plugin-contributed kind"; it was not one. The arrival date is what §8 C3 turns
+# on, and that part was always true.)
 #
 # What 0.2 adds over 0.1, all of it optional and all of it additive:
 #
@@ -114,7 +128,7 @@ kind: tangent.app-board
 # note written and never synced has changed nothing anywhere. What the caller
 # does with it afterwards is the caller's business — this kind neither
 # interprets a note nor sends it anywhere, which is what keeps it domain-free.
-version: "0.2"
+version: "0.3"
 revision: 1
 title: "App board"
 description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
@@ -130,7 +144,7 @@ renderer:
   id: tangent.renderer.app-board
   class: react-component
   entry: "components/envelopes/AppBoard#AppBoard"
-  trust_class: core-trusted
+  isolation: main-origin
   component: AppBoardView
   fallback:
     preserves_meaning: false

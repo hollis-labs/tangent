@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:7e1e5460af713b0cb162f35c05627e6467b1567293ba4a645cde8b62d8e93fc3
+// @definition-source sha256:7f8f00870cd3f855623abf9da51b244850ad71d1513206e529d7efcba753e9b8
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 19 manifests under
@@ -14,15 +14,7 @@ export type RendererClass =
   | 'sandboxed-frame'
   | 'external-surface';
 
-/** The trust level a manifest requests; the host decides what it grants. */
-export type RendererTrustClass =
-  | 'core-trusted'
-  | 'portfolio-trusted'
-  | 'declarative'
-  | 'sandboxed-code'
-  | 'external-surface';
-
-/** Where a granted trust class runs a renderer. Derived by the host, never declared. */
+/** Where a renderer runs, and what the browser lets it reach from there. */
 export type RendererIsolation =
   | 'main-origin'
   | 'host-primitive'
@@ -30,65 +22,49 @@ export type RendererIsolation =
   | 'external-surface';
 
 /**
- * What one trust class may do.
+ * What one isolation is.
  *
- * ADR 0003 §2.3 makes Tangent policy the decider of a renderer's trust class.
- * This table is generated from internal/definition/trust.go for that reason: a
- * hand-typed policy table in the SPA would be a second decider, and the two
- * would disagree the first time one of them was edited.
+ * Generated from internal/definition/trust.go: a hand-typed policy table in
+ * the SPA would be a second decider, and the two would disagree the first
+ * time one of them was edited.
+ *
+ * ADR 0009 reduced the five-value trust class to these four positions and
+ * removed the class-based capability ceiling, so this profile no longer
+ * carries one.
  */
 export interface RendererTrustProfile {
-  class: RendererTrustClass;
   isolation: RendererIsolation;
   /** False for the classes where no publisher-authored code executes at all. */
   executesPublisherCode: boolean;
   /** Whether this isolation can reach Tangent's own origin, storage, and session. */
   ambientHostAuthority: boolean;
   rendererClasses: readonly string[];
-  /** Host-mediated effect capability ids this class may ever declare. */
-  capabilities: readonly string[];
 }
 
 export const RENDERER_TRUST_PROFILES: readonly RendererTrustProfile[] = [
   {
-    class: "core-trusted",
     isolation: "main-origin",
     executesPublisherCode: true,
     ambientHostAuthority: true,
     rendererClasses: ["react-component","declarative"],
-    capabilities: ["file.read_scoped","file.write_scoped","evidence.preview","export.download","clipboard.write","network.fetch","process.exec"],
   },
   {
-    class: "portfolio-trusted",
-    isolation: "main-origin",
-    executesPublisherCode: true,
-    ambientHostAuthority: true,
-    rendererClasses: ["react-component","declarative"],
-    capabilities: ["file.read_scoped","file.write_scoped","evidence.preview","export.download","clipboard.write","network.fetch"],
-  },
-  {
-    class: "declarative",
     isolation: "host-primitive",
     executesPublisherCode: false,
     ambientHostAuthority: false,
     rendererClasses: ["declarative"],
-    capabilities: [],
   },
   {
-    class: "sandboxed-code",
     isolation: "sandboxed-frame",
     executesPublisherCode: true,
     ambientHostAuthority: false,
     rendererClasses: ["sandboxed-frame"],
-    capabilities: ["file.read_scoped","evidence.preview","export.download","clipboard.write","network.fetch"],
   },
   {
-    class: "external-surface",
     isolation: "external-surface",
     executesPublisherCode: false,
     ambientHostAuthority: false,
     rendererClasses: ["external-surface"],
-    capabilities: [],
   },
 ] as const;
 
@@ -101,9 +77,7 @@ export interface RendererBinding {
   rendererClass: RendererClass;
   /** Module specifier and exported symbol, for react-component renderers. */
   entry: string;
-  /** The trust class Tangent granted. A requested class the evidence did not support is quarantined, never downgraded. */
-  trustClass: RendererTrustClass;
-  /** Where that class runs this renderer. */
+  /** Where this renderer runs. Declared by the manifest and never substituted: a declaration the host cannot honor quarantines the definition (ADR 0009). */
   isolation: RendererIsolation;
   /** Manifest inline payload ceiling, after the host cap. The browser-side bound on untrusted display content. */
   inlinePayloadLimitBytes: number;
@@ -123,11 +97,10 @@ export interface RendererBinding {
 export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   {
     kind: "tangent.app-board",
-    version: "0.2",
+    version: "0.3",
     rendererId: "tangent.renderer.app-board",
     rendererClass: "react-component",
     entry: "components/envelopes/AppBoard#AppBoard",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -140,11 +113,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.approval-queue",
-    version: "0.7",
+    version: "0.8",
     rendererId: "tangent.renderer.approval-queue",
     rendererClass: "react-component",
     entry: "components/envelopes/ApprovalQueue#ApprovalQueue",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -157,11 +129,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.block-draft",
-    version: "0.3",
+    version: "0.4",
     rendererId: "tangent.renderer.block-draft",
     rendererClass: "react-component",
     entry: "components/envelopes/BlockDraft#BlockDraft",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -174,11 +145,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.dashboard",
-    version: "0.11",
+    version: "0.12",
     rendererId: "tangent.renderer.dashboard",
     rendererClass: "react-component",
     entry: "components/envelopes/Dashboard#Dashboard",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -191,11 +161,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.design-iteration",
-    version: "0.2",
+    version: "0.3",
     rendererId: "tangent.renderer.design-iteration",
     rendererClass: "sandboxed-frame",
     entry: "components/envelopes/DesignIteration#DesignIteration",
-    trustClass: "sandboxed-code",
     isolation: "sandboxed-frame",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -208,11 +177,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.diff-review",
-    version: "0.8",
+    version: "0.9",
     rendererId: "tangent.renderer.diff-review",
     rendererClass: "react-component",
     entry: "components/envelopes/DiffReview#DiffReview",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -225,11 +193,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.feedback",
-    version: "0.2",
+    version: "0.3",
     rendererId: "tangent.renderer.feedback",
     rendererClass: "react-component",
     entry: "components/envelopes/Feedback#Feedback",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -242,11 +209,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.file-picker",
-    version: "0.9",
+    version: "0.10",
     rendererId: "tangent.renderer.file-picker",
     rendererClass: "react-component",
     entry: "components/envelopes/FilePicker#FilePicker",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -259,11 +225,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.form-collect",
-    version: "0.6",
+    version: "0.7",
     rendererId: "tangent.renderer.form-collect",
     rendererClass: "react-component",
     entry: "components/envelopes/FormCollect#FormCollect",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -276,11 +241,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.hitl-item",
-    version: "1.0",
+    version: "1.1",
     rendererId: "tangent.renderer.hitl-inbox",
     rendererClass: "react-component",
     entry: "routes/HITLInbox#HITLInbox",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -293,11 +257,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.interview-question",
-    version: "0.3",
+    version: "0.4",
     rendererId: "tangent.renderer.interview-question",
     rendererClass: "react-component",
     entry: "components/envelopes/InterviewQuestion#InterviewQuestion",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -310,11 +273,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.output-render",
-    version: "0.3",
+    version: "0.4",
     rendererId: "tangent.renderer.output-render",
     rendererClass: "react-component",
     entry: "components/envelopes/OutputRender#OutputRender",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -327,11 +289,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.progress-panel",
-    version: "0.10",
+    version: "0.11",
     rendererId: "tangent.renderer.progress-panel",
     rendererClass: "react-component",
     entry: "components/envelopes/ProgressPanel#ProgressPanel",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -344,11 +305,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.prose-revision",
-    version: "0.3",
+    version: "0.4",
     rendererId: "tangent.renderer.prose-revision",
     rendererClass: "react-component",
     entry: "components/envelopes/ProseRevision#ProseRevision",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -361,11 +321,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.spreadsheet-review",
-    version: "0.5",
+    version: "0.6",
     rendererId: "tangent.renderer.spreadsheet-review",
     rendererClass: "react-component",
     entry: "components/envelopes/SpreadsheetReview#SpreadsheetReview",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -378,11 +337,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.synthesis-notes",
-    version: "0.3",
+    version: "0.4",
     rendererId: "tangent.renderer.synthesis-notes",
     rendererClass: "react-component",
     entry: "components/envelopes/SynthesisNotes#SynthesisNotes",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -395,11 +353,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.triage",
-    version: "0.1",
+    version: "0.2",
     rendererId: "tangent.renderer.triage",
     rendererClass: "react-component",
     entry: "components/envelopes/Triage#Triage",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -412,11 +369,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.whiteboard",
-    version: "0.4",
+    version: "0.5",
     rendererId: "tangent.renderer.whiteboard",
     rendererClass: "react-component",
     entry: "components/envelopes/Whiteboard#Whiteboard",
-    trustClass: "portfolio-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -429,11 +385,10 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.wizard",
-    version: "0.12",
+    version: "0.13",
     rendererId: "tangent.renderer.wizard",
     rendererClass: "react-component",
     entry: "components/envelopes/Wizard#Wizard",
-    trustClass: "core-trusted",
     isolation: "main-origin",
     inlinePayloadLimitBytes: 262144,
     fallbackRendererId: "",
@@ -457,9 +412,9 @@ export function rendererBindingFor(kind: string): RendererBinding | null {
   return RENDERER_BINDINGS.find((binding) => binding.kind === kind) ?? null;
 }
 
-/** The profile for one trust class, or null when this build does not implement it. */
-export function trustProfileFor(trustClass: string): RendererTrustProfile | null {
-  return RENDERER_TRUST_PROFILES.find((profile) => profile.class === trustClass) ?? null;
+/** The profile for one isolation, or null when this build does not implement it. */
+export function trustProfileFor(isolation: string): RendererTrustProfile | null {
+  return RENDERER_TRUST_PROFILES.find((profile) => profile.isolation === isolation) ?? null;
 }
 
 /** Kinds whose manifest says a React component in Tangent's own tree draws them. */

@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.interview-question
-version: "0.3"
+version: "0.4"
 revision: 1
 title: "Interview question"
 description: "Interview-question envelope: ask one long-form question with optional quick-picks and explicit output-shape prompting."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.interview-question
   class: react-component
   entry: "components/envelopes/InterviewQuestion#InterviewQuestion"
-  trust_class: core-trusted
+  isolation: main-origin
   component: InterviewQuestionView
   fallback:
     preserves_meaning: false

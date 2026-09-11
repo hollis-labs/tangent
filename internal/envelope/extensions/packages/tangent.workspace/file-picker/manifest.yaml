@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.file-picker
-version: "0.9"
+version: "0.10"
 revision: 1
 title: "File picker"
 description: "File-picker envelope: room-backed local artifact selection with allowed roots and explicit submit."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.file-picker
   class: react-component
   entry: "components/envelopes/FilePicker#FilePicker"
-  trust_class: core-trusted
+  isolation: main-origin
   component: FilePickerView
   fallback:
     preserves_meaning: false

@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.design-iteration
-version: "0.2"
+version: "0.3"
 revision: 1
 title: "Design iteration"
 description: "Design-iteration envelope: render sandboxed HTML, collect click/input actions, and iterate through multiple variants in one room."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.design-iteration
   class: sandboxed-frame
   entry: "components/envelopes/DesignIteration#DesignIteration"
-  trust_class: sandboxed-code
+  isolation: sandboxed-frame
   component: DesignIterationView
   fallback:
     preserves_meaning: false

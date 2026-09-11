@@ -78,10 +78,6 @@ type definitionSummary struct {
 	Available      bool   `json:"available"`
 	RendererID     string `json:"renderer_id"`
 	RendererClass  string `json:"renderer_class"`
-	// RendererTrustClass is the class Tangent *granted*. A requested class the
-	// trust evidence did not support is quarantined rather than downgraded, so
-	// this field is empty exactly when the evidence gate refused.
-	RendererTrustClass string `json:"renderer_trust_class"`
 	// RendererIsolation is where that class runs the renderer, and it is the
 	// field that makes a trust class mean something to a reader: `main-origin`
 	// carries Tangent's own authority, `sandboxed-frame` carries none.
@@ -149,16 +145,6 @@ type definitionDetail struct {
 	RequiredCapabilities []definition.Capability `json:"required_renderer_effect_capabilities"`
 	GrantedCapabilities  []definition.Capability `json:"granted_renderer_effect_capabilities"`
 	DeniedCapabilities   []definition.Capability `json:"denied_renderer_effect_capabilities,omitempty"`
-	// TrustDeniedCapabilities is what the *trust class* refuses, which is a
-	// different fact from host policy declining to grant something and is
-	// reported separately so an operator is not told to widen a policy that
-	// would not help. The ceiling is evaluated before the grant, so nothing
-	// here can be recovered by an operator.
-	TrustDeniedCapabilities []definition.Capability `json:"trust_denied_renderer_effect_capabilities,omitempty"`
-	// PermittedCapabilities is the whole ceiling for this renderer's trust
-	// class: what a manifest in that class may ever declare, whether or not
-	// this one does.
-	PermittedCapabilities []string `json:"trust_class_permitted_capabilities,omitempty"`
 
 	DraftCustody string `json:"draft_custody"`
 	// RetentionClass is nil when the publisher authored nothing, which is the
@@ -338,10 +324,9 @@ func (s *Server) handleDefinitionGet(
 		RendererEntry:       manifest.Renderer.Entry,
 		RendererAssetDigest: manifest.Renderer.AssetDigest,
 
-		RequiredCapabilities:    nonNilCapabilities(manifest.RequiredCapabilities),
-		GrantedCapabilities:     nonNilCapabilities(materialized.GrantedCapabilities),
-		DeniedCapabilities:      materialized.DeniedCapabilities,
-		TrustDeniedCapabilities: materialized.TrustDeniedCapabilities,
+		RequiredCapabilities: nonNilCapabilities(manifest.RequiredCapabilities),
+		GrantedCapabilities:  nonNilCapabilities(materialized.GrantedCapabilities),
+		DeniedCapabilities:   materialized.DeniedCapabilities,
 
 		DraftCustody:                string(manifest.DraftCustody),
 		RetentionClass:              manifest.RetentionClass,
@@ -365,9 +350,6 @@ func (s *Server) handleDefinitionGet(
 	if fallback, ok := materialized.SafeFallback(); ok {
 		detail.FallbackRendererID = fallback.RendererID
 		detail.FallbackDegradation = string(fallback.Degradation)
-	}
-	if profile, ok := definition.TrustProfileFor(manifest.Renderer.TrustClass); ok {
-		detail.PermittedCapabilities = profile.Capabilities
 	}
 	detail.RequestSchema = projectSchema(
 		material.RequestSchema, materialized.Derived.RequestSchemaDigest, input.IncludeSchemas, true)
@@ -438,7 +420,6 @@ func summarize(materialized definition.Materialized) definitionSummary {
 		State: string(materialized.State), StateReason: materialized.StateReason,
 		ErrorCode: materialized.ErrorCode, Available: materialized.State.Servable(),
 		RendererID: manifest.Renderer.ID, RendererClass: string(manifest.Renderer.Class),
-		RendererTrustClass:   string(materialized.TrustClass),
 		RendererIsolation:    string(materialized.Isolation),
 		AmbientHostAuthority: materialized.Isolation.AmbientHostAuthority(),
 		TrustAssurance:       string(materialized.Assurance),

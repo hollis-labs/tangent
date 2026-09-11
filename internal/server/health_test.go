@@ -38,7 +38,7 @@ renderer:
   id: tangent.renderer.fixture
   class: react-component
   entry: "components/envelopes/Fixture#Fixture"
-  trust_class: core-trusted
+  isolation: main-origin
   fallback:
     preserves_meaning: false
     degradation: none

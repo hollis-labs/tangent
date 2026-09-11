@@ -18,10 +18,26 @@ const HITLPackageID = "tangent.hitl"
 // request definition pinned by an InteractionRecord.
 const HITLItemEnvelopeType = "tangent.hitl-item"
 
-// HITLItemContractVersion is required in every v1 request, command, handle,
-// terminal outcome, and retrieval projection. It intentionally matches the
-// definition version in hitlItemManifest.
+// HITLItemContractVersion is the PAYLOAD contract version, required in every v1
+// request, command, handle, terminal outcome, and retrieval projection.
+//
+// It is not the definition version, and until ADR 0009 nothing made that
+// visible: both were "1.0", and one constant was used for both jobs — including
+// as the `Version` on the DefinitionRef that pins an interaction. The ADR bumped
+// every manifest, the two numbers separated, and every HITL enqueue started
+// failing with "definition not found: tangent.hitl-item@1.0".
+//
+// They move for different reasons and must stay apart. This one moving is a
+// WIRE BREAK: every v1 payload in flight carries it. The definition version
+// moving is a manifest change, which ADR 0003 §3 says happens whenever the
+// contract or the renderer identity does.
 const HITLItemContractVersion = "1.0"
+
+// HITLItemDefinitionVersion is the version of the shipped manifest, and is what
+// pins an interaction to a definition. It must equal the `version` field in
+// packages/tangent.hitl/hitl-item/manifest.yaml; TestHITLItemContract_RegistersPinnedDefinition
+// is what holds the two together.
+const HITLItemDefinitionVersion = "1.1"
 
 // Stable $defs entry points used to generate MCP schemas and TypeScript types.
 const (

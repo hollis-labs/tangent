@@ -171,7 +171,7 @@ func TestDefinitionGetProjectsTheWholeManifestAndBoundsSchemas(t *testing.T) {
 		OwnershipClass              string            `json:"ownership_class"`
 		RendererID                  string            `json:"renderer_id"`
 		RendererClass               string            `json:"renderer_class"`
-		RendererTrustClass          string            `json:"renderer_trust_class"`
+		RendererIsolation           string            `json:"renderer_isolation"`
 		RendererEntry               string            `json:"renderer_entry"`
 		TrustAssurance              string            `json:"trust_assurance"`
 		TrustSourceLocator          string            `json:"trust_source_locator"`
@@ -209,7 +209,7 @@ func TestDefinitionGetProjectsTheWholeManifestAndBoundsSchemas(t *testing.T) {
 	if detail.PackageID != extensions.HITLPackageID || detail.OwnershipClass != "host-package" {
 		t.Errorf("ownership = %s/%s", detail.PackageID, detail.OwnershipClass)
 	}
-	if detail.RendererID == "" || detail.RendererClass == "" || detail.RendererTrustClass == "" ||
+	if detail.RendererID == "" || detail.RendererClass == "" || detail.RendererIsolation == "" ||
 		detail.RendererEntry == "" {
 		t.Errorf("renderer binding is incomplete: %+v", detail)
 	}

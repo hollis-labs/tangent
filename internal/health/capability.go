@@ -39,7 +39,6 @@ const (
 const (
 	GrantGranted            = "granted"
 	GrantDeniedByHostPolicy = "denied-by-host-policy"
-	GrantDeniedByTrustClass = "denied-by-trust-class"
 	// GrantUnknownCapability is a capability id this build does not recognize.
 	// It is never a grant.
 	GrantUnknownCapability = "unknown-capability"
@@ -91,8 +90,10 @@ type CapabilityReport struct {
 	StateReason string `json:"state_reason,omitempty"`
 	ErrorCode   string `json:"error_code,omitempty"`
 
-	TrustClass string `json:"renderer_trust_class,omitempty"`
-	Isolation  string `json:"renderer_isolation,omitempty"`
+	// Isolation is where the renderer runs. It used to sit beside a
+	// `renderer_trust_class` field; ADR 0009 collapsed the two, because the
+	// class only ever produced this.
+	Isolation string `json:"renderer_isolation,omitempty"`
 
 	Effects EffectPosture `json:"effects"`
 
@@ -258,7 +259,6 @@ func (r *Reporter) describe(materialized definition.Materialized) CapabilityRepo
 		State:          string(materialized.State),
 		StateReason:    bound(materialized.StateReason),
 		ErrorCode:      materialized.ErrorCode,
-		TrustClass:     string(materialized.TrustClass),
 		Isolation:      string(materialized.Isolation),
 		Effects:        effectPosture(materialized),
 	}
@@ -310,7 +310,6 @@ func effectPosture(materialized definition.Materialized) EffectPosture {
 	isolation := effect.Isolation(materialized.Isolation)
 
 	granted := capabilitySet(materialized.GrantedCapabilities)
-	trustDenied := capabilitySet(materialized.TrustDeniedCapabilities)
 	hostDenied := capabilitySet(materialized.DeniedCapabilities)
 
 	for _, capability := range manifest.RequiredCapabilities {
@@ -321,9 +320,6 @@ func effectPosture(materialized definition.Materialized) EffectPosture {
 			entry.Mediation = string(effect.MediationUnimplemented)
 		case granted[capability.ID]:
 			entry.Grant = GrantGranted
-			entry.Mediation = string(effect.MediationFor(effect.Capability(capability.ID), isolation))
-		case trustDenied[capability.ID]:
-			entry.Grant = GrantDeniedByTrustClass
 			entry.Mediation = string(effect.MediationFor(effect.Capability(capability.ID), isolation))
 		case hostDenied[capability.ID]:
 			entry.Grant = GrantDeniedByHostPolicy

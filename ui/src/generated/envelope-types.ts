@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:7e1e5460af713b0cb162f35c05627e6467b1567293ba4a645cde8b62d8e93fc3
+// @definition-source sha256:7f8f00870cd3f855623abf9da51b244850ad71d1513206e529d7efcba753e9b8
 // Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -1112,7 +1112,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:7e1e5460af713b0cb162f35c05627e6467b1567293ba4a645cde8b62d8e93fc3";
+export const DEFINITION_SOURCE_DIGEST = "sha256:7f8f00870cd3f855623abf9da51b244850ad71d1513206e529d7efcba753e9b8";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.13.0";
@@ -1128,25 +1128,25 @@ export interface DefinitionSourceEntry {
 
 /** Per-kind manifest identity, so drift can name the kind that moved. */
 export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
-  { kind: "tangent.app-board", version: "0.2", revision: 1, manifestDigest: "sha256:ced9cea3e27575452344cffc2cfa83a8a20dd474feca5c1ea7e8883bb6272cc6", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
-  { kind: "tangent.approval-queue", version: "0.7", revision: 1, manifestDigest: "sha256:f6cc05239c2acf08167587fcb008781bf870c7afeb2a74c46d157e89c6adde01", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
-  { kind: "tangent.block-draft", version: "0.3", revision: 1, manifestDigest: "sha256:d5152653f4dba5f2a67695329cbb5fc4e56116b2d2bde0cb9065991681fd46a5", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
-  { kind: "tangent.dashboard", version: "0.11", revision: 1, manifestDigest: "sha256:0428fe0d6b1118ed2d38059de52b38b172b1b0d46b512c0a72420f16816b6847", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
-  { kind: "tangent.design-iteration", version: "0.2", revision: 1, manifestDigest: "sha256:a92bcfba76f7135c0395204cc1f36a8878b71632c3c7b1f80a92e968046ddd51", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
-  { kind: "tangent.diff-review", version: "0.8", revision: 1, manifestDigest: "sha256:865c9205fb40232aafddaea19c9ecbcea4068599a29e14d55e7e3c87416ecc60", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
-  { kind: "tangent.feedback", version: "0.2", revision: 1, manifestDigest: "sha256:8234446c309f043da6e22a2c5ccdbc330fc3dc02e6816915ac6c7cecc075ca66", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
-  { kind: "tangent.file-picker", version: "0.9", revision: 1, manifestDigest: "sha256:b5a87fd5030dfe3e8a99b4f6a9699975e6da4e3a4d932eacb7eaebcbd02ca52d", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
-  { kind: "tangent.form-collect", version: "0.6", revision: 2, manifestDigest: "sha256:35729fdd024d1e394be6ba255bb2d7fb8683d9d5e9950e4033d890331edd15c8", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
-  { kind: "tangent.hitl-item", version: "1.0", revision: 1, manifestDigest: "sha256:ec83fea418e7cd34789ff33c9e259a1eefc04b30b5dd5e771760de0d7949f8e8", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
-  { kind: "tangent.interview-question", version: "0.3", revision: 1, manifestDigest: "sha256:931b76a8835c34167d9e67bb4cc1dec6006f93dbb6bb5129095bc8ff904a2d7d", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
-  { kind: "tangent.output-render", version: "0.3", revision: 1, manifestDigest: "sha256:e7e10151125ffe1a7610f3856699de5da2d668acc54572e0eb038bd4ea5b6345", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },
-  { kind: "tangent.progress-panel", version: "0.10", revision: 1, manifestDigest: "sha256:eadd6152480cf6376076b23ddc253ce417b1f24cfd2141126e3224b004d0e695", contractDigest: "sha256:6ac28915e72d3eaf60d849e50888c2d3b3f74f3a78f27698d874e2d766296b59" },
-  { kind: "tangent.prose-revision", version: "0.3", revision: 1, manifestDigest: "sha256:cc6e1df5da24bea61c523edcb2844830728a9b81b72444452b328a32d4f84319", contractDigest: "sha256:0a1d37050af23dc3e6e61a6e6aea04dac6720b2644ba4d5f815f015347602f11" },
-  { kind: "tangent.spreadsheet-review", version: "0.5", revision: 1, manifestDigest: "sha256:25f741f14715048aa35e326b1390a8c7f450d3ccf2422b4b96f258a933e41f32", contractDigest: "sha256:16282b257eff5d6c7e9ad27ca178980aa5ee7ddb67f1a2edba22af66b3c8c1d9" },
-  { kind: "tangent.synthesis-notes", version: "0.3", revision: 1, manifestDigest: "sha256:7ef213e865d60689fded40b233b389f64859b3fa4906ad47f358285565908880", contractDigest: "sha256:9884a5ead5775b887689cf468454f8dca1eccc2c2eb0f9633640af85d0381342" },
-  { kind: "tangent.triage", version: "0.1", revision: 1, manifestDigest: "sha256:bed4f9b67f40b88c2dd2546a0d280f4917af663b018c2cea6f7dcc0285c2ff77", contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368" },
-  { kind: "tangent.whiteboard", version: "0.4", revision: 1, manifestDigest: "sha256:6f6297ef0fe1370ea1706f755c384409c465e6f41e888f7ea056be8641e629c1", contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c" },
-  { kind: "tangent.wizard", version: "0.12", revision: 1, manifestDigest: "sha256:793a679e9c9877af09b4e683f4db170249b2f93ca19570f604f3a1b66df15388", contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8" },
+  { kind: "tangent.app-board", version: "0.3", revision: 1, manifestDigest: "sha256:21689b180436900fe77562eaf86f7c435cccc63235baacb0b4870b9d2e064bd5", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
+  { kind: "tangent.approval-queue", version: "0.8", revision: 1, manifestDigest: "sha256:40f8023c9c1efa1c83fdba1d80c1e5cab68e037f2296f1f1e5207358ad49bfef", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
+  { kind: "tangent.block-draft", version: "0.4", revision: 1, manifestDigest: "sha256:52ff9c8adfffd35ee43826ca5016dd798b1b9f19e8a8755fbd4d816f600218cd", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
+  { kind: "tangent.dashboard", version: "0.12", revision: 1, manifestDigest: "sha256:24640bcaa0298cb9e89100002712fec80bc8360d5d6bd671beeaeb668425e999", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
+  { kind: "tangent.design-iteration", version: "0.3", revision: 1, manifestDigest: "sha256:e98d28afa43b82490d6f2321add7ce8221830cb48f9c2051fa61b0ff9a7a2125", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
+  { kind: "tangent.diff-review", version: "0.9", revision: 1, manifestDigest: "sha256:fcdf9efa5c34f896efabcb951e2b0540efc02b147ce75215bfc9aad75d69942d", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
+  { kind: "tangent.feedback", version: "0.3", revision: 1, manifestDigest: "sha256:c7501f59e1e40a5b1a938f668403837628fb333991b2db965df49823bfac7594", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
+  { kind: "tangent.file-picker", version: "0.10", revision: 1, manifestDigest: "sha256:4ef3363ccedea1c8b9afa8797d64233c4ed549c9e0a408ab08bde5dba1788939", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
+  { kind: "tangent.form-collect", version: "0.7", revision: 1, manifestDigest: "sha256:a64ffd6d1de303b5d37176c36799ca81c0c4d8817d21020cb2890cb918c942d7", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
+  { kind: "tangent.hitl-item", version: "1.1", revision: 1, manifestDigest: "sha256:04dbfee39751656b5b949935e6691013e424a55500b45a4843e80b2a04436d91", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
+  { kind: "tangent.interview-question", version: "0.4", revision: 1, manifestDigest: "sha256:051e73e63187b752716bc3a5cca51d44b2561c416cedc9fcf4c47dc8d5972730", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
+  { kind: "tangent.output-render", version: "0.4", revision: 1, manifestDigest: "sha256:f6107e6ab05224e4a24e31a40baa7fe2846c383a4b440b6c8420beed1b35f5c5", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },
+  { kind: "tangent.progress-panel", version: "0.11", revision: 1, manifestDigest: "sha256:c9ce109e5a91be742395c83ab98f98ecadf33707cbdaf04a74bda29c0cac9ace", contractDigest: "sha256:6ac28915e72d3eaf60d849e50888c2d3b3f74f3a78f27698d874e2d766296b59" },
+  { kind: "tangent.prose-revision", version: "0.4", revision: 1, manifestDigest: "sha256:98c214e0db86c7341ad04549590dc603e9c5fa9816cfe6e41cadf736968b9950", contractDigest: "sha256:0a1d37050af23dc3e6e61a6e6aea04dac6720b2644ba4d5f815f015347602f11" },
+  { kind: "tangent.spreadsheet-review", version: "0.6", revision: 1, manifestDigest: "sha256:8bfd251bfdc6faa486ace91d642a937c46c2ae473701cfc80ae089331e30761d", contractDigest: "sha256:16282b257eff5d6c7e9ad27ca178980aa5ee7ddb67f1a2edba22af66b3c8c1d9" },
+  { kind: "tangent.synthesis-notes", version: "0.4", revision: 1, manifestDigest: "sha256:a4c695e3c09557b9901839f9c1a317a0c630e33d09b143f8a0abb17b76deb09a", contractDigest: "sha256:9884a5ead5775b887689cf468454f8dca1eccc2c2eb0f9633640af85d0381342" },
+  { kind: "tangent.triage", version: "0.2", revision: 1, manifestDigest: "sha256:b9513affa43bf0f88cd7c899731823332b43ffb2552ee1c221ea5e58b2751cf3", contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368" },
+  { kind: "tangent.whiteboard", version: "0.5", revision: 1, manifestDigest: "sha256:1fa1b5261c6255fd037c22582ab9229ccc09b4d6f7e9df83ad207b8e51ebb9bf", contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c" },
+  { kind: "tangent.wizard", version: "0.13", revision: 1, manifestDigest: "sha256:920170905798d3372cf0f24453f50d9e844c6c4e51af8822e4f5a39d4707a776", contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8" },
 ] as const;
 
 /**

@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.feedback
-version: "0.2"
+version: "0.3"
 revision: 1
 title: "Feedback"
 description: "Feedback envelope: ask a human to answer a short structured questionnaire."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.feedback
   class: react-component
   entry: "components/envelopes/Feedback#Feedback"
-  trust_class: core-trusted
+  isolation: main-origin
   component: FeedbackView
   fallback:
     preserves_meaning: false

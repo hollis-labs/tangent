@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.output-render
-version: "0.3"
+version: "0.4"
 revision: 1
 title: "Output render"
 description: "Output-render envelope: present the final markdown artifact with copy/export affordances and preserve the room's canonical final output."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.output-render
   class: react-component
   entry: "components/envelopes/OutputRender#OutputRender"
-  trust_class: core-trusted
+  isolation: main-origin
   component: OutputRenderView
   fallback:
     preserves_meaning: false

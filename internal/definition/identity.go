@@ -43,9 +43,9 @@ var ErrIllegalRevisionAdvance = errors.New("definition: contract moved without a
 // readable, and a difference reports as one named field rather than as a
 // structural diff a reader has to interpret.
 type Identity struct {
-	ContractDigest     string        `json:"contract_digest"`
-	RendererClass      RendererClass `json:"renderer_class"`
-	RendererTrustClass TrustClass    `json:"renderer_trust_class"`
+	ContractDigest    string        `json:"contract_digest"`
+	RendererClass     RendererClass `json:"renderer_class"`
+	RendererIsolation Isolation     `json:"renderer_isolation"`
 	// CapabilitiesDigest is empty for a definition requiring none, which is
 	// every kind this build ships. Empty rather than the digest of `[]` for
 	// the same reason Digest returns "" for absent material: "requires
@@ -99,7 +99,7 @@ func PublicationOf(manifest *Manifest, derived Derived) Publication {
 		Identity: Identity{
 			ContractDigest:     derived.ContractDigest,
 			RendererClass:      manifest.Renderer.Class,
-			RendererTrustClass: manifest.Renderer.TrustClass,
+			RendererIsolation:  manifest.Renderer.Isolation,
 			CapabilitiesDigest: CapabilitiesDigest(manifest.RequiredCapabilities),
 		},
 		ResponseSchema: manifest.CompatibilityResponseSchema,
@@ -188,8 +188,8 @@ func (i Identity) Moved(other Identity) []string {
 	if i.RendererClass != other.RendererClass {
 		moved = append(moved, "renderer.class")
 	}
-	if i.RendererTrustClass != other.RendererTrustClass {
-		moved = append(moved, "renderer.trust_class")
+	if i.RendererIsolation != other.RendererIsolation {
+		moved = append(moved, "renderer.isolation")
 	}
 	if i.CapabilitiesDigest != other.CapabilitiesDigest {
 		moved = append(moved, "required_capabilities")

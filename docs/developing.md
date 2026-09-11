@@ -320,7 +320,7 @@ shape fits every kind.
 
 A manifest carries two numbers and they are not interchangeable. ADR 0003 §3:
 `revision` may advance within a `version` only while `contract_digest`,
-`renderer.class`, `renderer.trust_class` and `required_capabilities` all hold.
+`renderer.class`, `renderer.isolation` and `required_capabilities` all hold.
 Anything else is a new `version`. Adding an optional field to a request schema
 moves `contract_digest`, so it is a version bump — an optional field is still a
 contract change, and the number that tells a reader the contract moved is the

@@ -138,6 +138,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Proposed` and promoting only on his approval is now the standing convention**;
   an agent cannot write an approval line for a document he has not seen.
 
+- **The renderer trust model is reduced to isolation (`CW-20260911-0060`).**
+  Five trust classes became four isolations, and `renderer.trust_class` is now
+  `renderer.isolation`. [**ADR 0009**](docs/adr/0009-renderer-trust-reduced-to-isolation.md)
+  carries the decision and the evidence.
+
+  The class did two jobs under one name: **isolation**, which a browser
+  enforces, and **provenance** — which publisher, verified how, shipping its
+  bundle where — which a table enforced. Read against the distribution that
+  exists, the provenance half sorted seventeen first-party React components from
+  one first-party React component that imports tldraw, and the two buckets
+  differed by `process.exec`: a capability with no executor, gated on an
+  authority nothing in the shipped binary holds. What blocked an out-of-tree
+  publisher from `portfolio-trusted` was `signed-package` having no verifier —
+  **an unbuilt feature reading as a security boundary**, not a decision that
+  plugins must be signed.
+
+  Removed: assurance grantability as a class gate, the publisher reservation,
+  the empty-`asset_digest` rule, the `core-trusted` / `portfolio-trusted` split,
+  and the class-based capability ceiling. The ceiling was removed rather than
+  demoted to documentation — a table that reads like a gate and is not one is
+  the defect being corrected, and keeping it one layer down would rebuild it.
+
+  **The sandbox is untouched.** `tangent.design-iteration` renders markup an
+  agent produced, in the participant's browser, at Tangent's origin. The agent
+  is not the adversary there — it is the conduit, for a web page it summarized
+  or a file it read. All three layers, and the four-check `postMessage` rule,
+  stand exactly as they were.
+
+  Cost, paid once and deliberately: **every shipped kind takes a version bump**,
+  because the renderer identity moved and ADR 0003 §3 makes that a version
+  rather than a revision. Under §8 C1 that takes pending interactions out of
+  service for new submissions on upgrade. `CW-20260911-0045` rides along — two
+  knowingly false comments in the `tangent.app-board` manifest have been waiting
+  since `adca3ff` for a change that moved those bytes anyway.
+
 ### Known limitations
 
 - **The host holds no plugin configuration, and that is the answer**

@@ -208,7 +208,7 @@ func TestNoObservationCarriesAPlantedToken(t *testing.T) {
 		String(AttrState, planted["participant"]),
 		String(AttrRefusal, planted["terminal"]),
 		String(AttrCapability, planted["capability"]),
-		String(AttrTrustClass, planted["path"]),
+		String(AttrIsolation, planted["path"]),
 		// …and through keys the allowlist does not name.
 		String("error_message", planted["driver_error"]),
 		String("response_payload", planted["response"]),
@@ -302,7 +302,7 @@ func TestDroppedAttributesAreCounted(t *testing.T) {
 func TestEveryDeclaredAttributeIsAllowlisted(t *testing.T) {
 	declared := []string{
 		AttrMode, AttrState, AttrTerminalCause, AttrRefusal, AttrNamespace,
-		AttrDeniedBy, AttrCapability, AttrMaterializationState, AttrTrustClass,
+		AttrDeniedBy, AttrCapability, AttrMaterializationState, AttrIsolation,
 		AttrIsolation, AttrRole, AttrClientKind, AttrVerdict,
 	}
 	for _, key := range declared {

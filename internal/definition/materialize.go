@@ -25,7 +25,9 @@ const (
 	StateRegistered State = "registered"
 	// StateResolved means every file the manifest references was found.
 	StateResolved State = "resolved"
-	// StateVerified means trust evidence was evaluated and accepted.
+	// StateVerified means the assurance was one this build can verify and the
+	// declared isolation resolved to a profile. It covered a wider trust
+	// evaluation before ADR 0009 removed the provenance half.
 	StateVerified State = "verified"
 	// StateMaterialized means digests are derived and material is retained.
 	StateMaterialized State = "materialized"
@@ -131,29 +133,18 @@ type Materialized struct {
 	// DeniedCapabilities records what was asked for and refused by *host
 	// policy*, so a quarantine explains itself.
 	DeniedCapabilities []Capability `json:"denied_capabilities,omitempty"`
-	// TrustDeniedCapabilities records what the renderer's own trust class
-	// refuses, which is a different fact from host policy declining to grant
-	// it and is reported separately for the same reason the broker has two
-	// refusal codes for `undeclared` and `denied`: an operator who widens
-	// policy will not widen this one, and needs to be told so.
-	TrustDeniedCapabilities []Capability `json:"trust_denied_capabilities,omitempty"`
 	// QuarantineReason is set only when State is StateQuarantined (§2.7).
 	QuarantineReason string `json:"quarantine_reason,omitempty"`
 
-	// TrustClass is the class Tangent *granted*, which is the manifest's
-	// request only when the trust evidence supported it. A request the
-	// evidence does not support is quarantined rather than downgraded — a
-	// silently demoted renderer is a renderer running somewhere its author did
-	// not design for, and ADR 0003 §8 C2 makes a change of class a version
-	// bump rather than something a host does behind the publisher's back.
+	// Isolation is where this renderer runs. It is the fact every browser-side
+	// and effect-side enforcement decision reads.
 	//
-	// It is empty when the evidence check refused, and populated on every
-	// state reached after it, including a quarantine for a capability the
-	// class does not permit — where naming the class is the explanation.
-	TrustClass TrustClass `json:"renderer_trust_class,omitempty"`
-	// Isolation is where the granted class runs the renderer. It is the fact
-	// every browser-side and effect-side enforcement decision reads, and it is
-	// derived here rather than by each consumer so there is one answer.
+	// It is the manifest's declared value, and it is never substituted: a
+	// declaration the host cannot honor quarantines the definition rather than
+	// silently demoting it, because a demoted renderer is a renderer running
+	// somewhere its author did not design for. That property is what lets
+	// `renderer.isolation` be read as a fact (ADR 0009); before that ADR the
+	// same guarantee was spread across a granted class and a derived isolation.
 	Isolation Isolation `json:"renderer_isolation,omitempty"`
 
 	VerifiedAt  time.Time `json:"verified_at"`
@@ -220,57 +211,60 @@ func Materialize(manifest *Manifest, material Material, policy HostPolicy) (Mate
 	}
 	out.Assurance = manifest.Trust.Assurance
 
-	// Trust evidence is evaluated against the *requested class*, not against
-	// the manifest in general. This is the step ADR 0003 §2.3 describes as
-	// "a manifest requests a class; Tangent policy decides", and until
-	// CW-20260825-0073 it had no implementation at all: the field was
-	// validated for spelling and then copied through.
-	profile, known := TrustProfileFor(manifest.Renderer.TrustClass)
+	// The manifest REQUESTS an isolation; this is where the host decides.
+	//
+	// ADR 0003 §2.3's "a manifest requests a class; Tangent policy decides"
+	// survives ADR 0009 unchanged — what changed is the evidence being weighed.
+	// There used to be a trust-evidence step here, refusing on publisher, on
+	// assurance grantability and on an authored asset digest. That machinery
+	// gated a third-party publisher this distribution does not have, on a
+	// signature verifier that was never built, and ADR 0009 removed it.
+	//
+	// What decides now is narrow and real: an isolation this build implements
+	// no profile for is REFUSED, and — earlier, in manifest.validate — so is one
+	// that disagrees with the renderer's declared shape. Those two refusals are
+	// the whole of the decide half.
+	//
+	// # Why the field can be named `isolation` when it is a request
+	//
+	// Because the decision is only ever a refusal, never a substitution. Every
+	// path that disagrees with the declaration quarantines the definition; none
+	// assigns a different value. So a definition that materialized has exactly
+	// the isolation its manifest declared, and reading the field as a statement
+	// of fact is correct rather than optimistic.
+	//
+	// That is a property of this code and not an intention about it, which is
+	// why TestMaterializationNeverSubstitutesAnIsolation asserts it directly. A
+	// future edit that downgraded instead of refusing would make the field a
+	// wish again, and it would be this comment, not the name, that had lied.
+	profile, known := IsolationProfileFor(manifest.Renderer.Isolation)
 	if !known {
 		return out.quarantined(
-			fmt.Sprintf("renderer.trust_class %q has no profile in this build",
-				manifest.Renderer.TrustClass)), nil
+			fmt.Sprintf("renderer.isolation %q has no profile in this build",
+				manifest.Renderer.Isolation)), nil
 	}
-	if supported, reason := trustEvidenceSupports(manifest, out.Assurance, profile); !supported {
-		return out.quarantined(reason), nil
-	}
-	out.TrustClass = profile.Class
 	out.Isolation = profile.Isolation
 	out.State = StateVerified
 
-	// verified -> materialized: compatibility ranges. Checked after trust so
-	// an untrusted definition is never described as merely out-of-range.
+	// verified -> materialized: compatibility ranges. Checked after the
+	// isolation step so a definition the host refuses to place is never
+	// described as merely out-of-range.
 	if incompatible, reason := checkCompatibility(manifest, policy); incompatible {
 		return out.incompatible(reason), nil
 	}
 	out.State = StateMaterialized
 
-	// materialized -> available: the trust ceiling, then the host's own
-	// intersection, then host switches.
+	// materialized -> available: the host's own intersection, then host
+	// switches.
 	//
-	// The ceiling comes first and the order is the decision. A capability the
-	// renderer's trust class does not permit is refused whatever host policy
-	// says, so an operator who widens `GrantableCapabilities` widens nothing
-	// the class already closed — which is what stops "grant it and see" from
-	// being an escalation path for a sandboxed renderer.
-	if trustDenied := trustCeilingDenials(manifest.RequiredCapabilities, profile); len(trustDenied) > 0 {
-		out.TrustDeniedCapabilities = trustDenied
-		for _, capability := range trustDenied {
-			if capability.Optional {
-				continue
-			}
-			return out.quarantined(
-				fmt.Sprintf("renderer.trust_class %q does not permit required capability %q",
-					profile.Class, capability.ID)), nil
-		}
-	}
-	permitted := make([]Capability, 0, len(manifest.RequiredCapabilities))
-	for _, capability := range manifest.RequiredCapabilities {
-		if profile.Permits(capability.ID) {
-			permitted = append(permitted, capability)
-		}
-	}
-	granted, denied := intersectCapabilities(permitted, policy.GrantableCapabilities)
+	// There is no class-based ceiling in front of this any more (ADR 0009). It
+	// refused a capability because the renderer's trust class did not permit
+	// it, evaluated against first-party manifests written by the same people
+	// who wrote the ceiling — information dressed as a gate. What refuses a
+	// capability now is host policy's grant, and the mediation table behind it:
+	// a capability with no registered performer is refused at the broker with
+	// `effect_unavailable` rather than admitted.
+	granted, denied := intersectCapabilities(manifest.RequiredCapabilities, policy.GrantableCapabilities)
 	out.GrantedCapabilities = granted
 	out.DeniedCapabilities = denied
 	for _, capability := range denied {

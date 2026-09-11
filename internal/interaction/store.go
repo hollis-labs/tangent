@@ -324,7 +324,7 @@ INSERT INTO definition_bindings (
 		nullString(params.Definition.PackageID), nullString(params.Definition.PackageVersion),
 		nullString(params.Definition.OwnershipClass), nullString(params.Definition.CompatibilityClass),
 		nullString(params.Definition.RendererID), nullString(params.Definition.RendererClass),
-		nullString(params.Definition.RendererTrustClass),
+		nullString(params.Definition.RendererIsolation),
 		nullString(string(params.Definition.RequiredCapabilities)),
 		nullString(string(params.Definition.GrantedCapabilities)),
 		nullString(params.Definition.MaterializationState),

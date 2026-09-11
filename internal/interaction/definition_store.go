@@ -54,9 +54,9 @@ type RetainedDefinition struct {
 	OwnershipClass     string
 	CompatibilityClass string
 
-	RendererID         string
-	RendererClass      string
-	RendererTrustClass string
+	RendererID        string
+	RendererClass     string
+	RendererIsolation string
 
 	RequiredCapabilities string
 	GrantedCapabilities  string
@@ -123,7 +123,7 @@ INSERT OR IGNORE INTO definition_manifests (
 		nullString(retained.SchemaIdentity), nullString(retained.RequestSchemaDigest),
 		nullString(retained.ResponseSchemaDigest),
 		retained.PackageID, retained.PackageVersion, retained.OwnershipClass, retained.CompatibilityClass,
-		retained.RendererID, retained.RendererClass, retained.RendererTrustClass,
+		retained.RendererID, retained.RendererClass, retained.RendererIsolation,
 		jsonArrayOrEmpty(retained.RequiredCapabilities), jsonArrayOrEmpty(retained.GrantedCapabilities),
 		retained.TrustAssurance, retained.TrustSourceLocator,
 		nullString(retained.HostVersion), retained.ValidatorRevision,
@@ -171,7 +171,7 @@ FROM definition_manifests WHERE binding_digest = ?`, bindingDigest).Scan(
 		&retained.ResponseKind, &retained.CompatibilityResponseSchema,
 		&schemaIdentity, &requestDigest, &responseDigest,
 		&retained.PackageID, &retained.PackageVersion, &retained.OwnershipClass, &retained.CompatibilityClass,
-		&retained.RendererID, &retained.RendererClass, &retained.RendererTrustClass,
+		&retained.RendererID, &retained.RendererClass, &retained.RendererIsolation,
 		&retained.RequiredCapabilities, &retained.GrantedCapabilities,
 		&retained.TrustAssurance, &retained.TrustSourceLocator,
 		&hostVersion, &retained.ValidatorRevision, &retained.MaterializationState, &materializedAt,

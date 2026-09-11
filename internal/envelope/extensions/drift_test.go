@@ -127,26 +127,26 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 	// `tangent` or `hollis-labs/go-envelopes`, so a kind a plugin genuinely
 	// contributes cannot reach a higher class than a host-package one — which is
 	// the failure this line exists to make visible.
-	classified := map[string]definition.TrustClass{
-		"tangent.app-board":          definition.TrustCoreTrusted,
-		"tangent.approval-queue":     definition.TrustCoreTrusted,
-		"tangent.block-draft":        definition.TrustCoreTrusted,
-		"tangent.dashboard":          definition.TrustCoreTrusted,
-		"tangent.design-iteration":   definition.TrustSandboxedCode,
-		"tangent.diff-review":        definition.TrustCoreTrusted,
-		"tangent.feedback":           definition.TrustCoreTrusted,
-		"tangent.file-picker":        definition.TrustCoreTrusted,
-		"tangent.form-collect":       definition.TrustCoreTrusted,
-		"tangent.hitl-item":          definition.TrustCoreTrusted,
-		"tangent.interview-question": definition.TrustCoreTrusted,
-		"tangent.output-render":      definition.TrustCoreTrusted,
-		"tangent.progress-panel":     definition.TrustCoreTrusted,
-		"tangent.prose-revision":     definition.TrustCoreTrusted,
-		"tangent.spreadsheet-review": definition.TrustCoreTrusted,
-		"tangent.synthesis-notes":    definition.TrustCoreTrusted,
-		"tangent.triage":             definition.TrustCoreTrusted,
-		"tangent.whiteboard":         definition.TrustPortfolioTrusted,
-		"tangent.wizard":             definition.TrustCoreTrusted,
+	classified := map[string]definition.Isolation{
+		"tangent.app-board":          definition.IsolationMainOrigin,
+		"tangent.approval-queue":     definition.IsolationMainOrigin,
+		"tangent.block-draft":        definition.IsolationMainOrigin,
+		"tangent.dashboard":          definition.IsolationMainOrigin,
+		"tangent.design-iteration":   definition.IsolationSandboxedFrame,
+		"tangent.diff-review":        definition.IsolationMainOrigin,
+		"tangent.feedback":           definition.IsolationMainOrigin,
+		"tangent.file-picker":        definition.IsolationMainOrigin,
+		"tangent.form-collect":       definition.IsolationMainOrigin,
+		"tangent.hitl-item":          definition.IsolationMainOrigin,
+		"tangent.interview-question": definition.IsolationMainOrigin,
+		"tangent.output-render":      definition.IsolationMainOrigin,
+		"tangent.progress-panel":     definition.IsolationMainOrigin,
+		"tangent.prose-revision":     definition.IsolationMainOrigin,
+		"tangent.spreadsheet-review": definition.IsolationMainOrigin,
+		"tangent.synthesis-notes":    definition.IsolationMainOrigin,
+		"tangent.triage":             definition.IsolationMainOrigin,
+		"tangent.whiteboard":         definition.IsolationMainOrigin,
+		"tangent.wizard":             definition.IsolationMainOrigin,
 	}
 
 	svc := registeredService(t)
@@ -159,36 +159,28 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 		kind := item.Manifest.Kind
 		want, listed := classified[kind]
 		if !listed {
-			t.Errorf("%s has no reviewed trust class in this test", kind)
+			t.Errorf("%s has no reviewed isolation in this test", kind)
 			continue
 		}
-		// The *granted* class, not the requested one. They are equal on an
-		// available definition by construction — a request the evidence does
-		// not support is quarantined — and asserting the granted one is what
-		// makes that construction load-bearing rather than incidental.
-		if item.TrustClass != want {
-			t.Errorf("%s granted trust class = %q, want %q", kind, item.TrustClass, want)
+		// Both the declared value and the one in force, asserted separately
+		// even though ADR 0009 makes them equal by construction. That equality
+		// is exactly the property the ADR leans on to call `renderer.isolation`
+		// a fact rather than a request — materialization refuses a declaration
+		// it cannot honor instead of substituting one — so it is worth a line
+		// that fails if it ever stops being true.
+		if item.Isolation != want {
+			t.Errorf("%s isolation in force = %q, want %q", kind, item.Isolation, want)
 		}
-		if item.Manifest.Renderer.TrustClass != want {
-			t.Errorf("%s requests trust class %q, want %q",
-				kind, item.Manifest.Renderer.TrustClass, want)
-		}
-		if got := definition.IsolationFor(want); item.Isolation != got {
-			t.Errorf("%s isolation = %q, want %q", kind, item.Isolation, got)
-		}
-		// Nothing in v0.x declares an effect capability, so nothing is denied
-		// by either gate. A kind that starts declaring one has to come through
-		// this test, which is where a reviewer will see the ceiling.
-		if len(item.TrustDeniedCapabilities) != 0 {
-			t.Errorf("%s has capabilities its trust class refuses: %v",
-				kind, item.TrustDeniedCapabilities)
+		if item.Manifest.Renderer.Isolation != want {
+			t.Errorf("%s declares isolation %q, want %q",
+				kind, item.Manifest.Renderer.Isolation, want)
 		}
 	}
 
 	// The one renderer that runs untrusted code runs it nowhere near Tangent's
 	// own authority. This is acceptance criterion 1 stated against the shipped
 	// set rather than against the model.
-	if definition.IsolationFor(definition.TrustSandboxedCode).AmbientHostAuthority() {
+	if definition.IsolationSandboxedFrame.AmbientHostAuthority() {
 		t.Error("tangent.design-iteration would execute agent-authored markup with " +
 			"Tangent main-origin authority")
 	}

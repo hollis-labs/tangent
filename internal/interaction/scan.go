@@ -132,7 +132,7 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 	var definitionRevision string
 	var manifestDigest, contractDigest, responseSchemaDigest sql.NullString
 	var packageID, packageVersion, ownershipClass, compatibilityClass sql.NullString
-	var rendererID, rendererClass, rendererTrustClass sql.NullString
+	var rendererID, rendererClass, rendererIsolation sql.NullString
 	var requiredCapabilities, grantedCapabilities, materializationState sql.NullString
 	err := row.Scan(
 		&record.ID, &record.SurfaceID, &record.CallerScope, &callerPrincipalRef,
@@ -150,7 +150,7 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 		&record.Definition.Assurance, &definitionBoundAt,
 		&manifestDigest, &contractDigest, &responseSchemaDigest,
 		&packageID, &packageVersion, &ownershipClass, &compatibilityClass,
-		&rendererID, &rendererClass, &rendererTrustClass,
+		&rendererID, &rendererClass, &rendererIsolation,
 		&requiredCapabilities, &grantedCapabilities, &materializationState,
 	)
 	if err != nil {
@@ -189,7 +189,7 @@ func scanInteractionWithDefinition(row scanner) (InteractionRecord, error) {
 	record.Definition.CompatibilityClass = compatibilityClass.String
 	record.Definition.RendererID = rendererID.String
 	record.Definition.RendererClass = rendererClass.String
-	record.Definition.RendererTrustClass = rendererTrustClass.String
+	record.Definition.RendererIsolation = rendererIsolation.String
 	if requiredCapabilities.Valid {
 		record.Definition.RequiredCapabilities = json.RawMessage(requiredCapabilities.String)
 	}

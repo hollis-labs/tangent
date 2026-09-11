@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
@@ -97,8 +96,7 @@ func reportEffectRefusal(
 		Attrs: []telemetry.Attr{
 			telemetry.String(telemetry.AttrNamespace, "effect"),
 			telemetry.String(telemetry.AttrCapability, string(receipt.Capability)),
-			telemetry.String(telemetry.AttrDeniedBy, deniedBy(receipt, binding)),
-			telemetry.String(telemetry.AttrTrustClass, receipt.TrustClass),
+			telemetry.String(telemetry.AttrDeniedBy, deniedBy(receipt)),
 			telemetry.String(telemetry.AttrIsolation, string(receipt.Isolation)),
 			telemetry.String(telemetry.AttrTransport, "browser-api"),
 		},
@@ -115,19 +113,16 @@ func reportEffectRefusal(
 // and `granted`, so the split is recomputed here from the pinned trust class's
 // own ceiling — the same ceiling materialization applied.
 //
-// That recomputation is exact for the shipped classes and is the honest
-// answer for a pinned class this build no longer implements: an unknown class
-// has no profile, so nothing is attributable to it and the denial is reported
-// as host policy rather than guessed.
-func deniedBy(receipt effect.Receipt, binding effect.Binding) string {
+// "trust-class" used to be a third answer here, recomputed from the renderer's
+// class-based capability ceiling. ADR 0009 removed that ceiling, so a declared
+// capability that was denied was denied by host policy — there is no longer a
+// second denier to attribute it to, and guessing one would be worse than the
+// narrower true answer.
+func deniedBy(receipt effect.Receipt) string {
 	switch receipt.Code {
 	case effect.CodeCapabilityUndeclared:
 		return "undeclared"
 	case effect.CodeCapabilityDenied:
-		profile, ok := definition.TrustProfileFor(definition.TrustClass(binding.TrustClass))
-		if ok && !profile.Permits(string(receipt.Capability)) {
-			return "trust-class"
-		}
 		return "host-policy"
 	}
 	if !effect.Known(receipt.Capability) {
