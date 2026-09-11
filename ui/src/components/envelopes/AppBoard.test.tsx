@@ -8,6 +8,7 @@ import {
   applyFilters,
   applyStagedColumns,
   type BoardCardData,
+  CARD_DRAG_TYPE,
   isPluginRoutePath,
 } from "./AppBoard";
 
@@ -506,5 +507,300 @@ describe("<AppBoard> staging", () => {
     const scope = screen.getByTestId("app-board-scope");
     expect(scope).toHaveTextContent("Filters narrow what the caller sent");
     expect(scope).toHaveTextContent("3 task(s) in todo, doing.");
+  });
+});
+
+// ── Staged notes (CW-20260910-0054) ─────────────────────────────────────────
+//
+// The additive half of the same claim: a note is view state on exactly the
+// terms a staged column move is. It goes into the draft, it means nothing to
+// the owning application until the participant presses Sync, and this component
+// neither interprets it nor sends it anywhere itself.
+//
+// The kind stays domain-free. Nothing here knows the first consumer asks an
+// agent to reword a Tesseract record — a note is a string on a card.
+
+const noteSyncBlock = { ...syncBlock, note_label: "Ask the agent to reword this" };
+
+function noteEnvelope(): AppBoardEnvelope {
+  return envelope({ sync: noteSyncBlock });
+}
+
+/** A note board where one card already carries a note the caller has on record. */
+function noteOnRecordEnvelope(cardID: string, note: string): AppBoardEnvelope {
+  return envelope({
+    sync: noteSyncBlock,
+    cards: cards.map((card) => (card.id === cardID ? { ...card, note } : card)),
+  });
+}
+
+describe("AppBoard staged notes", () => {
+  it("offers no note box when the caller names no note_label", () => {
+    render(<AppBoard envelope={syncEnvelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    expect(screen.queryByTestId("app-board-note")).toBeNull();
+  });
+
+  it("records a note in the draft without submitting or fetching anything", () => {
+    const onSubmit = vi.fn();
+    const onDraft = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppBoard
+        envelope={noteEnvelope()}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    const box = screen.getByTestId("app-board-note-CW-2");
+    fireEvent.change(box, { target: { value: "say this in plainer words" } });
+    // Typing alone writes no draft: a revision per keystroke would be a durable
+    // write per keystroke. The box publishes when it loses focus.
+    fireEvent.blur(box);
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_notes: { "CW-2": "say this in plainer words" } }),
+    );
+    expect(screen.getByTestId("app-board-noted-CW-2")).toBeInTheDocument();
+    expect(screen.getByTestId("app-board-note-hint")).toHaveTextContent("until you press Sync");
+  });
+
+  it("leaves nothing pending when a box with nothing on record is emptied again", () => {
+    const onDraft = vi.fn();
+    render(
+      <AppBoard
+        envelope={noteEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    const box = screen.getByTestId("app-board-note-CW-2");
+    fireEvent.change(box, { target: { value: "typed something" } });
+    fireEvent.blur(box);
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.blur(box);
+
+    // The key survives as an empty string rather than being deleted — the
+    // caller needs to tell "cleared" from "never written" — but nothing about
+    // this card is pending, so it carries no marker and no hint.
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_notes: { "CW-2": "" } }),
+    );
+    expect(screen.queryByTestId("app-board-noted-CW-2")).toBeNull();
+    expect(screen.queryByTestId("app-board-note-hint")).toBeNull();
+  });
+
+  it("seeds the box from the note the caller has on record", () => {
+    const env = noteOnRecordEnvelope("CW-2", "say this in plainer words");
+    render(<AppBoard envelope={env} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+
+    expect(screen.getByTestId("app-board-note-CW-2")).toHaveValue("say this in plainer words");
+    // On record, so it is not pending anything — marking it would tell the
+    // participant they have unsaved work forever.
+    expect(screen.getByTestId("app-board-note-hint")).toHaveTextContent(
+      "On record with the caller",
+    );
+    expect(screen.queryByTestId("app-board-noted-CW-2")).toBeNull();
+    expect(screen.queryByTestId("app-board-staged-count")).toBeNull();
+  });
+
+  it("marks a note only once it differs from what is on record", () => {
+    const env = noteOnRecordEnvelope("CW-2", "original");
+    render(<AppBoard envelope={env} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.change(screen.getByTestId("app-board-note-CW-2"), {
+      target: { value: "changed my mind" },
+    });
+
+    expect(screen.getByTestId("app-board-noted-CW-2")).toBeInTheDocument();
+    expect(screen.getByTestId("app-board-note-hint")).toHaveTextContent("until you press Sync");
+  });
+
+  it("keeps an emptied box as an empty string so the caller can tell it was cleared", () => {
+    const onDraft = vi.fn();
+    const env = noteOnRecordEnvelope("CW-2", "original");
+    render(<AppBoard envelope={env} onSubmit={vi.fn()} onCancel={vi.fn()} onDraft={onDraft} />);
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    const box = screen.getByTestId("app-board-note-CW-2");
+    fireEvent.change(box, { target: { value: "" } });
+    fireEvent.blur(box);
+
+    // The key survives with an empty value. Dropping it would be
+    // indistinguishable from a card nobody ever wrote on, and the caller needs
+    // that difference to tell a withdrawal from silence.
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_notes: { "CW-2": "" } }),
+    );
+    expect(screen.getByTestId("app-board-note-hint")).toHaveTextContent("withdraw");
+  });
+
+  it("sends a note typed and never blurred, because Sync publishes the draft too", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+    const onDraft = vi.fn();
+
+    render(
+      <AppBoard
+        envelope={noteEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+        roomID="room-1"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.change(screen.getByTestId("app-board-note-CW-2"), {
+      target: { value: "reword this" },
+    });
+    fireEvent.click(screen.getByTestId("app-board-sync"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_notes: { "CW-2": "reword this" } }),
+    );
+  });
+});
+
+// ── Dragging a card into a column (CW-20260910-0135) ────────────────────────
+//
+// Chrispian, on first use of the Tesseract review board: "Click to drag is not
+// working." It never was. Kanban was chosen on the reasoning that MOVING a card
+// between columns IS the disposition, and clicking a button in a side pane is a
+// weaker version of that gesture — weakest exactly where the surface is aimed,
+// a triage pass over many records.
+//
+// What these hold: a drop is a second GESTURE onto the same view state, never a
+// second meaning. It writes the same draft the button writes, it settles
+// nothing, and it fetches nothing.
+
+/** A DataTransfer stub good enough for the three calls the component makes. */
+function dataTransfer(initial: Record<string, string> = {}) {
+  const store: Record<string, string> = { ...initial };
+  return {
+    types: Object.keys(store),
+    dropEffect: "",
+    effectAllowed: "",
+    setData: (type: string, value: string) => {
+      store[type] = value;
+    },
+    getData: (type: string) => store[type] ?? "",
+  };
+}
+
+describe("AppBoard drag staging", () => {
+  it("stages a card dropped into another column, exactly as the button does", () => {
+    const onSubmit = vi.fn();
+    const onDraft = vi.fn();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(screen.getByTestId("app-board-card-CW-2"), {
+      dataTransfer: transfer,
+    });
+    expect(transfer.getData(CARD_DRAG_TYPE)).toBe("CW-2");
+
+    const target = screen.getByTestId("app-board-column-doing");
+    fireEvent.dragOver(target, { dataTransfer: transfer });
+    fireEvent.drop(target, { dataTransfer: transfer });
+
+    // Same draft the detail-pane button writes, and nothing else happened.
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_changes: { "CW-2": { column_id: "doing" } } }),
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("app-board-column-doing")).toHaveTextContent("Ship the board");
+    expect(screen.getByTestId("app-board-staged-CW-2")).toBeInTheDocument();
+  });
+
+  it("unstages a card dropped back into the column it came from", () => {
+    const onDraft = vi.fn();
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+
+    const transfer = dataTransfer();
+    const move = (columnID: string) => {
+      fireEvent.dragStart(screen.getByTestId("app-board-card-CW-2"), { dataTransfer: transfer });
+      const target = screen.getByTestId(`app-board-column-${columnID}`);
+      fireEvent.dragOver(target, { dataTransfer: transfer });
+      fireEvent.drop(target, { dataTransfer: transfer });
+    };
+
+    move("doing");
+    move("todo");
+
+    // Undoing a move leaves nothing behind for the sync to apply — the same
+    // rule the button path follows.
+    expect(onDraft).toHaveBeenLastCalledWith(expect.objectContaining({ staged_changes: {} }));
+    expect(screen.queryByTestId("app-board-staged-CW-2")).toBeNull();
+  });
+
+  it("ignores a drop that does not carry one of this board's cards", () => {
+    const onDraft = vi.fn();
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+
+    const target = screen.getByTestId("app-board-column-doing");
+    // A card id from some other board — a stale drag that outlived a sync.
+    const foreign = dataTransfer({ [CARD_DRAG_TYPE]: "CW-999" });
+    fireEvent.dragOver(target, { dataTransfer: foreign });
+    fireEvent.drop(target, { dataTransfer: foreign });
+
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("offers no dragging when the caller offers no staging", () => {
+    render(<AppBoard envelope={envelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    // A read-only board is not a drop target, and its cards do not pick up.
+    expect(screen.getByTestId("app-board-card-CW-2")).not.toHaveAttribute("draggable", "true");
+  });
+
+  it("keeps the button path working, because dragging is not keyboard reachable", () => {
+    const onDraft = vi.fn();
+    render(
+      <AppBoard
+        envelope={syncEnvelope()}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+        onDraft={onDraft}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("app-board-card-CW-2"));
+    fireEvent.click(screen.getByTestId("app-board-stage-doing"));
+
+    expect(onDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ staged_changes: { "CW-2": { column_id: "doing" } } }),
+    );
   });
 });

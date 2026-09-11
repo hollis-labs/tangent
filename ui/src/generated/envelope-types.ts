@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:5d559c4557052cdab32e95353aa2a425024249acdc0ef20a5aff6a0ed34318a8
+// @definition-source sha256:8c5495ea31de62dd586e9b027139018c8ae6c07dc650942ee3b53257c0c4d3ff
 // Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -621,13 +621,13 @@ export interface TableCardData {
 /** Envelope data for "tangent.app-board" — App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it. */
 export interface TangentAppBoardData {
   board_id: string;
-  cards: { badges?: { id?: string; label: string; tone?: "neutral" | "info" | "success" | "warning" | "danger" }[]; body?: string; fields?: Record<string, unknown>; id: string; subtitle?: string; title: string }[];
+  cards: { badges?: { id?: string; label: string; tone?: "neutral" | "info" | "success" | "warning" | "danger" }[]; body?: string; fields?: Record<string, unknown>; id: string; note?: string; subtitle?: string; title: string }[];
   columns?: { card_ids?: string[]; id: string; label: string }[];
   detail?: { actions?: { id: string; label: string; tone?: "neutral" | "primary" | "danger" }[]; card_id?: string; open?: boolean; raised_by?: "agent" | "user"; sections?: { label: string; markdown?: string }[] };
   filters?: { field?: string; id: string; kind: "single" | "multi" | "text"; label: string; options?: { count?: number; label?: string; value: string }[]; selected?: string[] }[];
   source?: { app?: string; label?: string };
   /** What the board may use to talk back to the caller without an agent turn. Absent means the board is a read-only view. */
-  sync?: { enabled?: boolean; endpoint?: string; label?: string; scope?: string; stage_label?: string };
+  sync?: { enabled?: boolean; endpoint?: string; label?: string; note_label?: string; scope?: string; stage_label?: string };
   title?: string;
   updated_at?: string;
 }
@@ -1112,7 +1112,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:5d559c4557052cdab32e95353aa2a425024249acdc0ef20a5aff6a0ed34318a8";
+export const DEFINITION_SOURCE_DIGEST = "sha256:8c5495ea31de62dd586e9b027139018c8ae6c07dc650942ee3b53257c0c4d3ff";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.13.0";
@@ -1128,7 +1128,7 @@ export interface DefinitionSourceEntry {
 
 /** Per-kind manifest identity, so drift can name the kind that moved. */
 export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
-  { kind: "tangent.app-board", version: "0.1", revision: 2, manifestDigest: "sha256:d60a9f2dd44df9f4fe6499c065698a05fa617521e16bc5442c47d22beae64004", contractDigest: "sha256:f09d6d74679456b9c959fed8d6cba213bc9689a773c9fa0dad54f6f228ea75ca" },
+  { kind: "tangent.app-board", version: "0.1", revision: 4, manifestDigest: "sha256:16879373b767455ae7cdca7a9d65aeeedc3518d54fe54b2c7e856b0d67682f39", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
   { kind: "tangent.approval-queue", version: "0.7", revision: 1, manifestDigest: "sha256:f6cc05239c2acf08167587fcb008781bf870c7afeb2a74c46d157e89c6adde01", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
   { kind: "tangent.block-draft", version: "0.3", revision: 1, manifestDigest: "sha256:d5152653f4dba5f2a67695329cbb5fc4e56116b2d2bde0cb9065991681fd46a5", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
   { kind: "tangent.dashboard", version: "0.11", revision: 1, manifestDigest: "sha256:0428fe0d6b1118ed2d38059de52b38b172b1b0d46b512c0a72420f16816b6847", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },

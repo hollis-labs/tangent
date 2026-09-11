@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:5d559c4557052cdab32e95353aa2a425024249acdc0ef20a5aff6a0ed34318a8
+// @definition-source sha256:8c5495ea31de62dd586e9b027139018c8ae6c07dc650942ee3b53257c0c4d3ff
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 19 manifests under
@@ -136,7 +136,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     component: "AppBoardView",
     packageId: "tangent.appboard",
     state: "available",
-    contractDigest: "sha256:f09d6d74679456b9c959fed8d6cba213bc9689a773c9fa0dad54f6f228ea75ca",
+    contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e",
   },
   {
     kind: "tangent.approval-queue",
