@@ -10,13 +10,20 @@
 //   client → server : {type:"cancel", envelopeId, revision}
 //   client → server : {type:"draft", envelopeId, draftRevision, draft}
 //
-// Known limitation — `stale_draft` is not yet recoverable in-session. The
-// error frame echoes the revision the client sent, not the one the record
-// expects, so a client that falls behind (a second tab drafting the same
-// envelope, or a reconnect that resets this sequence) cannot resynchronize
-// without a reload. Single-tab drafting is unaffected. Closing it means
-// carrying the expected revision out of interaction.SaveDraftRevision, which
-// is where the value already exists.
+// `stale_draft` is recoverable in-session (CW-20260910-0134). The error frame
+// carries `expectedRevision` — the revision the record would have accepted,
+// taken from interaction.SaveDraftRevision, where the value already existed —
+// and this client resynchronizes its own sequence to it and retries once
+// before reporting anything.
+//
+// It used to echo only the revision the CLIENT sent, which told it nothing it
+// did not already know. The comment that stood here said recovery needed "a
+// reload" and that "single-tab drafting is unaffected"; both were wrong, and
+// wrong in the direction that hides the bug. A draft sequence is the one
+// revision a client PREDICTS rather than echoes, so a reload was the trigger,
+// not the cure — it resets this map to 1 against a server holding N drafts, and
+// every click then failed until the optimistic increments caught up by
+// accident. One tab, no second window, reload once.
 //   client → server : {type:"claim_resolver", takeover}
 //   client → server : {type:"release_resolver"}
 //   client → server : {type:"resync"}
@@ -99,6 +106,7 @@ const ErrorMessageSchema = z.object({
   message: z.string().default(""),
   envelopeId: z.string().optional(),
   revision: z.number().optional(),
+  expectedRevision: z.number().optional(),
   connectionId: z.string().optional(),
   lease: LeaseViewSchema.nullish(),
 });
@@ -132,6 +140,12 @@ export type ServerError = {
   message: string;
   envelopeId?: string;
   revision?: number;
+  /**
+   * On a `stale_draft`, the revision the record would have accepted. The client
+   * resynchronizes to it itself before this reaches a consumer, so a consumer
+   * seeing this has already had the recovery done for it.
+   */
+  expectedRevision?: number;
   lease: LeaseView | null;
 };
 
@@ -238,10 +252,11 @@ export type WSClient = {
    * caller's concern. Its sequence is the draft's own, not the presentation's.
    *
    * A stale revision comes back as a `stale_draft` error frame: nothing was
-   * written and nothing was merged, and the envelope is NOT re-presented.
-   * Recovering from that needs the current revision, which the frame does not
-   * yet carry — see the known limitation on `stale_draft` in ws-client's
-   * header comment.
+   * written and nothing was merged, and the envelope is NOT re-presented. The
+   * frame carries the revision the record expected, so this client corrects its
+   * own sequence and re-sends the same draft once. A caller sees a refusal only
+   * when the retry is also refused, which means a real concurrent writer rather
+   * than a lost count.
    */
   saveDraft: (envelopeId: string, draft: unknown) => boolean;
 
@@ -289,6 +304,18 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   // and conflict forever after. Keeping it here means no consumer has to know
   // that, which is the whole reason it is not a required argument.
   const nextDraftRevision = new Map<string, number>();
+  // The last draft sent per envelope, held so a `stale_draft` refusal can be
+  // retried with the SAME payload at the corrected revision.
+  //
+  // It is the last SENT draft rather than a queue: a draft is a whole snapshot
+  // of view state, not a delta, so the newest one supersedes every older one
+  // and replaying anything but the newest would put the participant back where
+  // they no longer are.
+  const lastDraft = new Map<string, unknown>();
+  // Envelopes whose refusal has already been retried once, so a genuine
+  // concurrent writer cannot turn into a retry loop between two tabs each
+  // correcting to the other's number.
+  const retriedDraft = new Set<string>();
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let ws = openSocket(currentRoomID);
 
@@ -381,14 +408,59 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
         opts.onSync?.(msg.sync);
         return;
       case "error":
+        if (recoverStaleDraft(msg)) return;
         opts.onServerError?.({
           code: msg.code,
           message: msg.message,
           envelopeId: msg.envelopeId,
           revision: msg.revision,
+          expectedRevision: msg.expectedRevision,
           lease: msg.lease ?? null,
         });
     }
+  }
+
+  /**
+   * Resynchronizes the draft sequence after a `stale_draft` and re-sends.
+   *
+   * Returns true when it handled the refusal, so the caller is not told about a
+   * failure that has been repaired. A consumer hearing about every corrected
+   * count would have to distinguish "your work is lost" from "a number was off
+   * by four", which is exactly the distinction this client is here to make.
+   *
+   * It retries ONCE per envelope. A first refusal is almost always a lost
+   * count — a reload, a reconnect — and is entirely the client's to fix. A
+   * second means another writer is genuinely moving the record underneath this
+   * one, and grinding against that would turn a refusal the participant can act
+   * on into a loop they cannot. The flag clears on success, so a later
+   * independent desync is still recovered.
+   */
+  function recoverStaleDraft(msg: Extract<InboundMessage, { type: "error" }>): boolean {
+    if (msg.code !== "stale_draft") return false;
+    const envelopeId = msg.envelopeId;
+    if (!envelopeId || typeof msg.expectedRevision !== "number") return false;
+    if (retriedDraft.has(envelopeId)) return false;
+    if (!lastDraft.has(envelopeId)) {
+      // Nothing to re-send: the sequence is still corrected so the NEXT draft
+      // lands, but there is no payload to replay and the caller should hear
+      // about the one that was refused.
+      nextDraftRevision.set(envelopeId, msg.expectedRevision);
+      return false;
+    }
+    retriedDraft.add(envelopeId);
+    nextDraftRevision.set(envelopeId, msg.expectedRevision);
+    const sent = send(ws, {
+      type: "draft",
+      envelopeId,
+      draftRevision: msg.expectedRevision,
+      draft: lastDraft.get(envelopeId),
+    });
+    if (!sent) {
+      retriedDraft.delete(envelopeId);
+      return false;
+    }
+    nextDraftRevision.set(envelopeId, msg.expectedRevision + 1);
+    return true;
   }
 
   return {
@@ -404,6 +476,13 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
       const draftRevision = nextDraftRevision.get(envelopeId) ?? 1;
       const sent = send(ws, { type: "draft", envelopeId, draftRevision, draft });
       if (sent) {
+        // Held for a retry: a `stale_draft` refusal arrives asynchronously, by
+        // which point this call has already returned.
+        lastDraft.set(envelopeId, draft);
+        // A new draft is a new attempt, so the one-retry budget refills. The
+        // budget exists to stop a loop inside ONE refusal, not to spend a tab's
+        // only recovery on the first hiccup of a long session.
+        retriedDraft.delete(envelopeId);
         // Optimistic. A refusal arrives asynchronously as a `stale_draft`
         // frame, and re-sending the same revision after one would conflict
         // just as surely as never advancing.

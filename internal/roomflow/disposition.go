@@ -374,6 +374,21 @@ func (d *roomDisposition) Draft(
 		// The client resynchronizes and retries; the payload is untouched and
 		// cannot be reported, so the refusal carries revisions and a code and
 		// nothing else. `Service.SaveDraft` has already emitted the telemetry.
+		//
+		// When the store knows which revision WOULD have been accepted, that
+		// number is carried across rather than dropped. It is the only thing
+		// that makes this refusal recoverable in-session: a draft sequence is
+		// the one revision a client has to predict rather than echo, so a
+		// client that lost its count cannot get back on its own
+		// (CW-20260910-0134).
+		var conflict *interaction.DraftRevisionConflictError
+		if errors.As(err, &conflict) {
+			return &room.DraftConflictError{
+				InteractionID: record.ID,
+				Sent:          conflict.Sent,
+				Expected:      conflict.Expected,
+			}
+		}
 		return fmt.Errorf("%w: %s", room.ErrDispositionDraftConflict, record.ID)
 	case errors.Is(err, interaction.ErrTerminal):
 		d.reportDispositionRefusal(ctx, correlation, "terminal")

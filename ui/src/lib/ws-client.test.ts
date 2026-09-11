@@ -307,6 +307,143 @@ describe("ws-client draft revisions", () => {
       globalThis.WebSocket = originalWS;
     }
   });
+
+  // CW-20260910-0134. The draft sequence is the one revision this client has to
+  // PREDICT rather than echo, so losing the count — a reload, a reconnect, a
+  // second tab — used to be unrecoverable: it guessed 1, was refused, and
+  // healed only by accident after as many clicks as it had missed drafts.
+  //
+  // The refusal now carries the revision the record wanted, so one correction
+  // gets it back.
+  function draftHarness() {
+    Object.assign(MockWebSocket, {
+      OPEN: 1,
+      CONNECTING: 0,
+      CLOSING: 2,
+      CLOSED: 3,
+      instances: [],
+    });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const onServerError = vi.fn();
+    const client = connect("room-a", {
+      wsURL: "ws://example.test/ws",
+      clientID: "tab-1",
+      heartbeatMs: 0,
+      onEnvelope: vi.fn(),
+      onServerError,
+    });
+    const socket = MockWebSocket.instances[0];
+    socket.emitOpen();
+    socket.sent.length = 0;
+    const drafts = () =>
+      socket.sent
+        .map((raw: string) => JSON.parse(raw))
+        .filter((frame: { type: string }) => frame.type === "draft");
+    const refuse = (expectedRevision?: number) =>
+      socket.emitMessage(
+        JSON.stringify({
+          type: "error",
+          code: "stale_draft",
+          message: "the draft revision this update was built on is no longer current",
+          envelopeId: "board-1",
+          revision: 1,
+          ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        }),
+      );
+    return { client, socket, drafts, refuse, onServerError };
+  }
+
+  it("resynchronizes to the revision the record wanted and re-sends once", () => {
+    const originalWS = globalThis.WebSocket;
+    try {
+      const { client, drafts, refuse, onServerError } = draftHarness();
+
+      // A client that lost its count sends 1 against a record holding five.
+      client.saveDraft("board-1", { filters: ["a"] });
+      refuse(6);
+
+      const sent = drafts();
+      expect(sent).toHaveLength(2);
+      // The retry carries the SAME payload at the corrected revision — a draft
+      // is a whole snapshot, so replaying it is replaying the participant's
+      // current view, not an older one.
+      expect(sent[1]).toMatchObject({ envelopeId: "board-1", draftRevision: 6 });
+      expect(sent[1].draft).toEqual({ filters: ["a"] });
+      // Repaired, so the consumer is not told about a failure that did not
+      // survive. It would have to distinguish "your work is lost" from "a
+      // number was off by five", which is what this client is here to do.
+      expect(onServerError).not.toHaveBeenCalled();
+
+      // And the sequence continues from the corrected point.
+      client.saveDraft("board-1", { filters: ["a", "b"] });
+      expect(drafts()[2]).toMatchObject({ draftRevision: 7 });
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+
+  it("retries once and then reports, so two writers cannot loop", () => {
+    const originalWS = globalThis.WebSocket;
+    try {
+      const { client, drafts, refuse, onServerError } = draftHarness();
+
+      client.saveDraft("board-1", { filters: ["a"] });
+      refuse(6);
+      expect(drafts()).toHaveLength(2);
+
+      // A second refusal means someone else is genuinely moving the record.
+      // Grinding against that turns a refusal the participant can act on into
+      // a loop they cannot.
+      refuse(7);
+      expect(drafts()).toHaveLength(2);
+      expect(onServerError).toHaveBeenCalledTimes(1);
+      expect(onServerError.mock.calls[0][0]).toMatchObject({
+        code: "stale_draft",
+        expectedRevision: 7,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+
+  it("refills the retry budget on the next draft, so one hiccup is not a tab's only recovery", () => {
+    const originalWS = globalThis.WebSocket;
+    try {
+      const { client, drafts, refuse, onServerError } = draftHarness();
+
+      client.saveDraft("board-1", { filters: ["a"] });
+      refuse(6);
+      client.saveDraft("board-1", { filters: ["b"] });
+      refuse(9);
+
+      // Two retries across two separate attempts, neither reported.
+      expect(drafts()).toHaveLength(4);
+      expect(drafts()[3]).toMatchObject({ draftRevision: 9 });
+      expect(onServerError).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
+
+  it("reports a refusal that carries no expected revision instead of guessing", () => {
+    const originalWS = globalThis.WebSocket;
+    try {
+      const { client, drafts, refuse, onServerError } = draftHarness();
+
+      client.saveDraft("board-1", { filters: ["a"] });
+      // An older server, or a conflict the store could not put a number on.
+      refuse(undefined);
+
+      expect(drafts()).toHaveLength(1);
+      expect(onServerError).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
 });
 
 describe("shell client identity", () => {

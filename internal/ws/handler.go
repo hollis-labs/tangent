@@ -194,6 +194,15 @@ type outboundError struct {
 	Revision     int64           `json:"revision,omitempty"`
 	ConnectionID string          `json:"connectionId,omitempty"`
 	Lease        *room.LeaseView `json:"lease,omitempty"`
+	// ExpectedRevision is the revision the record would have accepted, sent
+	// with a stale_draft refusal so the client can resynchronize its own draft
+	// sequence instead of guessing at it (CW-20260910-0134).
+	//
+	// It is deliberately NOT sent on a stale_presentation: that path answers by
+	// replaying the envelope, which carries the current revision already, and a
+	// second copy in the error frame would be a second source for the same
+	// fact.
+	ExpectedRevision int64 `json:"expectedRevision,omitempty"`
 }
 
 // ServeHTTP implements http.Handler. It enforces the roomID query
@@ -479,14 +488,24 @@ func (h *Handler) handleDispositionConflict(
 		// only means another writer got there first, and re-pushing the
 		// envelope would discard whatever the participant has since typed.
 		// They are told the revision moved and reconcile from what they hold.
-		h.logger.Debug("ws: stale draft revision",
-			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
-		h.sendError(ctx, c, outboundError{
+		// The expected revision rides along when the store knew it, which is
+		// what makes this refusal recoverable in-session rather than the start
+		// of a guessing game. Echoing only the revision the client sent told it
+		// nothing it did not already know.
+		frame := outboundError{
 			Code:       errorCodeStaleDraft,
 			Message:    "the draft revision this update was built on is no longer current",
 			EnvelopeID: msg.EnvelopeID,
 			Revision:   msg.DraftRevision,
-		})
+		}
+		var draftConflict *room.DraftConflictError
+		if errors.As(err, &draftConflict) {
+			frame.ExpectedRevision = draftConflict.Expected
+		}
+		h.logger.Debug("ws: stale draft revision",
+			"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID,
+			"sent", msg.DraftRevision, "expected", frame.ExpectedRevision)
+		h.sendError(ctx, c, frame)
 		h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeStaleDraft)
 	case errors.Is(err, room.ErrPresentationRevisionConflict):
 		h.logger.Debug("ws: stale presentation revision; resynchronizing",
