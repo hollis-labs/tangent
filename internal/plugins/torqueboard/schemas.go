@@ -38,8 +38,8 @@ var openToolSchema = json.RawMessage(`{
     "limit": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 500,
-      "description": "Maximum tasks to send. Send a deliberate superset: the board's own filter bar is a VIEW over what you sent, so narrowing past it needs a sync."
+      "maximum": 80,
+      "description": "Maximum tasks to send; defaults to 60 and is clamped at 80. The ceiling is measured against the kind's inline payload limit — a Torque description becomes the card body verbatim, so one card costs ~2.8 KB. Send a deliberate superset: the board's own filter bar is a VIEW over what you sent, so narrowing past it needs a sync. A cut set is reported in the board's scope line and in this tool's truncated field rather than passed off as the whole set."
     },
     "room_id": {
       "type": "string",
@@ -56,7 +56,9 @@ const openToolDescription = "Open a Torque board in Tangent: the tasks matching 
 	"arranged in columns by status, in a browser room. Returns the room URL and a board handle. " +
 	"The board stays open — the participant can stage status changes and press Sync to apply them " +
 	"and pull fresh cards, with no agent turn. Filters narrow the tasks you asked for; the board's " +
-	"own filter bar narrows what was sent."
+	"own filter bar narrows what was sent. Cards are capped, so check `truncated`: when it is true " +
+	"Torque held more matches than the board shows, and neither you nor the participant is looking " +
+	"at the whole set."
 
 // syncToolSchema advertises the sync tool's input.
 var syncToolSchema = json.RawMessage(`{

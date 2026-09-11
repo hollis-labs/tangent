@@ -406,6 +406,20 @@ Filters on the board narrow the cards the plugin sent; they are not a query
 Tangent re-runs, and the board says so in its own words. Reaching a task
 outside the sent set needs a sync.
 
+### What the board tells you about its own scope
+
+Cards default to 60 and are capped at 80, measured against the kind's 256 KiB
+inline payload limit: a Torque description becomes the card body verbatim, so
+one card costs ~2.8 KB where a Tesseract summary card costs ~700 bytes.
+
+Torque's HTTP list route reports no match count — it answers `{tasks, total}`
+where `total` is the length of the page — so the board learns it was cut by
+asking for one task more than it will show and discarding the extra, which is
+how `torque_task_list` derives its own `has_more`. The scope line therefore says
+*"60 task(s) in todo, doing, review, and there are more"* rather than naming a
+total, and the tools return `truncated` beside `cards` so the agent that opened
+the board knows it is not looking at everything either (`CW-20260910-0043`).
+
 Torque is reached over its HTTP API at `http://127.0.0.1:8990` by default, or
 `TANGENT_TORQUE_API_URL`. The plugin is the only thing in this repository that
 knows Torque exists — Tangent core stays domain-free. **If Torque is down, the

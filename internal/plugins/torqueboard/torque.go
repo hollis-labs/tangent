@@ -129,11 +129,40 @@ func NewClient(baseURL string) *Client {
 // so a reader can tell which Torque they are looking at.
 func (c *Client) BaseURL() string { return c.baseURL }
 
-// ListTasks returns the tasks matching filters.
+// TaskPage is one bounded page of Torque tasks, and whether Torque held more.
+//
+// It is a struct rather than a slice for one field: `More`. A board that sent
+// a cut set and reported only a count reads as the whole set, which is
+// CW-20260910-0043 — the participant filters, finds nothing, and cannot tell
+// whether the task is absent from Torque or was simply never sent.
+type TaskPage struct {
+	// Tasks is the page, already trimmed to the requested limit.
+	Tasks []Task
+	// More says Torque held at least one further match. It is exact, not a
+	// guess from `len(Tasks) == limit`.
+	//
+	// There is no total beside it, and that is Torque's answer rather than a
+	// shortcut: `GET /api/v1/tasks` returns `{tasks, total}` where `total` is
+	// `len(tasks)` — the page, not the match count, as Torque's own handler
+	// comment says. `has_more` and a cursor exist on `torque_task_list`, the
+	// MCP door, which this plugin deliberately does not use. So a total would
+	// cost a second call on the path of a person waiting for a board, and
+	// "and there are more" is the honest sentence that costs nothing.
+	More bool
+}
+
+// ListTasks returns the tasks matching filters, bounded by the card limit.
 //
 // Statuses are joined with commas because that is the shape Torque's own
 // handler splits on; everything else is one parameter per facet.
-func (c *Client) ListTasks(ctx context.Context, filters ListFilters) ([]Task, error) {
+//
+// The limit sent to Torque is one higher than the caller's. That extra row is
+// never rendered; it is the whole truncation signal, and it is Torque's own
+// idiom — `torque_task_list` determines `has_more` the same way ("fetch one
+// extra row beyond limit"). It costs one record on a request already in
+// flight, where a count would cost a second round trip.
+func (c *Client) ListTasks(ctx context.Context, filters ListFilters) (TaskPage, error) {
+	limit := clampCards(filters.Limit)
 	query := url.Values{}
 	if len(filters.Statuses) > 0 {
 		query.Set("status", strings.Join(filters.Statuses, ","))
@@ -147,17 +176,18 @@ func (c *Client) ListTasks(ctx context.Context, filters ListFilters) ([]Task, er
 	if len(filters.Tags) > 0 {
 		query.Set("tags", strings.Join(filters.Tags, ","))
 	}
-	if filters.Limit > 0 {
-		query.Set("limit", strconv.Itoa(filters.Limit))
-	}
+	query.Set("limit", strconv.Itoa(limit+1))
 
 	var response struct {
 		Tasks []Task `json:"tasks"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/api/v1/tasks?"+query.Encode(), nil, &response); err != nil {
-		return nil, err
+		return TaskPage{}, err
 	}
-	return response.Tasks, nil
+	if len(response.Tasks) > limit {
+		return TaskPage{Tasks: response.Tasks[:limit], More: true}, nil
+	}
+	return TaskPage{Tasks: response.Tasks}, nil
 }
 
 // Transition moves one task to a new status.

@@ -17,6 +17,43 @@ import (
 // is a column and a Torque tag is a badge, and nothing in Tangent core learns
 // either fact.
 
+// DefaultCards and MaximumCards bound one board.
+//
+// Measured against real Torque data rather than guessed, the way the Tesseract
+// board's pair was: over the 1111 tasks in the active statuses on this machine,
+// one mapped card marshals to ~2.8 KB (median 2.4 KB, p90 5.0 KB) because a
+// Torque description is long by design and becomes the card body verbatim.
+// Against the app-board manifest's `inline_payload_limit_bytes` of 262144 that
+// puts the default at ~168 KB and the ceiling at ~224 KB. The default is 60
+// because a board is a surface someone scans, and the ceiling is 80 because
+// that is where the envelope stops having comfortable headroom.
+//
+// There was no bound at all before CW-20260910-0043: a board opened with no
+// `limit` sent every matching task, which on this machine is ~2.8 MB — 10.7×
+// the limit its own kind declares. A cap is what makes a truncation sentence
+// necessary, and the sentence is what makes the cap honest; neither works
+// alone.
+const (
+	DefaultCards = 60
+	MaximumCards = 80
+)
+
+// clampCards resolves a requested card limit.
+//
+// It is applied both where the tool input becomes filters — so the number
+// recorded on the envelope is the effective one — and inside the client, so a
+// board opened before this cap existed still syncs bounded rather than
+// re-reading its own unbounded snapshot.
+func clampCards(limit int) int {
+	if limit <= 0 {
+		return DefaultCards
+	}
+	if limit > MaximumCards {
+		return MaximumCards
+	}
+	return limit
+}
+
 // ActiveStatuses is the default column set: the statuses a person is looking
 // at when they say "my work". Terminal and archival statuses are excluded by
 // default because a board that opens with 370 done cards is a board nobody

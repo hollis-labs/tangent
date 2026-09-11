@@ -68,7 +68,7 @@ func (in OpenInput) filters() ListFilters {
 	return ListFilters{
 		Statuses: statuses, ProjectID: in.ProjectID, SprintID: in.SprintID,
 		EpicID: in.EpicID, Kind: in.Kind, Executor: in.Executor,
-		Tags: in.Tags, Search: in.Search, Limit: in.Limit,
+		Tags: in.Tags, Search: in.Search, Limit: clampCards(in.Limit),
 	}
 }
 
@@ -81,6 +81,11 @@ type OpenResult struct {
 	// Cards is how many tasks were sent. It is the number the board's own
 	// filter bar narrows, which is why it is worth reporting.
 	Cards int `json:"cards"`
+	// Truncated says Torque held more matches than the board was allowed to
+	// send. The participant is told in the scope line; the agent is told here,
+	// because an agent that opened a board over a cut set and does not know it
+	// will reason about the cards as though they were the whole answer.
+	Truncated bool `json:"truncated"`
 	// Scope says which records were sent, in the same words the board shows
 	// the participant.
 	Scope string `json:"scope"`
@@ -96,7 +101,7 @@ func (p *Plugin) Open(ctx context.Context, input OpenInput) (OpenResult, error) 
 	}
 
 	filters := input.filters()
-	tasks, err := p.client.ListTasks(ctx, filters)
+	page, err := p.client.ListTasks(ctx, filters)
 	if err != nil {
 		return OpenResult{}, err
 	}
@@ -111,7 +116,7 @@ func (p *Plugin) Open(ctx context.Context, input OpenInput) (OpenResult, error) 
 	}
 
 	boardID := newBoardID()
-	data := p.boardData(boardID, input, filters, tasks)
+	data := p.boardData(boardID, input, filters, page)
 	envelope := boardEnvelope(newEnvelopeID(), p.boardTitle(input, filters), data, filters)
 
 	if err := advance(ctx, tools, roomID, envelope); err != nil {
@@ -119,7 +124,8 @@ func (p *Plugin) Open(ctx context.Context, input OpenInput) (OpenResult, error) 
 	}
 	return OpenResult{
 		RoomID: roomID, URL: url, BoardID: boardID,
-		Cards: len(tasks), Scope: data.Sync.scopeOrEmpty(), Source: p.client.BaseURL(),
+		Cards: len(page.Tasks), Truncated: page.More,
+		Scope: data.Sync.scopeOrEmpty(), Source: p.client.BaseURL(),
 	}, nil
 }
 
@@ -128,14 +134,14 @@ func (p *Plugin) boardData(
 	boardID string,
 	input OpenInput,
 	filters ListFilters,
-	tasks []Task,
+	page TaskPage,
 ) BoardData {
 	sync := &Sync{
 		Enabled:    !input.ReadOnly,
 		Endpoint:   SyncPath,
 		Label:      "Sync",
 		StageLabel: "Move to",
-		Scope:      scopeSentence(filters, len(tasks)),
+		Scope:      scopeSentence(filters, page),
 	}
 	if input.ReadOnly {
 		sync.Label = ""
@@ -144,7 +150,7 @@ func (p *Plugin) boardData(
 	return BuildBoard(
 		boardID,
 		p.boardTitle(input, filters),
-		tasks,
+		page.Tasks,
 		filters.Statuses,
 		Source{App: "torque", Label: "Torque · " + p.client.BaseURL()},
 		sync,
@@ -172,14 +178,24 @@ func (p *Plugin) boardTitle(input OpenInput, filters ListFilters) string {
 	return "Torque — " + strings.Join(parts, ", ")
 }
 
-// scopeSentence is what the board tells the participant about its own filters.
+// scopeSentence is what the board tells the participant about its own card set.
 //
-// It exists because of the one design detail most likely to bite: the filter
-// bar is a VIEW over the cards this plugin sent, not a query Tangent re-runs.
-// Without a sentence saying so, a filter that "finds nothing" for a task that
-// plainly exists in Torque reads as a bug rather than as a scope.
-func scopeSentence(filters ListFilters, sent int) string {
-	scope := fmt.Sprintf("%d task(s)", sent)
+// Two things have to come out of it, and the second is CW-20260910-0043:
+//
+//   - A filter that finds nothing reads as a SCOPE rather than an emptiness.
+//     The filter bar is a VIEW over the cards this plugin sent, not a query
+//     Tangent re-runs, and without a sentence saying so a task that plainly
+//     exists in Torque looks missing.
+//   - A cut set never reads as the whole set. "60 task(s)" alone is what a
+//     participant filters against, finds nothing in, and cannot tell from an
+//     absence — so a bounded card set says it was bounded.
+//
+// Unlike the Tesseract board's sentence there is no total here, because the
+// Torque door this plugin uses does not report one (see TaskPage.More). That
+// makes the sentence shorter, not vaguer: "and there are more" is a fact, and
+// it carries the remedy beside it.
+func scopeSentence(filters ListFilters, page TaskPage) string {
+	scope := fmt.Sprintf("%d task(s)", len(page.Tasks))
 	if len(filters.Statuses) > 0 {
 		scope += " in " + strings.Join(filters.Statuses, ", ")
 	}
@@ -192,7 +208,14 @@ func scopeSentence(filters ListFilters, sent int) string {
 	if len(filters.Tags) > 0 {
 		scope += ", tagged " + strings.Join(filters.Tags, "/")
 	}
-	return scope + ". Filters below narrow this set; press Sync to re-query Torque."
+	if page.More {
+		scope += ", and there are more. This is NOT the whole set — the card " +
+			"limit cut it, and Torque reports no total, so the board cannot say " +
+			"how many more. Raise the limit or narrow your filters to see the rest."
+	} else {
+		scope += "."
+	}
+	return scope + " Filters below narrow this set; press Sync to re-query Torque."
 }
 
 func (s *Sync) scopeOrEmpty() string {

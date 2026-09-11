@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -152,10 +154,20 @@ func startFakeTorque(t *testing.T, tasks []Task) *fakeTorque {
 	mux.HandleFunc("GET /api/v1/tasks", func(w http.ResponseWriter, r *http.Request) {
 		fake.mu.Lock()
 		fake.lastListQuery = r.URL.RawQuery
-		payload := map[string]any{"tasks": fake.tasks}
+		tasks := fake.tasks
 		fake.mu.Unlock()
+		// Honoring `limit` matters: the plugin detects truncation by asking
+		// for one task more than it will show, so a fake that ignored the
+		// parameter would make every truncation test vacuous.
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			if limit, err := strconv.Atoi(raw); err == nil && limit >= 0 && limit < len(tasks) {
+				tasks = tasks[:limit]
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(payload)
+		// `total` is the length of the page, exactly as Torque's own handler
+		// answers it — which is why it is no use as a match count.
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": tasks, "total": len(tasks)})
 	})
 	mux.HandleFunc("POST /api/v1/tasks/{id}/transition", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -743,3 +755,163 @@ func (baseHostOnly) Context() context.Context                             { retu
 var errNotHonored = errors.New("not honored")
 
 var _ plugin.Host = baseHostOnly{}
+
+// ── A bounded card set says it was bounded (CW-20260910-0043) ───────────────
+
+// manyTasks is a card set large enough for the card limit to bite.
+func manyTasks(count int) []Task {
+	out := make([]Task, 0, count)
+	for index := 0; index < count; index++ {
+		out = append(out, Task{
+			ID:     fmt.Sprintf("CW-%03d", index),
+			Title:  fmt.Sprintf("Task %d", index),
+			Status: "todo",
+		})
+	}
+	return out
+}
+
+// TestTheListAsksForOneMoreTaskThanItWillShow pins the request bytes, not the
+// behavior they produce.
+//
+// Truncation detection rests entirely on that extra row: Torque's HTTP list
+// route reports no match count, so `limit+1` IS the signal. A refactor that
+// "tidied" the +1 away would leave every other test here green and silently
+// restore the bug.
+func TestTheListAsksForOneMoreTaskThanItWillShow(t *testing.T) {
+	torque := startFakeTorque(t, manyTasks(5))
+	board, host := loadedPlugin(t, torque)
+	host.tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+
+	if _, err := board.Open(context.Background(), OpenInput{Limit: 3}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if !strings.Contains(torque.lastListQuery, "limit=4") {
+		t.Errorf("torque query = %q, want limit=4 for a board of 3", torque.lastListQuery)
+	}
+}
+
+// TestABoundedCardSetSaysItWasBounded is the defect itself: a board that sent
+// a subset must not let it read as the whole set.
+func TestABoundedCardSetSaysItWasBounded(t *testing.T) {
+	torque := startFakeTorque(t, manyTasks(10))
+	board, host := loadedPlugin(t, torque)
+	host.tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+
+	result, err := board.Open(context.Background(), OpenInput{Limit: 4})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if result.Cards != 4 {
+		t.Fatalf("cards = %d, want the limit rather than the extra probe row", result.Cards)
+	}
+	if !result.Truncated {
+		t.Error("truncated = false; the agent that opened this board is not looking at the whole set")
+	}
+	if !strings.Contains(result.Scope, "and there are more") ||
+		!strings.Contains(result.Scope, "NOT the whole set") {
+		t.Errorf("scope = %q, want it to say the set was cut", result.Scope)
+	}
+	// No total, deliberately: Torque's list route does not report one, and
+	// inventing a number would be worse than the sentence that omits it.
+	if strings.Contains(result.Scope, " of ") {
+		t.Errorf("scope = %q; Torque reports no match count, so the line must not imply one", result.Scope)
+	}
+
+	advance, _ := host.tools.called("tangent.session_advance")
+	envelope, _ := advance.Arguments["envelope"].(map[string]any)
+	data, _ := envelope["data"].(map[string]any)
+	sync, _ := data["sync"].(map[string]any)
+	if scope, _ := sync["scope"].(string); !strings.Contains(scope, "and there are more") {
+		t.Errorf("board scope = %q; the participant must be told too, not just the agent", scope)
+	}
+	if cards, _ := data["cards"].([]any); len(cards) != 4 {
+		t.Errorf("cards on the board = %d, want 4", len(cards))
+	}
+}
+
+// TestACompleteCardSetDoesNotClaimToBeCut is the other half. A warning that
+// fires on a complete set teaches the participant to ignore it.
+func TestACompleteCardSetDoesNotClaimToBeCut(t *testing.T) {
+	torque := startFakeTorque(t, manyTasks(4))
+	board, host := loadedPlugin(t, torque)
+	host.tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+
+	result, err := board.Open(context.Background(), OpenInput{Limit: 4})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if result.Truncated {
+		t.Error("truncated = true for a set that exactly filled the limit")
+	}
+	if strings.Contains(result.Scope, "there are more") {
+		t.Errorf("scope = %q, want no truncation warning on a complete set", result.Scope)
+	}
+}
+
+// TestASyncReportsTruncationToo: the fresh board is a board, and it is read by
+// the same participant with the same expectations.
+func TestASyncReportsTruncationToo(t *testing.T) {
+	many := manyTasks(DefaultCards + 10)
+	torque := startFakeTorque(t, many)
+	board, host := loadedPlugin(t, torque)
+	host.tools.answer("tangent.surface_get", surfaceWithBoard(t, nil, many))
+
+	result, err := board.Sync(context.Background(), SyncInput{RoomID: "room-1"})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !result.Truncated || result.Cards != DefaultCards {
+		t.Errorf("sync = {cards:%d truncated:%v}, want %d cards and the cut reported",
+			result.Cards, result.Truncated, DefaultCards)
+	}
+	if !strings.Contains(result.Scope, "and there are more") {
+		t.Errorf("scope = %q, want the fresh board to say it was cut as well", result.Scope)
+	}
+}
+
+// TestTheCardLimitIsBoundedAtBothEnds pins the numbers the schema advertises.
+//
+// The ceiling is not cosmetic: before this cap a board opened with no limit
+// sent every matching task, which against real Torque data is ~10× the inline
+// payload limit the kind declares.
+func TestTheCardLimitIsBoundedAtBothEnds(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"unset takes the default", 0, DefaultCards},
+		{"negative takes the default", -5, DefaultCards},
+		{"a modest ask is honored", 12, 12},
+		{"an unbounded ask is clamped", 5000, MaximumCards},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := clampCards(testCase.in); got != testCase.want {
+				t.Errorf("clampCards(%d) = %d, want %d", testCase.in, got, testCase.want)
+			}
+		})
+	}
+	if got := (OpenInput{}).filters().Limit; got != DefaultCards {
+		t.Errorf("filters().Limit = %d, want the default recorded on the envelope", got)
+	}
+}
+
+// TestAnUnboundedBoardFromBeforeTheCapStillSyncsBounded: a board opened before
+// this cap existed carries Limit 0 on its immutable request snapshot, and the
+// sync re-queries from that snapshot rather than from fresh input. The clamp
+// therefore has to live in the client too, or an old board syncs unbounded
+// forever.
+func TestAnUnboundedBoardFromBeforeTheCapStillSyncsBounded(t *testing.T) {
+	torque := startFakeTorque(t, manyTasks(DefaultCards+10))
+	client := NewClient(torque.server.URL)
+
+	page, err := client.ListTasks(context.Background(), ListFilters{Limit: 0})
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(page.Tasks) != DefaultCards || !page.More {
+		t.Errorf("page = %d tasks, more=%v; want the default cap applied at the client door",
+			len(page.Tasks), page.More)
+	}
+}

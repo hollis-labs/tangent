@@ -94,7 +94,10 @@ type SyncResult struct {
 	Applied []AppliedChange `json:"applied"`
 	Failed  []FailedChange  `json:"failed"`
 	Cards   int             `json:"cards"`
-	Scope   string          `json:"scope"`
+	// Truncated says Torque held more matches than the fresh board could
+	// send. Reported to the agent for the reason OpenResult.Truncated is.
+	Truncated bool   `json:"truncated"`
+	Scope     string `json:"scope"`
 	// SyncedAt is when the fresh cards were read.
 	SyncedAt string `json:"synced_at"`
 }
@@ -116,7 +119,7 @@ func (p *Plugin) Sync(ctx context.Context, input SyncInput) (SyncResult, error) 
 
 	applied, failed := p.applyStaged(ctx, board, input.Force)
 
-	tasks, err := p.client.ListTasks(ctx, board.filters)
+	page, err := p.client.ListTasks(ctx, board.filters)
 	if err != nil {
 		return SyncResult{}, err
 	}
@@ -133,7 +136,7 @@ func (p *Plugin) Sync(ctx context.Context, input SyncInput) (SyncResult, error) 
 		Statuses: board.filters.Statuses,
 		ReadOnly: !board.syncEnabled,
 	}
-	data := p.boardData(board.boardID, openInput, board.filters, tasks)
+	data := p.boardData(board.boardID, openInput, board.filters, page)
 	envelope := boardEnvelope(newEnvelopeID(), board.title, data, board.filters)
 	if err := advance(ctx, tools, input.RoomID, envelope); err != nil {
 		return SyncResult{}, err
@@ -141,7 +144,8 @@ func (p *Plugin) Sync(ctx context.Context, input SyncInput) (SyncResult, error) 
 
 	return SyncResult{
 		RoomID: input.RoomID, BoardID: board.boardID,
-		Applied: applied, Failed: failed, Cards: len(tasks),
+		Applied: applied, Failed: failed,
+		Cards: len(page.Tasks), Truncated: page.More,
 		Scope: data.Sync.scopeOrEmpty(), SyncedAt: data.UpdatedAt,
 	}, nil
 }
