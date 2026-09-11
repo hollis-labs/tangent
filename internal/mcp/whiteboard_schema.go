@@ -16,14 +16,14 @@ var whiteboardInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.whiteboard"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
           "properties": {
             "board_id": {"type": "string", "minLength": 1},
             "title": {"type": "string"},
-            "intent": {"type": "string"},
+            "intent": {"type": "string", "description": "What this board is for. Renders as markdown, as does each revision summary."},
             "scene": {"type": "object"},
             "assets": {
               "type": "array",

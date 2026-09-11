@@ -1,6 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import {
+  expectProseLiteral,
+  expectProseRendered,
+  proseProbe,
+} from "@/components/markdown/prose-probe";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 
 describe("<EvidenceDrawer>", () => {
@@ -249,6 +254,61 @@ describe("<EvidenceDrawer>", () => {
     expect(await screen.findByText("Preview expired")).toBeInTheDocument();
     expect(await screen.findByText("Preview not authorized")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Evidence" })).toBeInTheDocument();
+  });
+
+  it("routes a tangent reference description through the shared markdown renderer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "available",
+          label: "Earlier review",
+          surface: {
+            surface_id: "surface_1",
+            state: "resolved",
+            revision: 2,
+            updated_at: "2026-09-04T15:00:00Z",
+          },
+        }),
+      })),
+    );
+
+    render(
+      <EvidenceDrawer
+        itemID="item-reference"
+        itemTitle="Inspect a reference"
+        evidence={[
+          {
+            type: "tangent_reference",
+            label: "Earlier review",
+            surface_id: "surface_1",
+            description: proseProbe("ev-description"),
+          },
+        ]}
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+
+    await waitFor(() => expectProseRendered("ev-description"));
+  });
+
+  // The Leave bucket, pinned: `type: "text"` is the caller declaring plain
+  // text, and rendering it as markdown anyway would override that declaration.
+  it("keeps declared plain-text evidence literal", () => {
+    render(
+      <EvidenceDrawer
+        itemID="item-text"
+        itemTitle="Inspect text"
+        evidence={[{ type: "text", label: "Warning", content: proseProbe("ev-text") }]}
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+
+    expectProseLiteral(screen.getByTestId("hitl-evidence-text"), "ev-text");
   });
 });
 

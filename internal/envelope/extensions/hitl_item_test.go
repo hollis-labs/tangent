@@ -25,8 +25,18 @@ func TestHITLItemContract_RegistersPinnedDefinition(t *testing.T) {
 	if !ok {
 		t.Fatalf("definition %q was not registered", HITLItemEnvelopeType)
 	}
-	if spec.Version != HITLItemContractVersion {
-		t.Fatalf("definition version = %q, want %q", spec.Version, HITLItemContractVersion)
+	// The DEFINITION version, which is not HITLItemContractVersion. The two
+	// were both "1.0" until ADR 0009 bumped every manifest, and this assertion
+	// read as though they were one fact. They are not: HITLItemContractVersion
+	// is the `contract_version` required in every v1 request, command, handle
+	// and receipt, and it does not move when the manifest does.
+	if spec.Version != HITLItemDefinitionVersion {
+		t.Fatalf("definition version = %q, want %q", spec.Version, HITLItemDefinitionVersion)
+	}
+	if HITLItemContractVersion != "1.0" {
+		t.Fatalf("the v1 payload contract version moved to %q; every v1 request, command, "+
+			"handle and receipt carries it, so this is a wire break rather than a manifest bump",
+			HITLItemContractVersion)
 	}
 	if spec.PluginID != PluginID {
 		t.Fatalf("plugin id = %q, want %q", spec.PluginID, PluginID)

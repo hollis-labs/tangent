@@ -12,6 +12,7 @@ import {
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { cn } from "@/lib/utils";
 
 import { EvidenceRequestError, fetchArtifactPreview, fetchTangentReference } from "./api";
@@ -170,7 +171,12 @@ function PlainTextEvidence({ evidence }: { evidence: Extract<HITLEvidence, { typ
           {evidence.language}
         </p>
       ) : null}
+      {/*
+        Stays literal: the caller chose `type: "text"` over `type: "markdown"`,
+        and rendering it as markdown anyway would override a declared type.
+      */}
       <pre
+        data-testid="hitl-evidence-text"
         className={cn(
           "max-h-[28rem] overflow-auto whitespace-pre-wrap break-words border-l-2 px-4 py-3 text-sm leading-6 [overflow-wrap:anywhere]",
           evidence.language
@@ -246,7 +252,13 @@ function TangentReferenceProjection({
   return (
     <div className="border-l-2 border-[#6e8fb3] bg-[#10151b] px-4 py-4">
       {evidence.description ? (
-        <p className="mb-4 text-sm leading-6 text-[#b8bec6]">{evidence.description}</p>
+        <Markdown
+          data-testid="hitl-evidence-reference-description"
+          content={evidence.description}
+          tone="evidence"
+          linkPolicy="withhold"
+          className="mb-4 leading-6 text-[#b8bec6]"
+        />
       ) : null}
       {view.status === "revision_mismatch" ? (
         <p role="status" className="mb-4 text-xs leading-5 text-[#d5b486]">

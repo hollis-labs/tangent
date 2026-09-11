@@ -86,7 +86,7 @@ func NewTriageHandler(manager *room.Manager, logger *slog.Logger, roomURLBase st
 // Errors map to high-level cases:
 //
 //   - context deadline → fmt.Errorf wrapping ctx.Err()
-//   - user cancel → kind=ack, status=cancelled response (synthesized
+//   - user cancel → kind=ack, status=canceled response (synthesized
 //     here so the dispatcher's response-validation gate sees a valid
 //     envelope shape)
 //   - room disconnect → fmt.Errorf wrapping ErrRoomDisconnected;
@@ -155,7 +155,7 @@ func (t *TriageHandler) resolveRoom(env *envelopes.Envelope) (*room.Room, bool, 
 // dispatch-layer return. Cancel becomes a synthesized cancelled
 // Response; everything else propagates as an error.
 func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (*envelopes.Response, error) {
-	// User cancel is synthesized into an ack/cancelled response so MCP
+	// User cancel is synthesized into an ack/canceled response so MCP
 	// clients see the protocol-level cancel shape rather than a tool
 	// failure.
 	if errors.Is(err, room.ErrUserCancelled) {
@@ -163,7 +163,7 @@ func (t *TriageHandler) translateRoomError(env *envelopes.Envelope, err error) (
 			V:           envelopes.ProtocolVersion,
 			EnvelopeID:  env.ID,
 			Kind:        envelopes.ResponseKindAck,
-			Status:      envelopes.ResponseStatusCancelled,
+			Status:      envelopes.ResponseStatusCanceled,
 			CompletedAt: time.Now().UTC().Format(time.RFC3339),
 		}, nil
 	}
@@ -247,8 +247,9 @@ func RegisterDashboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tri
 }
 
 // RegisterAppBoardOnDispatcher wires the same room-bridging handler for
-// tangent.app-board envelopes. The kind is contributed by a plugin (ADR 0007
-// §4); how it is dispatched once registered is unchanged by that.
+// tangent.app-board envelopes. The kind is host plumbing like every other one
+// in this file; two application plugins supply its content, and neither of them
+// is in the dispatch path.
 func RegisterAppBoardOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
 	return dispatcher.Register(appBoardEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }

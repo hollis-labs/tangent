@@ -18,16 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   host will let it do, and **a registration without a manifest is refused**. A
   plugin names a kind; it cannot author that kind's trust class, capabilities,
   assurance or digests, and a component that tries is refused by name rather
-  than silently downgraded. Compiled-in only — no subprocess spawn, no
-  signature verification, no runtime asset loading, and `RegisterCRUDHandler`
-  deliberately unimplemented. `register_all.go` keeps one row per kind with a
-  column saying which door it comes through, so the drift tests walk both.
+  than silently downgraded. `RegisterCRUDHandler` is deliberately
+  unimplemented, and `register_all.go` keeps one row per kind with a column
+  saying which door it comes through, so the drift tests walk both.
+
+  This host is **compiled-in only** — no subprocess spawn, no runtime asset
+  loading — and that is the dogfood concession rather than the shape. See
+  [ADR 0008](docs/adr/0008-the-plugin-model.md) under *Changed*.
 
 - **`tangent.app-board`.** A domain-free board: caller-supplied cards in
   columns, a filter bar, and an optional detail pane composed inside the one
-  envelope rather than opening a second. The first kind contributed through the
-  plugin host, and the first whose `draft_custody` is `tangent-custodied` — its
-  view state is a durable revisioned draft record rather than `localStorage`.
+  envelope rather than opening a second. Host plumbing — the shape both
+  application plugins fill and neither owns — and the first kind whose
+  `draft_custody` is `tangent-custodied`, so its view state is a durable
+  revisioned draft record rather than `localStorage`.
   Filters are a **view over the cards the caller supplied**, never a query the
   host re-runs; the manifest, the tool description and the board itself all say
   so. The owning application supplies the records and applies every
@@ -43,8 +47,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   merged; and reading view state is a pull, never a push. A caller must not
   present a draft as a decision.
 
+- **A versioning gate (`CW-20260911-0008`).** ADR 0003 §3 has said since it was
+  accepted that a `revision` may advance within a `version` only while
+  `contract_digest`, `renderer.class`, `renderer.trust_class` and
+  `required_capabilities` all hold. Nothing compared them, so a year of
+  divergence surfaced in one sitting. `definition.CheckRevisionAdvance` is the
+  rule as code, honoring the one granted exception — the once-per-kind
+  response-schema backfill — rather than hard-failing it, and `contractLock` in
+  `internal/envelope/extensions` is the committed record that turns it into a
+  gate. **`tangent.app-board` is `0.2`, `revision: 1`**: one minor bump covering
+  the `sync` block, `sync.note_label` and `cards[].note`, which were each added
+  under a revision bump and each moved the contract. Semver versions mark
+  releases and none of the three were released separately, so the compressed
+  history is deliberate. §3 was not amended — it was right.
+
+- **Plugin lifecycle, failure isolation and legibility (`CW-20260910-0036`).**
+  `Unload` is now the host's stated contract instead of a decision each plugin
+  made in a comment: a plugin drops its own state and comes off the roster, and
+  **nothing it registered is removed** — the envelope registry has no removal,
+  and a tool or route cannot be attributed to the plugin that registered it. The
+  host refuses honestly rather than performing a rollback it cannot do, and
+  `UnloadAll` runs on the shutdown path. Every contributed tool and route is
+  bounded and panic-contained at registration, so one plugin's defect cannot
+  take down the tool surface or hold graceful shutdown past its deadline the way
+  an unbounded `/sse` stream did (`CW-20260909-0045`). `tangent.health_report`
+  carries a plugin inventory — which loaded, which refused and why — because a
+  tool list cannot answer it: a plugin can load, refuse, or load and register
+  nothing a caller can see.
+
+### Changed
+
+- **The plugin inventory, corrected (`CW-20260911-0036`).** Two names described
+  things that were not what they said.
+
+  `appboard` was not a plugin. It was a struct with a status field and a `Load`
+  that named one kind — `tangent.app-board`, which the host publishes, declares
+  `ownership_class: host-package`, versions with the repository and compiles
+  into `ui_dist` with the release. Every property that would justify plugin-hood
+  was absent: no dependency to isolate, no independent distribution, no
+  independent versioning, no domain knowledge to keep out of core. It was never
+  *moved* to a plugin either — the kind and the plugin were born in the same
+  commit, so the plugin existed to give the new host a customer, and the two
+  consumers that made the shape look shared arrived afterwards. The kind now
+  registers through `extensions.RegisterAll` like every other host-package kind
+  and `internal/plugins/appboard/` is deleted. **The ADR 0007 §4 door stays**,
+  fully implemented and tested with a fixture, on the same terms as the host
+  surfaces that are deliberately unimplemented: it is waiting for a kind this
+  host does not own. Every plugin this build ships now holds a real application
+  dependency.
+
+  `torqueboard` is now `torque`, because it will not just be a board — the
+  plugin carries the application, the way `tesseract` does. Its two tools are
+  renamed with it, to `tangent.torque_<verb>_<surface>` so a second surface
+  slots in without a collision or a breaking rename:
+
+  | Was | Is |
+  |---|---|
+  | `tangent.torque_board` | `tangent.torque_open_board` |
+  | `tangent.torque_board_sync` | `tangent.torque_sync_board` |
+
+  Both tool names are new in this unreleased cycle, so nothing published moves.
+
+- **ADR 0007 §4 is split, not replaced (`CW-20260911-0040`).** §4 was amended
+  twice in two days, and both times the same half moved: its *decisions* held
+  while its *instance stamps* and its *exclusions* rotted. Chrispian's call is
+  that the boundary rule and the plugin model have different lifetimes and
+  should not share a section.
+
+  §4 keeps what never moved — the SDK says what a plugin may offer, the ADR 0003
+  manifest says what the host will let it do, a registration without a manifest
+  is refused — plus the reserved-to-host list and the surfaces this host declines
+  to grow. It carries a note pointing at the rest.
+
+  [**ADR 0008**](docs/adr/0008-the-plugin-model.md) carries the model:
+  Nanite's manifest-authoritative registry adopted, runtime bundle loading,
+  first-party kinds with Tangent keeping a small core set, compiled-in as the
+  dogfood concession rather than the target, the extracted browser loader landing
+  as a TypeScript companion inside `libs/plugin-sdk` so the registry wire contract
+  is defined once, and four questions left explicitly open. **It reverses two of
+  §4's exclusions** — runtime asset loading and subprocess-as-a-separate-decision
+  — which were an agent's framing rather than a decision, and it corrects the
+  claim that `appboard` was the first plugin.
+
+  ADR 0007 stays Accepted and stays the collaboration-surface record. This is an
+  extraction, not a supersession.
+
+  ADR 0008 was drafted `Proposed` and approved the same day — read end-to-end by
+  Chrispian and ruled through a Tangent approval queue, the first ADR in this set
+  approved through Tangent rather than in chat. **An agent-drafted ADR landing
+  `Proposed` and promoting only on his approval is now the standing convention**;
+  an agent cannot write an approval line for a document he has not seen.
+
+- **The renderer trust model is reduced to isolation (`CW-20260911-0060`).**
+  Five trust classes became four isolations, and `renderer.trust_class` is now
+  `renderer.isolation`. [**ADR 0009**](docs/adr/0009-renderer-trust-reduced-to-isolation.md)
+  carries the decision and the evidence.
+
+  The class did two jobs under one name: **isolation**, which a browser
+  enforces, and **provenance** — which publisher, verified how, shipping its
+  bundle where — which a table enforced. Read against the distribution that
+  exists, the provenance half sorted seventeen first-party React components from
+  one first-party React component that imports tldraw, and the two buckets
+  differed by `process.exec`: a capability with no executor, gated on an
+  authority nothing in the shipped binary holds. What blocked an out-of-tree
+  publisher from `portfolio-trusted` was `signed-package` having no verifier —
+  **an unbuilt feature reading as a security boundary**, not a decision that
+  plugins must be signed.
+
+  Removed: assurance grantability as a class gate, the publisher reservation,
+  the empty-`asset_digest` rule, the `core-trusted` / `portfolio-trusted` split,
+  and the class-based capability ceiling. The ceiling was removed rather than
+  demoted to documentation — a table that reads like a gate and is not one is
+  the defect being corrected, and keeping it one layer down would rebuild it.
+
+  **The sandbox is untouched.** `tangent.design-iteration` renders markup an
+  agent produced, in the participant's browser, at Tangent's origin. The agent
+  is not the adversary there — it is the conduit, for a web page it summarized
+  or a file it read. All three layers, and the four-check `postMessage` rule,
+  stand exactly as they were.
+
+  Cost, paid once and deliberately: **every shipped kind takes a version bump**,
+  because the renderer identity moved and ADR 0003 §3 makes that a version
+  rather than a revision. Under §8 C1 that takes pending interactions out of
+  service for new submissions on upgrade. `CW-20260911-0045` rides along — two
+  knowingly false comments in the `tangent.app-board` manifest have been waiting
+  since `adca3ff` for a change that moved those bytes anyway.
+
 ### Known limitations
 
+- **The host holds no plugin configuration, and that is the answer**
+  (`CW-20260910-0036`). `GetConfig`, `SetConfig` and `RegisterConfigSchema` stay
+  unimplemented; a plugin reads its own environment. It keeps ADR 0005 §3.1's
+  secret boundary true by construction rather than by policy — there is no store
+  to leak, migrate or redact. Reopening it needs a plugin with no environment to
+  read, which in practice means subprocess mode (`CW-20260910-0034`).
+- **There is no runtime plugin enable/disable.** `internal/plugins/shipped.go`
+  is the enable set and changing it is a rebuild. Deferred with the reason:
+  nothing has a caller for a toggle, and not building it is how Tangent avoids
+  inheriting Tether's enabled-but-unreachable proxy stall.
+- **A plugin handler that ignores its context leaks a goroutine.** The dispatch
+  budget releases the *caller*; it cannot stop the plugin, because Go cannot
+  interrupt a goroutine that will not yield. Compiled-in plugins share this
+  process by design.
+- **An additive version bump takes pending interactions of that kind out of
+  service** (ADR 0003 §8 C1). The old payloads are still valid by construction,
+  but the pinned definition goes `unavailable` for new submissions anyway.
+  Narrowing C1 for an `additive` compatibility class is the honest fix and is
+  deliberately not in this change; proceed and fix the breakage as it is felt.
 - `stale_draft` is not recoverable in-session. The error frame echoes the
   revision the client sent rather than the one the record expects, so a client
   that falls behind cannot resynchronize without a reload. Single-tab drafting

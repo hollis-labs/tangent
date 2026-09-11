@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { Wizard, type WizardEnvelope, type WizardResponse } from "./Wizard";
 
 describe("Wizard", () => {
@@ -158,5 +159,40 @@ describe("Wizard", () => {
 
     const response = onSubmit.mock.calls[0][0];
     expect(response.payload.progress[0]?.updated_at).not.toBe("2026-05-09T00:00:00.000Z");
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: WizardEnvelope = {
+      v: 1,
+      id: "wizard-md",
+      type: "tangent.wizard",
+      data: {
+        wizard_id: "wizard-md",
+        description: proseProbe("wz-description"),
+        current_step_id: "s1",
+        steps: [
+          {
+            step_id: "s1",
+            title: "First",
+            description: proseProbe("wz-step"),
+            branches: [
+              {
+                branch_id: "b1",
+                label: "Branch one",
+                description: proseProbe("wz-branch"),
+                target_step_id: "s2",
+              },
+            ],
+          },
+          { step_id: "s2", title: "Second" },
+        ],
+      },
+    };
+
+    render(<Wizard envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("wz-description");
+    expectProseRendered("wz-step");
+    expectProseRendered("wz-branch");
   });
 });

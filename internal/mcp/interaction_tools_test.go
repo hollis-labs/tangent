@@ -106,7 +106,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 
 	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent.interaction_submit", map[string]any{
 		"surface_id": opened.SurfaceID, "caller": caller, "idempotency_key": "interaction-1",
-		"definition": map[string]any{"kind": "tangent.triage", "version": "0.1"},
+		"definition": map[string]any{"kind": "tangent.triage", "version": "0.2"},
 		"request":    map[string]any{"prompt": "Choose", "items": []any{"a", "b"}},
 	})
 	if submitted.InteractionID == "" || submitted.State != interaction.InteractionStateStaged ||
@@ -231,7 +231,7 @@ func TestResolvedInteractionSurvivesMCPDisconnectAndProcessRestart(t *testing.T)
 	})
 	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent.interaction_submit", map[string]any{
 		"surface_id": opened.SurfaceID, "caller": caller, "idempotency_key": "restart-submit",
-		"definition": map[string]any{"kind": "tangent.triage", "version": "0.1"},
+		"definition": map[string]any{"kind": "tangent.triage", "version": "0.2"},
 		"request":    map[string]any{"prompt": "Preserve this", "items": []any{"yes"}},
 	})
 	closeFirst()

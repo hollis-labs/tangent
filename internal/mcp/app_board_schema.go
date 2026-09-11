@@ -20,7 +20,7 @@ var appBoardInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.app-board"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "trace": {"type": "object"},
         "meta": {"type": "object"},

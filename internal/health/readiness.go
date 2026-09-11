@@ -10,11 +10,12 @@ import (
 
 // Readiness answers "can this process serve traffic right now".
 //
-// It runs the five dependency checks in a fixed order and under a fixed time
+// It runs the dependency checks in a fixed order and under a fixed time
 // budget. The order is the order an operator would debug in — durable state
-// first, then the schema over it, then what the process loaded, then what a
-// browser would receive, then what happens to an answer once it is given — so
-// the first failing line is usually the cause and not a consequence.
+// first, then the schema over it, then what the process loaded, then which
+// plugins extended it, then what a browser would receive, then what happens to
+// an answer once it is given — so the first failing line is usually the cause
+// and not a consequence.
 func (r *Reporter) Readiness(ctx context.Context) ReadinessReport {
 	ctx, cancel := context.WithTimeout(ctx, probeBudget)
 	defer cancel()
@@ -30,6 +31,10 @@ func (r *Reporter) Readiness(ctx context.Context) ReadinessReport {
 		// is not there.
 		r.checkMigrations(ctx, databaseCheck.Status == StatusFail),
 		r.checkDefinitionRegistry(),
+		// Immediately after the registry, because a plugin-contributed kind is
+		// in that registry and a refused plugin is why one would be missing
+		// from it (ADR 0007 §4).
+		r.checkPlugins(),
 		r.checkRendererHost(),
 		r.checkDeliveryWorker(),
 	}

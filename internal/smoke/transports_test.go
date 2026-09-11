@@ -125,9 +125,30 @@ func TestReadOnlyToolCallAnswersOnBothTransports(t *testing.T) {
 		t.Errorf("managed definition count differs by transport: /mcp %d, /sse %d",
 			direct.CapabilitySummary.ManagedDefinitions, legacy.CapabilitySummary.ManagedDefinitions)
 	}
-	t.Logf("%s: readiness=%s managed_definitions=%d usable=%d",
+	// Plugin legibility, proved against the shipped binary (CW-20260910-0036).
+	// A tool list cannot answer this. A plugin may register no tool at all — a
+	// kind-only plugin registers none by construction — and a plugin that
+	// REFUSED to load registers none either, which is the case an operator most
+	// needs told apart from a healthy one.
+	if direct.Plugins.Loaded == 0 {
+		t.Errorf("%s reports no loaded plugins, but this build ships them; "+
+			"the inventory is what makes a plugin visible when its tools cannot", smoke.ReadOnlyProbeTool)
+	}
+	if direct.Plugins.Refused != 0 {
+		t.Errorf("%s reports %d refused plugin(s): %+v",
+			smoke.ReadOnlyProbeTool, direct.Plugins.Refused, direct.Plugins.Plugins)
+	}
+	if direct.Plugins.Loaded != legacy.Plugins.Loaded {
+		t.Errorf("loaded plugin count differs by transport: /mcp %d, /sse %d",
+			direct.Plugins.Loaded, legacy.Plugins.Loaded)
+	}
+	if direct.Plugins.Attribution == "" {
+		t.Error("the plugin inventory does not say its contributed lists are host-wide")
+	}
+	t.Logf("%s: readiness=%s managed_definitions=%d usable=%d plugins_loaded=%d kinds=%v",
 		smoke.ReadOnlyProbeTool, direct.Readiness.Status,
-		direct.CapabilitySummary.ManagedDefinitions, direct.CapabilitySummary.Usable)
+		direct.CapabilitySummary.ManagedDefinitions, direct.CapabilitySummary.Usable,
+		direct.Plugins.Loaded, direct.Plugins.ContributedKinds)
 }
 
 // TestProcessDownIsDistinguishableFromEverythingElse points the probes at a

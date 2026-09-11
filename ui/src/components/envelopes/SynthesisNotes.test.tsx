@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { SynthesisNotes, type SynthesisNotesEnvelope } from "./SynthesisNotes";
 
 function hiddenEnvelope(): SynthesisNotesEnvelope {
@@ -89,5 +90,33 @@ describe("<SynthesisNotes>", () => {
       kind: "ack",
       status: "submitted",
     });
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <SynthesisNotes
+        envelope={{
+          v: 1,
+          id: "synth-md",
+          type: "tangent.synthesis-notes",
+          context: proseProbe("synth-context"),
+          data: {
+            visibility: "visible",
+            summary: proseProbe("synth-summary"),
+            outline_state: "present",
+            outline: {
+              title: "Draft outline",
+              items: [{ label: "Intro", description: proseProbe("synth-outline") }],
+            },
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("synth-context");
+    expectProseRendered("synth-summary");
+    expectProseRendered("synth-outline");
   });
 });

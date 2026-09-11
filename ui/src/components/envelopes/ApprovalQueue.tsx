@@ -440,9 +440,17 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
     >
       <CardHeader className="space-y-2">
         <CardTitle>{envelope.title ?? envelope.data?.title ?? "Approval Queue"}</CardTitle>
-        <p className="text-sm text-zinc-400">
-          {envelope.data?.intent ?? "Review each queued item and submit a durable decision set."}
-        </p>
+        {envelope.data?.intent ? (
+          <Markdown
+            data-testid="approval-queue-intent"
+            content={envelope.data.intent}
+            className="text-zinc-400"
+          />
+        ) : (
+          <p className="text-sm text-zinc-400">
+            Review each queued item and submit a durable decision set.
+          </p>
+        )}
         <p data-testid="approval-queue-counts" className="text-xs text-zinc-500">
           {items.length} item{items.length === 1 ? "" : "s"} · {unresolvedCount} unresolved
           {deferReasonMissing.length > 0
@@ -491,7 +499,7 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-medium">{item.title}</div>
-                      <div className="text-xs text-zinc-400">{item.summary}</div>
+                      <Markdown content={item.summary} className="text-xs text-zinc-400" />
                     </div>
                     <span className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">
                       {decision ?? "pending"}
@@ -579,7 +587,11 @@ export function ApprovalQueue({ envelope, onSubmit, onCancel, roomID }: Approval
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <h3 className="text-lg font-semibold">{currentItem.title}</h3>
-                    <p className="text-sm text-zinc-300">{currentItem.summary}</p>
+                    <Markdown
+                      data-testid="approval-queue-summary"
+                      content={currentItem.summary}
+                      className="text-zinc-300"
+                    />
                     <Markdown
                       data-testid="approval-queue-description"
                       content={currentItem.description}

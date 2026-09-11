@@ -87,12 +87,12 @@ export function classifyRenderer(kind: string): RendererClassification {
       fallbackRendererID: "",
     };
   }
-  const profile = trustProfileFor(binding.trustClass);
+  const profile = trustProfileFor(binding.isolation);
   if (!profile) {
     return {
       admitted: false,
       code: "trust_class_unimplemented",
-      reason: `this build does not implement the renderer trust class "${binding.trustClass}"`,
+      reason: `this build does not implement the renderer isolation "${binding.isolation}"`,
       remedy: "Update Tangent, then reload.",
       fallbackRendererID: safeFallback(binding),
     };
@@ -120,18 +120,6 @@ export function classifyRenderer(kind: string): RendererClassification {
 export function hasAmbientHostAuthority(kind: string): boolean {
   const classification = classifyRenderer(kind);
   return classification.admitted && classification.profile.ambientHostAuthority;
-}
-
-/**
- * The host-mediated effect capabilities a kind's trust class may ever declare.
- *
- * Empty for `declarative` and `external-surface`, where no publisher code runs
- * and there is therefore no renderer to grant anything to. A kind that is not
- * admitted has no ceiling because it has no renderer.
- */
-export function permittedCapabilities(kind: string): readonly string[] {
-  const classification = classifyRenderer(kind);
-  return classification.admitted ? classification.profile.capabilities : [];
 }
 
 /** The Refused copy for a classification, through the one owner of that shape. */

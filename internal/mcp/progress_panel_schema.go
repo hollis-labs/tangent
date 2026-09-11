@@ -23,9 +23,9 @@ var progressPanelInputSchemaJSON = []byte(`{
           "type": "object",
           "properties": {
             "panel_id": {"type": "string", "minLength": 1},
-            "items": {"type": "array"},
-            "updates": {"type": "array"},
-            "summary": {"type": "object"}
+            "items": {"type": "array", "description": "[{item_id, label, status, detail}]. Each item detail renders as markdown."},
+            "updates": {"type": "array", "description": "[{update_id, kind, item_id, status, summary}]. Each update summary renders as markdown."},
+            "summary": {"type": "object", "description": "{current_status, headline, detail, ...}. detail renders as markdown; headline is a single-line heading and does not."}
           },
           "required": ["panel_id", "items"]
         }

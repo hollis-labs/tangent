@@ -29,7 +29,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.diff-review
-version: "0.8"
+version: "0.9"
 revision: 1
 title: "Diff review"
 description: "Diff-review envelope: room-backed before/after review with per-file and per-hunk decisions, comments, durable artifact refs, and explicit submit."
@@ -45,7 +45,7 @@ renderer:
   id: tangent.renderer.diff-review
   class: react-component
   entry: "components/envelopes/DiffReview#DiffReview"
-  trust_class: core-trusted
+  isolation: main-origin
   component: DiffReviewView
   fallback:
     preserves_meaning: false

@@ -26,7 +26,7 @@
 // Wire shape (one JSON document per run):
 //
 //	{
-//	  "envelopesVersion": "v0.1.0",
+//	  "envelopesVersion": "v0.4.0",
 //	  "types": [
 //	    {
 //	      "name": "info-card",
@@ -62,24 +62,60 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
-	"github.com/hollis-labs/tangent/internal/plugins"
 )
 
-// envelopesVersion is the version line printed in the JSON dump banner.
-// Matches go.mod's `require github.com/hollis-labs/go-envelopes <ver>`;
-// the Node generator embeds this in the file banner so reviewers can see
-// at a glance which version produced the committed types.
+// envelopesModulePath is the module whose version the JSON dump banner
+// reports. The Node generator embeds that version in the generated file
+// banner so a reviewer can see at a glance which version produced the
+// committed types.
+const envelopesModulePath = "github.com/hollis-labs/go-envelopes"
+
+// envelopesVersion reads the selected go-envelopes version out of the
+// binary's own build info rather than repeating it here. The previous
+// hand-maintained constant carried the instruction "bump in lockstep with
+// go.mod", which is the kind of manual sync that silently rots: it still
+// read v0.1.0 while go.mod had moved on, so every regenerated artifact
+// was stamped with a version that had not produced it. Reading build info
+// cannot drift, because it is the same module graph the dump was built
+// from.
 //
-// Bump in lockstep with go.mod when upgrading the dep.
-const envelopesVersion = "v0.1.0"
+// Returns "unknown" when build info is unavailable (an interpreter or a
+// test binary stripped of module data) or when the module is absent from
+// the graph. That is deliberately a visible non-version rather than a
+// plausible-looking default — a wrong version in a provenance banner is
+// worse than an obviously missing one.
+func envelopesVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	if info.Main.Path == envelopesModulePath && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	for _, dep := range info.Deps {
+		if dep == nil || dep.Path != envelopesModulePath {
+			continue
+		}
+		// A replaced module reports the replacement's version; that is
+		// the one that actually produced these types.
+		if dep.Replace != nil && dep.Replace.Version != "" {
+			return dep.Replace.Version
+		}
+		if dep.Version != "" {
+			return dep.Version
+		}
+		return "unknown"
+	}
+	return "unknown"
+}
 
 // dumpType is the JSON shape emitted per registered envelope type.
 type dumpType struct {
@@ -125,13 +161,12 @@ type dumpDefinition struct {
 	// available still appears in the dump, and the generated artifact records
 	// the state rather than silently omitting the kind.
 	State string `json:"state"`
-	// RendererID / RendererClass / RendererEntry / RendererTrustClass replace
+	// RendererID / RendererClass / RendererEntry / RendererIsolation replace
 	// ui/src/main.tsx's string-literal registration as the authority for what
 	// draws a kind (ADR 0003 §4.5).
-	RendererID         string `json:"rendererId"`
-	RendererClass      string `json:"rendererClass"`
-	RendererEntry      string `json:"rendererEntry"`
-	RendererTrustClass string `json:"rendererTrustClass"`
+	RendererID    string `json:"rendererId"`
+	RendererClass string `json:"rendererClass"`
+	RendererEntry string `json:"rendererEntry"`
 	// RendererIsolation is where the *granted* trust class runs the renderer
 	// (CW-20260825-0073). It is derived by the host from the granted class and
 	// dumped rather than re-derived in TypeScript, because a second mapping is
@@ -180,19 +215,17 @@ type dumpDoc struct {
 // ambient authority, and the host-mediated effect capabilities the class may
 // ever declare.
 type dumpTrustProfile struct {
-	Class                 string   `json:"class"`
 	Isolation             string   `json:"isolation"`
 	ExecutesPublisherCode bool     `json:"executesPublisherCode"`
 	AmbientHostAuthority  bool     `json:"ambientHostAuthority"`
 	RendererClasses       []string `json:"rendererClasses"`
-	Capabilities          []string `json:"capabilities"`
 }
 
-// trustProfiles projects internal/definition's trust table for the dump.
+// trustProfiles projects internal/definition's isolation table for the dump.
 func trustProfiles() []dumpTrustProfile {
-	out := make([]dumpTrustProfile, 0, len(definition.TrustClasses()))
-	for _, class := range definition.TrustClasses() {
-		profile, ok := definition.TrustProfileFor(class)
+	out := make([]dumpTrustProfile, 0, len(definition.Isolations()))
+	for _, isolation := range definition.Isolations() {
+		profile, ok := definition.IsolationProfileFor(isolation)
 		if !ok {
 			continue
 		}
@@ -200,17 +233,11 @@ func trustProfiles() []dumpTrustProfile {
 		for _, rendererClass := range profile.RendererClasses {
 			rendererClasses = append(rendererClasses, string(rendererClass))
 		}
-		capabilities := profile.Capabilities
-		if capabilities == nil {
-			capabilities = []string{}
-		}
 		out = append(out, dumpTrustProfile{
-			Class:                 string(profile.Class),
 			Isolation:             string(profile.Isolation),
 			ExecutesPublisherCode: profile.ExecutesPublisherCode,
 			AmbientHostAuthority:  profile.Isolation.AmbientHostAuthority(),
 			RendererClasses:       rendererClasses,
-			Capabilities:          capabilities,
 		})
 	}
 	return out
@@ -231,15 +258,28 @@ func run() error {
 	if regErr := extensions.RegisterAll(svc); regErr != nil {
 		return fmt.Errorf("register tangent extensions: %w", regErr)
 	}
-	// The plugin door too (ADR 0007 §4). Skipping it here would leave every
-	// plugin-contributed kind out of the generated TypeScript while the server
-	// served it — which is exactly the two-registries drift this tool going
-	// through the same registration path exists to prevent.
-	if _, pluginErr := plugins.LoadShipped(
-		context.Background(), slog.New(slog.DiscardHandler), svc,
-	); pluginErr != nil {
-		return fmt.Errorf("load shipped plugins: %w", pluginErr)
-	}
+	// THE PLUGIN DOOR IS DELIBERATELY NOT WALKED HERE, and that reversed with
+	// CW-20260911-0070.
+	//
+	// It used to be: this tool called plugins.LoadShipped so a
+	// plugin-contributed kind could not be served by the binary and missing from
+	// the generated TypeScript. That was right while plugins were COMPILED IN —
+	// the roster was part of the repository, so walking it kept two views of one
+	// fixed set in agreement.
+	//
+	// Plugins are installed now. Loading them here would make the generated
+	// artifacts a function of whatever happens to be installed on the machine
+	// running `make generate-envelopes` — so two developers would generate
+	// different files from the same commit, and `make check-envelopes` would
+	// fail for whoever had a plugin the other did not. That is a worse version
+	// of the drift this tool exists to prevent: not two registries disagreeing,
+	// but a committed artifact that no longer has a single correct value.
+	//
+	// So the generated types describe the REPOSITORY's kinds, which is what a
+	// committed artifact can honestly be. A kind an installed plugin
+	// contributes brings its own renderer with it (ADR 0008 §3's registry, and
+	// the browser loader being extracted under CW-20260911-0035); it does not
+	// arrive through this file.
 	manifestFS := envelopes.EmbeddedFS()
 
 	sourceDigest, digestErr := svc.DefinitionSourceDigest()
@@ -249,7 +289,7 @@ func run() error {
 
 	specs := svc.All()
 	out := dumpDoc{
-		EnvelopesVersion:       envelopesVersion,
+		EnvelopesVersion:       envelopesVersion(),
 		HostVersion:            envelope.HostVersion,
 		DefinitionSourceDigest: sourceDigest,
 		TrustProfiles:          trustProfiles(),
@@ -341,11 +381,10 @@ func describeDefinition(materialized definition.Materialized, requestSchema []by
 		OwnershipClass: string(manifest.OwnershipClass),
 		State:          string(materialized.State),
 
-		RendererID:         manifest.Renderer.ID,
-		RendererClass:      string(manifest.Renderer.Class),
-		RendererEntry:      manifest.Renderer.Entry,
-		RendererTrustClass: string(materialized.TrustClass),
-		RendererIsolation:  string(materialized.Isolation),
+		RendererID:        manifest.Renderer.ID,
+		RendererClass:     string(manifest.Renderer.Class),
+		RendererEntry:     manifest.Renderer.Entry,
+		RendererIsolation: string(materialized.Isolation),
 
 		InlinePayloadLimitBytes:  materialized.EffectiveInlineLimitBytes,
 		FallbackPreservesMeaning: manifest.Renderer.Fallback.PreservesMeaning,

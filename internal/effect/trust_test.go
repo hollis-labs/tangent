@@ -116,43 +116,28 @@ func TestIsolationVocabulariesAgree(t *testing.T) {
 		}
 	}
 	seen := map[Isolation]bool{}
-	for _, class := range definition.TrustClasses() {
-		seen[Isolation(definition.IsolationFor(class))] = true
+	for _, isolation := range definition.Isolations() {
+		seen[Isolation(isolation)] = true
 	}
 	for _, pair := range pairs {
 		if !seen[pair.here] {
-			t.Errorf("no trust class maps to %q; either the value is dead or a class is missing",
-				pair.here)
+			t.Errorf("definition implements no profile for %q; either the value is dead "+
+				"or a position is missing", pair.here)
 		}
 	}
 }
 
-// The trust ceilings in internal/definition are spelled as string literals so
-// that package stays dependency-free. This is what keeps them honest.
-func TestTheTrustCeilingNamesOnlyKnownCapabilities(t *testing.T) {
-	t.Parallel()
-	union := map[string]bool{}
-	for _, class := range definition.TrustClasses() {
-		profile, ok := definition.TrustProfileFor(class)
-		if !ok {
-			t.Fatalf("%s has no profile", class)
-		}
-		for _, id := range profile.Capabilities {
-			if !Known(Capability(id)) {
-				t.Errorf("trust class %s permits %q, which is not a capability this build knows",
-					class, id)
-			}
-			union[id] = true
-		}
-	}
-	// The other direction: a capability no class may declare is a capability
-	// no manifest can reach, which would make it dead rather than reserved.
-	for _, capability := range Capabilities() {
-		if !union[string(capability)] {
-			t.Errorf("%s is in the catalog and no trust class permits it", capability)
-		}
-	}
-}
+// The class-based capability ceiling this used to hold is gone (ADR 0009).
+//
+// It asserted that internal/definition's ceiling literals named only
+// capabilities this build knows, and that every cataloged capability was
+// reachable by some class. Both directions were real while the ceiling was a
+// gate; with the ceiling removed there is no second list to keep honest, and a
+// test that walked an empty one would pass by vacancy.
+//
+// What replaced it as the thing worth pinning is TestIsolationVocabulariesAgree
+// above — the two packages still spell `Isolation` separately, and that pair
+// still has to match.
 
 // A receipt has to say which isolation its mediation was decided in, or the
 // mediation column is not interpretable. Asserted through the broker rather
@@ -161,7 +146,7 @@ func TestReceiptsRecordTheIsolationTheDecisionWasMadeIn(t *testing.T) {
 	t.Parallel()
 	fixture := newFixture(t)
 
-	request := func(isolation Isolation, trustClass, key string) Receipt {
+	request := func(isolation Isolation, key string) Receipt {
 		return fixture.request(t, Request{
 			Capability: ClipboardWrite,
 			Principal:  fixture.participant(),
@@ -169,7 +154,6 @@ func TestReceiptsRecordTheIsolationTheDecisionWasMadeIn(t *testing.T) {
 				BindingDigest: fixture.digest,
 				Required:      []Capability{ClipboardWrite},
 				Granted:       []Capability{ClipboardWrite},
-				TrustClass:    trustClass,
 				Isolation:     isolation,
 			},
 			OwnerScope:     authz.ParticipantScope,
@@ -179,7 +163,7 @@ func TestReceiptsRecordTheIsolationTheDecisionWasMadeIn(t *testing.T) {
 		}).Receipt
 	}
 
-	main := request(IsolationMainOrigin, "core-trusted", "trust-main")
+	main := request(IsolationMainOrigin, "trust-main")
 	if main.Decision != DecisionGranted {
 		t.Fatalf("main-origin decision = %s (%s), want granted", main.Decision, main.Code)
 	}
@@ -187,12 +171,11 @@ func TestReceiptsRecordTheIsolationTheDecisionWasMadeIn(t *testing.T) {
 		t.Errorf("main-origin mediation = %s, want declared: the browser still hands a "+
 			"same-origin renderer navigator.clipboard", main.Mediation)
 	}
-	if main.Isolation != IsolationMainOrigin || main.TrustClass != "core-trusted" {
-		t.Errorf("receipt lost its provenance: isolation=%q trust_class=%q",
-			main.Isolation, main.TrustClass)
+	if main.Isolation != IsolationMainOrigin {
+		t.Errorf("receipt lost its isolation: %q", main.Isolation)
 	}
 
-	sandboxed := request(IsolationSandboxedFrame, "sandboxed-code", "trust-sandboxed")
+	sandboxed := request(IsolationSandboxedFrame, "trust-sandboxed")
 	// No performer is registered for clipboard.write, so in an isolation where
 	// the host is the only possible actor the honest answer is `unavailable` —
 	// not an admission that leaves the renderer to perform it.
@@ -217,8 +200,15 @@ func TestReceiptsRecordTheIsolationTheDecisionWasMadeIn(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("ReceiptForKey: found=%v err=%v", found, err)
 	}
-	if stored.Isolation != IsolationSandboxedFrame || stored.TrustClass != "sandboxed-code" {
-		t.Errorf("persisted receipt = isolation %q / trust class %q, want the values it was written with",
-			stored.Isolation, stored.TrustClass)
+	if stored.Isolation != IsolationSandboxedFrame {
+		t.Errorf("persisted receipt isolation = %q, want the value it was written with",
+			stored.Isolation)
+	}
+	// The legacy trust-class column is empty on receipts minted after ADR 0009
+	// removed the class. Rows written before it keep whatever they recorded —
+	// migration 0010's own note is that rewriting an audit trail would be worse
+	// than a blank that reads as "not recorded".
+	if stored.TrustClass != "" {
+		t.Errorf("a receipt minted after ADR 0009 carries a trust class %q", stored.TrustClass)
 	}
 }

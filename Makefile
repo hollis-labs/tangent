@@ -41,6 +41,29 @@ build-ui: check-node ## Build frontend (Vite production build)
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
 
+# The first-party plugins, each its own program.
+#
+# They are built into dist/plugins/<id>/ with the plugin.yaml the binary itself
+# emits, which is the layout `tangent plugin install` consumes. One source for
+# the tool names and schemas — the Go package — rather than a hand-written YAML
+# copy kept in agreement by nobody.
+PLUGINS = torque tesseract
+
+build-plugins: ## Build the first-party plugins into dist/plugins/
+	@for p in $(PLUGINS); do \
+		id="tangent.plugin.$$p"; \
+		out="dist/plugins/$$id"; \
+		mkdir -p "$$out"; \
+		go build -o "$$out/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p; \
+		"$$out/tangent-plugin-$$p" --manifest > "$$out/plugin.yaml"; \
+		echo "built $$id"; \
+	done
+
+install-plugins: build-plugins build-go ## Install the first-party plugins for this user
+	@for p in $(PLUGINS); do \
+		./tangent plugin install "dist/plugins/tangent.plugin.$$p"; \
+	done
+
 build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
 	./scripts/build-macos-app.sh
 

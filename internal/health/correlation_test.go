@@ -65,6 +65,13 @@ func TestReadinessObservesTransitionsRatherThanSamples(t *testing.T) {
 		WithDatabase(migratedDB(t)),
 		WithDefinitionRegistry(availableRegistry(t)),
 		WithDeliveryWorker(func() DeliveryWorker { return DeliveryWorker{Authorized: true} }),
+		// Wired so the renderer host is the only unwired dependency. Leaving
+		// the plugin probe out too would make this assert "two transitions
+		// collapse to one observation", which is a different claim than the one
+		// the test is named for.
+		WithPlugins(func() PluginInventory {
+			return PluginInventory{Loaded: 1, Plugins: []PluginRecord{{ID: "x", Loaded: true}}}
+		}),
 		WithTelemetry(telemetry.New(telemetry.WithSink(sink))),
 	)
 	for range 5 {
@@ -126,15 +133,24 @@ func TestUnusableKindsNameTheirOwnTrace(t *testing.T) {
 	}
 }
 
-// TestTrustDenialIsAttributedSeparatelyFromHostPolicy is the other half of the
-// split, and the one that matters: widening host policy does nothing to a
-// capability the renderer's trust class refused, so an observation that
-// collapsed the two would send an operator to the wrong fix.
-func TestTrustDenialIsAttributedSeparatelyFromHostPolicy(t *testing.T) {
+// TestEveryCapabilityDenialIsAttributedToHostPolicy replaces a test that held
+// the OTHER half of a split ADR 0009 removed.
+//
+// There used to be two deniers: the renderer's class-based capability ceiling
+// and host policy. Attributing them separately mattered because widening host
+// policy did nothing to a ceiling refusal, so collapsing them would have sent
+// an operator to the wrong fix. The ceiling is gone, so there is one denier
+// left — and reporting it as the only one is now the accurate answer rather
+// than the collapsed one.
+//
+// This is kept as an assertion rather than deleted because "denied_by" is still
+// read by an operator, and a second denier reappearing without this line moving
+// is exactly the drift the original split was protecting.
+func TestEveryCapabilityDenialIsAttributedToHostPolicy(t *testing.T) {
 	t.Parallel()
 	source := strings.NewReplacer(
 		"class: react-component", "class: sandboxed-frame",
-		"trust_class: core-trusted", "trust_class: sandboxed-code",
+		"isolation: main-origin", "isolation: sandboxed-frame",
 		"required_capabilities: []",
 		"required_capabilities:\n  - id: process.exec\n    optional: false",
 	).Replace(fixtureManifest)
@@ -152,8 +168,9 @@ func TestTrustDenialIsAttributedSeparatelyFromHostPolicy(t *testing.T) {
 	if len(sink.records) != 1 {
 		t.Fatalf("observations = %+v, want one", sink.records)
 	}
-	if sink.records[0].Attributes["denied_by"] != "trust-class" {
-		t.Fatalf("denial attribution = %v, want trust-class", sink.records[0].Attributes)
+	if got := sink.records[0].Attributes["denied_by"]; got != "host-policy" {
+		t.Fatalf("denial attribution = %q, want host-policy: with the class-based ceiling "+
+			"removed, host policy is the only thing that denies a declared capability", got)
 	}
 }
 

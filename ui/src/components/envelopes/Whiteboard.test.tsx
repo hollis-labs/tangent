@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   getWhiteboardDraftStorageKey,
   WHITEBOARD_AUTOSAVE_DEBOUNCE_MS,
@@ -487,6 +487,26 @@ describe("Whiteboard", () => {
     );
     expect(screen.getByDisplayValue("canonical notes")).toBeInTheDocument();
     expect(window.localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: WhiteboardEnvelope = {
+      v: 1,
+      id: "whiteboard-md",
+      type: "tangent.whiteboard",
+      context: proseProbe("board-context"),
+      data: {
+        board_id: "board-md",
+        intent: proseProbe("board-intent"),
+        revisions: [{ revision_id: "rev-1", summary: proseProbe("board-revision") }],
+      },
+    };
+
+    render(<Whiteboard envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("board-context");
+    expectProseRendered("board-intent");
+    expectProseRendered("board-revision");
   });
 });
 

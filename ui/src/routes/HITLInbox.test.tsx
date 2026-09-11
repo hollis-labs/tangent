@@ -2,6 +2,11 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  expectProseLiteral,
+  expectProseRendered,
+  proseProbe,
+} from "@/components/markdown/prose-probe";
 import type { HITLInbox, HITLOperatorItem } from "@/lib/hitl-api";
 import HITLInboxRoute from "./HITLInbox";
 
@@ -52,7 +57,11 @@ describe("<HITLInboxRoute>", () => {
     renderRoute("/hitl");
 
     expect(await screen.findByRole("heading", { name: "Human input" })).toBeInTheDocument();
-    expect(screen.getByText("No pending requests")).toBeInTheDocument();
+    // The heading is static header markup, so awaiting it proves only that the
+    // route mounted — not that the inbox fetch settled. Until it does, the list
+    // is a QueueSkeleton and the empty state has not rendered, so this has to
+    // wait for the empty state itself rather than assume the line above did.
+    expect(await screen.findByText("No pending requests")).toBeInTheDocument();
     expect(
       screen.getByText("This surface is always available, even when no agent room is open."),
     ).toBeInTheDocument();
@@ -852,11 +861,10 @@ describe("<HITLInboxRoute>", () => {
     });
     expect(
       (
-        requests.find((request) => request.path.endsWith("/resolve"))?.body?.response as Record<
-          string,
-          unknown
-        >
-      ).reply,
+        requests.find((request) => request.path.endsWith("/resolve"))?.body?.response as
+          | Record<string, unknown>
+          | undefined
+      )?.reply,
     ).toBeUndefined();
   });
 
@@ -947,6 +955,87 @@ describe("<HITLInboxRoute>", () => {
       expect.stringContaining("02Approve later release"),
     ]);
     expect(requests).toEqual(["/api/hitl"]);
+  });
+
+  it("routes the request prose through the shared markdown renderer", async () => {
+    const base = approvalItem("item-md", "presented", 4);
+    const item: HITLOperatorItem = {
+      ...base,
+      presented_projection_revision: 3,
+      request_snapshot: {
+        ...base.request_snapshot,
+        summary: proseProbe("hitl-summary"),
+        request: proseProbe("hitl-request"),
+        recommendation: proseProbe("hitl-recommendation"),
+        impact: { approve: proseProbe("hitl-approve"), deny: proseProbe("hitl-deny") },
+      },
+    };
+    mockFetch(async () => jsonResponse(inbox([item], [])));
+    renderRoute("/hitl/items/item-md");
+
+    await screen.findByTestId("hitl-detail-summary");
+
+    expectProseRendered("hitl-summary");
+    expectProseRendered("hitl-request");
+    expectProseRendered("hitl-recommendation");
+    expectProseRendered("hitl-approve");
+    expectProseRendered("hitl-deny");
+  });
+
+  // The Leave bucket, pinned: the queue row shows the same summary as a
+  // two-line clamped preview inside a <span> chain, where block content cannot
+  // nest. It stays literal, and the full prose is one pane away.
+  it("keeps the clamped queue-row summary literal", async () => {
+    const base = approvalItem("item-clamp", "presented", 4);
+    const item: HITLOperatorItem = {
+      ...base,
+      presented_projection_revision: 3,
+      request_snapshot: { ...base.request_snapshot, summary: proseProbe("hitl-clamp") },
+    };
+    mockFetch(async () => jsonResponse(inbox([item], [])));
+    renderRoute("/hitl/items/item-clamp");
+
+    await screen.findByTestId("hitl-detail-summary");
+
+    const row = screen.getByRole("button", { name: /Approve deployment/ });
+    expectProseLiteral(row, "hitl-clamp");
+    expectProseRendered("hitl-clamp");
+  });
+
+  it("routes a committed decision note through the shared markdown renderer", async () => {
+    const base = approvalItem("item-note", "resolved", 5);
+    const resolved: HITLOperatorItem = {
+      ...base,
+      queue_position: null,
+      terminal_outcome: {
+        contract_version: "1.0",
+        state: "resolved",
+        item_id: "item-note",
+        interaction_revision: 5,
+        resolution: {
+          resolution_id: "resolution-note",
+          response: {
+            kind: "approval",
+            decision: "approved",
+            note: proseProbe("hitl-note"),
+          },
+          participant: {
+            principal_ref: "local-operator",
+            authority: "tangent-loopback",
+            assurance: "loopback-unverified",
+          },
+          resolved_at: "2026-09-04T15:02:00Z",
+          interaction_revision: 5,
+          presented_projection_revision: 3,
+        },
+      },
+    };
+    mockFetch(async () => jsonResponse(inbox([], [resolved])));
+    renderRoute("/hitl/items/item-note");
+
+    await screen.findByLabelText("Committed outcome");
+
+    expectProseRendered("hitl-note");
   });
 });
 

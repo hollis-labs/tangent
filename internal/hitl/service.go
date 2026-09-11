@@ -24,12 +24,18 @@ import (
 )
 
 const (
-	ContractVersion  = extensions.HITLItemContractVersion
-	DefaultSurfaceID = "surface_hitl_default"
-	InboxURL         = "/hitl"
-	defaultWait      = 30 * time.Second
-	maximumWait      = 50 * time.Second
-	maximumRequest   = 512 * 1024
+	// ContractVersion is the payload contract carried in every v1 message.
+	// DefinitionVersion pins the interaction's definition. They were one
+	// constant until ADR 0009 bumped the manifests and separated them; see
+	// extensions.HITLItemContractVersion for why conflating them was a defect
+	// rather than a convenience.
+	ContractVersion   = extensions.HITLItemContractVersion
+	DefinitionVersion = extensions.HITLItemDefinitionVersion
+	DefaultSurfaceID  = "surface_hitl_default"
+	InboxURL          = "/hitl"
+	defaultWait       = 30 * time.Second
+	maximumWait       = 50 * time.Second
+	maximumRequest    = 512 * 1024
 )
 
 var (
@@ -258,7 +264,7 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 		IdempotencyKey: fields.IdempotencyKey,
 		Definition: interaction.DefinitionRef{
 			Kind:    extensions.HITLItemEnvelopeType,
-			Version: ContractVersion,
+			Version: DefinitionVersion,
 		},
 		Request: request, Policy: policy, Capability: reservedSurfaceCapability,
 	})
@@ -780,7 +786,7 @@ func (s *Service) inspectHITL(
 func isHITLRecord(record interaction.InteractionRecord) bool {
 	return record.SurfaceID == DefaultSurfaceID &&
 		record.Definition.Kind == extensions.HITLItemEnvelopeType &&
-		record.Definition.Version == ContractVersion
+		record.Definition.Version == DefinitionVersion
 }
 
 func terminalOutcome(outcome interaction.TerminalOutcome) (*TerminalOutcome, error) {

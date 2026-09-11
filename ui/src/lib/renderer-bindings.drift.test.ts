@@ -152,12 +152,12 @@ describe("renderer binding drift", () => {
     const designIteration = bindingsByKind.get("tangent.design-iteration");
     expect(designIteration).toBeDefined();
     expect(designIteration?.rendererClass).toBe("sandboxed-frame");
-    expect(designIteration?.trustClass).toBe("sandboxed-code");
+    expect(designIteration?.isolation).toBe("sandboxed-frame");
 
     const overreaching = RENDERER_BINDINGS.filter(
       (binding) =>
-        binding.rendererClass === "sandboxed-frame" && binding.trustClass !== "sandboxed-code",
-    ).map((binding) => `${binding.kind}:${binding.trustClass}`);
+        binding.rendererClass === "sandboxed-frame" && binding.isolation !== "sandboxed-frame",
+    ).map((binding) => `${binding.kind}:${binding.isolation}`);
     expect(overreaching, "a sandboxed frame requested trust it cannot have").toEqual([]);
   });
 

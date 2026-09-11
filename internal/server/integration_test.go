@@ -465,7 +465,7 @@ func TestIntegration_Cancel(t *testing.T) {
 	if resp.Kind != envelopes.ResponseKindAck {
 		t.Errorf("kind = %q, want ack", resp.Kind)
 	}
-	if resp.Status != envelopes.ResponseStatusCancelled {
+	if resp.Status != envelopes.ResponseStatusCanceled {
 		t.Errorf("status = %q, want cancelled", resp.Status)
 	}
 }

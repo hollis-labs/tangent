@@ -100,30 +100,32 @@ describe("shipped room workflow registry", () => {
     expect(spaTypes).toHaveLength(expected);
   });
 
-  it.each(
-    registeredEnvelopeTypes(),
-  )("%s ships a component with a terminal-CTA affordance", (envelopeType) => {
-    const source = readFileSync(componentFileFor(envelopeType), "utf8");
-    if (envelopeType in NO_TERMINAL_GATE) {
-      expect(source).not.toContain("SubmitGateNotice");
-      return;
-    }
-    // The notice is the only sanctioned way to explain a blocked terminal
-    // CTA. A workflow that grows a gate without one is the exact regression
-    // this task existed to remove.
-    expect(source).toContain("SubmitGateNotice");
-    expect(source).toContain("buildSubmitGate");
-  });
+  it.each(registeredEnvelopeTypes())(
+    "%s ships a component with a terminal-CTA affordance",
+    (envelopeType) => {
+      const source = readFileSync(componentFileFor(envelopeType), "utf8");
+      if (envelopeType in NO_TERMINAL_GATE) {
+        expect(source).not.toContain("SubmitGateNotice");
+        return;
+      }
+      // The notice is the only sanctioned way to explain a blocked terminal
+      // CTA. A workflow that grows a gate without one is the exact regression
+      // this task existed to remove.
+      expect(source).toContain("SubmitGateNotice");
+      expect(source).toContain("buildSubmitGate");
+    },
+  );
 
-  it.each(
-    registeredEnvelopeTypes(),
-  )("%s never marks a requirement by placeholder alone", (type) => {
-    const source = readFileSync(componentFileFor(type), "utf8");
-    // "Required when …" in a placeholder is precisely how the approval queue
-    // hid its defer reason: it vanishes on the first keystroke and no screen
-    // reader treats it as a requirement.
-    expect(source).not.toMatch(/placeholder=\{?["'][^"']*[Rr]equired/);
-  });
+  it.each(registeredEnvelopeTypes())(
+    "%s never marks a requirement by placeholder alone",
+    (type) => {
+      const source = readFileSync(componentFileFor(type), "utf8");
+      // "Required when …" in a placeholder is precisely how the approval queue
+      // hid its defer reason: it vanishes on the first keystroke and no screen
+      // reader treats it as a requirement.
+      expect(source).not.toMatch(/placeholder=\{?["'][^"']*[Rr]equired/);
+    },
+  );
 });
 
 describe("representative workflow families", () => {

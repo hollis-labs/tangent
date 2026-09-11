@@ -10,7 +10,7 @@
 // coming back rather than as an assertion count changing.
 
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 import { getFilePickerDraftStorageKey } from "@/lib/file-picker-draft-storage";
 import { FilePicker, type FilePickerEnvelope, type FilePickerResponse } from "./FilePicker";
@@ -55,7 +55,10 @@ const emptyRootEnvelope: FilePickerEnvelope = {
   },
 };
 
-let scrollIntoView: ReturnType<typeof vi.fn>;
+// Typed with the signature it stands in for, not a bare `ReturnType<typeof
+// vi.fn>`: vitest 5 widened an untyped vi.fn() to Mock<Procedure |
+// Constructable>, which no longer assigns to Element.prototype.scrollIntoView.
+let scrollIntoView: Mock<typeof Element.prototype.scrollIntoView>;
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
 
 function renderPicker(
@@ -76,7 +79,7 @@ function renderPicker(
 describe("FilePicker validation affordances", () => {
   beforeEach(() => {
     originalScrollIntoView = Element.prototype.scrollIntoView;
-    scrollIntoView = vi.fn();
+    scrollIntoView = vi.fn<typeof Element.prototype.scrollIntoView>();
     Element.prototype.scrollIntoView = scrollIntoView;
   });
 

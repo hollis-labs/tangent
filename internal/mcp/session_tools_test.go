@@ -23,7 +23,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
-	"github.com/hollis-labs/tangent/internal/plugins"
+	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -150,18 +150,26 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
+	// Host plumbing like every kind above it. It arrived through the plugin
+	// host until CW-20260911-0036 found that the plugin holding it did nothing
+	// but name it; the kind is the host's, so RegisterAll's door is the one it
+	// comes through.
+	if regErr := extensions.RegisterAppBoard(envSvc); regErr != nil {
+		t.Fatalf("RegisterAppBoard: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(db)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	// tangent.app-board arrives through the plugin host, not through a
-	// Register* call (ADR 0007 §4). Loading it the way production loads it
-	// keeps this rig from being the one place the second door is skipped —
-	// which would make every test here pass against a registry the server does
-	// not serve.
-	pluginHost, pluginErr := plugins.LoadShipped(ctx, logger, envSvc)
+	// An empty plugin host. Application plugins are INSTALLED now
+	// (CW-20260911-0070), so loading "the ones this build ships" is no longer a
+	// thing a test can do — there are none, and what a developer happens to
+	// have installed must not change what this rig serves. The plugin surface
+	// is covered where it belongs: internal/pluginhost spawns a real child, and
+	// internal/smoke reads the shipped binary.
+	pluginHost, pluginErr := pluginhost.New(ctx, logger, envSvc)
 	if pluginErr != nil {
-		t.Fatalf("plugins.LoadShipped: %v", pluginErr)
+		t.Fatalf("pluginhost.New: %v", pluginErr)
 	}
 
 	wsHandler := tangentws.New(mgr, logger)

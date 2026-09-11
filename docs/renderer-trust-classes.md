@@ -1,62 +1,84 @@
-# Renderer trust classes and presentation sandboxing
+# Renderer isolation and presentation sandboxing
 
-What each class of renderer may do, where its code runs, and which of those
-limits the browser actually enforces.
+Where each renderer's code runs, and which of those limits the browser actually
+enforces.
 
-Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md),
+Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md)
+as reduced by [ADR 0009](adr/0009-renderer-trust-reduced-to-isolation.md),
 generalizes the design-iteration sandbox to every untrusted renderer, and
 completes the three capabilities
 [`host-mediated-capabilities.md`](host-mediated-capabilities.md) could not.
-Task: `CW-20260825-0073`.
+Tasks: `CW-20260825-0073`, `CW-20260911-0060`.
 
-## The five classes
+## The four isolations
 
-A manifest **requests** a class; Tangent decides. The decision produces two
-facts, and everything else in this document follows from them: an **isolation**
-(where the code runs) and a **capability ceiling** (what the class may ever
-declare).
+A manifest **declares** `renderer.isolation`; Tangent validates it and refuses a
+declaration it cannot honor. It never substitutes one — a definition that
+materialized runs exactly where it said it would, which is what lets this field
+be read as a fact rather than as a request.
 
-| Class | Isolation | Publisher code runs? | Ambient host authority | Renderer shapes | Capability ceiling |
-|---|---|---|---|---|---|
-| `core-trusted` | `main-origin` | yes, reviewed with the release | **yes** | `react-component`, `declarative` | all seven, `process.exec` included |
-| `portfolio-trusted` | `main-origin` | yes, portfolio package | **yes** | `react-component`, `declarative` | six — no `process.exec` |
-| `declarative` | `host-primitive` | **no** | n/a — nothing publisher-authored executes | `declarative` | none |
-| `sandboxed-code` | `sandboxed-frame` | yes, untrusted | **no** | `sandboxed-frame` | five — no `file.write_scoped`, no `process.exec` |
-| `external-surface` | `external-surface` | not in Tangent | **no** | `external-surface` | none |
+| Isolation | Publisher code runs? | Ambient host authority | Renderer shapes |
+|---|---|---|---|
+| `main-origin` | yes, reviewed and shipped with the release | **yes** | `react-component`, `declarative` |
+| `host-primitive` | **no** | n/a — nothing publisher-authored executes | `declarative` |
+| `sandboxed-frame` | yes, untrusted | **no** | `sandboxed-frame` |
+| `external-surface` | not in Tangent | **no** | `external-surface` |
 
-The ceilings are strictly ordered —
-`core ⊃ portfolio ⊃ sandboxed ⊃ declarative = external = ∅` — which is what
-makes ADR 0003 §8 C2's "raising `renderer.trust_class` is a major version bump"
-a statement about a set rather than about a label.
-`TestTheCapabilityCeilingsAreStrictlyOrdered` holds it.
-
-**Isolation is not the renderer's declared shape.** `RendererClass` is the
-publisher's answer to "what shape is my renderer"; `Isolation` is the host's
+**Isolation is not the renderer's declared shape.** `renderer.class` is the
+publisher's answer to "what shape is my renderer"; `renderer.isolation` is the
 answer to "what can the browser reach from there". A manifest whose shape and
-class disagree — a `react-component` calling itself `sandboxed-code`, a
-`sandboxed-frame` calling itself `core-trusted` — is refused at parse time in
-both directions. The pre-existing rule caught one of those twenty pairs.
+isolation disagree — a `react-component` calling itself `sandboxed-frame`, a
+`sandboxed-frame` calling itself `main-origin` — is refused at parse time in
+both directions.
+
+That coherence check carries more weight than it used to. Before ADR 0009 it
+was one refusal among several; it is now **the only thing standing between a
+declared isolation and the one in force**, so relaxing it on the grounds that
+the model got simpler would quietly make the field a wish again.
+
+### What this used to be, and why it is smaller
+
+Five *trust classes* sorted renderers by provenance — which publisher, verified
+how, shipping its bundle where. Read against the distribution that exists, that
+machinery sorted seventeen first-party React components from one first-party
+React component that imports tldraw, and the two buckets differed by
+`process.exec`, a capability with no executor gated on an authority nothing
+holds. What blocked an out-of-tree publisher from `portfolio-trusted` was a
+signature verifier that was never built.
+
+ADR 0009 removed the provenance half — assurance grantability as a class gate,
+the publisher reservation, the empty-`asset_digest` rule, and the
+`core-trusted` / `portfolio-trusted` split — along with the class-based
+capability ceiling. It removed the ceiling rather than demoting it to
+documentation, because a table that reads like a gate and is not one is the
+defect the reduction exists to remove.
+
+**The sandbox is untouched**, and the argument that retired the provenance
+apparatus does not reach it: `tangent.design-iteration` renders markup an agent
+produced, and the agent is a conduit for content from a web page, a file, or a
+model's output rather than the adversary.
 
 ## How each boundary is enforced
 
-### `main-origin` (core-trusted, portfolio-trusted)
+### `main-origin`
 
 Nothing contains code in this isolation, because nothing is trying to: the
 material shipped and was reviewed with the release. The enforcement is
 **admission**, not containment, and it happens twice:
 
-- **At materialization.** `core-trusted` requires publisher `tangent` or
-  `hollis-labs/go-envelopes`, a grantable assurance, and an empty
-  `renderer.asset_digest` — a separately distributed bundle is by definition not
-  the one that went through the release review. An application package from
-  another publisher cannot reach the class however it is reviewed downstream.
+- **At materialization.** The manifest's declared isolation has to be coherent
+  with its renderer shape, and the definition's assurance has to be one this
+  build can verify. The publisher reservation and the empty-`asset_digest`
+  requirement that used to sit here were removed by ADR 0009 — they gated a
+  third-party publisher this distribution does not have, on a signature
+  verifier that was never built.
 - **At dispatch.** `EnvelopeRouter` classifies every kind against the generated
   binding table before rendering it. A registered component whose kind no
   manifest classifies is refused rather than drawn.
 
 The document CSP applies here too, and it is what changed `network.fetch`.
 
-### `sandboxed-frame` (sandboxed-code)
+### `sandboxed-frame`
 
 Three independent layers, and the security property is in what is *absent* from
 each.
@@ -77,7 +99,7 @@ each.
 3. **`Permissions-Policy: clipboard-write=(self)`** on the Tangent document.
    `self` is the main origin; an opaque-origin frame is not `self`.
 
-### `host-primitive` (declarative) and `external-surface`
+### `host-primitive` and `external-surface`
 
 Neither runs publisher-authored code, so neither has a renderer to grant an
 effect to. Their ceilings are empty rather than small.
@@ -195,7 +217,7 @@ not deliver.
 1. **`clipboard.write` and `export.download` are still only declared in
    Tangent's own origin.** There is no CSP directive for either. Setting
    `clipboard-write=()` would enforce the first, and would break three shipped
-   `core-trusted` components that copy to the clipboard **without declaring the
+   main-origin components that copy to the clipboard **without declaring the
    capability**. Making them declare it is a capability backfill, not a trust
    boundary, and it is not done here. Five more components build a Blob and
    click an `<a download>`; the same applies.
@@ -207,14 +229,14 @@ not deliver.
    weakened silently. Actual enforcement is verified by hand —
    [`manual-tests/renderer-sandbox-e2e.md`](manual-tests/renderer-sandbox-e2e.md).
 
-3. **`portfolio-trusted` is not cryptographically distinguished from
-   `core-trusted` today.** Its defining evidence is a signature, `signed-package`
-   has no verifier, and `Assurance.Grantable()` therefore refuses it. What
-   separates the two classes in this build is the capability ceiling and the
-   release-provenance rule, not a signature check. An out-of-tree portfolio
-   package is refused at the assurance gate rather than admitted unverified,
-   which is the fail-closed direction, but the class is a declaration until a
-   verifier exists.
+3. **Resolved 2026-09-11, by removing the distinction rather than building the
+   verifier.** This entry used to record that `portfolio-trusted` was not
+   cryptographically distinguished from `core-trusted`: its defining evidence
+   was a signature, `signed-package` had no verifier, and `Assurance.Grantable`
+   therefore refused it. That was a limitation for as long as the two classes
+   were meant to differ. ADR 0009 decided they were not — signing is dead
+   portfolio-wide, kinds are first-party, and an unbuilt verifier reading as a
+   security boundary was the actual defect. Both classes are now `main-origin`.
 
 4. **The document CSP omits `default-src`, and therefore `frame-src`.**
    Browsers disagree about whether an `about:srcdoc` frame is subject to
@@ -246,10 +268,13 @@ not deliver.
 
 8. **The policy admits one external origin: `https://cdn.tldraw.com`.**
    `tangent.whiteboard` loads tldraw's fonts, icons, watermark, and embed icons
-   from that CDN. That dependency is the concrete reason whiteboard is
-   `portfolio-trusted` rather than `core-trusted` — it is a package Tangent
-   hosts and did not author, reaching an origin Tangent does not control — and
-   it is admitted for **passive subresources only** (`img-src`, `font-src`).
+   from that CDN. That dependency used to be the concrete reason whiteboard was
+   `portfolio-trusted` rather than `core-trusted`; ADR 0009 removed that
+   distinction, and the dependency is unchanged — it is still a package Tangent
+   hosts and did not author, reaching an origin Tangent does not control. What
+   contains it is this CSP entry rather than a trust class, which is the
+   reduction's point: it is admitted for **passive subresources only**
+   (`img-src`, `font-src`).
    It is deliberately absent from `connect-src`, so tldraw's scripted fetch of a
    non-English translation bundle is refused: that is a `network.fetch` the
    whiteboard manifest has never declared, and refusing it is the model working

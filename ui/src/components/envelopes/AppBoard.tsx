@@ -39,6 +39,13 @@
 // and never synced changes nothing. The press is the decision; the draft is
 // only where the intent was accumulated.
 //
+// A `note_label` adds a free-text box per card on the same terms. The note goes
+// into the draft beside the staged column and is read by the caller at the same
+// moment, for whatever the caller means by it — this component does not know.
+// It exists because a board could say where a card should GO but had no way for
+// the participant to say anything ABOUT it, and some callers need a sentence
+// rather than a column.
+//
 // The board never fetches its own content. `sync.endpoint` is a same-origin
 // path under `/api/plugins/`, checked below, so this is not a general fetch
 // surface a caller could point anywhere — that is what the host-mediated
@@ -71,6 +78,14 @@ export interface BoardCardData {
   badges?: BoardBadge[];
   /** Markdown. Rendered through the shared <Markdown>, never a second path. */
   body?: string;
+  /**
+   * A note already on record for this card. The note control seeds from it, so
+   * the participant sees what was recorded rather than an empty box.
+   *
+   * The renderer does not know what a note means or who acts on it — only that
+   * one is on record and that editing it replaces it.
+   */
+  note?: string;
   fields?: Record<string, unknown>;
 }
 
@@ -128,6 +143,8 @@ export interface BoardSync {
   label?: string;
   /** Names the staging control. Empty means staging is not offered. */
   stage_label?: string;
+  /** Names the per-card note control. Empty means no note is offered. */
+  note_label?: string;
   /** What the caller sent, in its own words, so a filter that finds nothing reads as a scope rather than a bug. */
   scope?: string;
 }
@@ -178,6 +195,18 @@ export interface AppBoardDraft {
    * changes nothing. Absent on a board whose caller offers no sync.
    */
   staged_changes?: Record<string, { column_id: string }>;
+  /**
+   * What the participant wrote about a card, keyed by card id.
+   *
+   * View state, exactly as a staged change is: it says what they typed, not
+   * what they decided. The caller reads it when the participant presses Sync
+   * and not before, and a board abandoned with a note written changes nothing.
+   * Absent on a board whose caller offers no note control.
+   *
+   * This component neither interprets a note nor sends it anywhere. What it
+   * means is the caller's business, which is what keeps the kind domain-free.
+   */
+  staged_notes?: Record<string, string>;
 }
 
 export interface AppBoardResponse {
@@ -346,12 +375,40 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
   // component: a sync replaces the board, and the replacement is a different
   // envelope with a fresh draft sequence, so there is nothing to reset.
   const [staged, setStaged] = useState<Record<string, string>>({});
+  // Notes, seeded from whatever the caller says is already on record.
+  //
+  // Seeding is what makes a note survive a sync in the participant's EYES. The
+  // caller replies to a sync with a fresh board, so without this the box comes
+  // back empty and the words they typed are gone from the screen even though
+  // the caller has them. First use found that within a minute.
+  //
+  // Seeded from the envelope once, like `selection`: Room keys the router on
+  // the envelope id, so a replacement board is a different component with a
+  // different seed, and a supersede of the SAME envelope deliberately leaves
+  // what the participant is typing alone.
+  const [notes, setNotes] = useState<Record<string, string>>(() => {
+    const seeded: Record<string, string> = {};
+    for (const card of cards) {
+      if (card.note !== undefined) seeded[card.id] = card.note;
+    }
+    return seeded;
+  });
+  // What was on record when this board arrived, so "sent" and "not sent yet"
+  // are distinguishable. It is not state: it is a property of the envelope.
+  const onRecord = useMemo(() => {
+    const recorded: Record<string, string> = {};
+    for (const card of cards) {
+      if (card.note !== undefined) recorded[card.id] = card.note;
+    }
+    return recorded;
+  }, [cards]);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const sync = data.sync;
   const syncEndpoint = sync?.enabled && isPluginRoutePath(sync.endpoint) ? sync.endpoint : null;
   const canStage = syncEndpoint !== null && (sync?.stage_label ?? "") !== "" && columns.length > 0;
+  const canNote = syncEndpoint !== null && (sync?.note_label ?? "") !== "";
 
   const visible = useMemo(
     () => applyFilters(cards, filters, selection),
@@ -359,7 +416,7 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
   );
   const stagedColumns = useMemo(() => applyStagedColumns(columns, staged), [columns, staged]);
 
-  const publishDraft = (next: Partial<AppBoardDraft>, stagedNext = staged) => {
+  const publishDraft = (next: Partial<AppBoardDraft>, stagedNext = staged, notesNext = notes) => {
     if (!onDraft) return;
     onDraft({
       board_id: boardID,
@@ -370,6 +427,7 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
       staged_changes: Object.fromEntries(
         Object.entries(stagedNext).map(([id, column]) => [id, { column_id: column }]),
       ),
+      staged_notes: notesNext,
       ...next,
     } satisfies AppBoardDraft);
   };
@@ -416,6 +474,29 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
     }
     setStaged(next);
     publishDraft({}, next);
+  };
+
+  // Typing updates local state only. A draft revision per keystroke would be a
+  // durable write per keystroke — the store computes MAX(revision) + 1 on every
+  // save — so the draft is published when the box loses focus instead. Pressing
+  // Sync blurs it first, and runSync publishes from this render's state anyway,
+  // so a note typed and immediately synced is not lost either way.
+  const editNote = (cardID: string, note: string) => {
+    setNotes((current) => {
+      const next = { ...current };
+      // The value is kept verbatim, INCLUDING an empty one, and this is the
+      // difference between "nothing was ever written here" and "what was here
+      // has been cleared". A card the participant never touched and that
+      // carries no note on record has no key at all; a card whose box they
+      // emptied has an empty one. The caller needs both to tell a new note from
+      // a withdrawn one, and deleting the key would collapse them.
+      next[cardID] = note;
+      return next;
+    });
+  };
+
+  const commitNote = () => {
+    publishDraft({});
   };
 
   const runSync = async () => {
@@ -465,6 +546,18 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
     });
   };
 
+  // Notes that differ from what the caller has on record — the ones a sync
+  // would actually change. A note that came back unchanged from the caller is
+  // not pending anything, so marking it would tell the participant they have
+  // unsaved work forever.
+  const unsentNotes = useMemo(() => {
+    const pending: Record<string, string> = {};
+    for (const [cardID, note] of Object.entries(notes)) {
+      if (note !== (onRecord[cardID] ?? "")) pending[cardID] = note;
+    }
+    return pending;
+  }, [notes, onRecord]);
+
   const selectedCard = cards.find((card) => card.id === selectedCardID) ?? null;
   const showDetail = detailOpen && selectedCard !== null;
 
@@ -481,7 +574,9 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
             </span>
           ) : null}
         </div>
-        {envelope.context ? <p className="text-xs text-zinc-400">{envelope.context}</p> : null}
+        {envelope.context ? (
+          <Markdown content={envelope.context} className="text-xs text-zinc-400" />
+        ) : null}
       </header>
 
       <BoardFilterBar
@@ -492,7 +587,7 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
         onSync={syncEndpoint ? runSync : undefined}
         syncLabel={sync?.label ?? "Sync"}
         syncing={syncing}
-        stagedCount={Object.keys(staged).length}
+        stagedCount={new Set([...Object.keys(staged), ...Object.keys(unsentNotes)]).size}
         scope={sync?.scope}
         showing={visible.length}
         supplied={cards.length}
@@ -512,7 +607,9 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
         cards={visible}
         selectedCardID={selectedCardID}
         staged={staged}
+        noted={unsentNotes}
         onSelect={selectCard}
+        onStage={canStage ? stageCard : undefined}
       />
 
       {showDetail ? (
@@ -523,6 +620,11 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
           stageLabel={sync?.stage_label ?? ""}
           stagedColumnID={staged[selectedCard.id] ?? null}
           onStage={stageCard}
+          noteLabel={canNote ? (sync?.note_label ?? "") : ""}
+          note={notes[selectedCard.id] ?? ""}
+          noteOnRecord={onRecord[selectedCard.id]}
+          onNoteChange={editNote}
+          onNoteCommit={commitNote}
           onAction={submitAction}
           onClose={() => {
             setDetailOpen(false);
@@ -643,21 +745,48 @@ function BoardFilterBar({
   );
 }
 
+/**
+ * The MIME type a dragged card is carried as.
+ *
+ * A private type rather than `text/plain`: a board must not accept a drop of
+ * arbitrary text that happens to look like a card id, and dragging a card out
+ * to another application should not paste an opaque identifier into it. The
+ * drop handler also checks the id against the cards actually on the board, so
+ * this is the outer of two gates rather than the only one.
+ */
+export const CARD_DRAG_TYPE = "application/x-tangent-board-card";
+
 export function BoardColumns({
   columns,
   cards,
   selectedCardID,
   staged,
+  noted,
   onSelect,
+  onStage,
 }: {
   columns: BoardColumn[];
   cards: BoardCardData[];
   selectedCardID: string | null;
   /** Card id → the column the participant staged it into, for the marker. */
   staged?: Record<string, string>;
+  /** Card id → what the participant wrote about it, for the marker. */
+  noted?: Record<string, string>;
   onSelect: (cardID: string) => void;
+  /**
+   * Stages a card into a column. Absent means the caller offers no staging, and
+   * the cards are then not draggable and the columns are not drop targets.
+   *
+   * Dragging is a SECOND gesture onto the same view state, never a second
+   * meaning: a drop writes `staged_changes` exactly as the detail pane's button
+   * does, nothing reaches the owning application until Sync, and a board
+   * abandoned mid-drag has changed nothing. The button path stays because it is
+   * the keyboard and assistive-technology route — HTML5 drag is neither.
+   */
+  onStage?: (cardID: string, columnID: string) => void;
 }) {
   const byID = new Map(cards.map((card) => [card.id, card]));
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   // No columns is a legitimate board: one implicit column of everything.
   const effective: BoardColumn[] =
     columns.length > 0
@@ -678,11 +807,57 @@ export function BoardColumns({
         const columnCards = (column.card_ids ?? [])
           .map((id) => byID.get(id))
           .filter((card): card is BoardCardData => card !== undefined);
+        const droppable = onStage !== undefined;
         return (
+          // biome-ignore lint/a11y/noStaticElementInteractions: the drop target is a pointer affordance layered over the button path, which is what keyboard and AT use; a role here would advertise an interaction those users cannot perform
           <section
             key={column.id}
-            className="space-y-2"
+            className={cn(
+              "space-y-2 rounded",
+              droppable && dragOverColumn === column.id
+                ? "outline outline-1 outline-zinc-500 bg-zinc-900/40"
+                : "outline-none",
+            )}
             data-testid={`app-board-column-${column.id}`}
+            onDragOver={
+              droppable
+                ? (event) => {
+                    // preventDefault is what makes an element a drop target at
+                    // all; without it the browser refuses every drop and the
+                    // card silently springs back.
+                    if (!event.dataTransfer.types.includes(CARD_DRAG_TYPE)) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDragOverColumn(column.id);
+                  }
+                : undefined
+            }
+            onDragLeave={
+              droppable
+                ? (event) => {
+                    // Only when the pointer actually left this column. Moving
+                    // between a column's own children fires dragleave on the
+                    // section, and clearing on that makes the highlight strobe.
+                    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+                    setDragOverColumn((current) => (current === column.id ? null : current));
+                  }
+                : undefined
+            }
+            onDrop={
+              droppable
+                ? (event) => {
+                    event.preventDefault();
+                    setDragOverColumn(null);
+                    const cardID = event.dataTransfer.getData(CARD_DRAG_TYPE);
+                    // A card the board does not hold is not staged. The drag
+                    // type already narrows this to our own drags; this is the
+                    // second gate, and it is the one that matters if a stale
+                    // drag survives a board replacement.
+                    if (!cardID || !byID.has(cardID)) return;
+                    onStage?.(cardID, column.id);
+                  }
+                : undefined
+            }
           >
             <h3 className="text-xs uppercase tracking-wide text-zinc-500">
               {column.label}
@@ -694,6 +869,8 @@ export function BoardColumns({
                 card={card}
                 selected={card.id === selectedCardID}
                 staged={staged?.[card.id] !== undefined}
+                noted={noted?.[card.id] !== undefined}
+                draggable={droppable}
                 onSelect={onSelect}
               />
             ))}
@@ -708,12 +885,18 @@ export function BoardCard({
   card,
   selected,
   staged,
+  noted,
+  draggable,
   onSelect,
 }: {
   card: BoardCardData;
   selected: boolean;
   /** Moved by the participant and not yet synced. */
   staged?: boolean;
+  /** Written about by the participant and not yet synced. */
+  noted?: boolean;
+  /** Whether this card may be dragged into another column. */
+  draggable?: boolean;
   onSelect: (cardID: string) => void;
 }) {
   return (
@@ -721,9 +904,19 @@ export function BoardCard({
       type="button"
       onClick={() => onSelect(card.id)}
       aria-pressed={selected}
+      draggable={draggable}
+      onDragStart={
+        draggable
+          ? (event) => {
+              event.dataTransfer.setData(CARD_DRAG_TYPE, card.id);
+              event.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       data-testid={`app-board-card-${card.id}`}
       className={cn(
         "w-full space-y-1 rounded border p-2 text-left",
+        draggable && "cursor-grab active:cursor-grabbing",
         selected
           ? "border-zinc-400 bg-zinc-800"
           : "border-zinc-800 bg-zinc-900 hover:border-zinc-700",
@@ -739,6 +932,18 @@ export function BoardCard({
             data-testid={`app-board-staged-${card.id}`}
           >
             •
+          </span>
+        ) : null}
+        {noted ? (
+          // Written about but not yet sent, for the same reason: an unsent note
+          // is invisible from the column otherwise, and a participant who wrote
+          // one and moved on has no way to find it again.
+          <span
+            className="pt-0.5 text-sky-400"
+            title="Note written — press Sync to send it"
+            data-testid={`app-board-noted-${card.id}`}
+          >
+            ✎
           </span>
         ) : null}
         <span>{card.title}</span>
@@ -769,6 +974,28 @@ export function BoardCard({
   );
 }
 
+/**
+ * What to say under the note box.
+ *
+ * Three states and they are genuinely different: nothing written, something
+ * written that the caller has not seen, and something the caller already has.
+ * Collapsing the last two is what made a participant think their note had been
+ * thrown away when it had in fact been delivered.
+ *
+ * Exported for its tests.
+ */
+export function noteHint(note: string | undefined, onRecord: string | undefined): string {
+  const current = note ?? "";
+  const recorded = onRecord ?? "";
+  if (current === recorded) {
+    return recorded === "" ? "" : "On record with the caller. Edit to replace it.";
+  }
+  if (current.trim() === "" && recorded !== "") {
+    return "Cleared. Press Sync to withdraw the note on record.";
+  }
+  return "Written down. Nothing has been sent until you press Sync.";
+}
+
 export function BoardDetailPane({
   card,
   detail,
@@ -776,6 +1003,11 @@ export function BoardDetailPane({
   stageLabel,
   stagedColumnID,
   onStage,
+  noteLabel,
+  note,
+  noteOnRecord,
+  onNoteChange,
+  onNoteCommit,
   onAction,
   onClose,
 }: {
@@ -786,6 +1018,14 @@ export function BoardDetailPane({
   stageLabel?: string;
   stagedColumnID?: string | null;
   onStage?: (cardID: string, columnID: string) => void;
+  /** Names the note control. Empty means no note is offered. */
+  noteLabel?: string;
+  note?: string;
+  /** What the caller has on record, so sent and unsent read differently. */
+  noteOnRecord?: string;
+  onNoteChange?: (cardID: string, note: string) => void;
+  /** Called when the box loses focus; the draft is published there. */
+  onNoteCommit?: () => void;
   onAction: (actionID: string) => void;
   onClose: () => void;
 }) {
@@ -863,6 +1103,36 @@ export function BoardDetailPane({
             // saved would be worse than no control.
             <p className="text-[11px] text-amber-400" data-testid="app-board-stage-note">
               Staged. Nothing has changed in the source until you press Sync.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {noteLabel && onNoteChange ? (
+        <div className="space-y-1" data-testid="app-board-note">
+          <h4 className="text-xs uppercase tracking-wide text-zinc-500">{noteLabel}</h4>
+          <textarea
+            value={note ?? ""}
+            onChange={(event) => onNoteChange(card.id, event.target.value)}
+            onBlur={onNoteCommit}
+            rows={3}
+            className="w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-zinc-500 focus:outline-none"
+            placeholder="What should change?"
+            data-testid={`app-board-note-${card.id}`}
+          />
+          {noteHint(note, noteOnRecord) ? (
+            // Says what has and has not happened. A box that looked like it
+            // saved would be worse than no box — and so would one that looked
+            // unsaved forever after it was sent, which is why "on record" and
+            // "changed since" are different sentences.
+            <p
+              className={cn(
+                "text-[11px]",
+                note !== (noteOnRecord ?? "") ? "text-sky-400" : "text-zinc-500",
+              )}
+              data-testid="app-board-note-hint"
+            >
+              {noteHint(note, noteOnRecord)}
             </p>
           ) : null}
         </div>

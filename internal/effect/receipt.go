@@ -97,7 +97,7 @@ type Receipt struct {
 	// reader of an audit trail can tell a barrier from a declaration without
 	// consulting a table elsewhere.
 	Mediation Mediation `json:"mediation"`
-	// TrustClass and Isolation are the renderer trust class the definition was
+	// Isolation is where the renderer ran, and TrustClass is the class the definition was
 	// granted and the place that class runs.
 	//
 	// They are on the receipt because without them Mediation is not
@@ -106,6 +106,12 @@ type Receipt struct {
 	// tree, and an audit row that carried only the answer would be
 	// indistinguishable between the two. Recording the isolation is what makes
 	// the mediation column readable a year later.
+	// TrustClass is NOT WRITTEN on receipts minted after ADR 0009 removed the
+	// class, and is empty on them. It is kept on the struct because receipts
+	// are immutable: rows written before that ADR recorded a real decision
+	// under the model in force at the time, and this is what reads them back.
+	// Migration 0010's own note applies unchanged — an empty string reads as
+	// "not recorded", and rewriting history to claim otherwise would be worse.
 	TrustClass string    `json:"renderer_trust_class,omitempty"`
 	Isolation  Isolation `json:"renderer_isolation,omitempty"`
 	// HandleID is the scope the effect was requested against, when one

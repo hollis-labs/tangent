@@ -16,14 +16,14 @@ var interviewQuestionInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.interview-question"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
           "properties": {
-            "prompt": {"type": "string", "minLength": 1},
-            "prompt_markdown": {"type": "string", "minLength": 1},
-            "helper_text": {"type": "string"},
+            "prompt": {"type": "string", "minLength": 1, "description": "The question. Renders as markdown; prompt_markdown wins when both are given."},
+            "prompt_markdown": {"type": "string", "minLength": 1, "description": "The question, when you want to be explicit that it is markdown. Takes precedence over prompt."},
+            "helper_text": {"type": "string", "description": "What would make a good answer. Renders as markdown."},
             "choices": {
               "type": "array",
               "items": {

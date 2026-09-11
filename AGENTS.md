@@ -17,7 +17,9 @@ something new.
   **Current limitations** list. Read it before designing anything.
 - `docs/adr/` — accepted decision records. `0005` owns the product boundary,
   `0007` the collaboration surface, the plugin host and where view state
-  lives. `0006` is superseded by `0007`; read `0007` instead.
+  lives. `0008` carries the plugin model — what the host is becoming, and what
+  is still open — after `0007` §4 was narrowed to the boundary rule alone.
+  `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
   `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
@@ -27,16 +29,24 @@ something new.
   every envelope wire name; authored manifests live beside it under
   `packages/<package-id>/<kind>/`. One table, **two doors**: a row marked
   `contributedByPlugin` is installed by the plugin host, not by `RegisterAll`.
+- `docs/writing-a-plugin.md` + `internal/plugintemplate/` — the scaffold every
+  plugin after the second one starts from, and the eight-item classification it
+  encodes. `go run ./cmd/tangent-new-plugin -package <name>` writes a plugin
+  that loads; `internal/plugintemplate/example/` holds two committed renders,
+  compiled and load-tested here but shipped in no build.
 - `internal/pluginhost/` + `internal/plugins/` — the ADR 0007 §4 plugin host and
   the compiled-in plugins this build ships. The host resolves an ADR 0003
   manifest for the kind a plugin names and refuses the registration without
-  one; a plugin authors nothing about what its kind may do. Two surfaces extend
+  one; a plugin authors nothing about what its kind may do. **Compiled-in is a
+  concession, not the shape** — ADR 0008 §5 records subprocess plus runtime UI
+  loading as the target, so read a not-yet here against `0008` and a refusal
+  against `0007` §4. Two surfaces extend
   the SDK's base contract, and both refuse by name rather than accommodate:
   `RegisterMCPTool` (`mcp.go`) contributes an agent-callable tool, and
   `RegisterHTTPRoute` (`http.go`) contributes a browser route under
   `/api/plugins/`. Both are recorded at load and installed later — plugins load
   before the MCP and HTTP servers exist.
-- `internal/plugins/torqueboard/` — the first application plugin, and the only
+- `internal/plugins/torque/` — the first application plugin, and the only
   file tree here that knows Torque exists. It is the ADR 0007 §6 pattern
   working: a domain-free kind, a mechanical mapping in userland, one agent call
   in, and a sync button that costs no agent turn. Its compiled-in Torque writes
@@ -122,6 +132,27 @@ A plugin drives Tangent through `pluginhost.ToolCaller` — an in-process MCP
 client session against Tangent's own tool surface, with the same authority any
 local MCP caller has and no more. Reach for a new typed host method only when a
 tool genuinely cannot express the need; `GetService` stays unimplemented.
+
+**The host holds no plugin configuration, so it can never hold a plugin's
+secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
+unimplemented (`CW-20260910-0036`): a plugin reads its own environment, which
+keeps ADR 0005 §3.1's secret boundary true by construction instead of by policy.
+`Unload` is the same posture — it drops the plugin's own state and unregisters
+nothing, because neither the envelope registry nor an unattributable tool
+registration can be removed, and a pretend unload is what the first host shipped.
+`internal/pluginhost/lifecycle.go` and `isolation.go` carry both, plus the
+dispatch guard: a contributed tool or route is bounded and panic-contained at
+registration, and shutdown releases in-flight dispatches rather than waiting on
+them.
+
+A change that moves a manifest's `contract_digest` is a **version** bump, never
+a `revision` bump — ADR 0003 §3, and `revision` is a non-semantic edit counter
+within a version. `contractLock` in
+`internal/envelope/extensions/contract_lock_test.go` is the committed record
+that makes it a gate rather than a rule nobody checks; do not edit it to silence
+a §3 finding. `docs/developing.md` carries the procedure, and
+`docs/architecture.md#current-limitations` carries the §8 C1 blast radius a bump
+still has.
 
 Keep the HTTP layer separate from app logic, and never import `cmd/tangent`
 from `internal/...` — the dependency is one-way. Wails is a real dependency

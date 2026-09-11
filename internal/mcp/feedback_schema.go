@@ -16,13 +16,13 @@ var feedbackInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.feedback", "description": "Must be 'tangent.feedback' for this tool."},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
           "required": ["questions"],
           "properties": {
-            "prompt": {"type": "string"},
+            "prompt": {"type": "string", "description": "What this form is asking for. Renders as markdown."},
             "layout": {"type": "string", "enum": ["inline", "walkthrough", "auto"]},
             "questions": {
               "type": "array",
@@ -37,7 +37,7 @@ var feedbackInputSchemaJSON = []byte(`{
                     "enum": ["radio", "checkbox", "select", "multiselect", "text", "textarea"]
                   },
                   "label": {"type": "string", "minLength": 1},
-                  "help": {"type": "string"},
+                  "help": {"type": "string", "description": "Field hint. Displayed literally, not as markdown: it is composed into one sentence with Tangent\u2019s own \"Required.\"/\"Optional.\""},
                   "required": {"type": "boolean"},
                   "options": {
                     "type": "array",
@@ -58,7 +58,7 @@ var feedbackInputSchemaJSON = []byte(`{
                     "required": ["value"],
                     "properties": {
                       "value": {},
-                      "rationale": {"type": "string"}
+                      "rationale": {"type": "string", "description": "Why this answer is suggested. Renders as markdown."}
                     },
                     "additionalProperties": false
                   },

@@ -45,6 +45,8 @@ import (
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/pluginhost"
+	"github.com/hollis-labs/tangent/internal/pluginpkg"
 	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
@@ -93,6 +95,11 @@ type Config struct {
 	// database ("tangent serve" vs. a future "tangent-app") rather than a
 	// generic string. Empty falls back to "tangent serve".
 	OwnerLabel string
+	// PluginDir is the installed-plugin root. Empty resolves through
+	// pluginpkg.DefaultRoot, which honors TANGENT_PLUGIN_DIR and otherwise
+	// uses ~/.tangent/plugins. It is a field so a test can point a boot at a
+	// directory it owns rather than at the operator's real plugins.
+	PluginDir string
 
 	// Logger receives every constructed service's structured logs. Nil
 	// defaults to slog.Default(). Boot does not call slog.SetDefault —
@@ -132,6 +139,17 @@ type Services struct {
 type ownedCloser struct {
 	db        *sql.DB
 	ownership *tangentdb.Ownership
+	// plugins is the plugin host. UnloadAll runs first on the way out: it
+	// releases every in-flight plugin dispatch rather than waiting out the
+	// dispatch budget, then lets each plugin drop its own state. It removes
+	// nothing a plugin registered, which is the host's stated contract and not
+	// an oversight — internal/pluginhost/lifecycle.go says why.
+	//
+	// First for the same reason the loopback closes before the database: a
+	// plugin handler that nothing bounded is exactly what CW-20260909-0045
+	// measured graceful shutdown waiting on, and a process still holding the
+	// database when its successor boots is the cost.
+	plugins *pluginhost.Host
 	// loopback is the plugin host's in-process MCP session. It is closed
 	// before the database because it can still be serving a plugin's tool
 	// call, and it holds the SDK's reader goroutines — a process that forgot
@@ -142,6 +160,11 @@ type ownedCloser struct {
 
 func (c *ownedCloser) Close() error {
 	var errs []error
+	if c.plugins != nil {
+		if err := c.plugins.UnloadAll(); err != nil {
+			errs = append(errs, fmt.Errorf("unload plugins: %w", err))
+		}
+	}
 	if c.loopback != nil {
 		if err := c.loopback.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close plugin tool caller: %w", err))
@@ -278,19 +301,36 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 	logger.Info("registered tangent envelope extensions", "plugin", extensions.PluginID, "count", envSvc.Len())
 
-	// The second door for interaction kinds (ADR 0007 §4). A compiled-in plugin
-	// names a kind; internal/pluginhost resolves the ADR 0003 manifest this host
-	// ships for that name and refuses the registration if there is none. The
-	// plugin authors nothing about what the kind may do — not its trust class,
-	// not its capabilities, not its assurance.
+	// The second door for interaction kinds (ADR 0007 §4). A plugin names a
+	// kind; internal/pluginhost resolves the ADR 0003 manifest this host ships
+	// for that name and refuses the registration if there is none. The plugin
+	// authors nothing about what the kind may do — not its trust class, not its
+	// capabilities, not its assurance.
 	//
 	// It runs after RegisterAll because a plugin-contributed kind is additive:
 	// the host-package registry is complete before any plugin is consulted, and
 	// a plugin failing to load cannot leave a host kind unregistered.
-	pluginHost, pluginErr := plugins.LoadShipped(context.Background(), logger, envSvc)
-	if pluginErr != nil {
-		return release(fmt.Errorf("load shipped plugins: %w", pluginErr))
+	//
+	// Plugins are INSTALLED, not compiled in (CW-20260911-0070). What loads here
+	// is whatever is under the plugin directory, so this host's binary links no
+	// application's client code — which is the boundary ADR 0005 exists to
+	// protect and the reason subprocess mode was built.
+	pluginRoot := cfg.PluginDir
+	if pluginRoot == "" {
+		resolved, rootErr := pluginpkg.DefaultRoot()
+		if rootErr != nil {
+			return release(rootErr)
+		}
+		pluginRoot = resolved
 	}
+	pluginHost, pluginErr := plugins.LoadInstalled(context.Background(), logger, envSvc, pluginRoot)
+	if pluginErr != nil {
+		return release(fmt.Errorf("load installed plugins: %w", pluginErr))
+	}
+	// On the closer as soon as it exists, so a Boot that fails further down
+	// still unloads what it loaded rather than leaving plugins holding state in
+	// a process that is about to exit.
+	closer.plugins = pluginHost
 	logger.Info("loaded shipped plugins",
 		"kinds", pluginHost.ContributedKinds(), "count", envSvc.Len())
 	// What the plugins registered is installed further down, once the surfaces
@@ -417,6 +457,15 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 				Authorized: interactionService.AuthorizesDeliveryWorker(roomflow.DeliveryWorker),
 				Scope:      roomflow.DeliveryWorker.Scope,
 			}
+		}),
+		// Which plugins loaded, and which refused and why (CW-20260910-0036).
+		// A function rather than a snapshot, like the two probes above: a
+		// plugin unloaded on the way out should read as unloaded. The
+		// adaptation is here rather than in internal/health so that package
+		// keeps depending on vocabularies instead of on the plugin host's
+		// lifecycle.
+		health.WithPlugins(func() health.PluginInventory {
+			return pluginInventory(pluginHost.Inventory())
 		}),
 		health.WithRuntime(health.Runtime{ManagedResource: cfg.ManagedResource}),
 		health.WithTelemetry(recorder),
@@ -594,4 +643,35 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		RoomURLBase:     roomURLBase,
 	}
 	return services, srv, closer, nil
+}
+
+// pluginInventory adapts the plugin host's inventory into the health
+// vocabulary. It is a field-for-field copy and it is deliberately dumb: the
+// alternative is internal/health importing internal/pluginhost, which would
+// make the health package depend on the plugin host's lifecycle to describe it.
+//
+// The attribution note travels with the document rather than being restated
+// here, because it is a fact about the report and not about this translation.
+func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
+	inventory := health.PluginInventory{
+		Loaded:           source.Loaded,
+		Refused:          source.Refused,
+		Plugins:          make([]health.PluginRecord, 0, len(source.Plugins)),
+		ContributedKinds: source.ContributedKinds,
+		Tools:            source.Tools,
+		Routes:           source.Routes,
+		Attribution:      source.Attribution,
+	}
+	for _, record := range source.Plugins {
+		inventory.Plugins = append(inventory.Plugins, health.PluginRecord{
+			ID:      record.ID,
+			Name:    record.Name,
+			Version: record.Version,
+			Loaded:  record.Loaded,
+			Enabled: record.Enabled,
+			At:      record.At,
+			Error:   record.Error,
+		})
+	}
+	return inventory
 }

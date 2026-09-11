@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.triage
-version: "0.1"
+version: "0.2"
 revision: 1
 title: "Triage"
 description: "Triage envelope: ask a human to accept, reject, or annotate an item. Tangent v0.1 plugin-registered; planned for go-envelopes core in v0.3."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.triage
   class: react-component
   entry: "components/envelopes/Triage#Triage"
-  trust_class: core-trusted
+  isolation: main-origin
   component: TriageView
   fallback:
     preserves_meaning: false

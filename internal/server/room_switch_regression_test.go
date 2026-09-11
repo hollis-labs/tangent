@@ -77,13 +77,27 @@ func (b *lockedBuffer) String() string {
 	return b.b.String()
 }
 
+// viteNodeCLIPath resolves the vite-node CLI both production browser drivers
+// execute. It lives in one place because the path has already moved once:
+// vite-node 5 relocated its entrypoint from vite-node.mjs at the package root
+// to dist/cli.mjs (the package's declared `bin` target). When it moved, the
+// two callers disagreed about what that meant — the HITL driver failed the
+// suite and this one skipped silently — so the drift was only half visible.
+//
+// vite-node is an explicit devDependency of ui/package.json. It used to arrive
+// transitively through vitest, which stopped shipping it in v5; depending on
+// another package's dependency graph is what made the move a surprise.
+func viteNodeCLIPath(repoRoot string) string {
+	return filepath.Join(repoRoot, "ui", "node_modules", "vite-node", "dist", "cli.mjs")
+}
+
 func startProductionBrowserDriver(t *testing.T) *productionBrowserDriver {
 	t.Helper()
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve repository root: %v", err)
 	}
-	viteNode := filepath.Join(repoRoot, "ui", "node_modules", "vite-node", "vite-node.mjs")
+	viteNode := viteNodeCLIPath(repoRoot)
 	if _, statErr := os.Stat(viteNode); statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			t.Skip("production SPA lifecycle regression requires ui/node_modules; run through make test after npm install")
@@ -639,7 +653,7 @@ func assertRegressionCancelled(t *testing.T, outcome regressionToolOutcome, enve
 	if err := json.Unmarshal([]byte(textOf(outcome.result)), &response); err != nil {
 		t.Fatalf("%s unmarshal cancel response: %v", envelopeID, err)
 	}
-	if response.EnvelopeID != envelopeID || response.Kind != envelopes.ResponseKindAck || response.Status != envelopes.ResponseStatusCancelled {
+	if response.EnvelopeID != envelopeID || response.Kind != envelopes.ResponseKindAck || response.Status != envelopes.ResponseStatusCanceled {
 		t.Fatalf("%s cancel result = id %q kind %q status %q, want ack/cancelled", envelopeID, response.EnvelopeID, response.Kind, response.Status)
 	}
 }

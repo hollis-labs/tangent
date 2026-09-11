@@ -140,6 +140,13 @@ func (h *Host) RegisterMCPTool(tool MCPTool) error {
 	if _, claimed := h.tools[tool.Name]; claimed {
 		return fmt.Errorf("%w: %s", ErrToolNameClaimed, tool.Name)
 	}
+	// Wrapped here rather than at the dispatch site, so the handler is bounded
+	// and panic-safe before anything can call it and internal/mcp does not have
+	// to remember to do it. See isolation.go for what the guard promises — and
+	// for the one thing it does not, which is that the plugin stopped.
+	tool.Handler = guardedMCPHandler{
+		name: tool.Name, release: h.release, budget: h.budget, inner: tool.Handler,
+	}
 	h.tools[tool.Name] = tool
 	h.logger.Info("pluginhost: mcp tool contributed", "tool", tool.Name)
 	return nil

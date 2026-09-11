@@ -324,7 +324,7 @@ INSERT INTO definition_bindings (
 		nullString(params.Definition.PackageID), nullString(params.Definition.PackageVersion),
 		nullString(params.Definition.OwnershipClass), nullString(params.Definition.CompatibilityClass),
 		nullString(params.Definition.RendererID), nullString(params.Definition.RendererClass),
-		nullString(params.Definition.RendererTrustClass),
+		nullString(params.Definition.RendererIsolation),
 		nullString(string(params.Definition.RequiredCapabilities)),
 		nullString(string(params.Definition.GrantedCapabilities)),
 		nullString(params.Definition.MaterializationState),
@@ -522,7 +522,15 @@ SELECT COALESCE(MAX(revision), 0) + 1 FROM draft_revisions WHERE interaction_id 
 		return DraftRevision{}, fmt.Errorf("load next draft revision: %w", err)
 	}
 	if draft.Revision != nextDraftRevision {
-		return DraftRevision{}, ErrRevisionConflict
+		// Typed, because this is the one revision conflict the CLIENT can fix
+		// by itself and the only one where the store already knows the answer.
+		// Returning a bare sentinel here threw that answer away and left a
+		// browser guessing — see DraftRevisionConflictError.
+		return DraftRevision{}, &DraftRevisionConflictError{
+			InteractionID: draft.InteractionID,
+			Sent:          draft.Revision,
+			Expected:      nextDraftRevision,
+		}
 	}
 	if draft.CreatedAt.IsZero() {
 		draft.CreatedAt = s.now()

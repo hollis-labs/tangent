@@ -1,16 +1,25 @@
-# Interaction definition manifest — tangent.app-board@0.1
+# Interaction definition manifest — tangent.app-board@0.2
 #
 # Authored per docs/adr/0003-definition-and-package-ownership.md §2. Every field
 # below is publisher-authored; Tangent derives the digests, the granted
 # capabilities, and the effective trust assurance and refuses a manifest that
 # tries to author them.
 #
-# THE FIRST PLUGIN-CONTRIBUTED KIND. It arrives through the ADR 0007 §4 plugin
-# path (internal/plugins/appboard registers it via internal/pluginhost) rather
-# than being installed directly by RegisterAll. That changes which door it comes
-# through and nothing else: this manifest is still what decides what the host
-# will let it do, and a registration the host cannot resolve a manifest for is
-# refused. See the `contributedByPlugin` column in register_all.go.
+# HOST PLUMBING. RegisterAll installs it, like every other host-package kind.
+#
+# It was marked plugin-contributed from the day the plugin host landed until
+# CW-20260911-0036, and it never should have been: `publisher: tangent`,
+# `ownership_class: host-package`, a renderer compiled into ui_dist with the
+# release. The plugin holding it had no dependency to isolate and no behaviour.
+# Two application plugins supply content to this shape and neither owns it.
+#
+# These two comment blocks stayed knowingly false from `adca3ff` until now.
+# Correcting them moves the raw manifest bytes, which moves `binding_digest`
+# (internal/interaction/catalog.go hashes them), which under ADR 0003 §8 C1
+# takes pending interactions of this kind out of service for new submissions —
+# too much to pay for a comment. CW-20260911-0045 recorded the deferral and the
+# reasoning so it could ride the next change that moved these bytes anyway.
+# ADR 0009 is that change.
 #
 # ADR 0003 §6 T3: a presentation surface Tangent hosts inside its own React
 # tree. Domain-free on purpose — a board of filtered cards with a detail pane,
@@ -44,9 +53,17 @@
 # Every kind shipped before this one says browser-local, describing a
 # ui/src/lib/*-draft-storage.ts module backed by localStorage. This kind's view
 # state — which filters are applied, which card is selected, whether the detail
-# pane is open, and which cards have been staged into another column — is a
-# durable revisioned draft record under ADR 0002 custody, written through
-# Service.SaveDraft and read back by the caller through tangent.surface_get.
+# pane is open, which cards have been staged into another column, and what the
+# participant has written about a card — is a durable revisioned draft record
+# under ADR 0002 custody, written through Service.SaveDraft and read back by the
+# caller through tangent.surface_get.
+#
+# A card is staged either by dragging it into a column or by choosing one from
+# the detail pane (CW-20260910-0135). Two gestures, one meaning: both write the
+# same `staged_changes` entry, and neither is offered unless the caller supplies
+# a sync block with a stage_label. The button path is not a fallback to be
+# removed once dragging works — HTML5 drag is not keyboard or assistive-
+# technology reachable, so it is the route those users have.
 #
 # A staged change is still view state, not a decision. It says where the
 # participant put a card, and the caller does not act on it until the
@@ -54,16 +71,65 @@
 # route and its own capability check. A board abandoned with staged changes
 # changes nothing anywhere, which is the property that keeps ADR 0007 §5's
 # "a caller must not present a draft as a decision" true rather than verbal.
+# A staged note is the same kind of thing and gets the same treatment.
 
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.app-board
-version: "0.1"
-# revision 2 adds the optional `sync` block (CW-20260910-0031): a same-origin
-# plugin route the board may POST to, and the label of the control that stages a
-# card into another column. Additive, per compatibility_class below — a board
-# sent without it renders exactly as it did before, read-only.
-revision: 2
+# 0.3 renames `renderer.trust_class` to `renderer.isolation` (ADR 0009), which
+# is semantic and therefore a version rather than a revision under §3.
+#
+# 0.2 covered everything added since 0.1 at once (CW-20260911-0008).
+#
+# This kind spent its first weeks at `version: "0.1"` while `revision` advanced
+# to 2, 3 and 4 — each time adding an optional field to request.schema.json.
+# Every one of those moved `contract_digest`, and ADR 0003 §3 is explicit that a
+# `contract_digest` change is a new `version`, never a revision. The rule was
+# right and this manifest was wrong, so §3 was not amended.
+#
+# One minor bump rather than 0.2, 0.3 and 0.4 in sequence, because semver
+# versions mark releases and none of those three were released separately. The
+# compressed history is deliberate, not a miscount — which is the only reason
+# this paragraph exists. `revision` goes back to 1: it is a non-semantic edit
+# counter *within* a version, so a new version starts its count over.
+#
+# §8 C3 does not reach this kind. It freezes "the eighteen shipped kinds'" wire
+# names and versions, and this kind arrived after those eighteen, with the
+# plugin host in `7b4803e`. (It was described here as "the first
+# plugin-contributed kind"; it was not one. The arrival date is what §8 C3 turns
+# on, and that part was always true.)
+#
+# What 0.2 adds over 0.1, all of it optional and all of it additive:
+#
+#   * the `sync` block (CW-20260910-0031): a same-origin plugin route the board
+#     may POST to, and the label of the control that stages a card into another
+#     column. A board sent without it renders exactly as it did before,
+#     read-only.
+#   * `sync.note_label` (CW-20260910-0054): the label of a per-card free-text
+#     control, and with it a `staged_notes` map in the draft alongside
+#     `staged_changes`. A board that names no note_label offers no note box and
+#     writes no staged_notes, which is every board sent before it.
+#   * `cards[].note`: a note already on record for a card, which the note
+#     control seeds from. It closed a hole the note control itself opened, and
+#     first use found it immediately — a participant typed a note, synced, and
+#     watched their own words disappear, because the reply was a fresh board and
+#     the box came back empty. A caller could say a note EXISTED (its own badge)
+#     but had no way to show WHAT it said, which made the most valuable thing on
+#     the board the one thing the board discarded. Seeding also gives withdrawal
+#     a meaning it did not have: with the box seeded, an empty box is the
+#     participant clearing a note that was there, so `staged_notes` carries the
+#     empty string rather than dropping the key. A card with no note on record
+#     and nothing typed carries no key at all, so the two states stay
+#     distinguishable.
+#
+# A note is view state, exactly as a staged column move is, and for the same
+# reason: it says what the participant wrote down, not what they decided. The
+# caller does not read it until they press sync, and a board abandoned with a
+# note written and never synced has changed nothing anywhere. What the caller
+# does with it afterwards is the caller's business — this kind neither
+# interprets a note nor sends it anywhere, which is what keeps it domain-free.
+version: "0.3"
+revision: 1
 title: "App board"
 description: "App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it."
 package_id: tangent.appboard
@@ -78,7 +144,7 @@ renderer:
   id: tangent.renderer.app-board
   class: react-component
   entry: "components/envelopes/AppBoard#AppBoard"
-  trust_class: core-trusted
+  isolation: main-origin
   component: AppBoardView
   fallback:
     preserves_meaning: false

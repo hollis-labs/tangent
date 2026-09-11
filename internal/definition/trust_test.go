@@ -1,7 +1,6 @@
 package definition
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
@@ -27,10 +26,10 @@ func trustManifest(mutate func(*Manifest)) *Manifest {
 		ResponseKind:      "data",
 		ResponseSchemaRef: "response.schema.json",
 		Renderer: Renderer{
-			ID:         "tangent.renderer.example",
-			Class:      RendererReactComponent,
-			Entry:      "components/envelopes/Example#Example",
-			TrustClass: TrustCoreTrusted,
+			ID:        "tangent.renderer.example",
+			Class:     RendererReactComponent,
+			Entry:     "components/envelopes/Example#Example",
+			Isolation: IsolationMainOrigin,
 		},
 		CompatibleHostVersions:     ">=0.0.0 <2.0.0",
 		CompatibleProtocolVersions: ">=1 <2",
@@ -68,72 +67,29 @@ func trustPolicy(grantable ...string) HostPolicy {
 	}
 }
 
-func TestEveryTrustClassHasAProfileAndEveryProfileHasAClass(t *testing.T) {
+func TestEveryIsolationHasAProfileAndEveryProfileHasAnIsolation(t *testing.T) {
 	t.Parallel()
-	classes := TrustClasses()
-	if len(classes) != len(trustProfiles) {
-		t.Fatalf("TrustClasses lists %d classes, the table has %d", len(classes), len(trustProfiles))
+	isolations := Isolations()
+	if len(isolations) != len(isolationProfiles) {
+		t.Fatalf("Isolations lists %d, the table has %d", len(isolations), len(isolationProfiles))
 	}
-	for _, class := range classes {
-		profile, ok := TrustProfileFor(class)
+	for _, isolation := range isolations {
+		profile, ok := IsolationProfileFor(isolation)
 		if !ok {
-			t.Fatalf("%s has no profile", class)
+			t.Fatalf("%s has no profile", isolation)
 		}
-		if !class.valid() {
-			t.Errorf("%s is in the profile table but not in the enum", class)
+		if !isolation.valid() {
+			t.Errorf("%s is in the profile table but not in the enum", isolation)
 		}
-		if !profile.Isolation.valid() {
-			t.Errorf("%s has isolation %q, which is not a value", class, profile.Isolation)
+		if profile.Isolation != isolation {
+			t.Errorf("%s is keyed to a profile describing %s", isolation, profile.Isolation)
 		}
 		if len(profile.RendererClasses) == 0 {
-			t.Errorf("%s admits no renderer class, so nothing could ever request it", class)
+			t.Errorf("%s admits no renderer shape, so nothing could ever declare it", isolation)
 		}
 	}
-	if _, ok := TrustProfileFor(TrustClass("core-trusted-ish")); ok {
-		t.Error("an unknown trust class resolved to a profile")
-	}
-}
-
-// The ordering is the model. If it stops being strict, "raising trust_class"
-// stops being a statement about what a renderer may reach.
-func TestTheCapabilityCeilingsAreStrictlyOrdered(t *testing.T) {
-	t.Parallel()
-	set := func(class TrustClass) map[string]bool {
-		profile, _ := TrustProfileFor(class)
-		out := map[string]bool{}
-		for _, id := range profile.Capabilities {
-			out[id] = true
-		}
-		return out
-	}
-	core, portfolio, sandboxed := set(TrustCoreTrusted), set(TrustPortfolioTrusted), set(TrustSandboxedCode)
-
-	for id := range portfolio {
-		if !core[id] {
-			t.Errorf("portfolio-trusted permits %q and core-trusted does not", id)
-		}
-	}
-	for id := range sandboxed {
-		if !portfolio[id] {
-			t.Errorf("sandboxed-code permits %q and portfolio-trusted does not", id)
-		}
-	}
-	if len(core) <= len(portfolio) || len(portfolio) <= len(sandboxed) {
-		t.Errorf("ceilings are not strictly decreasing: core=%d portfolio=%d sandboxed=%d",
-			len(core), len(portfolio), len(sandboxed))
-	}
-	for _, class := range []TrustClass{TrustDeclarative, TrustExternalSurface} {
-		if profile, _ := TrustProfileFor(class); len(profile.Capabilities) != 0 {
-			t.Errorf("%s permits %v; no publisher code runs in that class, so there is "+
-				"no renderer to grant a capability to", class, profile.Capabilities)
-		}
-	}
-	// The two that matter most, named rather than left to the ordering.
-	if sandboxed[capabilityFileWrite] {
-		t.Error("sandboxed-code may write to the workspace through a host proxy")
-	}
-	if sandboxed[capabilityProcessExec] || portfolio[capabilityProcessExec] {
-		t.Error("process.exec is nameable outside core-trusted")
+	if _, ok := IsolationProfileFor(Isolation("main-origin-ish")); ok {
+		t.Error("an unknown isolation resolved to a profile")
 	}
 }
 
@@ -141,215 +97,110 @@ func TestTheCapabilityCeilingsAreStrictlyOrdered(t *testing.T) {
 // calls itself. This is acceptance criterion 1 as an assertion.
 func TestOnlyMainOriginCarriesAmbientHostAuthority(t *testing.T) {
 	t.Parallel()
-	for _, class := range TrustClasses() {
-		profile, _ := TrustProfileFor(class)
+	for _, isolation := range Isolations() {
+		profile, _ := IsolationProfileFor(isolation)
 		want := profile.Isolation == IsolationMainOrigin
 		if got := profile.Isolation.AmbientHostAuthority(); got != want {
-			t.Errorf("%s: AmbientHostAuthority = %v, want %v", class, got, want)
+			t.Errorf("%s: AmbientHostAuthority = %v, want %v", isolation, got, want)
 		}
-		if profile.ExecutesPublisherCode && !want && profile.Isolation == IsolationHostPrimitive {
+		if profile.ExecutesPublisherCode && profile.Isolation == IsolationHostPrimitive {
 			t.Errorf("%s executes publisher code in the host-primitive isolation, which is "+
-				"defined as the isolation where none does", class)
+				"defined as the isolation where none does", isolation)
 		}
 	}
-	if IsolationFor(TrustSandboxedCode).AmbientHostAuthority() {
+	if IsolationSandboxedFrame.AmbientHostAuthority() {
 		t.Error("sandboxed code has ambient host authority")
 	}
-	// An unrecognized class must not fall through to the main origin.
-	if got := IsolationFor(TrustClass("something-new")); got != IsolationExternalSurface {
-		t.Errorf("unknown trust class isolation = %q, want %q", got, IsolationExternalSurface)
+	// An unrecognized value must not resolve to anything at all — it has no
+	// profile, and a manifest declaring it is refused rather than defaulted.
+	if _, ok := IsolationProfileFor(Isolation("something-new")); ok {
+		t.Error("an unknown isolation resolved to a profile instead of being refused")
 	}
 }
 
-func TestRendererShapeAndTrustClassMustAgree(t *testing.T) {
+// TestRendererShapeAndIsolationMustAgree is the check ADR 0009 made
+// load-bearing.
+//
+// It used to be one refusal among several — the provenance apparatus refused a
+// manifest on publisher, on assurance, and on asset digest as well. Those are
+// gone, so this is now the ONLY thing standing between a declared isolation and
+// the one in force, and it is what lets `renderer.isolation` be read as a fact
+// rather than as a request. If it ever stops refusing in both directions, the
+// field silently becomes a wish.
+func TestRendererShapeAndIsolationMustAgree(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name       string
-		class      RendererClass
-		trustClass TrustClass
-		wantErr    bool
+		name      string
+		class     RendererClass
+		isolation Isolation
+		wantErr   bool
 	}{
-		{"react component may be core trusted", RendererReactComponent, TrustCoreTrusted, false},
-		{"react component may be portfolio trusted", RendererReactComponent, TrustPortfolioTrusted, false},
-		{"sandboxed frame may be sandboxed code", RendererSandboxedFrame, TrustSandboxedCode, false},
-		{"declarative may be declarative", RendererDeclarative, TrustDeclarative, false},
-		{"external surface may be external surface", RendererExternalSurface, TrustExternalSurface, false},
+		{"react component runs in the main origin", RendererReactComponent, IsolationMainOrigin, false},
+		{"declarative may be drawn by host primitives", RendererDeclarative, IsolationHostPrimitive, false},
+		{"declarative may also be main-origin", RendererDeclarative, IsolationMainOrigin, false},
+		{"sandboxed frame is sandboxed", RendererSandboxedFrame, IsolationSandboxedFrame, false},
+		{"external surface is external", RendererExternalSurface, IsolationExternalSurface, false},
 
-		// The original narrow rule (§7 T6).
-		{"sandboxed frame may not be core trusted", RendererSandboxedFrame, TrustCoreTrusted, true},
-		// The cases the narrow rule missed. A React component that calls
-		// itself sandboxed is not sandboxed — it is mislabeled, and the label
-		// would have bought it a weaker-looking classification for code that
+		// The original narrow rule (§7 T6): untrusted markup may not claim the
+		// host's own authority.
+		{"sandboxed frame may not claim main origin", RendererSandboxedFrame, IsolationMainOrigin, true},
+		// And the direction the narrow rule missed. A React component that
+		// calls itself sandboxed is not sandboxed — it is mislabeled, and the
+		// label would buy it a weaker-looking classification for code that
 		// still runs in the main origin.
-		{"react component may not claim sandboxed code", RendererReactComponent, TrustSandboxedCode, true},
-		{"react component may not claim external surface", RendererReactComponent, TrustExternalSurface, true},
-		{"sandboxed frame may not be declarative", RendererSandboxedFrame, TrustDeclarative, true},
-		{"declarative may not be sandboxed code", RendererDeclarative, TrustSandboxedCode, true},
+		{"react component may not claim sandboxed frame", RendererReactComponent, IsolationSandboxedFrame, true},
+		{"react component may not claim external surface", RendererReactComponent, IsolationExternalSurface, true},
+		{"react component may not claim host primitive", RendererReactComponent, IsolationHostPrimitive, true},
+		{"sandboxed frame may not claim host primitive", RendererSandboxedFrame, IsolationHostPrimitive, true},
+		{"declarative may not claim sandboxed frame", RendererDeclarative, IsolationSandboxedFrame, true},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			manifest := trustManifest(func(m *Manifest) {
 				m.Renderer.Class = testCase.class
-				m.Renderer.TrustClass = testCase.trustClass
+				m.Renderer.Isolation = testCase.isolation
 			})
 			err := manifest.validate()
 			if testCase.wantErr && err == nil {
-				t.Fatalf("%s/%s was accepted", testCase.class, testCase.trustClass)
+				t.Fatalf("%s/%s was accepted", testCase.class, testCase.isolation)
 			}
 			if !testCase.wantErr && err != nil {
-				t.Fatalf("%s/%s was refused: %v", testCase.class, testCase.trustClass, err)
+				t.Fatalf("%s/%s was refused: %v", testCase.class, testCase.isolation, err)
 			}
 		})
 	}
 }
 
-func TestTrustEvidenceGatesTheReleaseReviewedClasses(t *testing.T) {
+// TestMaterializationNeverSubstitutesAnIsolation is the property ADR 0009 leans
+// on to call the field a statement of fact.
+//
+// A manifest either materializes with exactly the isolation it declared, or it
+// does not materialize. There is no third outcome in which the host quietly
+// runs a renderer somewhere other than where its author said — which is what a
+// downgrade would be, and what makes "the name does not lie" checkable rather
+// than asserted.
+func TestMaterializationNeverSubstitutesAnIsolation(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name          string
-		mutate        func(*Manifest)
-		wantState     State
-		wantReasonSub string
-	}{
-		{
-			name:      "an in-tree core-trusted renderer materializes",
-			mutate:    nil,
-			wantState: StateAvailable,
-		},
-		{
-			name: "a separately distributed bundle may not be core-trusted",
-			mutate: func(m *Manifest) {
-				m.Renderer.AssetDigest = "sha256:" + strings.Repeat("a", 64)
-			},
-			wantState:     StateQuarantined,
-			wantReasonSub: "asset_digest",
-		},
-		{
-			name: "another publisher may not be core-trusted",
-			mutate: func(m *Manifest) {
-				m.Publisher = "acme"
-				m.OwnershipClass = OwnershipApplicationPackage
-				m.PackageID = "acme.thing"
-			},
-			wantState:     StateQuarantined,
-			wantReasonSub: "reviewed with the Tangent release",
-		},
-		{
-			name: "another publisher may be portfolio-trusted on grantable evidence",
-			mutate: func(m *Manifest) {
-				m.Publisher = "acme"
-				m.OwnershipClass = OwnershipApplicationPackage
-				m.PackageID = "acme.thing"
-				m.Renderer.TrustClass = TrustPortfolioTrusted
-			},
-			wantState: StateAvailable,
-		},
-		{
-			name: "a separately distributed portfolio bundle is admitted",
-			mutate: func(m *Manifest) {
-				m.Renderer.TrustClass = TrustPortfolioTrusted
-				m.Renderer.AssetDigest = "sha256:" + strings.Repeat("b", 64)
-			},
-			wantState: StateAvailable,
-		},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			manifest := trustManifest(testCase.mutate)
-			materialized, err := Materialize(manifest, trustMaterial(), trustPolicy())
-			if err != nil {
-				t.Fatalf("Materialize: %v", err)
-			}
-			if materialized.State != testCase.wantState {
-				t.Fatalf("state = %s (%s), want %s",
-					materialized.State, materialized.StateReason, testCase.wantState)
-			}
-			if testCase.wantReasonSub != "" &&
-				!strings.Contains(materialized.QuarantineReason, testCase.wantReasonSub) {
-				t.Fatalf("quarantine reason = %q, want it to mention %q",
-					materialized.QuarantineReason, testCase.wantReasonSub)
-			}
-			if testCase.wantState == StateAvailable {
-				if materialized.TrustClass != manifest.Renderer.TrustClass {
-					t.Errorf("granted trust class = %q, want the requested %q",
-						materialized.TrustClass, manifest.Renderer.TrustClass)
-				}
-				if materialized.Isolation != IsolationFor(manifest.Renderer.TrustClass) {
-					t.Errorf("isolation = %q, want %q",
-						materialized.Isolation, IsolationFor(manifest.Renderer.TrustClass))
-				}
-			}
+	for _, isolation := range Isolations() {
+		profile, _ := IsolationProfileFor(isolation)
+		manifest := trustManifest(func(m *Manifest) {
+			m.Renderer.Isolation = isolation
+			m.Renderer.Class = profile.RendererClasses[0]
 		})
-	}
-}
-
-// The ceiling runs before host policy, so widening policy widens nothing the
-// class already closed. This is the escalation path the ordering exists to
-// prevent, asserted directly.
-func TestTheTrustCeilingOutranksHostPolicy(t *testing.T) {
-	t.Parallel()
-	sandboxed := func(m *Manifest) {
-		m.Renderer.Class = RendererSandboxedFrame
-		m.Renderer.TrustClass = TrustSandboxedCode
-		m.Renderer.Entry = "frame/example"
-		m.RequiredCapabilities = []Capability{{ID: capabilityFileWrite}}
-	}
-
-	// An operator who has granted the capability outright.
-	materialized, err := Materialize(
-		trustManifest(sandboxed), trustMaterial(), trustPolicy(capabilityFileWrite))
-	if err != nil {
-		t.Fatalf("Materialize: %v", err)
-	}
-	if materialized.State != StateQuarantined {
-		t.Fatalf("state = %s, want quarantined even with the capability granted", materialized.State)
-	}
-	if !strings.Contains(materialized.QuarantineReason, "sandboxed-code") ||
-		!strings.Contains(materialized.QuarantineReason, capabilityFileWrite) {
-		t.Fatalf("quarantine reason = %q, want it to name the class and the capability",
-			materialized.QuarantineReason)
-	}
-	if len(materialized.TrustDeniedCapabilities) != 1 {
-		t.Fatalf("trust-denied capabilities = %v, want exactly the one the class refuses",
-			materialized.TrustDeniedCapabilities)
-	}
-	if len(materialized.GrantedCapabilities) != 0 {
-		t.Errorf("granted %v despite the class refusing it", materialized.GrantedCapabilities)
-	}
-}
-
-// An *optional* capability outside the ceiling degrades rather than
-// quarantines, and is reported separately from a host-policy denial so an
-// operator is not told to widen a policy that would not help.
-func TestAnOptionalCapabilityOutsideTheCeilingDegrades(t *testing.T) {
-	t.Parallel()
-	manifest := trustManifest(func(m *Manifest) {
-		m.Renderer.Class = RendererSandboxedFrame
-		m.Renderer.TrustClass = TrustSandboxedCode
-		m.Renderer.Entry = "frame/example"
-		m.RequiredCapabilities = []Capability{
-			{ID: capabilityFileWrite, Optional: true},
-			{ID: capabilityFileRead},
+		materialized, err := Materialize(manifest, trustMaterial(), trustPolicy())
+		if err != nil {
+			t.Fatalf("%s: Materialize: %v", isolation, err)
 		}
-	})
-	materialized, err := Materialize(
-		manifest, trustMaterial(), trustPolicy(capabilityFileRead, capabilityFileWrite))
-	if err != nil {
-		t.Fatalf("Materialize: %v", err)
-	}
-	if materialized.State != StateAvailable {
-		t.Fatalf("state = %s (%s), want available", materialized.State, materialized.StateReason)
-	}
-	if len(materialized.GrantedCapabilities) != 1 ||
-		materialized.GrantedCapabilities[0].ID != capabilityFileRead {
-		t.Fatalf("granted = %v, want only the permitted capability", materialized.GrantedCapabilities)
-	}
-	if len(materialized.TrustDeniedCapabilities) != 1 {
-		t.Fatalf("trust-denied = %v, want the optional one the class refuses",
-			materialized.TrustDeniedCapabilities)
-	}
-	if len(materialized.DeniedCapabilities) != 0 {
-		t.Errorf("host-policy denials = %v; the class refused it, not the operator",
-			materialized.DeniedCapabilities)
+		if materialized.State == StateQuarantined {
+			continue // refused outright, which is the other legal outcome
+		}
+		if materialized.Isolation == "" {
+			t.Fatalf("%s: never reached the isolation step (state %s: %s)",
+				isolation, materialized.State, materialized.StateReason)
+		}
+		if materialized.Isolation != isolation {
+			t.Errorf("%s declared, %q in force: materialization substituted an isolation",
+				isolation, materialized.Isolation)
+		}
 	}
 }

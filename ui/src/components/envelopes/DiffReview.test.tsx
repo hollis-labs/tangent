@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { expectProseLiteral, proseProbe } from "@/components/markdown/prose-probe";
 import {
   DIFF_REVIEW_AUTOSAVE_DEBOUNCE_MS,
   getDiffReviewDraftStorageKey,
@@ -143,5 +143,58 @@ describe("DiffReview", () => {
     expect(screen.getByTestId("diff-review-hunk-decision-hunk-2-notes")).toHaveValue(
       "Need stronger rationale.",
     );
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: DiffReviewEnvelope = {
+      v: 1,
+      id: "diff-md",
+      type: "tangent.diff-review",
+      data: {
+        review_id: "diff-md",
+        files: [
+          {
+            id: "f1",
+            path: "a.ts",
+            summary: proseProbe("dr-summary"),
+            before: "old",
+            after: "new",
+          },
+        ],
+      },
+    };
+
+    render(<DiffReview envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    // The sidebar row and the file header render the same string; both go
+    // through the renderer, so the probe appears twice.
+    expect(screen.getAllByText("dr-summary-bold", { selector: "strong" })).toHaveLength(2);
+    expect(screen.getAllByText("dr-summary-one", { selector: "li" })).toHaveLength(2);
+  });
+
+  // The Leave bucket, pinned: a diff hunk is evidence the reader compares
+  // character by character, so it stays literal no matter what it contains.
+  it("keeps diff hunks literal", () => {
+    const envelope: DiffReviewEnvelope = {
+      v: 1,
+      id: "diff-literal",
+      type: "tangent.diff-review",
+      data: {
+        review_id: "diff-literal",
+        files: [
+          {
+            id: "f1",
+            path: "a.ts",
+            before: proseProbe("dr-before"),
+            after: proseProbe("dr-after"),
+          },
+        ],
+      },
+    };
+
+    render(<DiffReview envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseLiteral(screen.getByTestId("diff-review-pane-before"), "dr-before");
+    expectProseLiteral(screen.getByTestId("diff-review-pane-after"), "dr-after");
   });
 });

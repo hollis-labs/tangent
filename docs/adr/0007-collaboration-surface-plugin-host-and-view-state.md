@@ -1,6 +1,12 @@
 # ADR 0007: The Collaboration Surface, the Plugin Host, and Where View State Lives
 
-**Status:** Accepted.
+**Status:** Accepted. **§4 narrowed 2026-09-11** and its plugin model extracted
+to [ADR 0008](0008-the-plugin-model.md) (`CW-20260911-0040`): the model, the
+exclusions and the instance stamps move there, and ADR 0008 reverses two of §4's
+exclusions. §4's boundary rule, its reserved-to-host list and its
+unimplemented-surfaces posture stand unchanged and stay here. Every other section
+stands unchanged. This is an extraction, not a supersession — this document
+remains the collaboration-surface record.
 
 **Date:** 2026-09-09
 
@@ -146,20 +152,35 @@ a draft payload, has made the mistake this section exists to prevent.
 ### 4. The plugin host boundary
 
 **New. Decided here.** Shipped: `internal/pluginhost/` (the `plugin_sdk.Host`
-implementation), `internal/plugins/` (the compiled-in set and its loader),
-`internal/plugins/appboard/` (the first plugin), and the `contributedByPlugin`
-column in `internal/envelope/extensions/register_all.go` (`CW-20260909-0042`).
+implementation) and the `contributedByPlugin` column in
+`internal/envelope/extensions/register_all.go` (`CW-20260909-0042`).
+
+**Narrowed 2026-09-11 (`CW-20260911-0040`), and this note is how a reader
+arriving here finds the rest.** This section used to carry the plugin *model*
+as well as the plugin *boundary* — which mode the host runs in, what a plugin
+may not do yet, and which plugin was "the first" one. It was amended twice in
+two days, and both times the boundary rule below survived untouched while the
+model around it rotted. They have different lifetimes, so they are now in
+different documents:
+
+> **[ADR 0008](0008-the-plugin-model.md) carries the plugin model** — Nanite's
+> manifest-authoritative registry adopted, runtime bundle loading, first-party
+> kinds, compiled-in as the dogfood concession rather than the target, where the
+> extracted browser loader lives, and the questions that are open. **It reverses
+> two exclusions this section used to state** (runtime asset loading, and
+> subprocess plugins as a separate decision) and drops the instance stamps. What
+> stays below is what never moved.
 
 `libs/plugin-sdk` is the portfolio plugin framework. It is host-neutral,
 carries `UIComponentTypeEnvelope` as a first-class component type, and
 distinguishes a compiled-in plugin from a subprocess one — `UIComponent.Handler`
 is documented as compiled-in-only because *"subprocess plugins cannot carry an
-http.Handler across the wire."* Nanite is the working consumer precedent
-(`plugins/nanite-plugin-oembed`: an envelope type, a JSON schema, `EnvelopeOut`
-emission).
+http.Handler across the wire."*
 
 **Interaction kinds may be contributed by plugins.** This is the intended path
-for new kinds, and `register_all.go` is not the only door.
+for new kinds, and `register_all.go` is not the only door. ADR 0008 §4 scopes
+this to first-party kinds and records that Tangent keeps a small core set of its
+own.
 
 The boundary that makes it safe, stated as a single rule:
 
@@ -185,23 +206,24 @@ Consequences of that rule:
   (`TestPackageTreeMatchesRegistrations`) must cover both paths, or the
   guarantee they provide silently narrows to half the registry.
 
-**Deliberately excluded from the first host, and recorded so absence is not
-read as decision:**
+**Host surfaces this host does not implement, recorded so absence is not read
+as decision:** `RegisterCRUDHandler`, `GetConfig`, `SetConfig`,
+`RegisterConfigSchema` and `GetService`. Each returns an error naming itself
+rather than succeeding quietly, because a registration that silently does
+nothing is the failure mode worth spending an error on. Implementing one because
+the SDK offers it, rather than because a consumer needs it, is the specific way
+this boundary rots — see the risk section.
 
-- **Plugin signing and signature verification.** Out of scope by Chrispian's
-  direction, 2026-09-09. First-party compiled-in plugins only. `trust.assurance`
-  is unchanged; nothing here relaxes it.
-- **Subprocess plugins.** The SDK supports them; the first Tangent host does
-  not spawn them. A subprocess host is a separate decision with its own
-  isolation questions, and it is not answered by this ADR.
-- **Runtime asset loading.** A plugin does not ship a renderer bundle into the
-  browser at runtime. The React renderer is compiled into `ui_dist` with the
-  release, which is what `core-trusted`'s empty-`asset_digest` requirement
-  already assumes.
+**What this host does not yet do is a question of the model, not the boundary,
+and lives in [ADR 0008](0008-the-plugin-model.md).** Subprocess plugins, runtime
+bundle loading and plugin signing were listed here as exclusions of "the first
+host"; two of the three have since been reversed, and keeping a list of
+not-yets inside a boundary statement is what dated this section twice. ADR 0008
+§5 and its open questions carry them.
 
 **Where a plugin's code lives is not the boundary.** In-tree and out-of-tree
-plugins are subject to identical manifest and trust rules. The first one may
-live in-tree for convenience without that location becoming a permission.
+plugins are subject to identical manifest and trust rules. A plugin may live
+in-tree for convenience without that location becoming a permission.
 
 ### 5. Long-lived surfaces and `tangent-custodied` view state
 
@@ -263,11 +285,20 @@ added for it.
 An application gets an agent-facing surface in Tangent by composing four things
 that already have owners:
 
-1. A **domain-free interaction kind**, contributed by a plugin under §4. The
-   kind describes a shape — a board of filtered cards with a detail pane — not
-   a domain. Torque supplies content to it; it is not a Torque type. This is
-   what keeps ADR 0005's *"Tangent is not a task tracker"* true while a Torque
-   board renders.
+1. A **domain-free interaction kind**. The kind describes a shape — a board of
+   filtered cards with a detail pane — not a domain. Torque supplies content to
+   it; it is not a Torque type. This is what keeps ADR 0005's *"Tangent is not a
+   task tracker"* true while a Torque board renders.
+
+   **Corrected 2026-09-11 (`CW-20260911-0036`, shipped in `adca3ff`).** This item
+   said the kind was *contributed by a plugin under §4*, and `tangent.app-board`
+   never was one: `publisher: tangent`, `ownership_class: host-package`, a
+   renderer compiled into `ui_dist` with the release. It is host plumbing — the
+   shape both application plugins fill and neither owns — and it registers
+   through `RegisterAll`. A kind a plugin genuinely contributes composes here the
+   same way; which door the kind came through was never what this pattern
+   depended on, which is why the correction changes the sentence and not the
+   pattern.
 2. **The agent as the application's client.** The agent already holds the
    application's tools; it supplies the data and applies every write. Tangent
    takes no dependency on the application, holds no credential for it, and
@@ -293,7 +324,7 @@ motivating case (Tesseract `agents_drive_tangent_apps_are_called`).
 The amendment is deliberately narrow, and the parts it does not relax are the
 parts that were doing the work:
 
-- **Tangent core still holds no application dependency.** `internal/plugins/torqueboard/torque.go`
+- **Tangent core still holds no application dependency.** `internal/plugins/torque/torque.go`
   is the only file in the repository that knows Torque exists. Nothing in
   `internal/mcp`, `internal/room`, `internal/interaction` or the renderer
   learns a Torque concept, which is what keeps ADR 0005's *"Tangent is not a
@@ -312,6 +343,59 @@ Recording the exception here rather than leaving the sentence quietly false is
 the point. A document whose claims are checkable against the tree is this ADR's
 whole argument for existing (see §Context on ADR 0006); an absolute that the
 tree contradicts would be the same defect one section later.
+
+**Amended again 2026-09-10 (`CW-20260910-0054`), because the second app plugin
+takes the same exception, and amending this section once per plugin would turn a
+boundary into a changelog.** The amendment above names a plugin. The Tesseract
+plugin makes Tesseract writes from inside this process for exactly the reason
+the Torque board does — this host compiles its plugins in — and nothing about
+that is specific to either application.
+
+The exception is therefore restated as a property of **the host**, not of a
+plugin:
+
+> While this host compiles its plugins in, a compiled-in plugin's writes to the
+> application it adapts originate in Tangent's process. That is a known cost of
+> the compiled-in mode, tracked by `CW-20260910-0034`, and it closes for every
+> plugin at once when subprocess mode lands.
+
+**The mode named above is corrected 2026-09-11 (`CW-20260911-0040`), and only
+the mode.** Both amendments were written as though compiled-in were the host's
+standing mode and subprocess an improvement that might arrive. That is
+backwards: compiled-in was the **dogfood concession**, authorized so the Torque
+integration could be used sooner, and subprocess plus runtime UI loading is the
+target ([ADR 0008](0008-the-plugin-model.md) §1 and §5).
+
+That correction is about which mode this host runs and why. It leaves the test
+above, its exception and its terms exactly as they stand.
+
+Two conditions keep the exception readable rather than merely recorded:
+
+- **Every plugin that takes it says so in its package doc**, in the terms
+  `internal/plugins/torque/plugin.go` already uses. Who is inside the
+  exception is then a `grep`, not a memory.
+- **A plugin that writes to an application holds that application's client in
+  its own package and nowhere else.** `internal/plugins/torque/torque.go`
+  is the only file in the repository that knows Torque exists; a Tesseract
+  plugin's client must be the only file that knows Tesseract does. Widening the
+  exception widens what a *plugin* may do and not what Tangent core learns,
+  which is the half that was doing the work.
+
+What this does not relax, unchanged from the first amendment:
+`RegisterCRUDHandler` stays unimplemented, `GetService` stays unimplemented, and
+a plugin remains a caller through `pluginhost.ToolCaller` rather than an insider
+holding a handle to the database, the room manager or the interaction service.
+
+One thing this amendment adds rather than restates, because the second plugin
+raises it and the first did not:
+
+- **A plugin writes with whatever authority its own client carries, and Tangent
+  grants it none.** Tangent holds no credential for an application and issues no
+  identity to one. A plugin writing to a store that trusts an asserted actor is
+  relying on that store's policy, not on a guarantee from this host, and must not
+  be described as though the host vouched for the write. `CW-20260910-0045` is
+  where that is being made enforceable for Tesseract specifically; nothing here
+  anticipates its outcome.
 
 ## Consequences
 
@@ -380,6 +464,12 @@ Nanite. Keeping the single door would make every new application surface a
 change to Tangent's own registration table, which is precisely the coupling the
 plugin framework exists to remove.
 
+**Scoped 2026-09-11:** *"how new envelopes arrive"* means **first-party**
+plugins, and Tangent keeps a small core set of kinds in `register_all.go` that
+rarely changes ([ADR 0008](0008-the-plugin-model.md) §4). The rejection stands;
+read unscoped it would suggest a third-party contribution path that is not in
+scope and would reopen the whole trust model.
+
 ### Put board filters in `ViewFocus` rather than a draft revision
 
 Rejected. `ViewFocus` is channel-scoped and survives the interaction; board
@@ -398,9 +488,14 @@ unverifiable.
 
 1. Does any normative sentence here lack a stamp or an *intended* / *assumed*
    label? If so it is a defect, not a style preference.
-2. Does §4's rule survive contact with the first real plugin, or does the
-   manifest requirement turn out to need an escape hatch? If it needs one, that
-   is a new ADR, not a patch to this one.
+2. **Answered 2026-09-11, and not the way this question expected.** §4's rule
+   survived contact with three plugins and needed no escape hatch — the manifest
+   requirement has not been relaxed once, and `RegisterUIComponent` still refuses
+   a kind it cannot resolve a manifest for. What needed a new ADR was everything
+   *around* the rule: the mode, the exclusions and the instance stamps, which
+   moved twice in two days while the rule did not move at all. That is
+   [ADR 0008](0008-the-plugin-model.md), and it is an extraction rather than the
+   patch this question was trying to forbid.
 3. **Resolved 2026-09-09, against this document.** There was never a naming
    choice to make: `tangent-custodied` shipped in the manifest format at
    `2e2c48a`, long before this ADR, and the enum is what validates. This
@@ -423,5 +518,6 @@ unverifiable.
 - [ADR 0004](0004-caller-participant-and-room-access-authority.md) — caller, participant and room access authority
 - [ADR 0005](0005-product-boundary-and-portfolio-composition.md) — the product boundary and its tests
 - [ADR 0006](0006-collaboration-surface-and-relay-boundary.md) — superseded by this document
+- [ADR 0008](0008-the-plugin-model.md) — the plugin model, extracted from §4
 - `docs/renderer-trust-classes.md` — the shipped isolation model
 - `~/dev/agent-os/workspaces/drafts/tangent/torque-plugin-mvp.md` — the pilot design

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { BlockDraft, type BlockDraftEnvelope } from "./BlockDraft";
 
 describe("<BlockDraft>", () => {
@@ -81,5 +82,38 @@ describe("<BlockDraft>", () => {
       target: { value: "Push harder on constraints." },
     });
     expect(screen.getByTestId("block-draft-submit")).not.toBeDisabled();
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <BlockDraft
+        envelope={{
+          v: 1,
+          id: "draft-md",
+          type: "tangent.block-draft",
+          context: proseProbe("draft-context"),
+          data: {
+            block_id: "intro",
+            mode: "section",
+            content: proseProbe("draft-content"),
+            rationale: proseProbe("draft-rationale"),
+            outline_hint: proseProbe("draft-hint"),
+            current_draft: {
+              block_count: 1,
+              markdown: proseProbe("draft-current"),
+              blocks: [{ block_id: "prior", content: "Accepted." }],
+            },
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("draft-context");
+    expectProseRendered("draft-current");
+    expectProseRendered("draft-hint");
+    expectProseRendered("draft-content");
+    expectProseRendered("draft-rationale");
   });
 });

@@ -3,7 +3,6 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,7 +10,6 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
-	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -28,16 +26,12 @@ func definitionToolsClient(t *testing.T) (*mcpsdk.ClientSession, func()) {
 	if registerErr := extensions.RegisterAll(envelopeService); registerErr != nil {
 		t.Fatalf("RegisterAll: %v", registerErr)
 	}
-	// And the plugin door (ADR 0007 §4). These tests compare the diagnostics
-	// against extensions.RegisteredTypes(), which counts both doors, so a
-	// server booted through only one of them would report a registry smaller
-	// than the one production serves and the assertions would be measuring the
-	// harness rather than the tool.
-	if _, pluginErr := plugins.LoadShipped(
-		context.Background(), slog.New(slog.DiscardHandler), envelopeService,
-	); pluginErr != nil {
-		t.Fatalf("LoadShipped: %v", pluginErr)
-	}
+	// The plugin door is NOT walked here, and that is correct rather than a
+	// gap. It contributes no kind in this build — CW-20260911-0036 established
+	// that the one kind it appeared to contribute was the host's — and since
+	// CW-20260911-0070 a plugin is installed rather than compiled in, so
+	// walking it would make this rig depend on what happens to be installed on
+	// the machine running the test.
 	server, err := tangentmcp.New(
 		envelopeService, envelope.NewDispatcher(envelopeService), room.NewManager(nil), "")
 	if err != nil {
@@ -171,7 +165,7 @@ func TestDefinitionGetProjectsTheWholeManifestAndBoundsSchemas(t *testing.T) {
 		OwnershipClass              string            `json:"ownership_class"`
 		RendererID                  string            `json:"renderer_id"`
 		RendererClass               string            `json:"renderer_class"`
-		RendererTrustClass          string            `json:"renderer_trust_class"`
+		RendererIsolation           string            `json:"renderer_isolation"`
 		RendererEntry               string            `json:"renderer_entry"`
 		TrustAssurance              string            `json:"trust_assurance"`
 		TrustSourceLocator          string            `json:"trust_source_locator"`
@@ -209,7 +203,7 @@ func TestDefinitionGetProjectsTheWholeManifestAndBoundsSchemas(t *testing.T) {
 	if detail.PackageID != extensions.HITLPackageID || detail.OwnershipClass != "host-package" {
 		t.Errorf("ownership = %s/%s", detail.PackageID, detail.OwnershipClass)
 	}
-	if detail.RendererID == "" || detail.RendererClass == "" || detail.RendererTrustClass == "" ||
+	if detail.RendererID == "" || detail.RendererClass == "" || detail.RendererIsolation == "" ||
 		detail.RendererEntry == "" {
 		t.Errorf("renderer binding is incomplete: %+v", detail)
 	}

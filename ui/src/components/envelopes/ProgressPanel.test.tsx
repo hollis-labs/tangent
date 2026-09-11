@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   getProgressPanelDraftStorageKey,
   PROGRESS_PANEL_AUTOSAVE_DEBOUNCE_MS,
@@ -293,5 +294,49 @@ describe("<ProgressPanel>", () => {
     });
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText.mock.calls[0][0]).toContain('"completion_result": "completed"');
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <ProgressPanel
+        envelope={{
+          v: 1,
+          id: "progress-md",
+          type: "tangent.progress-panel",
+          data: {
+            panel_id: "panel-md",
+            items: [
+              {
+                item_id: "i1",
+                label: "Step one",
+                status: "running",
+                detail: proseProbe("pp-detail"),
+              },
+            ],
+            updates: [
+              {
+                update_id: "u1",
+                kind: "status",
+                item_id: "i1",
+                summary: proseProbe("pp-update"),
+              },
+            ],
+            checkpoints: [
+              { checkpoint_id: "c1", label: "Gate", summary: proseProbe("pp-checkpoint") },
+            ],
+            summary: { headline: "Running", detail: proseProbe("pp-summary") },
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("pp-detail");
+    expectProseRendered("pp-summary");
+    expectProseRendered("pp-update");
+
+    fireEvent.click(screen.getByTestId("progress-panel-tab-checkpoints"));
+    expectProseRendered("pp-checkpoint");
   });
 });

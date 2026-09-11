@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -470,10 +471,10 @@ export function SpreadsheetReview({
             {envelope.title ?? envelope.data?.title ?? "Spreadsheet review"}
           </CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
           {envelope.data?.intent ? (
-            <p className="text-sm text-zinc-300">{envelope.data.intent}</p>
+            <Markdown content={envelope.data.intent} className="text-zinc-300" />
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">

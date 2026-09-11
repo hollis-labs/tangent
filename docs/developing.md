@@ -2,7 +2,8 @@
 
 Onboarding for contributors and future-you. For the system shape see
 [`architecture.md`](./architecture.md). For the user-facing MCP setup
-see [`mcp-integration.md`](./mcp-integration.md).
+see [`mcp-integration.md`](./mcp-integration.md). To add a plugin, start from
+the scaffold — [`writing-a-plugin.md`](./writing-a-plugin.md).
 
 ## Prerequisites
 
@@ -314,6 +315,44 @@ shape fits every kind.
    `ui/src/generated/envelope-types.ts`. CI fails the build if it's
    stale (`make check-envelopes`), and the gate now covers every
    Tangent-owned kind, not just the upstream core catalog.
+
+## Changing a kind that already ships
+
+A manifest carries two numbers and they are not interchangeable. ADR 0003 §3:
+`revision` may advance within a `version` only while `contract_digest`,
+`renderer.class`, `renderer.isolation` and `required_capabilities` all hold.
+Anything else is a new `version`. Adding an optional field to a request schema
+moves `contract_digest`, so it is a version bump — an optional field is still a
+contract change, and the number that tells a reader the contract moved is the
+one on the wire.
+
+`TestNoRevisionAdvancedWhileTheContractMoved` in
+`internal/envelope/extensions/contract_lock_test.go` is the gate, and
+`contractLock` beside it is the committed record of what each kind last
+published. A build has no history, so the previous identity has to be written
+down for "the contract moved" to mean anything — the same reason the trust-class
+table in `drift_test.go` is written out kind by kind. Two failures come out of
+it and the message says which:
+
+- **A §3 violation.** Bump `version` in the manifest. Do not edit `contractLock`
+  to match — that is the gate reporting the finding it exists for. A new version
+  starts its revision count back at 1.
+- **A stale lock.** The kind moved legally and the table has not caught up. The
+  failure prints the literal to paste.
+
+There is deliberately no target that rewrites `contractLock`. A baseline a
+command can refresh is a baseline that gets refreshed instead of read.
+
+The one exception §3 grants is the once-per-kind
+`compatibility_response_schema: absent` → `present` backfill, which
+`CheckRevisionAdvance` honors from the marker rather than hard-failing. It
+covers `contract_digest` and nothing else.
+
+Budget for the blast radius before you bump. Under ADR 0003 §8 C1 a registry
+change that alters the current binding makes the pinned definition `unavailable`
+for **new submissions**, so a version bump takes pending interactions of that
+kind out of service. Narrowing C1 for an additive-classed bump is a known open
+question, not something this gate decided.
 
 ## Adding a new workflow
 

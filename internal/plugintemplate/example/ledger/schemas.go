@@ -1,0 +1,82 @@
+package ledger
+
+import "encoding/json"
+
+// The tool contracts.
+//
+// They are raw JSON rather than a Go struct with reflection, for the reason
+// pluginhost.MCPTool takes raw JSON: this is what a subprocess plugin would put
+// on the wire, so the declaration a compiled-in plugin writes today is the one
+// it keeps when CW-20260910-0034 makes subprocess mode real.
+//
+// Every filter here should be one Ledger's own list surface already takes, in
+// the same vocabulary. A plugin that invents a filter language of its own makes
+// an agent learn two.
+//
+// THIS IS ALSO WHERE MARKDOWN IS DOCUMENTED. Say per field whether it renders as
+// markdown, and say it where it does NOT — a reader comparing exact characters
+// depends on the second half. It does not go in the kind's ADR 0003 request
+// schema: those bytes are hashed into contract_digest and binding_digest, so a
+// description there moves the pin and takes pending interactions of that kind
+// out of service (see internal/envelope/extensions/packages.go).
+
+// openToolSchema advertises the open tool's input.
+var openToolSchema = json.RawMessage(`{
+  "title": "tangent.ledger_board input",
+  "description": "Filters selecting which Ledger records the board shows. Every field is optional.",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Board heading. Defaults to a description of the filters."
+    },
+    "statuses": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Ledger statuses to show, in column order. A record whose status is outside this list still appears, in a column appended at the end."
+    },
+    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags; a record matching any of them is included."},
+    "search": {"type": "string"},
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 80,
+      "description": "Maximum records to send; defaults to 60 and is clamped at 80. Send a deliberate superset: the board's own filter bar is a VIEW over what you sent, so narrowing past it needs a sync. A cut set is reported in the board's scope line and in this tool's truncated field rather than passed off as the whole set."
+    },
+    "room_id": {
+      "type": "string",
+      "description": "Open the board in an existing room instead of creating one."
+    },
+    "read_only": {
+      "type": "boolean",
+      "description": "Offer no staging control and no sync button. The board becomes a view of Ledger that cannot change it."
+    }
+  }
+}`)
+
+const openToolDescription = "Open a board of Ledger records in Tangent: the records matching " +
+	"your filters, arranged in columns by status, in a browser room. Returns the room URL and a board handle. " +
+	"The board stays open — the participant can stage changes and press Sync to apply them and " +
+	"pull fresh cards, with no agent turn. Filters narrow the records you asked for; the board's " +
+	"own filter bar narrows what was sent. Cards are capped, so check `truncated`: when it is " +
+	"true neither you nor the participant is looking at the whole set."
+
+// syncToolSchema advertises the sync tool's input.
+var syncToolSchema = json.RawMessage(`{
+  "title": "tangent.ledger_board_sync input",
+  "description": "Apply what the participant staged on a board of Ledger records and replace it with fresh cards.",
+  "type": "object",
+  "properties": {
+    "room_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The room the board is open in, as tangent.ledger_board returned it."
+    }
+  },
+  "required": ["room_id"]
+}`)
+
+const syncToolDescription = "Sync a board of Ledger records both ways in one call: apply what the " +
+	"participant staged, re-query Ledger, and replace the board with fresh cards. Returns what " +
+	"The board's own Sync button does exactly this without an agent turn; call this when you " +
+	"are already in a turn."

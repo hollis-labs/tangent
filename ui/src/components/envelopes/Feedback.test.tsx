@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { Feedback, type FeedbackEnvelope } from "./Feedback";
 
 function sampleEnvelope(): FeedbackEnvelope {
@@ -108,5 +109,31 @@ describe("<Feedback>", () => {
 
     fireEvent.click(screen.getByTestId("feedback-cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: FeedbackEnvelope = {
+      v: 1,
+      id: "feedback-md",
+      type: "tangent.feedback",
+      context: proseProbe("fb-context"),
+      data: {
+        prompt: proseProbe("fb-prompt"),
+        questions: [
+          {
+            id: "q1",
+            type: "text",
+            label: "One",
+            suggestion: { value: "yes", rationale: proseProbe("fb-rationale") },
+          },
+        ],
+      },
+    };
+
+    render(<Feedback envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("fb-context");
+    expectProseRendered("fb-prompt");
+    expectProseRendered("fb-rationale");
   });
 });

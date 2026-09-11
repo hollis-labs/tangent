@@ -2,6 +2,7 @@ import { type ChangeEvent, useEffect, useEffectEvent, useRef, useState } from "r
 import { type Editor, getSnapshot, type TLEditorSnapshot, Tldraw } from "tldraw";
 import "tldraw/tldraw.css";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage } from "@/components/ui/field";
@@ -499,9 +500,9 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
         <div className="space-y-1">
           <CardTitle className="text-lg">{envelope.title ?? data?.title ?? "Whiteboard"}</CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
-          {data?.intent ? <p className="text-sm text-zinc-300">{data.intent}</p> : null}
+          {data?.intent ? <Markdown content={data.intent} className="text-zinc-300" /> : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">
           <span className="rounded-full border border-zinc-700 px-2 py-1">
@@ -652,7 +653,7 @@ export function Whiteboard({ envelope, onSubmit, onCancel, roomID }: WhiteboardP
                         {revision.asset_count ? ` • ${revision.asset_count} asset refs` : ""}
                       </p>
                       {revision.summary ? (
-                        <p className="mt-1 text-sm text-zinc-300">{revision.summary}</p>
+                        <Markdown content={revision.summary} className="mt-1 text-zinc-300" />
                       ) : null}
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button

@@ -137,7 +137,8 @@ table above is the `main-origin` column. Two things changed:
   and stayed `declared` in the main origin, where no CSP directive covers
   either.
 
-Every receipt now carries `renderer_trust_class` and `renderer_isolation`
+Every receipt carries `renderer_isolation` (and, on rows written before
+ADR 0009 removed the class, `renderer_trust_class`)
 (migration `0010`) because `mediation` alone is not interpretable: the same
 value is a true statement about one isolation and a false one about another. See
 [`renderer-trust-classes.md`](renderer-trust-classes.md).
@@ -271,7 +272,7 @@ Stated plainly, because a stub that looks enforced is worse than an honest gap.
 1. **`clipboard.write` cannot be enforced in the main origin.** CSP has no
    clipboard directive. `CW-20260825-0073` added
    `Permissions-Policy: clipboard-write=(self)`, which denies every embedded
-   frame — so the capability *is* enforced for a `sandboxed-code` renderer — but
+   frame — so the capability *is* enforced for a `sandboxed-frame` renderer — but
    `self` is Tangent's own tree, where three shipped components still call
    `navigator.clipboard.writeText` directly without declaring the capability.
    Tightening the allowlist to `()` would enforce it and break them; that is a

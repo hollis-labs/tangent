@@ -1,0 +1,114 @@
+// Package {{.Package}} is the compiled-in plugin that contributes the
+// `{{.Kind}}` interaction kind{{.TaskRef}}.
+//
+// It is deliberately almost empty, and that is the point of the ADR 0007 §4
+// boundary: a plugin NAMES a kind, and the host decides what that kind may do by
+// resolving the manifest it ships. There is nothing here to review for a trust
+// decision, because there is nothing here a trust decision could be made from.
+// The trust class, the granted capabilities, the assurance and the digests are
+// all the host's to derive, and the host refuses a component that tries to
+// author any of them.
+//
+// # A contributed kind is not privileged
+//
+// It goes through the same manifest, trust classification and renderer
+// isolation as every kind installed by RegisterAll. The `contributedByPlugin`
+// column in internal/envelope/extensions/register_all.go records which door it
+// came through and nothing else — and the drift tests walk both doors, because
+// covering only one would narrow ADR 0003 §6's ownership guarantee to half the
+// registry without failing.
+//
+// # Keep it domain-free
+//
+// This kind must describe a SHAPE, never an application's concepts. The
+// pressure runs the other way in practice: an application plugin discovers its
+// board cannot express something, and the shortest path is to add the field
+// where the author is already typing. The field belongs here — and if it can
+// only be described in one application's vocabulary, it does not belong here at
+// all.
+//
+// Adding one is a manifest `version` bump, not a `revision` bump. An optional
+// field still moves `contract_digest`, and ADR 0003 §3 makes any contract move
+// a version. `TestNoRevisionAdvancedWhileTheContractMoved` fails the build
+// otherwise (CW-20260911-0008), and §8 C1 means the bump takes pending
+// interactions of the kind out of service — so widening a shared kind is a
+// decision with a cost, not a convenience.
+//
+// Nothing in this package may import an application client, and nothing in it
+// may learn which application supplies its content.
+package {{.Package}}
+
+import (
+	"fmt"
+	"time"
+
+	plugin "github.com/hollis-labs/plugin-sdk"
+)
+
+// ID is the plugin identifier, and the name that appears in host logs.
+const ID = "{{.ID}}"
+
+// EnvelopeType is the kind's wire name. It is what the host resolves a manifest
+// for, and a name with no manifest is refused — which is why a scaffold that
+// omitted the manifest would produce a plugin that builds and cannot load.
+const EnvelopeType = "{{.Kind}}"
+
+// Plugin contributes the kind. It holds no state beyond its own load status:
+// the definition lives in its manifest, the renderer is compiled into ui_dist,
+// and any MCP tool that emits this kind belongs to whoever emits it.
+type Plugin struct {
+	status plugin.PluginStatus
+}
+
+// New returns an unloaded plugin.
+func New() *Plugin { return &Plugin{} }
+
+func (p *Plugin) ID() string      { return ID }
+func (p *Plugin) Name() string    { return "{{.App}}" }
+func (p *Plugin) Version() string { return "0.1.0" }
+
+func (p *Plugin) Description() string {
+	return "Contributes the {{.Kind}} interaction kind."
+}
+
+// Dependencies returns none. The kind depends on the host's manifest tree,
+// which is not a plugin.
+func (p *Plugin) Dependencies() []string { return nil }
+
+// Load registers the envelope kind with the host.
+//
+// The component carries a name and a type and nothing else. Leaving Props nil is
+// not an oversight — it is the plugin having nothing to say about the things the
+// manifest decides.
+func (p *Plugin) Load(host plugin.Host) error {
+	if host == nil {
+		return fmt.Errorf("{{.Package}}: host is nil")
+	}
+	if err := host.RegisterUIComponent(plugin.UIComponent{
+		ID:          EnvelopeType,
+		Type:        plugin.UIComponentTypeEnvelope,
+		Name:        "{{.Component}}",
+		Description: "{{.App}} surface.",
+	}); err != nil {
+		p.status.LastError = err.Error()
+		return err
+	}
+	p.status = plugin.PluginStatus{Loaded: true, Enabled: true, LoadedAt: time.Now().UTC()}
+	return nil
+}
+
+// Unload drops the plugin's own status. It does NOT unregister the kind, and
+// that is the host's contract rather than this plugin's choice: see
+// internal/pluginhost/lifecycle.go. go-envelopes' registry is boot-time and has
+// no removal, and a definition that vanished from a running registry would
+// leave live interactions referring to a kind the host could no longer explain.
+// A plugin that should not be present is one that is not loaded at boot.
+func (p *Plugin) Unload() error {
+	p.status = plugin.PluginStatus{}
+	return nil
+}
+
+func (p *Plugin) Status() plugin.PluginStatus { return p.status }
+
+// Compile-time proof this satisfies the SDK contract.
+var _ plugin.Plugin = (*Plugin)(nil)

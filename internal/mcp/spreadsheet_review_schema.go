@@ -16,7 +16,7 @@ var spreadsheetReviewInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.spreadsheet-review"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "trace": {"type": "object"},
         "meta": {"type": "object"},
@@ -25,7 +25,7 @@ var spreadsheetReviewInputSchemaJSON = []byte(`{
           "properties": {
             "table_id": {"type": "string", "minLength": 1},
             "title": {"type": "string"},
-            "intent": {"type": "string"},
+            "intent": {"type": "string", "description": "What this table is for. Renders as markdown. Cell values do not: they are tabular data."},
             "columns": {"type": "array", "items": {"type": "object"}},
             "rows": {"type": "array", "items": {"type": "object"}},
             "query_state": {"type": "object"},

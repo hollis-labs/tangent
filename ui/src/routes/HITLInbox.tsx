@@ -16,6 +16,7 @@ import {
   type AttentionComposerIntent,
 } from "@/components/hitl-attention/AttentionActions";
 import { EvidenceDrawer } from "@/components/hitl-evidence";
+import { Markdown } from "@/components/markdown";
 import {
   fetchHITLInbox,
   fetchHITLItem,
@@ -752,9 +753,13 @@ function ItemDetail(props: ItemDetailProps) {
           >
             {request.title}
           </h2>
-          <p className="mt-3 max-w-3xl break-words text-sm leading-6 text-[#a5abb4] [overflow-wrap:anywhere] sm:text-base">
-            {request.summary}
-          </p>
+          <Markdown
+            data-testid="hitl-detail-summary"
+            content={request.summary}
+            tone="evidence"
+            linkPolicy="withhold"
+            className="mt-3 max-w-3xl leading-6 text-[#a5abb4] sm:text-base"
+          />
 
           {props.conflict ? (
             <div
@@ -998,14 +1003,15 @@ function DetailSection({
       <h3 className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]">
         {eyebrow}
       </h3>
-      <p
+      <Markdown
+        content={text}
+        tone="evidence"
+        linkPolicy="withhold"
         className={cn(
-          "mt-3 whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]",
+          "mt-3",
           accent ? "border-l-2 border-[#f2b84b] pl-4 text-[#d9dde2]" : "text-[#c5cad1]",
         )}
-      >
-        {text}
-      </p>
+      />
     </section>
   );
 }
@@ -1022,7 +1028,19 @@ function ImpactRow({
   return (
     <div className="grid grid-cols-[5rem_1fr] gap-3 py-3 text-sm leading-6">
       <span className={tone === "approve" ? "text-[#75c49d]" : "text-[#ef9a95]"}>{label}</span>
-      <span className="min-w-0 break-words text-[#a5abb4] [overflow-wrap:anywhere]">{value}</span>
+      {/*
+        A grid cell rather than a <span>: the impact prose is the caller's own
+        words, up to 2000 characters of them, and <Markdown> renders block
+        content that cannot nest inside phrasing content.
+      */}
+      <div className="min-w-0">
+        <Markdown
+          content={value}
+          tone="evidence"
+          linkPolicy="withhold"
+          className="leading-6 text-[#a5abb4]"
+        />
+      </div>
     </div>
   );
 }
@@ -1143,9 +1161,12 @@ function OutcomeText({ label, text }: { label: string; text: string }) {
   return (
     <div className="mt-3">
       <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8e959f]">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-[#aeb4bc] [overflow-wrap:anywhere]">
-        {text}
-      </p>
+      <Markdown
+        content={text}
+        tone="evidence"
+        linkPolicy="withhold"
+        className="mt-1 leading-6 text-[#aeb4bc]"
+      />
     </div>
   );
 }

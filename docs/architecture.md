@@ -633,7 +633,9 @@ the payload-bounded diagnostics surface.
 contract (`github.com/hollis-labs/plugin-sdk`), and it is how a new interaction
 kind can arrive without editing Tangent's own registration table.
 [ADR 0007](adr/0007-collaboration-surface-plugin-host-and-view-state.md) §4 is
-the decision; the rule is one sentence:
+the boundary decision and [ADR 0008](adr/0008-the-plugin-model.md) is the model
+this host is moving toward. The rule is one sentence, and it is the half that
+has never moved:
 
 > The SDK says what a plugin may offer. The ADR 0003 manifest says what the
 > host will let it do. A registration without a manifest is refused.
@@ -649,10 +651,16 @@ raised its own trust class fails to load instead of being silently downgraded.
 
 `internal/plugins/` lists what this build ships and loads it. There is no
 discovery, no directory scan and no subprocess spawn — compiled-in only — so
-"which plugins does this binary have" is answered by reading one file.
-`internal/plugins/appboard/` contributes the board kind and
-`internal/plugins/torqueboard/` fills it with Torque tasks; both live in-tree,
-which ADR 0007 §4 is explicit is convenience rather than permission.
+"which plugins does this binary have" is answered by reading one file. That is
+the **dogfood concession** rather than the target shape: it was authorized so
+the Torque integration could be used sooner, and ADR 0008 §5 records subprocess
+plus runtime UI loading as where this is going, tracked by `CW-20260910-0034`.
+`internal/plugins/torque/` and `internal/plugins/tesseract/` each fill the
+host's board kind with one application's records; both live in-tree, which
+ADR 0007 §4 is explicit is convenience rather than permission. Every plugin
+this build ships holds a real application dependency, and that is the
+inventory correction `CW-20260911-0036` made: `appboard` held none, because
+the kind it named is the host's own (see below).
 
 **Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
 `internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
@@ -712,13 +720,22 @@ growing an application dependency; a plugin holding its own client is userland
 choosing one — see ADR 0007 §6's 2026-09-10 amendment for where that line now
 sits), `RegisterEventHook`, `GetService`,
 `GetConfig`/`SetConfig`, `RegisterConfigSchema`, `RegisterConnector`,
-`RegisterProvider`, `RegisterCLIAdapter`. Subprocess plugins, signature
-verification and runtime asset loading are excluded by the same ADR.
+`RegisterProvider`, `RegisterCLIAdapter`.
+
+Subprocess plugins, runtime asset loading and signature verification are a
+different kind of absence and are recorded in a different place. They are not
+surfaces this host refuses — they are modes it does not run yet, and
+[ADR 0008](adr/0008-the-plugin-model.md) §5 records the first two as the target
+rather than as exclusions. ADR 0007 §4 listed all three as excluded, and two of
+the three have since been reversed; that is why the two lists are now separate.
+Signing stays out of scope, first-party only, unchanged.
 
 **A plugin-contributed kind is not a privileged one.** It goes through the same
-manifest, the same trust classification and the same renderer isolation as
-every host-package kind, and `core-trusted` stays unreachable for a publisher
-that is not `tangent` or `hollis-labs/go-envelopes`.
+manifest, the same validation and the same renderer isolation as every
+host-package kind. What used to be said here — that `core-trusted` stays
+unreachable for a publisher that is not `tangent` or `hollis-labs/go-envelopes`
+— was removed by ADR 0009 along with the class it gated; the equal treatment it
+was asserting survives it.
 
 ### Long-lived surfaces and `tangent-custodied` view state
 
@@ -769,13 +786,13 @@ is the decision.
 
 ### The app-plugin composition pattern
 
-`tangent.torque_board` (`internal/plugins/torqueboard/`) is ADR 0007 §6's
+`tangent.torque_open_board` (`internal/plugins/torque/`) is ADR 0007 §6's
 pattern working end to end, and the shape is worth stating because it is meant
 to generalize:
 
-1. **A domain-free kind, contributed by a plugin.** `tangent.app-board`
-   describes a board of filtered cards with a detail pane. Torque supplies
-   content to it; it is not a Torque type.
+1. **A domain-free kind the host ships.** `tangent.app-board` describes a board
+   of filtered cards with a detail pane. Torque supplies content to it; it is
+   not a Torque type.
 2. **The mapping lives in the plugin.** A Torque status becomes a column, a tag
    becomes a badge, a description becomes the card body. All of it is a `for`
    loop, which is the point — a model asked to shape this payload would be
@@ -798,6 +815,62 @@ so explicitly and names `CW-20260910-0034` (subprocess mode) as the fix. What
 the amendment does not relax: Tangent core still holds no application
 dependency, `RegisterCRUDHandler` is still refused, and the plugin still
 reaches Tangent only through the tool surface an agent uses.
+
+#### What the second plugin found
+
+`tangent.tesseract_review` (`internal/plugins/tesseract/`) is the same five
+steps against a different application, which is what it was built to test
+(`CW-20260910-0054`). Steps 1 through 3 held unchanged: a domain-free kind, a
+mechanical mapping in userland, one agent call in. Step 4 did not.
+
+The pattern's word for what a sync applies was **mechanical** — a status
+transition, a `for` loop, the kind of work a model would do expensively and
+occasionally wrong. That word turned out to describe a property of *Torque*
+rather than of application plugins. Tesseract's memory revisions are immutable
+except for deprecation, and the memory domain exposes no status route, so
+promoting a record up its lifecycle is a new revision carrying the whole payload
+forward with `supersedes` — an authored write, and the same act as rewording it.
+
+So the pattern generalizes with the boundary stated by consequence rather than
+by surface:
+
+> A plugin applies what is mechanical **in the owning application's own terms**,
+> and hands back what that application makes an authored act. Which side a
+> disposition falls on is the application's answer, not the plugin's.
+
+For this plugin that leaves exactly one write — a deprecation — and everything
+else travels back as a work list on the sync's response, durable in the board's
+draft, with the card wearing a badge until the request clears itself. Keeping
+the write surface one call wide is also the cheapest way to keep an
+already-recorded limitation honest: Tangent holds no Tesseract credential and
+issues no identity, so a write a plugin makes is authorized by the owning
+store's policy and by nothing this host vouched for (`CW-20260910-0045`).
+
+The board also needed something `tangent.app-board` did not have — a free-text
+control per card, since a board could say where a card should *go* but not
+anything *about* it. That went into the app-board package as `sync.note_label`
+plus a `staged_notes` map in the draft (manifest revision 3, additive), not into
+the Tesseract plugin: a note is domain-free, and the kind neither interprets one
+nor sends it anywhere. That it belongs to the host rather than to either
+consumer is the whole reason a second application could ask for it.
+
+#### The scaffold the third plugin starts from
+
+Two plugins is enough to tell what generalizes from what one application
+happened to need, so the pattern is now extracted into a scaffold rather than
+re-derived (`CW-20260910-0035`). `go run ./cmd/tangent-new-plugin -package
+<name>` writes a plugin that loads; `internal/plugintemplate/` holds the
+templates and two committed renders, and
+[`writing-a-plugin.md`](./writing-a-plugin.md) carries the reasoning — including
+which of the eight measured differences between the two plugins is essential,
+which was incidental to its application, and which is a trap the scaffold
+prevents.
+
+The two presets never mix. One fills an existing domain-free kind and knows
+about one application; the other contributes a kind and knows about none. A
+plugin that did both would be a domain-free kind with one application's concepts
+in it, which is how the boundary above rots — so the generator refuses the
+combination rather than trusting a reviewer to catch it.
 
 ### go-envelopes registry
 
@@ -915,17 +988,24 @@ does not use, and a `Content-Security-Policy`.
 
 ## Renderer trust classes and presentation sandboxing
 
-Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md).
-The full model is [`renderer-trust-classes.md`](renderer-trust-classes.md).
+Implements [ADR 0003 §2.3 and §2.7](adr/0003-definition-and-package-ownership.md)
+as reduced by [ADR 0009](adr/0009-renderer-trust-reduced-to-isolation.md). The
+full model is [`renderer-trust-classes.md`](renderer-trust-classes.md).
 
-**A trust class decides two things**: an *isolation* — where the renderer's code
-runs — and a *capability ceiling* over the effect namespace, ordered
-`core-trusted ⊃ portfolio-trusted ⊃ sandboxed-code ⊃ declarative = external-surface = ∅`.
-The ceiling is evaluated before host policy's grant, so widening
-`GrantableCapabilities` widens nothing a class already closed. Isolation is the
-host's derivation from the granted class, never a manifest field.
+**A manifest declares `renderer.isolation`** — where the renderer's code runs —
+and Tangent validates it against the declared renderer shape, refusing a
+manifest whose two disagree in either direction. It never substitutes one, so a
+definition that materialized runs exactly where it said.
 
-**Untrusted code runs in an opaque origin.** A `sandboxed-code` renderer draws
+There is no capability ceiling. ADR 0009 removed the five-value trust class and
+the ordered ceiling with it: read against the distribution that exists, the
+class sorted seventeen first-party React components from one first-party React
+component that imports tldraw, and what blocked an out-of-tree publisher was a
+signature verifier that was never built. What refuses a capability now is host
+policy's grant and the mediation table behind it.
+
+**Untrusted code runs in an opaque origin, and that is untouched.** A
+`sandboxed-frame` renderer draws
 inside `sandbox="allow-scripts"` with no `allow-same-origin`, no
 `allow-downloads`, and no `allow-forms`, under a `default-src 'none'` frame
 policy whose `script-src` is a hash of Tangent's own shim — so agent-authored
@@ -1139,6 +1219,55 @@ trusting it.
   cell editing, or remote spreadsheet connectors.
 - **No desktop shell and no Nanite-native channel.** MCP is the only
   agent-facing transport. See the Wails note above.
+
+### The plugin host: what unload, config and a hung handler actually do
+
+Three of these are scope decisions (`CW-20260910-0036`) and the fourth is a
+bounded cost that has a task.
+
+- **Unloading a plugin removes nothing it registered.** An envelope kind cannot
+  be removed — go-envelopes' registry is boot-time and has no removal — and a
+  contributed tool or route cannot be removed either, because the plugin SDK
+  passes no caller identity to a registration call, so the host does not know
+  which plugin registered which surface. `Unload` therefore means the plugin
+  drops its own state and comes off the roster. A tool whose plugin has
+  unloaded still dispatches, into a plugin that answers "not loaded". The host
+  refuses honestly rather than performing a removal it cannot do.
+- **The host holds no plugin configuration.** `GetConfig`, `SetConfig` and
+  `RegisterConfigSchema` are unimplemented and ratified as such: a plugin reads
+  its own process environment. This is what keeps ADR 0005 §3.1's secret
+  boundary true by construction rather than by policy — there is no store to
+  leak, migrate, or redact. A subprocess plugin with no environment to read
+  (`CW-20260910-0034`) is what would reopen it.
+- **There is no runtime enable/disable.** `internal/plugins/shipped.go` is the
+  enable set and changing it is a rebuild. Deferred with the reason rather than
+  omitted: Tether's equivalent flag carries a documented enabled-but-unreachable
+  stall, and nothing here has a caller for a toggle.
+- **A plugin handler that ignores its context leaks a goroutine.** Every
+  contributed tool and route is bounded at registration, and a blown budget
+  releases the *caller* — it does not stop the plugin, because Go cannot
+  interrupt a goroutine that will not yield. The leak lasts as long as the
+  process and nothing reports it. Compiled-in plugins share this process by
+  design; `CW-20260910-0034`'s subprocess mode is what turns "the goroutine
+  leaked" into "the process was killed".
+
+### An additive version bump takes pending interactions out of service
+
+ADR 0003 §3 makes any change that moves `contract_digest` a `version` bump, and
+§8 C1 makes a registry change that alters the current binding render the pinned
+definition `unavailable` for **new submissions**. Adding an optional field to a
+shared kind therefore takes live interactions of that kind out of service, even
+though the old payloads are still valid by construction.
+
+The conservatism exists because the host cannot generally prove a pending
+payload still satisfies a moved contract. For a `compatibility_class: additive`
+change with the new fields optional it demonstrably can, so narrowing C1 for
+that case is the honest fix. Chrispian's call (`CW-20260911-0008`) is to proceed
+and fix the breakage as it is felt rather than pre-emptively, which is
+reasonable at 0.x with one user — and it is why
+`docs/writing-a-plugin.md` tells an author to budget for the blast radius before
+widening a shared kind. File the narrowing as its own task when the churn is
+felt.
 
 ### `standalone-local` partitions are advisory, not a security boundary
 

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   FORM_COLLECT_AUTOSAVE_DEBOUNCE_MS,
   getFormCollectDraftStorageKey,
@@ -119,5 +119,43 @@ describe("FormCollect", () => {
     expect(screen.getByTestId("form-collect-message")).toHaveTextContent("Recovered");
     expect(screen.getByTestId("form-collect-input-headline")).toHaveValue("Recovered headline");
     expect(screen.getByTestId("form-collect-notes")).toHaveValue("Recovered notes");
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: FormCollectEnvelope = {
+      v: 1,
+      id: "form-md",
+      type: "tangent.form-collect",
+      context: proseProbe("form-context"),
+      data: {
+        form_id: "form-md",
+        intent: proseProbe("form-intent"),
+        schema: {
+          sections: [
+            {
+              id: "plain",
+              title: "Plain section",
+              description: proseProbe("form-section"),
+              fields: [{ id: "one", label: "One", type: "text" }],
+            },
+            {
+              id: "repeat",
+              title: "Repeatable section",
+              description: proseProbe("form-repeatable"),
+              repeatable: true,
+              min_items: 1,
+              fields: [{ id: "two", label: "Two", type: "text" }],
+            },
+          ],
+        },
+      },
+    };
+
+    render(<FormCollect envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("form-context");
+    expectProseRendered("form-intent");
+    expectProseRendered("form-section");
+    expectProseRendered("form-repeatable");
   });
 });

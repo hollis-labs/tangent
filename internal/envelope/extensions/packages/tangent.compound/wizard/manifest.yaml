@@ -30,7 +30,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.wizard
-version: "0.12"
+version: "0.13"
 revision: 1
 title: "Wizard"
 description: "Step-based wizard workflow with room-backed progress, branching selections, review, and completion."
@@ -46,7 +46,7 @@ renderer:
   id: tangent.renderer.wizard
   class: react-component
   entry: "components/envelopes/Wizard#Wizard"
-  trust_class: core-trusted
+  isolation: main-origin
   component: WizardView
   fallback:
     preserves_meaning: false

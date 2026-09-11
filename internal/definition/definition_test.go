@@ -25,7 +25,7 @@ renderer:
   id: tangent.renderer.fixture
   class: react-component
   entry: "components/envelopes/Fixture#Fixture"
-  trust_class: core-trusted
+  isolation: main-origin
   fallback:
     preserves_meaning: false
     degradation: none
@@ -78,7 +78,7 @@ func TestParseAcceptsAWellFormedManifest(t *testing.T) {
 // would silently be a weaker trust decision than the author wrote.
 func TestParseRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
-	tampered := []byte(validManifest + "\nrenderer_trust_class: core-trusted\n")
+	tampered := []byte(validManifest + "\nrenderer_isolation: main-origin\n")
 	if _, err := Parse(tampered); !errors.Is(err, ErrInvalidManifest) {
 		t.Fatalf("unknown field error = %v, want ErrInvalidManifest", err)
 	}

@@ -129,6 +129,12 @@ func (h *Host) RegisterHTTPRoute(route HTTPRoute) error {
 	if _, claimed := h.routes[route.Pattern()]; claimed {
 		return fmt.Errorf("%w: %s", ErrRouteClaimed, route.Pattern())
 	}
+	// Bounded and panic-safe at registration, for the reason RegisterMCPTool
+	// gives: a participant pressing a button must get an answer, and a handler
+	// that never returns must not be what graceful shutdown is waiting on.
+	route.Handler = guardedHTTPHandler{
+		pattern: route.Pattern(), release: h.release, budget: h.budget, inner: route.Handler,
+	}
 	h.routes[route.Pattern()] = route
 	h.logger.Info("pluginhost: http route contributed",
 		"method", route.Method, "path", route.Path, "capability", route.Capability)

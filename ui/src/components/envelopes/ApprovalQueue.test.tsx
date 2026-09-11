@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import {
   APPROVAL_QUEUE_AUTOSAVE_DEBOUNCE_MS,
   getApprovalQueueDraftStorageKey,
@@ -299,5 +300,34 @@ describe("ApprovalQueue", () => {
     expect(screen.getByTestId("approval-queue-submit")).toBeDisabled();
     expect(screen.queryByText(/Recovered unsent approval-queue state/)).not.toBeInTheDocument();
     expect(screen.getByTestId("approval-queue-notes")).toHaveValue("seed notes");
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    const envelope: ApprovalQueueEnvelope = {
+      v: 1,
+      id: "approval-md",
+      type: "tangent.approval-queue",
+      data: {
+        queue_id: "queue-md",
+        intent: proseProbe("aq-intent"),
+        current_index: 0,
+        items: [
+          {
+            id: "item-1",
+            title: "One",
+            summary: proseProbe("aq-summary"),
+            description: proseProbe("aq-description"),
+          },
+        ],
+      },
+    };
+
+    render(<ApprovalQueue envelope={envelope} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+
+    expectProseRendered("aq-intent");
+    expectProseRendered("aq-description");
+    // The queue row and the item pane render the same string; both go through
+    // the renderer, so the probe appears twice.
+    expect(screen.getAllByText("aq-summary-bold", { selector: "strong" })).toHaveLength(2);
   });
 });

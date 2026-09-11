@@ -110,9 +110,9 @@ export function OutputRender({ envelope, onSubmit, onCancel }: OutputRenderProps
             {envelope.title ?? output?.title ?? "Final output"}
           </CardTitle>
           {envelope.context ? (
-            <p className="whitespace-pre-wrap text-sm text-zinc-400">{envelope.context}</p>
+            <Markdown content={envelope.context} className="text-zinc-400" />
           ) : null}
-          {output?.summary ? <p className="text-sm text-zinc-300">{output.summary}</p> : null}
+          {output?.summary ? <Markdown content={output.summary} className="text-zinc-300" /> : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-zinc-400">
           <span className="rounded-full border border-zinc-700 px-2 py-1">

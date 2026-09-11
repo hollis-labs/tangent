@@ -209,7 +209,11 @@ type Reporter struct {
 	registry DefinitionRegistry
 	renderer func() RendererHost
 	delivery func() DeliveryWorker
-	runtime  Runtime
+	// plugins reports which plugins the host loaded and which it refused. Nil
+	// is a valid state and reads as a warning rather than a failure: a build
+	// with no probe is not a build with broken plugins. See plugins.go.
+	plugins func() PluginInventory
+	runtime Runtime
 
 	// telemetry records readiness transitions and links failures to the trace
 	// their history is filed under. Nil is a valid state: a build with no

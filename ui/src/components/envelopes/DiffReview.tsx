@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage } from "@/components/ui/field";
@@ -469,7 +470,7 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
                 >
                   <div className="text-sm font-medium text-zinc-100">{file.path}</div>
                   {file.summary ? (
-                    <div className="mt-1 text-xs text-zinc-400">{file.summary}</div>
+                    <Markdown content={file.summary} className="mt-1 text-xs text-zinc-400" />
                   ) : null}
                   <div className="mt-2 text-[11px] text-zinc-500">
                     {stats.decided}/{stats.total} decided
@@ -489,7 +490,11 @@ export function DiffReview({ envelope, onSubmit, onCancel, roomID }: DiffReviewP
                 {activeFile?.path ?? "No file selected"}
               </CardTitle>
               {activeFile?.summary ? (
-                <p className="text-sm text-zinc-400">{activeFile.summary}</p>
+                <Markdown
+                  data-testid="diff-review-file-summary"
+                  content={activeFile.summary}
+                  className="text-zinc-400"
+                />
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
@@ -722,7 +727,15 @@ function DiffPane({ title, content }: { title: string; content: string }) {
       <div className="border-b border-zinc-800 px-3 py-2 text-xs uppercase tracking-[0.16em] text-zinc-400">
         {title}
       </div>
-      <pre className="overflow-x-auto whitespace-pre-wrap p-3 text-xs text-zinc-200">
+      {/*
+        A diff hunk stays literal. It is evidence, not prose: the reader is
+        comparing characters, and a renderer that reflowed it would be worse
+        than one that shows the bytes.
+      */}
+      <pre
+        data-testid={`diff-review-pane-${title.toLowerCase()}`}
+        className="overflow-x-auto whitespace-pre-wrap p-3 text-xs text-zinc-200"
+      >
         {content || " "}
       </pre>
     </div>

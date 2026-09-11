@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { InterviewQuestion, type InterviewQuestionEnvelope } from "./InterviewQuestion";
 
 function sampleEnvelope(): InterviewQuestionEnvelope {
@@ -93,5 +94,28 @@ describe("<InterviewQuestion>", () => {
 
     fireEvent.click(screen.getByTestId("interview-question-cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <InterviewQuestion
+        envelope={{
+          v: 1,
+          id: "interview-md",
+          type: "tangent.interview-question",
+          context: proseProbe("iq-context"),
+          data: {
+            prompt: proseProbe("iq-prompt"),
+            helper_text: proseProbe("iq-helper"),
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("iq-context");
+    expectProseRendered("iq-prompt");
+    expectProseRendered("iq-helper");
   });
 });

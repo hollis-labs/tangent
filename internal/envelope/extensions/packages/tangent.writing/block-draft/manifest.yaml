@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.block-draft
-version: "0.3"
+version: "0.4"
 revision: 1
 title: "Block draft"
 description: "Block-draft envelope: propose one draft block, capture accept/revise/inline-edit direction, and accumulate accepted blocks on the room."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.block-draft
   class: react-component
   entry: "components/envelopes/BlockDraft#BlockDraft"
-  trust_class: core-trusted
+  isolation: main-origin
   component: BlockDraftView
   fallback:
     preserves_meaning: false

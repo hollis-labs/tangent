@@ -28,7 +28,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.whiteboard
-version: "0.4"
+version: "0.5"
 revision: 1
 title: "Whiteboard"
 description: "Whiteboard envelope: present a tldraw-backed board with persisted room snapshot hydration and a full-scene submit response."
@@ -44,7 +44,7 @@ renderer:
   id: tangent.renderer.whiteboard
   class: react-component
   entry: "components/envelopes/Whiteboard#Whiteboard"
-  trust_class: portfolio-trusted
+  isolation: main-origin
   component: WhiteboardView
   fallback:
     preserves_meaning: false

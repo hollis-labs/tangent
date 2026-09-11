@@ -57,6 +57,14 @@ type Config struct {
 	// DBPath, when set, is exported as TANGENT_DB_PATH. Empty leaves the
 	// daemon's default (~/.tangent/tangent.db) in force.
 	DBPath string
+	// PluginDir, when set, is exported as TANGENT_PLUGIN_DIR. Empty leaves the
+	// daemon's default (~/.tangent/plugins) in force.
+	//
+	// It travels beside DBPath deliberately. A packaged install that relocated
+	// one and not the other would split a plugin from the database it was
+	// installed alongside, and the symptom — a plugin that loads but finds none
+	// of its own state — reads as a plugin bug rather than a path one.
+	PluginDir string
 	// LogDir receives tangent.log (stdout and stderr). Empty means
 	// DefaultLogDir(home).
 	LogDir string
@@ -127,13 +135,16 @@ func Render(cfg Config, home string) ([]byte, error) {
 	b.WriteString("\t<key>ProgramArguments</key>\n\t<array>\n")
 	b.WriteString("\t\t<string>" + html.EscapeString(cfg.Binary) + "</string>\n")
 	b.WriteString("\t</array>\n")
-	if cfg.Port != 0 || cfg.DBPath != "" {
+	if cfg.Port != 0 || cfg.DBPath != "" || cfg.PluginDir != "" {
 		b.WriteString("\t<key>EnvironmentVariables</key>\n\t<dict>\n")
 		if cfg.Port != 0 {
 			b.WriteString("\t\t<key>TANGENT_HTTP_PORT</key>\n\t\t<string>" + strconv.Itoa(cfg.Port) + "</string>\n")
 		}
 		if cfg.DBPath != "" {
 			b.WriteString("\t\t<key>TANGENT_DB_PATH</key>\n\t\t<string>" + html.EscapeString(cfg.DBPath) + "</string>\n")
+		}
+		if cfg.PluginDir != "" {
+			b.WriteString("\t\t<key>TANGENT_PLUGIN_DIR</key>\n\t\t<string>" + html.EscapeString(cfg.PluginDir) + "</string>\n")
 		}
 		b.WriteString("\t</dict>\n")
 	}

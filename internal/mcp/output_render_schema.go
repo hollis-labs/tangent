@@ -16,7 +16,7 @@ var outputRenderInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.output-render"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
@@ -25,7 +25,7 @@ var outputRenderInputSchemaJSON = []byte(`{
             "markdown": {"type": "string", "minLength": 1},
             "filename": {"type": "string", "minLength": 1},
             "format": {"type": "string", "enum": ["markdown"]},
-            "summary": {"type": "string"}
+            "summary": {"type": "string", "description": "One-glance description of the output. Renders as markdown, as the markdown field itself does."}
           },
           "required": ["markdown"],
           "additionalProperties": false

@@ -683,7 +683,12 @@ func (s *Service) projectTerminal(
 		result.Response = cancelledResponse(handle.EnvelopeID, outcome.Interaction.TerminalAt)
 	default:
 		result.Status = StatusFailed
-		result.TerminalErrorCode = outcome.Interaction.TerminalErrorCode
+		// Canonicalized on the way out rather than in the database. A terminal
+		// interaction is immutable, so migration 0017 deliberately leaves
+		// terminal_error_code alone; rows backfilled by migration 0003 can
+		// still carry the legacy "user-cancelled" spelling, and this is where
+		// a caller would otherwise see it.
+		result.TerminalErrorCode = envelopes.CanonicalErrorCode(outcome.Interaction.TerminalErrorCode)
 		result.TerminalMessage = terminalMessage(outcome.Interaction)
 	}
 	s.recordDelivery(ctx, outcome, handle)
@@ -762,7 +767,7 @@ func cancelledResponse(envelopeID string, terminalAt *time.Time) *envelopes.Resp
 		V:           envelopes.ProtocolVersion,
 		EnvelopeID:  envelopeID,
 		Kind:        envelopes.ResponseKindAck,
-		Status:      envelopes.ResponseStatusCancelled,
+		Status:      envelopes.ResponseStatusCanceled,
 		CompletedAt: completedAt,
 	}
 }

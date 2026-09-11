@@ -1,0 +1,70 @@
+# Interaction definition manifest — {{.Kind}}@0.1
+#
+# Authored per docs/adr/0003-definition-and-package-ownership.md §2. Every field
+# below is publisher-authored; Tangent DERIVES the digests, the granted
+# capabilities and the effective trust assurance, and refuses a manifest that
+# tries to author them.
+#
+# READ EVERY FIELD BEFORE SHIPPING THIS. The values below are ADR 0003 §8 C4's
+# restrictive defaults — what the code actually does, never something more
+# permissive — and a default is not an endorsement. In particular:
+#
+#   * response_schema is absent, which preserves a response-kind-only check
+#     rather than pretending a schema exists.
+#   * required_capabilities is empty. A kind requiring a capability this
+#     installation cannot grant is QUARANTINED, which is the fail-closed
+#     behaviour §8 C7 requires — not a reason to grant by default.
+#   * retention_class is deliberately UNAUTHORED, so ADR 0002 §4's host default
+#     governs. Authoring a looser one here on the assumption that a precedence
+#     engine will tighten it later is exactly the mistake ADR 0007's risk
+#     section names.
+#
+# A REVISION BUMP IS FOR A MANIFEST DESCRIPTION OR A RENDERER ASSET. Changing
+# request.schema.json changes contract_digest, which under §3 is a new `version`
+# rather than a revision, and under §8 C1 makes pending interactions of this kind
+# unavailable for new submissions. An additive optional field is a minor version
+# bump with compatibility_class: additive.
+
+manifest_version: "1.0.0"
+publisher: tangent
+kind: {{.Kind}}
+version: "0.1"
+revision: 1
+title: "{{.App}}"
+description: "{{.App}} envelope. Replace this with what the kind IS, in shape terms and not in any application's vocabulary — it is read by an agent choosing a surface and by a reviewer deciding what it may do."
+package_id: {{.KindPackage}}
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+compatibility_response_schema: absent
+
+renderer:
+  id: tangent.renderer.{{.KindSlug}}
+  class: react-component
+  entry: "components/envelopes/{{.Exported}}#{{.Exported}}"
+  isolation: main-origin
+  component: {{.Component}}
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: browser-local
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

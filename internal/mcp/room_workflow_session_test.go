@@ -110,7 +110,7 @@ func TestDurableSessionCloseTerminalizesCanonicallyFirst(t *testing.T) {
 	assertClosedRoomRow(t, rg.db, roomID, "done")
 
 	// The cancellation is immutable and replays: retrying the original
-	// invocation returns the v0.12 ack/cancelled shape rather than re-opening
+	// invocation returns the v0.12 ack/canceled shape rather than re-opening
 	// the request on a closed room.
 	retry := callWorkflow(t, rg, fixture, roomID, envelopeID, nil, nil)
 	if retry.err != nil {
@@ -126,8 +126,10 @@ func TestDurableSessionCloseTerminalizesCanonicallyFirst(t *testing.T) {
 	if err := json.Unmarshal([]byte(extractText(t, retry.result)), &cancelled); err != nil {
 		t.Fatalf("unmarshal retry result: %v", err)
 	}
-	if cancelled.Kind != "ack" || cancelled.Status != "cancelled" {
-		t.Fatalf("retry after close = %+v, want the ack/cancelled shape", cancelled)
+	// A literal wire assertion, for the reason recorded in
+	// room_workflow_completion_test.go's cancel test.
+	if cancelled.Kind != "ack" || cancelled.Status != "canceled" {
+		t.Fatalf("retry after close = %+v, want the ack/canceled shape", cancelled)
 	}
 }
 

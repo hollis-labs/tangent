@@ -43,6 +43,10 @@
             }
           },
           "body": { "type": "string" },
+          "note": {
+            "type": "string",
+            "description": "A note already recorded against this card. The note control seeds from it, so a participant sees what was recorded rather than an empty box, and editing it replaces it. Absent means no note is on record. The board does not interpret a note or act on one; what a recorded note means is the caller's business."
+          },
           "fields": { "type": "object" }
         },
         "required": ["id", "title"]
@@ -119,6 +123,10 @@
         "stage_label": {
           "type": "string",
           "description": "Names the control that stages a card into another column. Empty means staging is not offered even when enabled is true."
+        },
+        "note_label": {
+          "type": "string",
+          "description": "Names the per-card free-text control. Empty means no note is offered even when enabled is true. A note is view state like a staged column move — it is recorded in the draft and means nothing to the owning application until the participant presses sync, and the caller decides what to do with it. The board neither interprets it nor sends it anywhere itself."
         },
         "scope": {
           "type": "string",

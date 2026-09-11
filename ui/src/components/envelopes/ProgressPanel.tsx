@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FieldMessage, RequiredMark } from "@/components/ui/field";
@@ -345,7 +346,9 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                       {item.status}
                     </span>
                   </div>
-                  {item.detail ? <p className="mt-2 text-sm text-zinc-400">{item.detail}</p> : null}
+                  {item.detail ? (
+                    <Markdown content={item.detail} className="mt-2 text-zinc-400" />
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -360,7 +363,11 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                 {summary?.headline ?? "No summary yet"}
               </p>
               {summary?.detail ? (
-                <p className="mt-2 text-sm text-zinc-400">{summary.detail}</p>
+                <Markdown
+                  data-testid="progress-panel-summary-detail"
+                  content={summary.detail}
+                  className="mt-2 text-zinc-400"
+                />
               ) : null}
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-500">
                 {summary?.current_status ? <span>status: {summary.current_status}</span> : null}
@@ -544,9 +551,10 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                               ? readItemLabel(items, update.item_id)
                               : "Panel summary"}
                           </p>
-                          <p className="text-sm text-zinc-400">
-                            {update.summary || update.status || update.kind}
-                          </p>
+                          <Markdown
+                            content={update.summary || update.status || update.kind}
+                            className="text-zinc-400"
+                          />
                         </div>
                         <div className="text-right text-xs text-zinc-500">
                           <div>{update.kind}</div>
@@ -584,7 +592,7 @@ export function ProgressPanel({ envelope, onSubmit, onCancel, roomID }: Progress
                         </span>
                       </div>
                       {checkpoint.summary ? (
-                        <p className="mt-2 text-sm text-zinc-400">{checkpoint.summary}</p>
+                        <Markdown content={checkpoint.summary} className="mt-2 text-zinc-400" />
                       ) : null}
                       <p className="mt-2 text-xs text-zinc-500">{checkpoint.checkpoint_id}</p>
                     </div>

@@ -29,7 +29,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.spreadsheet-review
-version: "0.5"
+version: "0.6"
 revision: 1
 title: "Spreadsheet review"
 description: "Spreadsheet review envelope: render canonical agent-provided rows in a persistent room with explicit submit, saved views, and CSV export metadata."
@@ -45,7 +45,7 @@ renderer:
   id: tangent.renderer.spreadsheet-review
   class: react-component
   entry: "components/envelopes/SpreadsheetReview#SpreadsheetReview"
-  trust_class: core-trusted
+  isolation: main-origin
   component: SpreadsheetReviewView
   fallback:
     preserves_meaning: false

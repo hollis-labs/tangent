@@ -25,8 +25,8 @@ var approvalQueueInputSchemaJSON = []byte(`{
           "properties": {
             "queue_id": {"type": "string", "minLength": 1},
             "title": {"type": "string"},
-            "intent": {"type": "string"},
-            "items": {"type": "array", "items": {"type": "object"}},
+            "intent": {"type": "string", "description": "What this queue is for. Renders as markdown."},
+            "items": {"type": "array", "items": {"type": "object"}, "description": "[{id, title, summary, description, evidence, action_options}]. Each item summary and description renders as markdown; evidence panes whose kind is literal stay literal."},
             "current_index": {"type": "integer", "minimum": 0},
             "notes": {"type": "string"}
           },

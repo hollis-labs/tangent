@@ -39,7 +39,7 @@ renderer:
   id: tangent.renderer.fixture
   class: react-component
   entry: "components/envelopes/Fixture#Fixture"
-  trust_class: core-trusted
+  isolation: main-origin
   fallback:
     preserves_meaning: false
     degradation: none
@@ -144,6 +144,15 @@ func healthyReporter(t *testing.T) *Reporter {
 		WithDeliveryWorker(func() DeliveryWorker {
 			return DeliveryWorker{Authorized: true, Scope: "tangent:room-workflow-delivery"}
 		}),
+		WithPlugins(func() PluginInventory {
+			return PluginInventory{
+				Loaded:           1,
+				Plugins:          []PluginRecord{{ID: "tangent.plugin.example", Loaded: true, Enabled: true}},
+				ContributedKinds: []string{"tangent.example-kind"},
+				Tools:            []string{},
+				Routes:           []string{},
+			}
+		}),
 		WithRuntime(Runtime{ManagedResource: "tangent-dev"}),
 	)
 }
@@ -201,8 +210,8 @@ func TestReadinessPassesWithEveryDependencyPresent(t *testing.T) {
 			t.Errorf("check %q recommends an action while passing: %q", check.Name, check.Action)
 		}
 	}
-	if len(report.Checks) != 5 {
-		t.Fatalf("readiness reported %d checks, want the fixed five", len(report.Checks))
+	if len(report.Checks) != 6 {
+		t.Fatalf("readiness reported %d checks, want the fixed six", len(report.Checks))
 	}
 }
 
@@ -542,7 +551,7 @@ func TestCapabilityDistinguishesTheFourUnusableStates(t *testing.T) {
 			// to say so or an operator grants and re-grants for an afternoon.
 			materialized: materialize(t, strings.NewReplacer(
 				"class: react-component", "class: sandboxed-frame",
-				"trust_class: core-trusted", "trust_class: sandboxed-code",
+				"isolation: main-origin", "isolation: sandboxed-frame",
 				"required_capabilities: []",
 				"required_capabilities:\n  - id: process.exec\n    optional: false",
 			).Replace(fixtureManifest), hostPolicy()),
@@ -634,7 +643,7 @@ func TestCapabilitySeparatesTrustDenialFromPolicyDenial(t *testing.T) {
 	// on an otherwise-available kind.
 	source := strings.NewReplacer(
 		"class: react-component", "class: sandboxed-frame",
-		"trust_class: core-trusted", "trust_class: sandboxed-code",
+		"isolation: main-origin", "isolation: sandboxed-frame",
 		"required_capabilities: []",
 		"required_capabilities:\n  - id: process.exec\n    optional: true",
 	).Replace(fixtureManifest)
@@ -648,9 +657,9 @@ func TestCapabilitySeparatesTrustDenialFromPolicyDenial(t *testing.T) {
 		t.Fatalf("declared capabilities = %+v, want one", report.Effects.Declared)
 	}
 	declared := report.Effects.Declared[0]
-	if declared.Grant != GrantDeniedByTrustClass {
+	if declared.Grant != GrantDeniedByHostPolicy {
 		t.Fatalf("grant = %q, want %q: the trust ceiling refused it before host policy was asked",
-			declared.Grant, GrantDeniedByTrustClass)
+			declared.Grant, GrantDeniedByHostPolicy)
 	}
 	if declared.Mediation == "" {
 		t.Error("a declared capability reports no mediation, so a reader cannot tell a barrier from a record")

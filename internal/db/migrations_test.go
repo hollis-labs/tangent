@@ -995,3 +995,120 @@ func probeTableExists(database *sql.DB, table string) error {
 	_, err := database.Exec(`SELECT 1 FROM ` + table + ` LIMIT 1`)
 	return err
 }
+
+// TestUSEnglishCanceledErrorCodeMigrationRewritesAndRollsBack pins migration
+// 0017 against the two columns it rewrites and the three it deliberately
+// leaves alone.
+//
+// The three it leaves alone are the point. `envelopes.status` holds Tangent's
+// own vocabulary, which only coincidentally spells cancellation the British
+// way; `interactions.policy` holds 0003's archival record of what a v0.12
+// row's code WAS; and `interactions.terminal_error_code` belongs to a record
+// the schema guards as immutable. A migration that swept any of them would
+// look like it had done a more thorough job while actually rewriting history
+// it does not own.
+func TestUSEnglishCanceledErrorCodeMigrationRewritesAndRollsBack(t *testing.T) {
+	t.Parallel()
+
+	database, err := Open(filepath.Join(t.TempDir(), "us-english-canceled.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrateTo(database, 16); err != nil {
+		t.Fatalf("migrate to version 16: %v", err)
+	}
+
+	const ts = "2026-09-10T00:00:00Z"
+	if _, err := database.Exec(
+		`INSERT INTO rooms (id, title, created_at, updated_at) VALUES ('room-1', 'legacy', ?, ?)`,
+		ts, ts); err != nil {
+		t.Fatalf("seed room: %v", err)
+	}
+	// A cancelled envelope as the pre-migration code wrote one: Tangent's own
+	// status vocabulary in `status`, the protocol's British code in
+	// `error_code`, and a second copy of that code inside the error body.
+	if _, err := database.Exec(`
+INSERT INTO envelopes (
+  room_id, envelope_id, type, request_payload,
+  response_kind, response_payload, status, error_code, error_message,
+  created_at, resolved_at
+) VALUES (
+  'room-1', 'env-1', 'triage', '{}',
+  'error', '{"code":"user-cancelled","message":"context canceled"}',
+  'cancelled', 'user-cancelled', 'context canceled', ?, ?)`, ts, ts); err != nil {
+		t.Fatalf("seed legacy envelope: %v", err)
+	}
+	// The shape migration 0003's backfill produces when it copies a status
+	// 'error' / code 'user-cancelled' envelope forward: lifecycle_state
+	// 'failed', the code in terminal_error_code, and the legacy provenance
+	// blob in `policy`.
+	if _, err := database.Exec(
+		`INSERT INTO surfaces (id, owner_scope, lifecycle_state, created_at, updated_at, legacy_room_id)
+		 VALUES ('surface-1', 'standalone-local', 'active', ?, ?, 'room-1')`, ts, ts); err != nil {
+		t.Fatalf("seed surface: %v", err)
+	}
+	if _, err := database.Exec(`
+INSERT INTO interactions (
+  id, surface_id, caller_scope, caller_authority, caller_assurance,
+  idempotency_key, surface_sequence, request_snapshot, policy,
+  lifecycle_state, terminal_reason, terminal_error_code,
+  revision, created_at, updated_at, terminal_at
+) VALUES (
+  'int-1', 'surface-1', 'standalone-local', 'legacy-unknown', 'legacy-uncertain',
+  'legacy:key:1', 1, '{}', '{"legacy_status":"error","legacy_error_code":"user-cancelled"}',
+  'failed', 'legacy failure', 'user-cancelled',
+  1, ?, ?, ?)`, ts, ts, ts); err != nil {
+		t.Fatalf("seed legacy interaction: %v", err)
+	}
+
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("apply 0017: %v", err)
+	}
+
+	assertScalar(t, database,
+		`SELECT error_code FROM envelopes WHERE envelope_id = 'env-1'`,
+		"user-canceled", "envelopes.error_code after up")
+	assertScalar(t, database,
+		`SELECT response_payload FROM envelopes WHERE envelope_id = 'env-1'`,
+		`{"code":"user-canceled","message":"context canceled"}`, "envelopes.response_payload after up")
+	// Untouched on purpose.
+	assertScalar(t, database,
+		`SELECT terminal_error_code FROM interactions WHERE id = 'int-1'`,
+		"user-cancelled", "a terminal interaction is immutable; roomflow canonicalizes it on read instead")
+	assertScalar(t, database,
+		`SELECT status FROM envelopes WHERE envelope_id = 'env-1'`,
+		"cancelled", "envelopes.status is Tangent's own vocabulary and must not move")
+	assertScalar(t, database,
+		`SELECT json_extract(policy, '$.legacy_error_code') FROM interactions WHERE id = 'int-1'`,
+		"user-cancelled", "the legacy provenance blob records what the row said, and must not be rewritten")
+
+	if err := RollbackOne(database); err != nil {
+		t.Fatalf("RollbackOne: %v", err)
+	}
+	assertScalar(t, database,
+		`SELECT error_code FROM envelopes WHERE envelope_id = 'env-1'`,
+		"user-cancelled", "envelopes.error_code after down")
+	assertScalar(t, database,
+		`SELECT response_payload FROM envelopes WHERE envelope_id = 'env-1'`,
+		`{"code":"user-cancelled","message":"context canceled"}`, "envelopes.response_payload after down")
+	// Re-applying is the real-world case: a row already carrying the US
+	// spelling must not be double-rewritten into something else.
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("re-apply after rollback: %v", err)
+	}
+	assertScalar(t, database,
+		`SELECT error_code FROM envelopes WHERE envelope_id = 'env-1'`,
+		"user-canceled", "envelopes.error_code after re-apply")
+}
+
+func assertScalar(t *testing.T, database *sql.DB, query, want, what string) {
+	t.Helper()
+	var got string
+	if err := database.QueryRow(query).Scan(&got); err != nil {
+		t.Fatalf("%s: query: %v", what, err)
+	}
+	if got != want {
+		t.Fatalf("%s = %q, want %q", what, got, want)
+	}
+}

@@ -489,7 +489,7 @@ func (s *Server) advanceRoomEnvelopeLegacy(
 				V:           envelopes.ProtocolVersion,
 				EnvelopeID:  env.ID,
 				Kind:        envelopes.ResponseKindAck,
-				Status:      envelopes.ResponseStatusCancelled,
+				Status:      envelopes.ResponseStatusCanceled,
 				CompletedAt: nowRFC3339(),
 			}
 			toolRes, payload := toolJSONResult(cancelled)

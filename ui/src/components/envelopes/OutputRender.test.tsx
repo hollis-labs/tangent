@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { OutputRender, type OutputRenderEnvelope } from "./OutputRender";
 
 describe("<OutputRender>", () => {
@@ -89,5 +90,28 @@ describe("<OutputRender>", () => {
       kind: "ack",
       status: "submitted",
     });
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <OutputRender
+        envelope={{
+          v: 1,
+          id: "output-md",
+          type: "tangent.output-render",
+          context: proseProbe("out-context"),
+          data: {
+            markdown: proseProbe("out-markdown"),
+            summary: proseProbe("out-summary"),
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("out-context");
+    expectProseRendered("out-summary");
+    expectProseRendered("out-markdown");
   });
 });

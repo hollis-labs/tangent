@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-
+import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { SANDBOX_FRAME_ORIGIN, SANDBOX_PAYLOAD_ELEMENT_ID } from "@/lib/sandbox-frame";
 import { DesignIteration, type DesignIterationEnvelope } from "./DesignIteration";
 
@@ -236,5 +236,28 @@ describe("<DesignIteration>", () => {
 
     fireEvent.click(screen.getByTestId("design-iteration-cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes every prose surface through the shared markdown renderer", () => {
+    render(
+      <DesignIteration
+        envelope={{
+          v: 1,
+          id: "design-md",
+          type: "tangent.design-iteration",
+          context: proseProbe("design-context"),
+          data: {
+            variant_id: "variant-a",
+            caption: proseProbe("design-caption"),
+            html: "<p>preview</p>",
+          },
+        }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expectProseRendered("design-context");
+    expectProseRendered("design-caption");
   });
 });

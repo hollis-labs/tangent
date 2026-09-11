@@ -16,7 +16,7 @@ var blockDraftInputSchemaJSON = []byte(`{
         "type": {"type": "string", "const": "tangent.block-draft"},
         "typeVersion": {"type": "string"},
         "title": {"type": "string"},
-        "context": {"type": "string"},
+        "context": {"type": "string", "description": "Orienting prose shown above the workflow. Renders as markdown."},
         "presentation": {"type": "string", "enum": ["inline", "modal", "drawer", "sidecar", "fullscreen"]},
         "data": {
           "type": "object",
@@ -24,9 +24,9 @@ var blockDraftInputSchemaJSON = []byte(`{
             "block_id": {"type": "string", "minLength": 1},
             "mode": {"type": "string", "enum": ["section", "paragraph"]},
             "label": {"type": "string"},
-            "content": {"type": "string", "minLength": 1},
-            "rationale": {"type": "string"},
-            "outline_hint": {"type": "string"}
+            "content": {"type": "string", "minLength": 1, "description": "The proposed block. Renders as markdown, as does the accepted draft it is appended to."},
+            "rationale": {"type": "string", "description": "Why this block, for the reviewer. Renders as markdown."},
+            "outline_hint": {"type": "string", "description": "Where this block sits in the outline. Renders as markdown."}
           },
           "required": ["block_id", "content"],
           "additionalProperties": false

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
 )
 
@@ -50,15 +49,14 @@ func (s *Service) ResolveEffectContext(
 	// implements resolves to `external-surface` — the position with no
 	// Tangent-granted authority — so an unrecognized pin never buys the main
 	// origin by omission.
-	trustClass := record.Definition.RendererTrustClass
+	isolation := record.Definition.RendererIsolation
 	return effect.Binding{
 		Kind:          record.Definition.Kind,
 		Version:       record.Definition.Version,
 		BindingDigest: record.Definition.Digest,
 		Required:      effect.CapabilitiesFromManifestJSON(record.Definition.RequiredCapabilities),
 		Granted:       effect.CapabilitiesFromManifestJSON(record.Definition.GrantedCapabilities),
-		TrustClass:    trustClass,
-		Isolation:     effect.Isolation(definition.IsolationFor(definition.TrustClass(trustClass))),
+		Isolation:     effect.Isolation(isolation),
 	}, record.CallerScope, nil
 }
 

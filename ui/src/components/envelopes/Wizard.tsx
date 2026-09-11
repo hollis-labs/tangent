@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -406,7 +407,11 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
           <div className="space-y-1">
             <CardTitle>{envelope.data?.title ?? envelope.title ?? "Wizard"}</CardTitle>
             {envelope.data?.description ? (
-              <p className="text-sm text-zinc-400">{envelope.data.description}</p>
+              <Markdown
+                data-testid="wizard-description"
+                content={envelope.data.description}
+                className="text-zinc-400"
+              />
             ) : null}
           </div>
           <div className="text-right text-xs text-zinc-500">
@@ -465,7 +470,11 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
             {currentStep.title}
           </h2>
           {currentStep.description ? (
-            <p className="text-sm text-zinc-400">{currentStep.description}</p>
+            <Markdown
+              data-testid="wizard-step-description"
+              content={currentStep.description}
+              className="text-zinc-400"
+            />
           ) : null}
         </section>
 
@@ -533,8 +542,18 @@ export function Wizard({ envelope, onSubmit, onCancel, roomID }: Props) {
                       <div id={`${branchID}-label`} className="font-medium">
                         {branch.label}
                       </div>
-                      <div id={`${branchID}-description`} className="text-zinc-400">
-                        {branch.description ?? `Next: ${branch.target_step_id}`}
+                      {/*
+                        The id stays on the wrapper because the radio's
+                        `aria-describedby` points at it. Only the caller's own
+                        description routes through the renderer; the
+                        `Next: <step>` fallback is ours.
+                      */}
+                      <div id={`${branchID}-description`}>
+                        {branch.description ? (
+                          <Markdown content={branch.description} className="text-zinc-400" />
+                        ) : (
+                          <span className="text-zinc-400">Next: {branch.target_step_id}</span>
+                        )}
                       </div>
                     </div>
                   </label>
