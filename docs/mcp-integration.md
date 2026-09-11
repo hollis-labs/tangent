@@ -411,6 +411,85 @@ Torque is reached over its HTTP API at `http://127.0.0.1:8990` by default, or
 knows Torque exists — Tangent core stays domain-free. **If Torque is down, the
 plugin reports it and every other Tangent surface keeps working.**
 
+## The Tesseract review board
+
+The second application plugin (`CW-20260910-0054`), and the one that exists to
+be a *different shape* of problem from the first. It reviews Tesseract records
+that need dispositioning. Two tools:
+
+- `tangent.tesseract_review` takes a recall — namespaces, lifecycle statuses,
+  tags, a query, a time window, a ranking — recalls from Tesseract, shapes the
+  revisions into a `tangent.app-board` envelope with the lifecycle as its
+  columns (draft, reviewed, canonical, deprecated), opens a room, and returns
+  the room URL and a board handle. **The agent passes a recall and nothing
+  else.**
+- `tangent.tesseract_review_sync` applies what the participant staged,
+  re-recalls with the board's own originating recall, replaces the board, and
+  returns the work list.
+
+**Ranking is the sort.** `activation` is what is hottest, `chronological` is
+what is newest, `relevance` answers a query. `tangent.app-board` has no
+client-side sort and does not need one for this surface: recall's own ranking
+modes are the meaningful orderings over this data.
+
+### The plugin applies mechanical changes; the agent applies authored ones
+
+This is where the second plugin found something the first could not, and it
+moved the line rather than confirming it.
+
+A Torque status transition is an API call that mutates a field. A Tesseract
+memory revision is **immutable except for deprecation** —
+`internal/memory/types.go` says "the only field that may be mutated after write
+is Status, and only via the deprecation code path" — and the memory domain
+exposes no status route at all. So the two directions cost different things:
+
+| Staged move | What happens |
+|---|---|
+| into `deprecated` | The plugin calls `POST /v1/memory/deprecate` with the revision id. One field, no authoring, no agent turn. |
+| up the lifecycle | A new revision carrying the whole payload forward with `supersedes`. That is authoring, so it leaves as a **request** and the agent writes it. |
+
+A per-card note is the other half. The participant writes what should change,
+and the record id plus the note reaches the agent as a reword request — because
+a reword is a new revision too, and wording needs judgement.
+
+A note on a card the participant **also** staged for retirement is a third
+thing: a `supersede` request, meaning *"retire this and say it better."* That
+pairing is not a contradiction to resolve — in an append-only store it is the
+definition of a supersede, and it is often the most useful thing a review pass
+produces. The deprecation still applies; the note goes to the agent with the
+retired revision's id and summary so it can author the replacement.
+
+Both requests come back in `tangent.tesseract_review_sync`'s `requests` field,
+each naming the revision to supersede, its memory, namespace, key, and current
+status. They are also durable in the board's draft, so an agent that was not in
+the room when the button was pressed can still collect them with
+`tangent.surface_get`. **Nothing pokes the agent either way** — a request waits
+until an agent asks. The board keeps it visible in the meantime: the card wears
+a badge until the revision it names stops coming back from recall, which is
+exactly when the work has been done.
+
+### What the board tells you about its own scope
+
+Recall's manifest reports `results_total`, `results_returned`, `truncated` and
+`truncation_reason` exactly, so a cut card set is a fact the board holds rather
+than a guess. The scope line says which records were sent, how many matched, and
+whether the two differ — *"3 of 1426 … This is NOT the whole set"*. Cards default
+to 100 and are capped at 200, measured against the kind's 256 KiB inline payload
+limit: a revision costs ~700 bytes at `payload_mode: summary`, and `full` is
+already over the limit at fifty records, which is why the board shows summaries
+and the agent hydrates a body by revision id when it acts.
+
+Tesseract is reached over its HTTP API at `http://127.0.0.1:8089` by default, or
+`TANGENT_TESSERACT_API_URL`, with an optional `TANGENT_TESSERACT_TOKEN` sent
+only when set. The plugin is the only thing in this repository that knows
+Tesseract exists. **If Tesseract is down, the plugin reports it and every other
+Tangent surface keeps working.**
+
+Note what a write here does *not* establish: Tangent holds no Tesseract
+credential and issues no identity, so a write the plugin makes is authorized by
+Tesseract's own policy and by nothing this host vouched for
+(`CW-20260910-0045`).
+
 ## Cursor
 
 Cursor reads MCP servers from a JSON config at `~/.cursor/mcp.json`.

@@ -799,6 +799,44 @@ the amendment does not relax: Tangent core still holds no application
 dependency, `RegisterCRUDHandler` is still refused, and the plugin still
 reaches Tangent only through the tool surface an agent uses.
 
+#### What the second plugin found
+
+`tangent.tesseract_review` (`internal/plugins/tesseract/`) is the same five
+steps against a different application, which is what it was built to test
+(`CW-20260910-0054`). Steps 1 through 3 held unchanged: a domain-free kind, a
+mechanical mapping in userland, one agent call in. Step 4 did not.
+
+The pattern's word for what a sync applies was **mechanical** — a status
+transition, a `for` loop, the kind of work a model would do expensively and
+occasionally wrong. That word turned out to describe a property of *Torque*
+rather than of application plugins. Tesseract's memory revisions are immutable
+except for deprecation, and the memory domain exposes no status route, so
+promoting a record up its lifecycle is a new revision carrying the whole payload
+forward with `supersedes` — an authored write, and the same act as rewording it.
+
+So the pattern generalizes with the boundary stated by consequence rather than
+by surface:
+
+> A plugin applies what is mechanical **in the owning application's own terms**,
+> and hands back what that application makes an authored act. Which side a
+> disposition falls on is the application's answer, not the plugin's.
+
+For this plugin that leaves exactly one write — a deprecation — and everything
+else travels back as a work list on the sync's response, durable in the board's
+draft, with the card wearing a badge until the request clears itself. Keeping
+the write surface one call wide is also the cheapest way to keep an
+already-recorded limitation honest: Tangent holds no Tesseract credential and
+issues no identity, so a write a plugin makes is authorized by the owning
+store's policy and by nothing this host vouched for (`CW-20260910-0045`).
+
+The board also needed something `tangent.app-board` did not have — a free-text
+control per card, since a board could say where a card should *go* but not
+anything *about* it. That went into the app-board package as `sync.note_label`
+plus a `staged_notes` map in the draft (manifest revision 3, additive), not into
+the Tesseract plugin: a note is domain-free, and the kind neither interprets one
+nor sends it anywhere. Extending it there is plugin work rather than a core
+change, because app-board is itself plugin-contributed.
+
 ### go-envelopes registry
 
 `github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared
