@@ -219,6 +219,17 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		}
 		payload = bytes.NewReader(encoded)
 	}
+	// #nosec G704 -- the URL is `c.baseURL` (operator configuration, from
+	// TANGENT_TORQUE_API_URL or the loopback default) joined to a `path`
+	// literal from this file. gosec's taint analysis flags it because the base
+	// reaches here from os.Getenv, which is true and is the point: pointing at
+	// a named Torque is what the environment override is for. The filters a
+	// caller supplies ride in `path` only as url.Values.Encode() output, which
+	// percent-encodes them into the query of a fixed route — no
+	// participant-supplied value can move the host, the scheme or the path.
+	// The same annotation, with the same reasoning, is on the Tesseract
+	// plugin's client; this one went unflagged only until a test in this
+	// package built a client the way production does.
 	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
 		return fmt.Errorf("torqueboard: build request: %w", err)
@@ -228,7 +239,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 		request.Header.Set("Content-Type", "application/json")
 	}
 
-	response, err := c.http.Do(request)
+	response, err := c.http.Do(request) // #nosec G704 -- see the request above
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrTorqueUnavailable, c.baseURL, err)
 	}

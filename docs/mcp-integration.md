@@ -308,6 +308,33 @@ room URL, the browser resolves the workflow, and Claude receives the
 structured response back. Full walkthroughs live in the manual recipes
 under [`docs/manual-tests/`](./manual-tests/).
 
+## Which fields render as markdown
+
+Anywhere an agent's own words are displayed, Tangent routes them through the
+shared `<Markdown>` component. Which fields those are is documented **on the
+MCP tool input schemas and nowhere else**, per field and in both directions:
+`"Renders as markdown."`, and for the fields that deliberately stay literal —
+a diff hunk, a `prose-revision` `source_text`, an evidence pane whose kind is
+`literal` — a sentence saying why the reader is comparing characters.
+
+That is the surface an agent reads while composing the call, which is when the
+fact is useful. It is also the only surface where the fact can be corrected
+cheaply. The ADR 0003 package request schemas under
+`internal/envelope/extensions/packages/` say nothing about rendering on
+purpose: their bytes are hashed into `contract_digest` and `binding_digest`, so
+a field `description` added there moves the pin — ADR 0003 §8 C1 makes every
+pending interaction of that kind `unavailable` for new submissions, and §3
+turns what looks like a `revision` bump into the `version` bump §8 C3 freezes.
+A rendering fact must not be able to take a live surface out of service.
+
+`TestPackageRequestSchemasDocumentNoRendering` holds the silence and
+`TestTheMCPSchemasAreWhereTheInventoryLives` holds the inventory, so neither
+half can be lost without a failing build (`CW-20260911-0004`).
+
+**Writing a plugin that contributes a kind: copy the silence.** Say which of
+your fields render as markdown in the tool schema your plugin registers, and
+render them through the shared component rather than a second markdown path.
+
 ## Durable HITL inbox
 
 The HITL inbox is a persistent asynchronous operation surface, separate from

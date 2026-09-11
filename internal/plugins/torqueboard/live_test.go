@@ -24,7 +24,9 @@ func TestLiveTorque(t *testing.T) {
 	if os.Getenv("TANGENT_TORQUE_LIVE_TEST") == "" {
 		t.Skip("set TANGENT_TORQUE_LIVE_TEST=1 to run against the real Torque")
 	}
-	client := NewClient(os.Getenv(BaseURLEnv))
+	// Through the production constructor, so the environment override this
+	// reads is the one the shipped plugin reads.
+	client := New().client
 	ctx := context.Background()
 
 	if err := client.Health(ctx); err != nil {

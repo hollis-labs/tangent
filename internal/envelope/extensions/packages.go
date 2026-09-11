@@ -30,6 +30,34 @@ import (
 // directory, is caught by TestPackageTreeMatchesRegistrations rather than
 // discovered in production.
 //
+// # A request schema is contract bytes, not documentation (CW-20260911-0004)
+//
+// It follows from the paragraph above, and it decides a question that looked
+// like a style preference: **which fields render as markdown is documented on
+// the MCP tool schemas in internal/mcp, and deliberately not here.**
+//
+// `internal/mcp/*_schema.go` says, per field, "Renders as markdown." — and says
+// where it does NOT, which is the half that matters for a diff hunk or a
+// reviewer's exact wording. A package request schema says nothing about it.
+// That asymmetry is the decision rather than an oversight, and
+// TestPackageRequestSchemasDocumentNoRendering holds it so a later reader does
+// not "fix" it.
+//
+// The reason is cost, and it is not small. A field `description` added here
+// changes the request schema bytes, so it changes `contract_digest` and
+// `binding_digest` (internal/interaction/catalog.go hashes the schema bytes
+// into both). Under ADR 0003 §8 C1 that makes every pending interaction of the
+// kind `unavailable` for new submissions, and under §3 a `contract_digest`
+// change may not ride a `revision` bump at all — it is a new `version`, which
+// §8 C3 freezes for the shipped kinds. So the wrong place for a rendering fact
+// is the one place where writing it down can take a live surface out of
+// service. A manifest `description` is the one §3 does contemplate correcting,
+// because it moves `manifest_digest` and not the contract.
+//
+// The corollary for a plugin author copying one of these as a model: copy the
+// silence. Say which fields render as markdown in the tool schema your plugin
+// registers, where a correction costs a rebuild and nothing else.
+//
 //go:embed all:packages
 var packagesFS embed.FS
 
