@@ -293,7 +293,7 @@ motivating case (Tesseract `agents_drive_tangent_apps_are_called`).
 The amendment is deliberately narrow, and the parts it does not relax are the
 parts that were doing the work:
 
-- **Tangent core still holds no application dependency.** `internal/plugins/torqueboard/torque.go`
+- **Tangent core still holds no application dependency.** `internal/plugins/torque/torque.go`
   is the only file in the repository that knows Torque exists. Nothing in
   `internal/mcp`, `internal/room`, `internal/interaction` or the renderer
   learns a Torque concept, which is what keeps ADR 0005's *"Tangent is not a
@@ -331,10 +331,10 @@ plugin:
 Two conditions keep the exception readable rather than merely recorded:
 
 - **Every plugin that takes it says so in its package doc**, in the terms
-  `internal/plugins/torqueboard/plugin.go` already uses. Who is inside the
+  `internal/plugins/torque/plugin.go` already uses. Who is inside the
   exception is then a `grep`, not a memory.
 - **A plugin that writes to an application holds that application's client in
-  its own package and nowhere else.** `internal/plugins/torqueboard/torque.go`
+  its own package and nowhere else.** `internal/plugins/torque/torque.go`
   is the only file in the repository that knows Torque exists; a Tesseract
   plugin's client must be the only file that knows Tesseract does. Widening the
   exception widens what a *plugin* may do and not what Tangent core learns,

@@ -102,9 +102,9 @@ func healthOptions(db *sql.DB) func(*envelope.Service) []tangentmcp.Option {
 				return health.PluginInventory{
 					Loaded: 1,
 					Plugins: []health.PluginRecord{
-						{ID: "tangent.plugin.appboard", Loaded: true, Enabled: true},
+						{ID: "tangent.plugin.torque", Loaded: true, Enabled: true},
 					},
-					ContributedKinds: []string{"tangent.app-board"},
+					ContributedKinds: []string{},
 					Tools:            []string{},
 					Routes:           []string{},
 					Attribution:      "host-wide",

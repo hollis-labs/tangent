@@ -1,5 +1,11 @@
-// Package torqueboard is the compiled-in plugin that puts Torque's task list
-// on a Tangent board (CW-20260910-0031).
+// Package torque is the compiled-in plugin that carries Torque (CW-20260910-0031).
+//
+// It opens with one surface — Torque's task list on a Tangent board — and it is
+// named for the application rather than for that surface. Chrispian,
+// 2026-09-11: "it won't just be a board and that name makes it sound like a
+// component like appboard. just name the plugin torque - it will carry any/all
+// functionality related to torque just like tesseract will for that app." The
+// package was `torqueboard` until CW-20260911-0036 renamed it.
 //
 // # Who calls what
 //
@@ -47,7 +53,7 @@
 // costs no agent turn. Chrispian, verbatim: "add a sync button for both ways
 // so I can just push the button without having to ask an agent, that's
 // wasteful."
-package torqueboard
+package torque
 
 import (
 	"context"
@@ -66,27 +72,41 @@ import (
 )
 
 // ID is the plugin identifier, and the name that appears in host logs.
-const ID = "tangent.plugin.torqueboard"
+const ID = "tangent.plugin.torque"
 
 // Tool names. Both are in the `tangent.` namespace because every tool this
 // build serves is, and the documentation gate matches that spelling — a plugin
 // tool is a shipped tool and is documented like one.
+//
+// The shape is `tangent.torque_<verb>_<surface>`, Chrispian's call on
+// 2026-09-11, and it is chosen for the surfaces that do not exist yet:
+// `torque_open_sprint` and `torque_sync_sprint` slot in beside these without a
+// collision and without renaming anything. They were `tangent.torque_board` and
+// `tangent.torque_board_sync`, which described a board back when a board was
+// all there would be. Spending the plain verb on this surface —
+// `torque_open`, `torque_sync` — reads best today and was rejected for the
+// same reason: it makes the second surface's name the awkward one.
 const (
 	// OpenTool opens a board. One call, filters in, a room URL out.
-	OpenTool = "tangent.torque_board"
+	OpenTool = "tangent.torque_open_board"
 	// SyncTool is the same sync the button performs, for an agent that wants
 	// it in a turn it is already spending.
-	SyncTool = "tangent.torque_board_sync"
+	SyncTool = "tangent.torque_sync_board"
 )
 
 // SyncPath is the plugin-served route the board's Sync button POSTs to. It is
 // under pluginhost.RoutePrefix, which is what keeps it from colliding with
 // /api/hitl, /api/rooms, /api/channels, /api/effects or the SPA.
+//
+// It stays scoped to the board rather than following the package to
+// `torque/sync`, for the reason the tool names above were chosen: this plugin
+// grows surfaces, and a route named for the plugin would be the one this
+// surface happened to claim first.
 const SyncPath = pluginhost.RoutePrefix + "torque-board/sync"
 
 // EnvelopeType is the domain-free kind this plugin supplies content to. It is
-// contributed by internal/plugins/appboard, not by this plugin: the kind
-// describes a board, and a board is not a Torque concept.
+// host plumbing, installed by extensions.RegisterAll and owned by nothing in
+// userland: the kind describes a board, and a board is not a Torque concept.
 const EnvelopeType = "tangent.app-board"
 
 // Plugin is the Torque board adapter.
@@ -126,10 +146,15 @@ func (p *Plugin) Description() string {
 		"without an agent turn."
 }
 
-// Dependencies names the plugin that contributes the kind this one fills.
-// Declaring it means a build that ships this plugin without that one fails at
-// boot, where it is one line to read, rather than at the first tool call.
-func (p *Plugin) Dependencies() []string { return []string{"tangent.plugin.appboard"} }
+// Dependencies returns none.
+//
+// It used to name `tangent.plugin.appboard`, and that declaration described the
+// wrong thing: `tangent.app-board` is host plumbing, installed by
+// extensions.RegisterAll before any plugin loads (CW-20260911-0036). A plugin's
+// dependency list is for plugins it needs loaded first, and a build that
+// shipped this one without the host's own kind is not a build — it is a
+// compile error.
+func (p *Plugin) Dependencies() []string { return nil }
 
 // Load registers the two tools and the one route.
 //
@@ -140,12 +165,12 @@ func (p *Plugin) Dependencies() []string { return []string{"tangent.plugin.appbo
 // discovering it when someone presses a button.
 func (p *Plugin) Load(host plugin.Host) error {
 	if host == nil {
-		return fmt.Errorf("torqueboard: host is nil")
+		return fmt.Errorf("torque: host is nil")
 	}
 	tangentHost, ok := host.(Host)
 	if !ok {
 		return fmt.Errorf(
-			"torqueboard: host does not offer Tangent's plugin registration surfaces "+
+			"torque: host does not offer Tangent's plugin registration surfaces "+
 				"(RegisterMCPTool, RegisterHTTPRoute); got %T", host)
 	}
 
@@ -225,7 +250,7 @@ func (p *Plugin) tools() (pluginhost.ToolCaller, error) {
 	host := p.host
 	p.mu.Unlock()
 	if host == nil {
-		return nil, fmt.Errorf("torqueboard: plugin is not loaded")
+		return nil, fmt.Errorf("torque: plugin is not loaded")
 	}
 	return host.Tools()
 }
@@ -258,7 +283,7 @@ func (p *Plugin) MCPCallTool(
 		return jsonResult(result)
 	default:
 		return subprocess.MCPCallResult{}, fmt.Errorf(
-			"torqueboard: no handler for tool %q", request.ToolName)
+			"torque: no handler for tool %q", request.ToolName)
 	}
 }
 
@@ -274,7 +299,7 @@ func (p *Plugin) HTTPHandle(
 ) (subprocess.HTTPResponse, error) {
 	if request.Path != SyncPath {
 		return subprocess.HTTPResponse{}, fmt.Errorf(
-			"torqueboard: no handler for route %s %s", request.Method, request.Path)
+			"torque: no handler for route %s %s", request.Method, request.Path)
 	}
 	var input SyncInput
 	if len(request.Body) > 0 {
@@ -298,7 +323,7 @@ func (p *Plugin) HTTPHandle(
 	}
 	body, err := json.Marshal(result)
 	if err != nil {
-		return subprocess.HTTPResponse{}, fmt.Errorf("torqueboard: encode sync result: %w", err)
+		return subprocess.HTTPResponse{}, fmt.Errorf("torque: encode sync result: %w", err)
 	}
 	return subprocess.HTTPResponse{
 		Status:  http.StatusOK,
@@ -322,10 +347,10 @@ func badRequest(message string) (subprocess.HTTPResponse, error) {
 func decodeArguments(arguments map[string]any, into any) error {
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
-		return fmt.Errorf("torqueboard: re-encode arguments: %w", err)
+		return fmt.Errorf("torque: re-encode arguments: %w", err)
 	}
 	if err := json.Unmarshal(encoded, into); err != nil {
-		return fmt.Errorf("torqueboard: decode arguments: %w", err)
+		return fmt.Errorf("torque: decode arguments: %w", err)
 	}
 	return nil
 }
@@ -333,7 +358,7 @@ func decodeArguments(arguments map[string]any, into any) error {
 func jsonResult(value any) (subprocess.MCPCallResult, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
-		return subprocess.MCPCallResult{}, fmt.Errorf("torqueboard: encode result: %w", err)
+		return subprocess.MCPCallResult{}, fmt.Errorf("torque: encode result: %w", err)
 	}
 	return subprocess.MCPCallResult{Content: encoded}, nil
 }

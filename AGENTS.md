@@ -41,7 +41,7 @@ something new.
   `RegisterHTTPRoute` (`http.go`) contributes a browser route under
   `/api/plugins/`. Both are recorded at load and installed later — plugins load
   before the MCP and HTTP servers exist.
-- `internal/plugins/torqueboard/` — the first application plugin, and the only
+- `internal/plugins/torque/` — the first application plugin, and the only
   file tree here that knows Torque exists. It is the ADR 0007 §6 pattern
   working: a domain-free kind, a mechanical mapping in userland, one agent call
   in, and a sync button that costs no agent turn. Its compiled-in Torque writes

@@ -150,15 +150,21 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	if regErr := extensions.RegisterSynthesisNotes(envSvc); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotes: %v", regErr)
 	}
+	// Host plumbing like every kind above it. It arrived through the plugin
+	// host until CW-20260911-0036 found that the plugin holding it did nothing
+	// but name it; the kind is the host's, so RegisterAll's door is the one it
+	// comes through.
+	if regErr := extensions.RegisterAppBoard(envSvc); regErr != nil {
+		t.Fatalf("RegisterAppBoard: %v", regErr)
+	}
 	dispatcher := envelope.NewDispatcher(envSvc)
 	mgr := room.NewManager(db)
 	logger := slog.New(slog.NewTextHandler(testLogWriter{t}, &slog.HandlerOptions{Level: slog.LevelWarn}))
 
-	// tangent.app-board arrives through the plugin host, not through a
-	// Register* call (ADR 0007 §4). Loading it the way production loads it
-	// keeps this rig from being the one place the second door is skipped —
-	// which would make every test here pass against a registry the server does
-	// not serve.
+	// The application plugins, loaded the way production loads them: their
+	// tools and their sync routes are part of the surface this rig serves, and
+	// a rig that skipped them would be testing a server the binary does not
+	// ship.
 	pluginHost, pluginErr := plugins.LoadShipped(ctx, logger, envSvc)
 	if pluginErr != nil {
 		t.Fatalf("plugins.LoadShipped: %v", pluginErr)

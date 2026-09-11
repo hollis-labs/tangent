@@ -15,7 +15,6 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
-	"github.com/hollis-labs/tangent/internal/plugins/appboard"
 )
 
 // These tests hold both flows end to end, against a fake Almanac and the REAL
@@ -35,8 +34,9 @@ import (
 
 // ── Loading on the real host ────────────────────────────────────────────────
 
-// loadOnRealHost builds a host carrying the shipped kinds, loads the kind's own
-// plugin, then loads this one.
+// loadOnRealHost builds a host carrying the shipped kinds and loads this plugin
+// onto it. RegisterAll is what puts the board kind in the registry; nothing
+// else has to be loaded first.
 func loadOnRealHost(t *testing.T, client *Client) (*Plugin, *pluginhost.Host) {
 	t.Helper()
 	svc, err := envelope.New(context.Background())
@@ -49,13 +49,6 @@ func loadOnRealHost(t *testing.T, client *Client) (*Plugin, *pluginhost.Host) {
 	host, err := pluginhost.New(context.Background(), slog.New(slog.DiscardHandler), svc)
 	if err != nil {
 		t.Fatalf("pluginhost.New: %v", err)
-	}
-	// The dependency this plugin declares. Loading it first is not test setup —
-	// the host refuses a plugin whose stated dependency is not already loaded,
-	// which is the check that turns a missing kind into a boot failure instead
-	// of a failure at the first tool call.
-	if loadErr := host.Load(appboard.New()); loadErr != nil {
-		t.Fatalf("load the kind's plugin: %v", loadErr)
 	}
 	board := NewWithClient(client)
 	if loadErr := host.Load(board); loadErr != nil {

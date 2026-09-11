@@ -28,6 +28,24 @@ type registration struct {
 	// explicit that if the drift tests only walked one of them, the ownership
 	// guarantee ADR 0003 §6 makes mechanical would silently narrow to half the
 	// registry.
+	//
+	// NO ROW SETS IT TODAY, and that is a correction rather than a gap
+	// (CW-20260911-0036). `tangent.app-board` set it from the day the plugin
+	// host landed, and it should not have: it is a domain-free board shape
+	// published by `tangent`, owned by `host-package`, rendered from a
+	// component compiled into `ui_dist` with the release. It is plumbing the
+	// host owns, and the plugin that "contributed" it was a registration
+	// statement wearing the plugin contract — no dependency to isolate, no
+	// independent distribution, no independent versioning, no domain knowledge
+	// to keep out of core.
+	//
+	// The door stays, on the same terms as the host surfaces pluginhost leaves
+	// unimplemented: a contributable kind is one this host does not own, and
+	// none has arrived yet. What keeps the door honest with no shipped user is
+	// contributedDoorFixture in register_all_test.go — a fixture table that
+	// exercises every branch of RegisterContributedKind against a real
+	// manifest. Deleting that fixture, or letting this field decay because
+	// nothing sets it, is the narrowing ADR 0003 §6 names.
 	contributedByPlugin bool
 }
 
@@ -64,11 +82,7 @@ var registrations = []registration{
 	{ApprovalQueueEnvelopeType, "tangent.review", RegisterApprovalQueue, false},
 	{SynthesisNotesEnvelopeType, "tangent.writing", RegisterSynthesisNotes, false},
 	{HITLItemEnvelopeType, HITLPackageID, RegisterHITLItem, false},
-
-	// Contributed through the plugin host (ADR 0007 §4), not by RegisterAll.
-	// internal/plugins/appboard declares it; internal/pluginhost resolves this
-	// row's manifest and refuses the registration if it cannot.
-	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, true},
+	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, false},
 }
 
 // RegisterAll registers every Tangent-owned interaction definition on svc. It
@@ -87,10 +101,18 @@ var registrations = []registration{
 // it will not serve. Refusing a *submission* against it is the interaction
 // catalog's job.
 func RegisterAll(svc *envelope.Service) error {
+	return registerAll(registrations, svc)
+}
+
+// registerAll is RegisterAll over a supplied table. The table is a parameter so
+// that contributedDoorFixture can drive the same code the production table
+// drives: the ADR 0007 §4 door has no shipped user, and a door tested through a
+// copy of its logic is not the door.
+func registerAll(regs []registration, svc *envelope.Service) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	for _, reg := range registrations {
+	for _, reg := range regs {
 		// A plugin-contributed kind is installed by the plugin host, through
 		// RegisterContributedKind, after the host has resolved its manifest.
 		// Registering it here as well would be a duplicate, which go-envelopes
@@ -123,10 +145,16 @@ func RegisterAll(svc *envelope.Service) error {
 // install one would mean the same kind could be registered by two paths with
 // no test able to say which one production used.
 func RegisterContributedKind(svc *envelope.Service, kind string) error {
+	return registerContributedKind(registrations, svc, kind)
+}
+
+// registerContributedKind is RegisterContributedKind over a supplied table. See
+// registerAll for why the table is a parameter.
+func registerContributedKind(regs []registration, svc *envelope.Service, kind string) error {
 	if svc == nil {
 		return fmt.Errorf("extensions: envelope service is nil")
 	}
-	for _, reg := range registrations {
+	for _, reg := range regs {
 		if reg.name != kind {
 			continue
 		}
@@ -143,8 +171,14 @@ func RegisterContributedKind(svc *envelope.Service, kind string) error {
 // PluginContributedTypes returns the wire names that arrive through the plugin
 // host rather than through RegisterAll, in registration order.
 func PluginContributedTypes() []string {
+	return pluginContributedTypes(registrations)
+}
+
+// pluginContributedTypes is PluginContributedTypes over a supplied table. See
+// registerAll for why the table is a parameter.
+func pluginContributedTypes(regs []registration) []string {
 	names := make([]string, 0, 1)
-	for _, reg := range registrations {
+	for _, reg := range regs {
 		if reg.contributedByPlugin {
 			names = append(names, reg.name)
 		}

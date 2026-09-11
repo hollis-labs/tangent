@@ -22,8 +22,8 @@
 //     Tesseract exists — an explicit condition on this task, checkable with one
 //     grep.
 //
-// The board itself is `tangent.app-board`, a domain-free kind contributed by
-// internal/plugins/appboard. board.go is where a Tesseract lifecycle status
+// The board itself is `tangent.app-board`, a domain-free kind the host ships.
+// board.go is where a Tesseract lifecycle status
 // becomes a column and a tag becomes a badge, and that mapping is mechanical
 // from end to end — a model asked to shape this payload would be doing a `for`
 // loop expensively and occasionally wrong.
@@ -86,7 +86,7 @@ const ID = "tangent.plugin.tesseract"
 //
 // They are named for what they do rather than for the kind they render on. The
 // board is a review surface over Tesseract, not a generic board, and an agent
-// choosing between `tangent.torque_board` and this one is choosing between two
+// choosing between `tangent.torque_open_board` and this one is choosing between two
 // applications rather than two boards.
 const (
 	// OpenTool opens a review board. One call, a recall in, a room URL out.
@@ -103,8 +103,8 @@ const (
 const SyncPath = pluginhost.RoutePrefix + "tesseract-review/sync"
 
 // EnvelopeType is the domain-free kind this plugin supplies content to. It is
-// contributed by internal/plugins/appboard, not by this plugin: the kind
-// describes a board, and a board is not a Tesseract concept.
+// host plumbing, installed by extensions.RegisterAll and owned by nothing in
+// userland: the kind describes a board, and a board is not a Tesseract concept.
 const EnvelopeType = "tangent.app-board"
 
 // Plugin is the Tesseract review board adapter.
@@ -148,10 +148,15 @@ func (p *Plugin) Description() string {
 		"promotions and reword requests back as a work list, without an agent turn."
 }
 
-// Dependencies names the plugin that contributes the kind this one fills.
-// Declaring it means a build that ships this plugin without that one fails at
-// boot, where it is one line to read, rather than at the first tool call.
-func (p *Plugin) Dependencies() []string { return []string{"tangent.plugin.appboard"} }
+// Dependencies returns none.
+//
+// It used to name `tangent.plugin.appboard`, and that declaration described the
+// wrong thing: `tangent.app-board` is host plumbing, installed by
+// extensions.RegisterAll before any plugin loads (CW-20260911-0036). A plugin's
+// dependency list is for plugins it needs loaded first, and a build that
+// shipped this one without the host's own kind is not a build — it is a
+// compile error.
+func (p *Plugin) Dependencies() []string { return nil }
 
 // Load registers the two tools and the one route.
 //

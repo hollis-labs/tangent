@@ -17,7 +17,7 @@ import (
 // this repository that knows Tesseract exists.
 //
 // That placement is a condition recorded on CW-20260910-0054, not a layout
-// preference. `internal/plugins/torqueboard/torque.go` is the only file that
+// preference. `internal/plugins/torque/torque.go` is the only file that
 // knows Torque exists, and the ADR 0007 §6 amendment that widened what a
 // *plugin* may do widened nothing about what Tangent core learns. A future
 // reader checking "does Tangent know about Tesseract" should get one file back.
@@ -309,7 +309,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	// literal from this file. gosec's taint analysis flags it because the base
 	// reaches here from os.Getenv, which is true and is the point: pointing at
 	// a named Tesseract is what the environment override is for, exactly as
-	// torqueboard's TANGENT_TORQUE_API_URL is. No request-derived or
+	// torque's TANGENT_TORQUE_API_URL is. No request-derived or
 	// participant-supplied value reaches this call — every caller-supplied
 	// value in this package rides in the JSON body, never in the URL.
 	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)

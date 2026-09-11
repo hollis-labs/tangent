@@ -1,4 +1,4 @@
-package torqueboard
+package torque
 
 import "encoding/json"
 
@@ -15,7 +15,7 @@ import "encoding/json"
 
 // openToolSchema advertises the open tool's input.
 var openToolSchema = json.RawMessage(`{
-  "title": "tangent.torque_board input",
+  "title": "tangent.torque_open_board input",
   "description": "Filters selecting which Torque tasks the board shows. Every field is optional.",
   "type": "object",
   "properties": {
@@ -62,14 +62,14 @@ const openToolDescription = "Open a Torque board in Tangent: the tasks matching 
 
 // syncToolSchema advertises the sync tool's input.
 var syncToolSchema = json.RawMessage(`{
-  "title": "tangent.torque_board_sync input",
+  "title": "tangent.torque_sync_board input",
   "description": "Apply what the participant staged on a Torque board and replace the board with fresh cards.",
   "type": "object",
   "properties": {
     "room_id": {
       "type": "string",
       "minLength": 1,
-      "description": "The room the board is open in, as tangent.torque_board returned it."
+      "description": "The room the board is open in, as tangent.torque_open_board returned it."
     },
     "force": {
       "type": "boolean",

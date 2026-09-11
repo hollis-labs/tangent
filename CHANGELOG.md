@@ -25,9 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **`tangent.app-board`.** A domain-free board: caller-supplied cards in
   columns, a filter bar, and an optional detail pane composed inside the one
-  envelope rather than opening a second. The first kind contributed through the
-  plugin host, and the first whose `draft_custody` is `tangent-custodied` — its
-  view state is a durable revisioned draft record rather than `localStorage`.
+  envelope rather than opening a second. Host plumbing — the shape both
+  application plugins fill and neither owns — and the first kind whose
+  `draft_custody` is `tangent-custodied`, so its view state is a durable
+  revisioned draft record rather than `localStorage`.
   Filters are a **view over the cards the caller supplied**, never a query the
   host re-runs; the manifest, the tool description and the board itself all say
   so. The owning application supplies the records and applies every
@@ -68,8 +69,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   take down the tool surface or hold graceful shutdown past its deadline the way
   an unbounded `/sse` stream did (`CW-20260909-0045`). `tangent.health_report`
   carries a plugin inventory — which loaded, which refused and why — because a
-  tool list cannot answer it: the plugin contributing `tangent.app-board`
-  registers no tool at all.
+  tool list cannot answer it: a plugin can load, refuse, or load and register
+  nothing a caller can see.
+
+### Changed
+
+- **The plugin inventory, corrected (`CW-20260911-0036`).** Two names described
+  things that were not what they said.
+
+  `appboard` was not a plugin. It was a struct with a status field and a `Load`
+  that named one kind — `tangent.app-board`, which the host publishes, declares
+  `ownership_class: host-package`, versions with the repository and compiles
+  into `ui_dist` with the release. Every property that would justify plugin-hood
+  was absent: no dependency to isolate, no independent distribution, no
+  independent versioning, no domain knowledge to keep out of core. It was never
+  *moved* to a plugin either — the kind and the plugin were born in the same
+  commit, so the plugin existed to give the new host a customer, and the two
+  consumers that made the shape look shared arrived afterwards. The kind now
+  registers through `extensions.RegisterAll` like every other host-package kind
+  and `internal/plugins/appboard/` is deleted. **The ADR 0007 §4 door stays**,
+  fully implemented and tested with a fixture, on the same terms as the host
+  surfaces that are deliberately unimplemented: it is waiting for a kind this
+  host does not own. Every plugin this build ships now holds a real application
+  dependency.
+
+  `torqueboard` is now `torque`, because it will not just be a board — the
+  plugin carries the application, the way `tesseract` does. Its two tools are
+  renamed with it, to `tangent.torque_<verb>_<surface>` so a second surface
+  slots in without a collision or a breaking rename:
+
+  | Was | Is |
+  |---|---|
+  | `tangent.torque_board` | `tangent.torque_open_board` |
+  | `tangent.torque_board_sync` | `tangent.torque_sync_board` |
+
+  Both tool names are new in this unreleased cycle, so nothing published moves.
 
 ### Known limitations
 

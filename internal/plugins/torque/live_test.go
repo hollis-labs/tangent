@@ -1,4 +1,4 @@
-package torqueboard
+package torque
 
 import (
 	"context"

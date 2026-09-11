@@ -13,7 +13,7 @@ import (
 	"github.com/coder/websocket"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/hollis-labs/tangent/internal/plugins/torqueboard"
+	"github.com/hollis-labs/tangent/internal/plugins/torque"
 )
 
 // CW-20260910-0031 — the Torque board, end to end, through the real surface.
@@ -37,14 +37,14 @@ import (
 // single call opens a board, the participant stages a move, the sync applies it
 // to Torque and replaces the board with fresh cards.
 func TestTorqueBoard_OpenStageSync(t *testing.T) {
-	torque := startFakeTorqueAPI(t)
-	rg := newSessionRigWithTorque(t, torque)
+	api := startFakeTorqueAPI(t)
+	rg := newSessionRigWithTorque(t, api)
 	defer rg.cleanup()
 	ctx := context.Background()
 
 	// 1. One tool call, filters in, a room out. The agent shapes no payload.
-	var opened torqueboard.OpenResult
-	callPluginTool(t, rg, "tangent.torque_board", map[string]any{
+	var opened torque.OpenResult
+	callPluginTool(t, rg, "tangent.torque_open_board", map[string]any{
 		"statuses": []string{"todo", "doing"},
 		"title":    "Torque — dogfood",
 	}, &opened)
@@ -82,16 +82,16 @@ func TestTorqueBoard_OpenStageSync(t *testing.T) {
 	// so this waits on the record — which is also what the sync reads.
 	waitForDrafts(t, rg, opened.RoomID, 1)
 
-	if applied := torque.applied(); len(applied) != 0 {
+	if applied := api.applied(); len(applied) != 0 {
 		t.Fatalf("staging wrote to Torque before the sync: %+v; a draft is not a decision", applied)
 	}
 
 	// 4. Sync. One call, both directions.
-	var synced torqueboard.SyncResult
-	callPluginTool(t, rg, "tangent.torque_board_sync",
+	var synced torque.SyncResult
+	callPluginTool(t, rg, "tangent.torque_sync_board",
 		map[string]any{"room_id": opened.RoomID}, &synced)
 
-	applied := torque.applied()
+	applied := api.applied()
 	if len(applied) != 1 || applied[0].TaskID != "CW-1" || applied[0].Status != "doing" {
 		t.Fatalf("torque transitions = %+v, want the staged move applied", applied)
 	}
@@ -118,16 +118,16 @@ func TestTorqueBoard_OpenStageSync(t *testing.T) {
 // report, and every other Tangent surface keeps working — including the board
 // the participant is looking at.
 func TestTorqueBoard_SyncReportsATorqueOutageAndLeavesTheBoardAlone(t *testing.T) {
-	torque := startFakeTorqueAPI(t)
-	rg := newSessionRigWithTorque(t, torque)
+	api := startFakeTorqueAPI(t)
+	rg := newSessionRigWithTorque(t, api)
 	defer rg.cleanup()
 
-	var opened torqueboard.OpenResult
-	callPluginTool(t, rg, "tangent.torque_board", map[string]any{}, &opened)
+	var opened torque.OpenResult
+	callPluginTool(t, rg, "tangent.torque_open_board", map[string]any{}, &opened)
 
-	torque.server.Close()
+	api.server.Close()
 
-	result := callBoardTool(t, rg, "tangent.torque_board_sync",
+	result := callBoardTool(t, rg, "tangent.torque_sync_board",
 		map[string]any{"room_id": opened.RoomID})
 	if !result.IsError {
 		t.Fatal("sync succeeded with Torque down")
@@ -157,8 +157,8 @@ func TestTorqueBoard_SyncReportsATorqueOutageAndLeavesTheBoardAlone(t *testing.T
 // agent's single call possible, and it goes through the same tools/list every
 // other tool does.
 func TestTorqueBoard_ToolsAreOnTheSurface(t *testing.T) {
-	torque := startFakeTorqueAPI(t)
-	rg := newSessionRigWithTorque(t, torque)
+	api := startFakeTorqueAPI(t)
+	rg := newSessionRigWithTorque(t, api)
 	defer rg.cleanup()
 
 	listed, err := rg.mcpClient.ListTools(context.Background(), nil)
@@ -169,7 +169,7 @@ func TestTorqueBoard_ToolsAreOnTheSurface(t *testing.T) {
 	for _, tool := range listed.Tools {
 		found[tool.Name] = true
 	}
-	for _, name := range []string{"tangent.torque_board", "tangent.torque_board_sync"} {
+	for _, name := range []string{"tangent.torque_open_board", "tangent.torque_sync_board"} {
 		if !found[name] {
 			t.Errorf("%s is not advertised; no agent could call it", name)
 		}
@@ -179,11 +179,11 @@ func TestTorqueBoard_ToolsAreOnTheSurface(t *testing.T) {
 // TestTorqueBoard_RefusesArgumentsItsOwnSchemaRejects proves a plugin tool is
 // validated like any other, at the surface, before the plugin sees anything.
 func TestTorqueBoard_RefusesArgumentsItsOwnSchemaRejects(t *testing.T) {
-	torque := startFakeTorqueAPI(t)
-	rg := newSessionRigWithTorque(t, torque)
+	api := startFakeTorqueAPI(t)
+	rg := newSessionRigWithTorque(t, api)
 	defer rg.cleanup()
 
-	result := callBoardTool(t, rg, "tangent.torque_board_sync", map[string]any{})
+	result := callBoardTool(t, rg, "tangent.torque_sync_board", map[string]any{})
 	if !result.IsError {
 		t.Fatal("a sync with no room_id was accepted")
 	}
@@ -201,9 +201,9 @@ func TestTorqueBoard_RefusesArgumentsItsOwnSchemaRejects(t *testing.T) {
 // itself, before the rig loads it. That is not a shortcut around the plugin's
 // configuration — it IS the plugin's configuration, so this test exercises the
 // same resolution production does.
-func newSessionRigWithTorque(t *testing.T, torque *fakeTorqueAPI) *sessionRig {
+func newSessionRigWithTorque(t *testing.T, api *fakeTorqueAPI) *sessionRig {
 	t.Helper()
-	t.Setenv(torqueboard.BaseURLEnv, torque.server.URL)
+	t.Setenv(torque.BaseURLEnv, api.server.URL)
 	return newSessionRigWith(t, sessionRigOptions{durable: true, window: testWindow})
 }
 

@@ -650,9 +650,12 @@ raised its own trust class fails to load instead of being silently downgraded.
 `internal/plugins/` lists what this build ships and loads it. There is no
 discovery, no directory scan and no subprocess spawn — compiled-in only — so
 "which plugins does this binary have" is answered by reading one file.
-`internal/plugins/appboard/` contributes the board kind and
-`internal/plugins/torqueboard/` fills it with Torque tasks; both live in-tree,
-which ADR 0007 §4 is explicit is convenience rather than permission.
+`internal/plugins/torque/` and `internal/plugins/tesseract/` each fill the
+host's board kind with one application's records; both live in-tree, which
+ADR 0007 §4 is explicit is convenience rather than permission. Every plugin
+this build ships holds a real application dependency, and that is the
+inventory correction `CW-20260911-0036` made: `appboard` held none, because
+the kind it named is the host's own (see below).
 
 **Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
 `internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
@@ -769,13 +772,13 @@ is the decision.
 
 ### The app-plugin composition pattern
 
-`tangent.torque_board` (`internal/plugins/torqueboard/`) is ADR 0007 §6's
+`tangent.torque_open_board` (`internal/plugins/torque/`) is ADR 0007 §6's
 pattern working end to end, and the shape is worth stating because it is meant
 to generalize:
 
-1. **A domain-free kind, contributed by a plugin.** `tangent.app-board`
-   describes a board of filtered cards with a detail pane. Torque supplies
-   content to it; it is not a Torque type.
+1. **A domain-free kind the host ships.** `tangent.app-board` describes a board
+   of filtered cards with a detail pane. Torque supplies content to it; it is
+   not a Torque type.
 2. **The mapping lives in the plugin.** A Torque status becomes a column, a tag
    becomes a badge, a description becomes the card body. All of it is a `for`
    loop, which is the point — a model asked to shape this payload would be
@@ -834,8 +837,8 @@ control per card, since a board could say where a card should *go* but not
 anything *about* it. That went into the app-board package as `sync.note_label`
 plus a `staged_notes` map in the draft (manifest revision 3, additive), not into
 the Tesseract plugin: a note is domain-free, and the kind neither interprets one
-nor sends it anywhere. Extending it there is plugin work rather than a core
-change, because app-board is itself plugin-contributed.
+nor sends it anywhere. That it belongs to the host rather than to either
+consumer is the whole reason a second application could ask for it.
 
 #### The scaffold the third plugin starts from
 

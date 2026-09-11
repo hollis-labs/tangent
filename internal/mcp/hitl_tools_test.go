@@ -77,11 +77,11 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	// tangent.retention_status (CW-20260825-0072). Changing this number is a
 	// public-API change.
 	//
-	// The 26th legacy tool is tangent.app-board (CW-20260909-0043), the first
-	// one whose kind arrives through the plugin host rather than RegisterAll.
-	// It is counted here like any other: a plugin-contributed kind is not a
-	// lesser member of the surface, and a tool the build serves that this
-	// number did not expect is exactly what this assertion is for.
+	// The 26th legacy tool is tangent.app-board (CW-20260909-0043). Its kind
+	// arrived through the plugin host until CW-20260911-0036 moved it back to
+	// RegisterAll, where it had belonged all along; the tool was counted here
+	// like any other throughout, because which door a kind comes through was
+	// never what decides whether its tool is part of the surface.
 	if len(listed.Tools) != 47 {
 		t.Fatalf("production MCP topology = %d tools, want 47", len(listed.Tools))
 	}

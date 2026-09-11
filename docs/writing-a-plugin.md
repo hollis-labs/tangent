@@ -7,11 +7,20 @@ go run ./cmd/tangent-new-plugin -package almanac -app Almanac -hands-back-work
 That writes a plugin that loads. The rest of this document is why it is shaped
 the way it is, and which parts of it you still have to do yourself.
 
-The scaffold is **extracted, not designed**. Three plugins exist —
-`internal/plugins/appboard` contributes a domain-free kind, and
-`internal/plugins/torqueboard` and `internal/plugins/tesseract` fill it with two
-different applications' records — and everything in the template was measured
-off those three. Nothing in it anticipates a fourth.
+The scaffold is **extracted, not designed**. Two plugins exist —
+`internal/plugins/torque` and `internal/plugins/tesseract`, which fill the
+host's `tangent.app-board` kind with two different applications' records — and
+everything in the `application` preset was measured off those two. Nothing in
+it anticipates a third.
+
+The `kind` preset is the other half, and it has no shipped instance: nothing
+this build ships contributes a kind through the plugin host. That is the
+correction `CW-20260911-0036` made rather than a gap. `appboard` looked like
+that instance and was not one — it named `tangent.app-board`, which the host
+publishes, owns, versions with the repository and compiles into `ui_dist`, so
+the kind went back to `extensions.RegisterAll` and the plugin was deleted.
+Reach for the `kind` preset when your surface genuinely cannot fit a kind the
+host already ships; the host's own board shape is not yours to re-contribute.
 
 ## Two presets, kept apart
 

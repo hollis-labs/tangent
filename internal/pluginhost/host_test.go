@@ -3,6 +3,7 @@ package pluginhost
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -31,6 +32,47 @@ func newHost(t *testing.T) (*Host, *envelope.Service) {
 		t.Fatalf("New: %v", err)
 	}
 	return host, svc
+}
+
+// newContributingHost is newHost for the tests that need the ADR 0007 §4 door
+// to OPEN, and it exists because since CW-20260911-0036 nothing shipped goes
+// through it.
+//
+// `tangent.app-board` used to be the shipped input here, and it should never
+// have been: it is a domain-free board shape the host publishes, owns and
+// compiles into ui_dist, so it belongs to RegisterAll. Removing it left the
+// door's success path with no caller, and a success path nothing exercises is
+// how a refusal that should be conditional becomes unconditional without any
+// test objecting.
+//
+// So the kind is fixtured and the resolution is not. The envelope service is
+// empty — RegisterAll is deliberately not called — and the substituted door
+// installs app-board through extensions.RegisterAppBoard, which reads the real
+// manifest out of the real embedded package tree. What is stubbed is the
+// registration table's answer to "is this kind contributable", one line whose
+// own branches are held by contributedDoorFixture in
+// internal/envelope/extensions/register_all_test.go. Everything in
+// RegisterUIComponent stays real, and every refusal it makes fires before the
+// door is reached, so those tests keep using newHost and the genuine one.
+func newContributingHost(t *testing.T) (*Host, *envelope.Service, string) {
+	t.Helper()
+	svc, err := envelope.New(context.Background())
+	if err != nil {
+		t.Fatalf("envelope.New: %v", err)
+	}
+	host, err := New(context.Background(), slog.New(slog.DiscardHandler), svc)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	kind := extensions.AppBoardEnvelopeType
+	host.contributeKind = func(target *envelope.Service, name string) error {
+		if name != kind {
+			return fmt.Errorf("%w: %s ships no manifest in this host",
+				extensions.ErrNotContributable, name)
+		}
+		return extensions.RegisterAppBoard(target)
+	}
+	return host, svc, kind
 }
 
 // stubPlugin is a plugin whose Load does exactly what the test tells it to.
@@ -94,27 +136,31 @@ func TestEnvelopeComponentRequiresAManifest(t *testing.T) {
 }
 
 // TestEnvelopeComponentWithAManifestRegisters is the other half — the rule
-// admits the shipped case, so a refusal above means "no manifest" rather than
-// "nothing works".
+// admits the contributable case, so a refusal above means "no manifest" rather
+// than "nothing works".
+//
+// It runs on newContributingHost. Read the comment there before concluding the
+// test went soft: the door is fixtured because this host ships no contributable
+// kind, and the manifest it resolves is real.
 func TestEnvelopeComponentWithAManifestRegisters(t *testing.T) {
 	t.Parallel()
-	host, svc := newHost(t)
+	host, svc, kind := newContributingHost(t)
 
 	if err := host.RegisterUIComponent(plugin.UIComponent{
-		ID:   extensions.AppBoardEnvelopeType,
+		ID:   kind,
 		Type: plugin.UIComponentTypeEnvelope,
 		Name: "AppBoardView",
 	}); err != nil {
 		t.Fatalf("RegisterUIComponent: %v", err)
 	}
-	spec, found := svc.Lookup(extensions.AppBoardEnvelopeType)
+	spec, found := svc.Lookup(kind)
 	if !found {
 		t.Fatal("the kind did not reach the registry")
 	}
-	if spec.Name != extensions.AppBoardEnvelopeType {
+	if spec.Name != kind {
 		t.Errorf("registered name = %q", spec.Name)
 	}
-	if got := host.ContributedKinds(); len(got) != 1 || got[0] != extensions.AppBoardEnvelopeType {
+	if got := host.ContributedKinds(); len(got) != 1 || got[0] != kind {
 		t.Errorf("ContributedKinds = %v", got)
 	}
 }
@@ -268,13 +314,13 @@ func TestLoadFailureLeavesNoTrace(t *testing.T) {
 // here so the doc comment saying so cannot quietly stop being true.
 func TestPartialRegistrationIsNotRolledBack(t *testing.T) {
 	t.Parallel()
-	host, svc := newHost(t)
+	host, svc, kind := newContributingHost(t)
 	before := svc.Len()
 
 	err := host.Load(&stubPlugin{
 		id: "tangent.plugin.halfway",
 		components: []plugin.UIComponent{
-			{ID: extensions.AppBoardEnvelopeType, Type: plugin.UIComponentTypeEnvelope, Name: "AppBoardView"},
+			{ID: kind, Type: plugin.UIComponentTypeEnvelope, Name: "AppBoardView"},
 			{ID: "tangent.no-such-kind", Type: plugin.UIComponentTypeEnvelope, Name: "GhostView"},
 		},
 	})
@@ -288,7 +334,7 @@ func TestPartialRegistrationIsNotRolledBack(t *testing.T) {
 		t.Errorf("registry size = %d, want %d: the first kind registered and cannot be removed",
 			svc.Len(), before+1)
 	}
-	if _, found := svc.Lookup(extensions.AppBoardEnvelopeType); !found {
+	if _, found := svc.Lookup(kind); !found {
 		t.Error("the successfully registered kind was removed; go-envelopes has no removal, " +
 			"so this would mean the host is reporting a state it cannot produce")
 	}
@@ -326,9 +372,9 @@ func TestMissingDependencyIsRefusedAtLoad(t *testing.T) {
 // one fails on its own name rather than on go-envelopes' duplicate check.
 func TestOneKindHasOneContributor(t *testing.T) {
 	t.Parallel()
-	host, _ := newHost(t)
+	host, _, kind := newContributingHost(t)
 	component := plugin.UIComponent{
-		ID: extensions.AppBoardEnvelopeType, Type: plugin.UIComponentTypeEnvelope, Name: "AppBoardView",
+		ID: kind, Type: plugin.UIComponentTypeEnvelope, Name: "AppBoardView",
 	}
 	if err := host.Load(&stubPlugin{id: "tangent.plugin.first", component: &component}); err != nil {
 		t.Fatalf("first Load: %v", err)

@@ -126,12 +126,13 @@ func TestReadOnlyToolCallAnswersOnBothTransports(t *testing.T) {
 			direct.CapabilitySummary.ManagedDefinitions, legacy.CapabilitySummary.ManagedDefinitions)
 	}
 	// Plugin legibility, proved against the shipped binary (CW-20260910-0036).
-	// A tool list cannot answer this: the plugin that contributes
-	// tangent.app-board registers no tool at all, so "which plugins loaded" was
-	// not inferable from the surface before this rode on the health report.
+	// A tool list cannot answer this. A plugin may register no tool at all — a
+	// kind-only plugin registers none by construction — and a plugin that
+	// REFUSED to load registers none either, which is the case an operator most
+	// needs told apart from a healthy one.
 	if direct.Plugins.Loaded == 0 {
 		t.Errorf("%s reports no loaded plugins, but this build ships them; "+
-			"the inventory is what makes a kind-only plugin visible", smoke.ReadOnlyProbeTool)
+			"the inventory is what makes a plugin visible when its tools cannot", smoke.ReadOnlyProbeTool)
 	}
 	if direct.Plugins.Refused != 0 {
 		t.Errorf("%s reports %d refused plugin(s): %+v",

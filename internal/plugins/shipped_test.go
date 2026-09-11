@@ -18,6 +18,14 @@ import (
 // them, so without this a kind could be marked contributedByPlugin and have no
 // plugin that contributes it — registered nowhere, absent from the running
 // registry, and still counted by every drift gate that reads the table.
+//
+// Both sides are empty today: since CW-20260911-0036 this build ships no
+// plugin-contributed kind, because the one it had was never one. The first
+// assertion is therefore vacuous and the second is not — every kind in
+// RegisteredTypes has to be in the registry after both doors have run, which is
+// now the whole registry through RegisterAll. The comparison stays because it
+// is written against the table: the day a genuinely foreign kind is marked,
+// this is what fails if no plugin contributes it.
 func TestShippedPluginsContributeExactlyTheRegisteredKinds(t *testing.T) {
 	t.Parallel()
 	svc, err := envelope.New(context.Background())

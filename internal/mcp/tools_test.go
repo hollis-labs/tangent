@@ -131,10 +131,12 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 		t.Fatalf("expected 31 tools, got %d (%v)", len(res.Tools), names)
 	}
 
-	// tangent.app-board is the tool for the first plugin-contributed kind
-	// (ADR 0007 §4). It is registered unconditionally like every other room
-	// workflow: the plugin door decides whether the KIND is served, not whether
-	// the tool exists.
+	// tangent.app-board is registered unconditionally like every other room
+	// workflow. It spent a while looking like the exception — its kind went
+	// through the ADR 0007 §4 plugin door until CW-20260911-0036 established
+	// that it never should have — and the tool was never conditional on that
+	// either way: the door decides whether a KIND is served, not whether a tool
+	// exists.
 	want := map[string]bool{
 		"tangent.list_workflows":           false,
 		"tangent.telemetry_query":          false,

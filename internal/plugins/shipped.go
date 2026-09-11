@@ -18,9 +18,8 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
-	"github.com/hollis-labs/tangent/internal/plugins/appboard"
 	"github.com/hollis-labs/tangent/internal/plugins/tesseract"
-	"github.com/hollis-labs/tangent/internal/plugins/torqueboard"
+	"github.com/hollis-labs/tangent/internal/plugins/torque"
 )
 
 // Shipped returns the compiled-in plugins in load order.
@@ -50,12 +49,12 @@ import (
 // compiled-in one cannot.
 func Shipped() []plugin.Plugin {
 	return []plugin.Plugin{
-		// Order is load order, and it is a dependency order: both application
-		// plugins declare appboard as a dependency because they supply content
-		// to the kind appboard contributes, and the host refuses a plugin whose
-		// stated dependency is not already loaded.
-		appboard.New(),
-		torqueboard.New(),
+		// Order is load order. Neither of these declares a dependency: the kind
+		// they both supply content to is `tangent.app-board`, which RegisterAll
+		// installs before any plugin loads (CW-20260911-0036). A plugin depends
+		// on another plugin or on nothing; it does not declare a dependency on
+		// the host.
+		torque.New(),
 		tesseract.New(),
 	}
 }

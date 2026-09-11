@@ -3,11 +3,19 @@
 //
 // # It is extracted, not designed
 //
-// Three plugins exist and the template is what they have in common:
-// internal/plugins/appboard contributes a domain-free kind, and
-// internal/plugins/torqueboard and internal/plugins/tesseract fill it with two
-// different applications' records. Everything here was measured off those
-// three. Nothing here anticipates a fourth.
+// Two plugins exist and the template is what they have in common:
+// internal/plugins/torque and internal/plugins/tesseract fill the host's
+// tangent.app-board kind with two different applications' records. Everything
+// in PresetApplication was measured off those two. Nothing here anticipates a
+// third.
+//
+// PresetKind has no shipped instance, and that is a correction rather than a
+// gap (CW-20260911-0036). internal/plugins/appboard looked like one until
+// somebody read it: it named tangent.app-board, a kind the host publishes,
+// owns, versions with the repository and compiles into ui_dist. The kind went
+// back to extensions.RegisterAll and the plugin was deleted. The preset stays
+// because the ADR 0007 §4 door stays — a kind this host does not own has
+// somewhere to arrive from.
 //
 // The two presets are that split, and keeping them apart is the point rather
 // than a packaging convenience:
@@ -85,7 +93,7 @@ type Options struct {
 	Preset Preset
 
 	// Package is the Go package name and the directory name, lowercase and
-	// alphanumeric: `torqueboard`, `tesseract`.
+	// alphanumeric: `torque`, `tesseract`.
 	Package string
 	// App is the application's human name, used in prose and in the board's
 	// source label: `Torque`, `Tesseract`.

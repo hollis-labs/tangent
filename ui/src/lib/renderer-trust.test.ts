@@ -24,11 +24,14 @@ import {
  * classed as a portfolio package rather than as host core), and one
  * `sandboxed-code` (design-iteration renders agent-authored HTML).
  *
- * `tangent.app-board` is core-trusted like the rest even though a plugin
- * contributes it. Being plugin-contributed buys a kind nothing: core-trusted
- * stays unreachable for a publisher that is not `tangent` or
- * `hollis-labs/go-envelopes`, and the renderer ships compiled into this bundle
- * like every other (ADR 0007 §4).
+ * `tangent.app-board` is core-trusted like the rest. It used to be listed here
+ * as the plugin-contributed exception, which it was not — the host publishes,
+ * owns and compiles it (CW-20260911-0036). The rule it was cited for still
+ * stands and is what would matter if a kind were genuinely contributed: being
+ * plugin-contributed buys a kind nothing, because core-trusted stays
+ * unreachable for a publisher that is not `tangent` or
+ * `hollis-labs/go-envelopes`, and every renderer ships compiled into this
+ * bundle (ADR 0007 §4).
  */
 const SHIPPED_TRUST: Record<string, string> = {
   "tangent.app-board": "core-trusted",

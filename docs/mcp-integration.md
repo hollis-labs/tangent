@@ -413,15 +413,19 @@ never retrieval authority.
 ## The Torque board
 
 The first application plugin (`CW-20260910-0031`), and the pilot for the ADR
-0007 §6 app-plugin pattern. It contributes two tools:
+0007 §6 app-plugin pattern. The plugin is named for the application rather than
+for this surface — it carries Torque, and a board is the first thing it carries
+— so its tools are named verb-first under that namespace, `torque_<verb>_<surface>`,
+and a second surface slots in beside them without renaming anything. It
+contributes two tools:
 
-- `tangent.torque_board` takes Torque list filters — statuses, project, sprint,
+- `tangent.torque_open_board` takes Torque list filters — statuses, project, sprint,
   epic, kind, executor, tags, search, limit — queries Torque, shapes the tasks
   into a `tangent.app-board` envelope, opens a room, and returns the room URL
   and a board handle. **The agent passes filters and nothing else.** It shapes
   no payload; the mapping from a Torque status to a board column is a `for`
   loop in the plugin.
-- `tangent.torque_board_sync` syncs an open board both ways in one call:
+- `tangent.torque_sync_board` syncs an open board both ways in one call:
   applies the status changes the participant staged, re-queries Torque with the
   board's own originating filters, and replaces the board with fresh cards.
 

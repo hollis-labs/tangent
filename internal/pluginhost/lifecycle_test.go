@@ -11,8 +11,6 @@ import (
 
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
-
-	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 )
 
 // These tests hold CW-20260910-0036: the lifecycle contract, the failure
@@ -75,8 +73,7 @@ func (p *lifecyclePlugin) Status() plugin.PluginStatus { return p.status }
 // state that is not the one in force — which is what the first host's
 // load-failure cleanup path did.
 func TestUnloadRemovesNothingThePluginRegistered(t *testing.T) {
-	host, svc := newHost(t)
-	kind := extensions.PluginContributedTypes()[0]
+	host, svc, kind := newContributingHost(t)
 
 	p := &lifecyclePlugin{id: "tangent.plugin.lifecycle"}
 	if err := host.Load(p); err != nil {

@@ -247,8 +247,9 @@ func RegisterDashboardOnDispatcher(dispatcher *envelope.Dispatcher, handler *Tri
 }
 
 // RegisterAppBoardOnDispatcher wires the same room-bridging handler for
-// tangent.app-board envelopes. The kind is contributed by a plugin (ADR 0007
-// §4); how it is dispatched once registered is unchanged by that.
+// tangent.app-board envelopes. The kind is host plumbing like every other one
+// in this file; two application plugins supply its content, and neither of them
+// is in the dispatch path.
 func RegisterAppBoardOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
 	return dispatcher.Register(appBoardEnvelopeType, envelope.HandlerFunc(handler.Handle))
 }

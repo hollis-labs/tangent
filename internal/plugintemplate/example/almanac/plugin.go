@@ -142,10 +142,15 @@ func (p *Plugin) Description() string {
 		"button pushes staged changes back and pulls fresh cards down without an agent turn."
 }
 
-// Dependencies names the plugin that contributes the kind this one fills.
-// Declaring it means a build that ships this plugin without that one fails at
-// boot, where it is one line to read, rather than at the first tool call.
-func (p *Plugin) Dependencies() []string { return []string{"tangent.plugin.appboard"} }
+// Dependencies returns none. The kind this plugin fills is host plumbing,
+// installed by extensions.RegisterAll before any plugin loads, and a plugin
+// does not declare a dependency on the host.
+//
+// Name a plugin here only when this one genuinely needs ANOTHER PLUGIN loaded
+// first. The host refuses a plugin whose stated dependency is not already
+// loaded, which turns that into a boot failure instead of a failure at the
+// first tool call.
+func (p *Plugin) Dependencies() []string { return nil }
 
 // Load registers the two tools and the one route.
 //

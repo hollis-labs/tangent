@@ -1,4 +1,4 @@
-package torqueboard
+package torque
 
 import (
 	"bytes"
@@ -52,7 +52,7 @@ const requestTimeout = 10 * time.Second
 // unusably. It is distinguishable so a tool result can say "Torque is down"
 // rather than "something failed", which is the difference between an operator
 // restarting a service and an operator reading Tangent's logs.
-var ErrTorqueUnavailable = errors.New("torqueboard: torque is unavailable")
+var ErrTorqueUnavailable = errors.New("torque: torque is unavailable")
 
 // Task is the subset of a Torque task this board renders. It is deliberately
 // not every column Torque returns: a field nothing displays is a field that
@@ -215,7 +215,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	if body != nil {
 		encoded, err := json.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("torqueboard: encode request: %w", err)
+			return fmt.Errorf("torque: encode request: %w", err)
 		}
 		payload = bytes.NewReader(encoded)
 	}
@@ -232,7 +232,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	// package built a client the way production does.
 	request, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, payload)
 	if err != nil {
-		return fmt.Errorf("torqueboard: build request: %w", err)
+		return fmt.Errorf("torque: build request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	if body != nil {

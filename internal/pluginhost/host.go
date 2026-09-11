@@ -173,6 +173,18 @@ type Host struct {
 	// toolCaller is the host's own MCP tool surface, which is how a plugin
 	// drives Tangent. Nil until the composition root attaches it; see tools.go.
 	toolCaller ToolCaller
+	// contributeKind is the ADR 0007 §4 door: it resolves a kind's manifest and
+	// installs it, or refuses. New sets it to extensions.RegisterContributedKind
+	// and production never changes it.
+	//
+	// It is a field for the same reason budget is, and for one more. Since
+	// CW-20260911-0036 this host ships NO plugin-contributed kind —
+	// `tangent.app-board` was never one, and RegisterAll owns it now — so the
+	// door's success path has no shipped input to test it with. A test supplies
+	// a fixture kind through this field and the path stays held. The refusals
+	// in RegisterUIComponent all fire before the door is reached, so they are
+	// tested against the real one.
+	contributeKind func(*envelope.Service, string) error
 }
 
 // New builds a Host over the envelope service that plugin-contributed kinds
@@ -199,6 +211,8 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 		routes:  map[string]HTTPRoute{},
 		release: make(chan struct{}),
 		budget:  dispatchBudget,
+
+		contributeKind: extensions.RegisterContributedKind,
 	}, nil
 }
 
@@ -336,7 +350,7 @@ func (h *Host) RegisterUIComponent(component plugin.UIComponent) error {
 	h.mu.Unlock()
 
 	// The manifest requirement, and the only place it is enforced.
-	if err := extensions.RegisterContributedKind(h.envSvc, kind); err != nil {
+	if err := h.contributeKind(h.envSvc, kind); err != nil {
 		if errors.Is(err, extensions.ErrNotContributable) {
 			return fmt.Errorf(
 				"%w: %s (a kind is contributable only when this host ships its manifest under "+

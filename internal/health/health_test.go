@@ -148,7 +148,7 @@ func healthyReporter(t *testing.T) *Reporter {
 			return PluginInventory{
 				Loaded:           1,
 				Plugins:          []PluginRecord{{ID: "tangent.plugin.example", Loaded: true, Enabled: true}},
-				ContributedKinds: []string{"tangent.app-board"},
+				ContributedKinds: []string{"tangent.example-kind"},
 				Tools:            []string{},
 				Routes:           []string{},
 			}

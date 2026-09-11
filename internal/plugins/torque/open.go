@@ -1,4 +1,4 @@
-package torqueboard
+package torque
 
 import (
 	"context"
@@ -262,10 +262,10 @@ func createRoom(
 		URL    string `json:"url"`
 	}
 	if err := result.Unmarshal(&created); err != nil {
-		return "", "", fmt.Errorf("torqueboard: create room: %w", err)
+		return "", "", fmt.Errorf("torque: create room: %w", err)
 	}
 	if created.RoomID == "" {
-		return "", "", fmt.Errorf("torqueboard: tangent.session_create returned no room id")
+		return "", "", fmt.Errorf("torque: tangent.session_create returned no room id")
 	}
 	return created.RoomID, created.URL, nil
 }
@@ -292,7 +292,7 @@ func advance(
 		return err
 	}
 	if result.IsError {
-		return fmt.Errorf("torqueboard: present board: %s", string(result.Content))
+		return fmt.Errorf("torque: present board: %s", string(result.Content))
 	}
 	return nil
 }

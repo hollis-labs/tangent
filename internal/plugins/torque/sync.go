@@ -1,4 +1,4 @@
-package torqueboard
+package torque
 
 import (
 	"context"
@@ -105,7 +105,7 @@ type SyncResult struct {
 // Sync applies staged changes and replaces the board with fresh cards.
 func (p *Plugin) Sync(ctx context.Context, input SyncInput) (SyncResult, error) {
 	if input.RoomID == "" {
-		return SyncResult{}, fmt.Errorf("torqueboard: sync needs a room_id")
+		return SyncResult{}, fmt.Errorf("torque: sync needs a room_id")
 	}
 	tools, err := p.tools()
 	if err != nil {
@@ -219,13 +219,13 @@ func readBoard(
 	}
 	var snapshot surfaceSnapshot
 	if decodeErr := result.Unmarshal(&snapshot); decodeErr != nil {
-		return boardState{}, fmt.Errorf("torqueboard: read surface %s: %w", roomID, decodeErr)
+		return boardState{}, fmt.Errorf("torque: read surface %s: %w", roomID, decodeErr)
 	}
 
 	pending := snapshot.pendingBoard()
 	if pending == nil {
 		return boardState{}, fmt.Errorf(
-			"torqueboard: room %s has no open Torque board to sync", roomID)
+			"torque: room %s has no open Torque board to sync", roomID)
 	}
 
 	envelope, err := pending.envelope()
@@ -235,7 +235,7 @@ func readBoard(
 	filters, ok := decodeFilters(envelope.Meta)
 	if !ok {
 		return boardState{}, fmt.Errorf(
-			"torqueboard: the board in room %s was not opened by this plugin "+
+			"torque: the board in room %s was not opened by this plugin "+
 				"(its envelope carries no %s), so there are no filters to re-query with",
 			roomID, metaFiltersKey)
 	}
@@ -301,7 +301,7 @@ func withdraw(
 		// sync was running, and withdrawing the new one would destroy work this
 		// sync never read.
 		return fmt.Errorf(
-			"torqueboard: the board in room %s was replaced while syncing; press Sync again", roomID)
+			"torque: the board in room %s was replaced while syncing; press Sync again", roomID)
 	}
 	return cancelInteraction(ctx, tools, fresh.interactionID, fresh.revision)
 }
@@ -340,7 +340,7 @@ func cancelOnce(ctx context.Context, tools pluginhost.ToolCaller, board boardSta
 		return err
 	}
 	if result.IsError {
-		return fmt.Errorf("torqueboard: withdraw the open board: %s", string(result.Content))
+		return fmt.Errorf("torque: withdraw the open board: %s", string(result.Content))
 	}
 	return nil
 }
@@ -493,11 +493,11 @@ func (r *interactionRecord) envelope() (boardEnvelopeRecord, error) {
 	}
 	if len(data) == 0 {
 		return envelope, fmt.Errorf(
-			"torqueboard: interaction %s retains no board content to read", r.ID)
+			"torque: interaction %s retains no board content to read", r.ID)
 	}
 	if err := json.Unmarshal(data, &envelope.Data); err != nil {
 		return envelope, fmt.Errorf(
-			"torqueboard: decode the board on interaction %s: %w", r.ID, err)
+			"torque: decode the board on interaction %s: %w", r.ID, err)
 	}
 	return envelope, nil
 }
