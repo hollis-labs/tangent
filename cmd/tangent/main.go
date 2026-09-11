@@ -66,7 +66,51 @@ const (
 	envOpenTelemetry = "TANGENT_OTEL"
 )
 
-func main() {
+// main is a thin wrapper so that every exit path runs the deferred cleanup
+// below it. See run.
+func main() { os.Exit(run()) }
+
+// run is the real entry point, and it returns an exit code rather than calling
+// os.Exit, because os.Exit DOES NOT RUN DEFERRED FUNCTIONS.
+//
+// Until this change it was `main`, and it exited directly from ten places that
+// sat after a `defer` had been established — six inside the maintenance
+// one-shots, which hold the database ownership claim and an open handle, and
+// four on the serve path, which holds all of that plus the plugin host. Every
+// one of them skipped the cleanup it had just installed.
+//
+// # What that costs today, stated honestly, because it is less than it looks
+//
+// Every resource the deferred cleanup releases is ALSO released by process
+// exit. The ownership claim is an advisory flock on a file descriptor and
+// `AcquireOwnership` says so itself — "exiting is equally effective: the kernel
+// drops the lock with the file descriptor". The database handle, the in-process
+// MCP session and a compiled-in plugin's state all die with the process too.
+//
+// So this is not a leak that outlives the process, and a reader who assumes it
+// is will go looking for a symptom that was never there. It is a cleanup path
+// that does not run, which matters for what runs *in* it.
+//
+// # Why it is worth fixing anyway
+//
+// `closer.Close()` calls `pluginhost.UnloadAll`, and CW-20260910-0034 puts
+// child processes behind it. A child is the first thing this host will own that
+// the kernel does NOT clean up by closing a descriptor. Wiring subprocess
+// termination into a path that provably does not run on the timeout branch is
+// how a second defect hides behind the first — so the path is fixed before
+// anything is built on it, not after.
+//
+// # The half a naive fix breaks
+//
+// "Replace os.Exit with a bare return" releases the cleanup and SILENTLY DROPS
+// THE EXIT CODE, so a failed shutdown starts reporting success to whatever
+// supervises this process. That turns a missing cleanup into a lie, which is
+// worse. Returning a code preserves both.
+//
+// The os.Exit calls ABOVE the first defer were correct and stayed that way in
+// spirit: they are now plain returns, and there is nothing acquired yet for
+// them to skip.
+func run() int {
 	flagSet := flag.NewFlagSet("tangent", flag.ExitOnError)
 	// --version prints the release this binary is and exits. It is the same
 	// string the MCP server advertises as serverInfo.version and definitions
@@ -89,23 +133,23 @@ func main() {
 	maintenance := registerMaintenanceFlags(flagSet)
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		// flag.ExitOnError already handled this; keep the linter happy.
-		os.Exit(2)
+		return 2
 	}
 	if *showVersion {
 		fmt.Println("tangent " + envelope.HostVersion)
-		return
+		return 0
 	}
 	maintenanceModes := maintenance.requested()
 	if maintenanceModes > 1 {
 		fmt.Fprintln(os.Stderr, "tangent: maintenance commands are one at a time")
-		os.Exit(2)
+		return 2
 	}
 	oneShots := exclusiveModes(*migrateOnly, *rollbackOne, *revokeSessions) + maintenanceModes
 	if oneShots > 1 {
 		fmt.Fprintln(os.Stderr,
 			"tangent: --migrate-only, --rollback-one, --revoke-participant-sessions, and the "+
 				"maintenance commands are mutually exclusive")
-		os.Exit(2)
+		return 2
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -125,7 +169,7 @@ func main() {
 		ownership, refusal := refuseIfServing(dbPath, *port, maintenance.needsExclusiveOwnership())
 		if refusal != nil {
 			fmt.Fprintf(os.Stderr, "tangent: %v\n", refusal)
-			os.Exit(1)
+			return 1
 		}
 		// Migrations deliberately do NOT run first. A restore, a check, and a
 		// repair are all things an operator reaches for when the schema is the
@@ -134,7 +178,7 @@ func main() {
 		sqlDB, openErr := tangentdb.Open(dbPath)
 		if openErr != nil {
 			fmt.Fprintf(os.Stderr, "tangent: open db: %v\n", openErr)
-			os.Exit(1)
+			return 1
 		}
 		closed := false
 		closeOnce := func() error {
@@ -153,7 +197,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "tangent: release database ownership: %v\n", releaseErr)
 			}
 		}
-		os.Exit(code)
+		return code
 	}
 
 	// --migrate-only, --rollback-one, and --revoke-participant-sessions are
@@ -165,7 +209,7 @@ func main() {
 		ownership, claimErr := tangentdb.AcquireOwnership(dbPath, tangentdb.RoleMaintenance, commandLabel())
 		if claimErr != nil {
 			fmt.Fprintf(os.Stderr, "tangent: %v\n", claimErr)
-			os.Exit(1)
+			return 1
 		}
 		defer func() {
 			if releaseErr := ownership.Release(); releaseErr != nil {
@@ -176,7 +220,7 @@ func main() {
 		sqlDB, openErr := tangentdb.Open(dbPath)
 		if openErr != nil {
 			fmt.Fprintf(os.Stderr, "tangent: open db: %v\n", openErr)
-			os.Exit(1)
+			return 1
 		}
 		defer func() {
 			if closeErr := tangentdb.Close(sqlDB); closeErr != nil {
@@ -187,10 +231,10 @@ func main() {
 		if *rollbackOne {
 			if rollbackErr := tangentdb.RollbackOne(sqlDB); rollbackErr != nil {
 				fmt.Fprintf(os.Stderr, "tangent: rollback db: %v\n", rollbackErr)
-				os.Exit(1)
+				return 1
 			}
 			logger.Info("rolled back latest tangent migration")
-			return
+			return 0
 		}
 		if *revokeSessions {
 			// Migrations run first: the table has to exist before it can be
@@ -198,28 +242,28 @@ func main() {
 			// should not have to run --migrate-only first.
 			if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
 				fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
-				os.Exit(1)
+				return 1
 			}
 			store, storeErr := participant.NewStore(sqlDB)
 			if storeErr != nil {
 				fmt.Fprintf(os.Stderr, "tangent: build participant session store: %v\n", storeErr)
-				os.Exit(1)
+				return 1
 			}
 			revoked, revokeErr := store.RevokeAll(context.Background(), "operator-revoked")
 			if revokeErr != nil {
 				fmt.Fprintf(os.Stderr, "tangent: revoke participant sessions: %v\n", revokeErr)
-				os.Exit(1)
+				return 1
 			}
 			logger.Info("revoked browser participant sessions", "count", revoked)
-			return
+			return 0
 		}
 		// *migrateOnly is the only mode left in this branch.
 		if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
 			fmt.Fprintf(os.Stderr, "tangent: migrate db: %v\n", migrateErr)
-			os.Exit(1)
+			return 1
 		}
 		logger.Info("applied tangent migrations")
-		return
+		return 0
 	}
 
 	// Every other mode has already returned or exited. What's left is
@@ -238,7 +282,7 @@ func main() {
 	})
 	if bootErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", bootErr)
-		os.Exit(1)
+		return 1
 	}
 	defer func() {
 		if closeErr := closer.Close(); closeErr != nil {
@@ -251,7 +295,7 @@ func main() {
 	ln, err := srv.Listen()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: listen: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	listenErr := make(chan error, 1)
 	go func() {
@@ -273,23 +317,24 @@ func main() {
 		// "address already in use" or a genuine bind failure.
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			fmt.Fprintf(os.Stderr, "tangent: listen: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		fmt.Fprintf(os.Stderr, "tangent: shutdown: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	// Drain the listener result so the goroutine exits cleanly.
 	if err := <-listenErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintf(os.Stderr, "tangent: post-shutdown: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	logger.Info("tangent stopped")
+	return 0
 }
 
 // exclusiveModes counts how many one-shot maintenance modes were requested.
