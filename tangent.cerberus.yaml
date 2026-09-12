@@ -1,0 +1,42 @@
+# App-owned Cerberus configuration for the development instance.
+# Register this repo file after it is on main. Registration changes discovery;
+# `cerberus resource deploy tangent-dev` separately rebuilds and activates it.
+# Dev uses port 7843 and a workspace database, separate from stable's port 7842.
+kind: cerberus-project/v1
+owner: tangent
+namespace: local
+project:
+  id: tangent
+  name: Tangent
+resources:
+  - id: tangent-dev
+    name: Tangent Dev
+    type: process
+    project: tangent
+    connector: local
+    config:
+      build_strategy:
+        kind: make_standard
+        env_prefix: [mise, --no-config, exec, node@22.12.0, --]
+        rules:
+          output: ./tangent
+      command:
+        - ./tangent
+      dir: /Users/chrispian/dev/hollis-labs/apps/tangent
+      env:
+        TANGENT_HTTP_PORT: "7843"
+        TANGENT_DB_PATH: /Users/chrispian/dev/hollis-labs/apps/tangent/.tangent/dev.db
+        TANGENT_MANAGED_RESOURCE: tangent-dev
+      health: http://127.0.0.1:7843/healthz
+      mode: dev_session
+      port: 7843
+      run_from: workspace
+      url: http://127.0.0.1:7843
+    tags:
+      - gui
+      - mcp
+      - go
+      - dev
+      - tangent
+      - v2
+registry_urn: msg://agent/agent-mux/prj_6zsvst6o25

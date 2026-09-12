@@ -143,7 +143,7 @@ it is two separate things that fail separately.
 
 **Cerberus owns the lifecycle.** The resource is `tangent-dev` (mode
 `dev_session`, run from the workspace, port 7842), defined in
-`~/.cerberus/projects/tangent.cerberus.yaml`:
+the repo-root `tangent.cerberus.yaml`:
 
 ```bash
 cerberus resource status tangent-dev    # what the supervisor believes

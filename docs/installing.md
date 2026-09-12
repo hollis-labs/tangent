@@ -121,7 +121,7 @@ are what the run taught:
    makes the installer wait for the lock itself).
 3. `make install-macos` from the tagged tree; confirm `/readyz`.
 4. Bring dev up on the dev port against the workspace database. The prepared
-   Cerberus file is `packaging/cerberus/tangent.cerberus.yaml`, but **do not run
+   Cerberus file is the repo-root `tangent.cerberus.yaml`, but **do not run
    any Cerberus lifecycle verb against `tangent-dev` until the Cerberus daemon
    has re-read that file**: its in-memory spec keeps the old port and it finds
    "the running process" by `lsof` on it, so `stop`, `reload`, `apply`, and

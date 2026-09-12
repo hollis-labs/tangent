@@ -1072,7 +1072,7 @@ into a silent one; separating them is what closes that.
 | `tangent.telemetry_query` (MCP) | What happened to this invocation, this kind, or this check? | The append-only `telemetry_events` table, plus the in-process metric snapshot. |
 
 **Liveness deliberately touches nothing.** The managed-runtime health probe in
-`~/.cerberus/projects/tangent.cerberus.yaml` points at `/healthz`, and that
+the repo-root `tangent.cerberus.yaml` points at `/healthz`, and that
 probe feeds a supervisor's restart decision. Pointing a supervisor at readiness
 turns one slow query into a restart loop, so `/healthz` keeps its path and its
 `{"status":"ok"}` body, and readiness is what an operator and
