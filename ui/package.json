@@ -12,9 +12,16 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "preview": "vite preview",
-    "test": "vitest --passWithNoTests"
+    "test": "vitest --passWithNoTests",
+    "theme:gen": "node scripts/gen-tangent-theme.mjs > src/styles/tangent-theme.css && biome format --write src/styles/tangent-theme.css",
+    "theme:verify": "node scripts/verify-derivation.mjs"
   },
   "dependencies": {
+    "@hollis-labs/design-app-runtime": "^0.1.0",
+    "@hollis-labs/design-bindings": "^0.1.0",
+    "@hollis-labs/design-components": "^0.1.0",
+    "@hollis-labs/design-tokens": "^0.1.0",
+    "@hollis-labs/kit-dashboard": "^0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.44.0",

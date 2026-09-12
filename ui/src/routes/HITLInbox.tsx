@@ -1,13 +1,5 @@
-import {
-  ArrowLeft,
-  BookOpenText,
-  Check,
-  Clock3,
-  Link2,
-  RefreshCw,
-  ShieldCheck,
-  X,
-} from "lucide-react";
+import { Button, Callout, EmptyState, LiveDot } from "@hollis-labs/design-components";
+import { ArrowLeft, BookOpenText, Check, Link2, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -353,37 +345,34 @@ export default function HITLInboxRoute() {
   }
 
   return (
-    <main className="min-h-[calc(100vh-57px)] bg-[#090a0c] text-[#d7dce2]">
-      <header className="border-b border-[#292c32] px-4 py-5 sm:px-6 lg:px-8">
+    <main className="min-h-[calc(100vh-57px)] bg-bg text-fg-secondary">
+      <header className="border-b border-border-subtle px-4 py-5 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[92rem] flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#f2b84b]">
+            <div className="mb-2 flex items-center gap-2 text-label font-semibold uppercase tracking-label text-primary">
               <ShieldCheck className="size-3.5" aria-hidden="true" />
               Operator-owned surface
             </div>
-            <h1 className="text-2xl font-semibold tracking-[-0.025em] text-[#f2f4f6]">
-              Human input
-            </h1>
-            <p className="mt-1 max-w-xl text-sm leading-6 text-[#8e959f]">
+            <h1 className="text-2xl font-semibold tracking-tight text-fg">Human input</h1>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-fg-muted">
               Oldest requests stay first. Looking never changes their order; decisions commit one
               item at a time.
             </p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-[#8e959f]" aria-live="polite">
-            <span
-              className={cn(
-                "size-1.5 rounded-full",
+          <div className="flex items-center gap-2 text-xs text-fg-muted" aria-live="polite">
+            <LiveDot
+              tone={
                 syncState.startsWith("Synced") || syncState.startsWith("Connected")
-                  ? "bg-[#4faf83]"
-                  : "bg-[#f2b84b]",
-              )}
-              aria-hidden="true"
+                  ? "success"
+                  : "warning"
+              }
+              pulsing={!syncState.startsWith("Synced")}
             />
             {syncState}
             <button
               type="button"
               onClick={() => void syncInbox()}
-              className="ml-1 rounded-sm p-2 text-[#b6bbc3] outline-none hover:bg-[#17191d] hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+              className="ml-1 rounded-sm p-2 text-fg-secondary outline-none hover:bg-surface hover:text-fg focus-visible:ring-2 focus-visible:ring-primary"
               aria-label="Resynchronize inbox"
             >
               <RefreshCw className="size-3.5" aria-hidden="true" />
@@ -392,29 +381,28 @@ export default function HITLInboxRoute() {
         </div>
       </header>
       {error ? (
-        <div
-          role="alert"
-          className="border-b border-[#5b3030] bg-[#1a1213] px-4 py-3 text-sm text-[#efb1ad] sm:px-6 lg:px-8"
-        >
-          <div className="mx-auto flex max-w-[92rem] items-center justify-between gap-4">
-            <span>{error}</span>
-            <button
-              type="button"
-              onClick={() => void syncInbox()}
-              className="shrink-0 border border-[#8a4643] px-3 py-1.5 text-xs font-semibold text-[#f5c3c0] outline-none hover:bg-[#261719] focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+        <div className="px-4 py-3 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-[92rem]">
+            <Callout
+              tone="danger"
+              actions={
+                <Button variant="outline" size="sm" onClick={() => void syncInbox()}>
+                  Retry
+                </Button>
+              }
             >
-              Retry
-            </button>
+              {error}
+            </Callout>
           </div>
         </div>
       ) : null}
 
       <div className="mx-auto max-w-[92rem] lg:grid lg:min-h-[calc(100vh-186px)] lg:grid-cols-[23rem_minmax(0,1fr)]">
         <section
-          className={cn("border-[#292c32] lg:border-r", itemID ? "hidden lg:block" : "block")}
+          className={cn("border-border-subtle lg:border-r", itemID ? "hidden lg:block" : "block")}
           aria-label="HITL queue"
         >
-          <div className="flex items-end justify-between border-b border-[#292c32] px-4 pt-4 sm:px-6">
+          <div className="flex items-end justify-between border-b border-border-subtle px-4 pt-4 sm:px-6">
             <nav className="flex gap-5" aria-label="Inbox views">
               <InboxTab
                 active={view === "pending"}
@@ -429,13 +417,13 @@ export default function HITLInboxRoute() {
                 onClick={() => setView("history")}
               />
             </nav>
-            <span className="pb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8e959f]">
+            <span className="pb-3 font-mono text-caption uppercase tracking-label text-fg-muted">
               {view === "pending" ? "FIFO" : "Newest"}
             </span>
           </div>
 
           <nav
-            className="flex items-center gap-1 border-b border-[#25282e] bg-[#0d0f12] px-4 py-2 sm:px-6"
+            className="flex items-center gap-1 border-b border-divider bg-bg-elevated px-4 py-2 sm:px-6"
             aria-label={`Filter ${view} requests by kind`}
           >
             {(["all", "approval", "attention"] as const).map((kind) => (
@@ -560,14 +548,14 @@ function InboxTab({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "border-b-2 pb-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-[#f2b84b]",
+        "border-b-2 pb-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary",
         active
-          ? "border-[#f2b84b] text-[#f2f4f6]"
-          : "border-transparent text-[#8e959f] hover:text-[#c5cad1]",
+          ? "border-primary text-fg"
+          : "border-transparent text-fg-muted hover:text-fg-secondary",
       )}
     >
       {label}{" "}
-      <span className="ml-1 font-mono text-[11px] text-[#8e959f]">
+      <span className="ml-1 font-mono text-label text-fg-muted">
         {String(count).padStart(2, "0")}
       </span>
     </button>
@@ -592,12 +580,12 @@ function KindFilterButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "min-h-8 border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.08em] outline-none focus-visible:ring-2 focus-visible:ring-[#f2b84b]",
+        "min-h-8 border px-2.5 py-1 font-mono text-caption uppercase tracking-label outline-none focus-visible:ring-2 focus-visible:ring-primary",
         active
           ? kind === "attention"
-            ? "border-[#79a7d3] bg-[#15202a] text-[#b8d2e9]"
-            : "border-[#5d626b] bg-[#1a1d22] text-[#eef0f2]"
-          : "border-transparent text-[#8e959f] hover:border-[#3a3e46] hover:text-[#c5cad1]",
+            ? "border-info bg-info-muted text-info"
+            : "border-fg-faint bg-surface-hover text-fg"
+          : "border-transparent text-fg-muted hover:border-border hover:text-fg-secondary",
       )}
     >
       {label} {String(count).padStart(2, "0")}
@@ -640,36 +628,36 @@ function QueueRow({
           }
         }}
         className={cn(
-          "group relative grid w-full grid-cols-[2.25rem_1fr] gap-3 border-b border-[#25282e] px-4 py-4 text-left outline-none transition-colors sm:px-6",
-          selected ? "bg-[#17191d]" : "bg-[#0d0f12] hover:bg-[#131519]",
-          "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#f2b84b]",
+          "group relative grid w-full grid-cols-[2.25rem_1fr] gap-3 border-b border-divider px-4 py-4 text-left outline-none transition-colors sm:px-6",
+          selected ? "bg-surface" : "bg-bg-elevated hover:bg-bg-elevated",
+          "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
         )}
       >
         <span
           className={cn(
-            "mt-0.5 border-l-2 pl-2 font-mono text-[10px] leading-5",
+            "mt-0.5 border-l-2 pl-2 font-mono text-caption leading-5",
             selected
-              ? "border-[#f2b84b] text-[#f2b84b]"
-              : "border-[#363a42] text-[#8e959f] group-hover:border-[#7f6739]",
+              ? "border-primary text-primary"
+              : "border-border text-fg-muted group-hover:border-primary/50",
           )}
         >
           {String(ordinal).padStart(2, "0")}
         </span>
         <span className="min-w-0">
           <span className="flex items-center justify-between gap-3">
-            <span className="truncate text-sm font-medium text-[#e7e9ec]">{request.title}</span>
-            <span className="shrink-0 font-mono text-[10px] text-[#8e959f]">
+            <span className="truncate text-sm font-medium text-fg">{request.title}</span>
+            <span className="shrink-0 font-mono text-caption text-fg-muted">
               {relativeAge(item.enqueued_at)}
             </span>
           </span>
-          <span className="mt-1 line-clamp-2 text-xs leading-5 text-[#8e959f]">
+          <span className="mt-1 line-clamp-2 text-xs leading-5 text-fg-muted">
             {request.summary}
           </span>
-          <span className="mt-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-[#8e959f]">
+          <span className="mt-2 flex items-center gap-2 text-caption uppercase tracking-label text-fg-muted">
             <span
               className={cn(
                 "size-1 rounded-full",
-                request.kind === "approval" ? "bg-[#f2b84b]" : "bg-[#79a7d3]",
+                request.kind === "approval" ? "bg-primary" : "bg-info",
               )}
               aria-hidden="true"
             />
@@ -723,21 +711,21 @@ function ItemDetail(props: ItemDetailProps) {
         <button
           type="button"
           onClick={props.onBack}
-          className="mb-5 inline-flex items-center gap-2 text-xs text-[#8e959f] outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b] lg:hidden"
+          className="mb-5 inline-flex items-center gap-2 text-xs text-fg-muted outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-primary lg:hidden"
         >
           <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to queue
         </button>
 
         <div className="mx-auto max-w-4xl">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8e959f]">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-caption uppercase tracking-label text-fg-muted">
             <span
               className={cn(
                 "border-l-2 pl-2",
                 terminal
-                  ? "border-[#4faf83]"
+                  ? "border-success"
                   : request.kind === "attention"
-                    ? "border-[#79a7d3]"
-                    : "border-[#f2b84b]",
+                    ? "border-info"
+                    : "border-primary",
               )}
             >
               {item.state.replace("_", " ")}
@@ -749,7 +737,7 @@ function ItemDetail(props: ItemDetailProps) {
           <h2
             ref={props.headingRef}
             tabIndex={-1}
-            className="mt-4 scroll-mt-6 text-2xl font-semibold leading-tight tracking-[-0.03em] text-[#f2f4f6] outline-none sm:text-3xl"
+            className="mt-4 scroll-mt-6 text-2xl font-semibold leading-tight tracking-tight text-fg outline-none sm:text-3xl"
           >
             {request.title}
           </h2>
@@ -758,16 +746,15 @@ function ItemDetail(props: ItemDetailProps) {
             content={request.summary}
             tone="evidence"
             linkPolicy="withhold"
-            className="mt-3 max-w-3xl leading-6 text-[#a5abb4] sm:text-base"
+            className="mt-3 max-w-3xl leading-6 text-fg-muted sm:text-base"
           />
 
           {props.conflict ? (
             <div
               role="alert"
-              className="mt-6 border-l-2 border-[#d96b67] bg-[#1a1213] px-4 py-3 text-sm leading-6 text-[#efb1ad]"
+              className="mt-6 border-l-2 border-danger bg-danger-muted px-4 py-3 text-sm leading-6 text-danger"
             >
-              <strong className="font-semibold text-[#f5c3c0]">State changed.</strong>{" "}
-              {props.conflict}
+              <strong className="font-semibold text-danger">State changed.</strong> {props.conflict}
             </div>
           ) : null}
 
@@ -783,18 +770,18 @@ function ItemDetail(props: ItemDetailProps) {
                 <section aria-labelledby={`impact-${item.item_id}`}>
                   <h3
                     id={`impact-${item.item_id}`}
-                    className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]"
+                    className="text-label font-semibold uppercase tracking-label text-fg-muted"
                   >
                     Decision impact
                   </h3>
-                  <div className="mt-3 divide-y divide-[#292c32] border-y border-[#292c32]">
+                  <div className="mt-3 divide-y divide-border-subtle border-y border-border-subtle">
                     <ImpactRow label="Approve" value={request.impact.approve} tone="approve" />
                     <ImpactRow label="Deny" value={request.impact.deny} tone="deny" />
                   </div>
                 </section>
               ) : null}
             </div>
-            <aside className="space-y-7 border-t border-[#292c32] pt-7 xl:border-l xl:border-t-0 xl:pl-7 xl:pt-0">
+            <aside className="space-y-7 border-t border-border-subtle pt-7 xl:border-l xl:border-t-0 xl:pl-7 xl:pt-0">
               {request.evidence && request.evidence.length > 0 ? (
                 <EvidenceSummary
                   count={request.evidence.length}
@@ -810,15 +797,15 @@ function ItemDetail(props: ItemDetailProps) {
       </div>
 
       {!terminal ? (
-        <div className="sticky bottom-0 border-t border-[#30343b] bg-[#0d0f12]/95 px-4 py-4 backdrop-blur sm:px-7 lg:px-10">
+        <div className="sticky bottom-0 border-t border-border-subtle bg-bg-elevated/95 px-4 py-4 backdrop-blur sm:px-7 lg:px-10">
           <div className="mx-auto max-w-4xl">
             {request.kind === "approval" ? (
               <>
                 {props.noteIntent === "approved" || props.noteIntent === "denied" ? (
-                  <div className="mb-4 border-l-2 border-[#f2b84b] pl-4">
+                  <div className="mb-4 border-l-2 border-primary pl-4">
                     <label
                       htmlFor="hitl-decision-note"
-                      className="block text-xs font-medium text-[#d7dce2]"
+                      className="block text-xs font-medium text-fg-secondary"
                     >
                       {props.noteIntent === "approved" ? "Approval note" : "Denial note"}
                     </label>
@@ -830,11 +817,11 @@ function ItemDetail(props: ItemDetailProps) {
                       onChange={(event) => props.onNoteChange(event.target.value)}
                       aria-invalid={Boolean(props.noteError)}
                       aria-describedby={props.noteError ? "hitl-note-error" : undefined}
-                      className="mt-2 w-full resize-y border border-[#3a3e46] bg-[#111317] px-3 py-2 text-sm leading-6 text-[#eef0f2] outline-none placeholder:text-[#8e959f] focus:border-[#f2b84b] focus:ring-1 focus:ring-[#f2b84b]"
+                      className="mt-2 w-full resize-y border border-border bg-bg-elevated px-3 py-2 text-sm leading-6 text-fg outline-none placeholder:text-fg-muted focus:border-primary focus:ring-1 focus:ring-primary"
                       placeholder="Record the reasoning the caller should receive…"
                     />
                     {props.noteError ? (
-                      <p id="hitl-note-error" className="mt-1 text-xs text-[#ef9a95]">
+                      <p id="hitl-note-error" className="mt-1 text-xs text-danger">
                         {props.noteError}
                       </p>
                     ) : null}
@@ -858,7 +845,7 @@ function ItemDetail(props: ItemDetailProps) {
                   </div>
                 ) : null}
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                  <p className="text-xs text-[#8e959f]">
+                  <p className="text-xs text-fg-muted">
                     {props.presenting || item.state === "staged"
                       ? "Preparing an exact decision revision…"
                       : "One action commits this item immediately."}
@@ -936,7 +923,7 @@ function EvidenceSummary({
     <section aria-labelledby="hitl-evidence-summary">
       <h3
         id="hitl-evidence-summary"
-        className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]"
+        className="text-label font-semibold uppercase tracking-label text-fg-muted"
       >
         Evidence
       </h3>
@@ -944,16 +931,16 @@ function EvidenceSummary({
         ref={buttonRef}
         type="button"
         onClick={onOpen}
-        className="mt-3 flex w-full items-center justify-between gap-4 border-l-2 border-[#f2b84b] bg-[#131519] px-3 py-3 text-left outline-none hover:bg-[#191c21] focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+        className="mt-3 flex w-full items-center justify-between gap-4 border-l-2 border-primary bg-bg-elevated px-3 py-3 text-left outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-primary"
       >
-        <span className="flex items-center gap-2 text-xs font-semibold text-[#d7dce2]">
-          <BookOpenText className="size-3.5 text-[#f2b84b]" aria-hidden="true" /> Open case file
+        <span className="flex items-center gap-2 text-xs font-semibold text-fg-secondary">
+          <BookOpenText className="size-3.5 text-primary" aria-hidden="true" /> Open case file
         </span>
-        <span className="font-mono text-[10px] text-[#8e959f]">
+        <span className="font-mono text-caption text-fg-muted">
           {String(Math.min(count, 24)).padStart(2, "0")} records
         </span>
       </button>
-      <p className="mt-2 text-[11px] leading-5 text-[#8e959f]">
+      <p className="mt-2 text-label leading-5 text-fg-muted">
         Opens in context. Queue state and order stay unchanged.
       </p>
     </section>
@@ -977,11 +964,11 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "min-h-10 border px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#f2b84b] disabled:cursor-not-allowed disabled:opacity-45",
-        variant === "approve" && "border-[#4faf83] bg-[#4faf83] text-[#07110d] hover:bg-[#69bf96]",
-        variant === "deny" && "border-[#9d504d] bg-transparent text-[#ef9a95] hover:bg-[#261719]",
+        "min-h-10 border px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-45",
+        variant === "approve" && "border-success bg-success text-success-muted hover:bg-success",
+        variant === "deny" && "border-danger/70 bg-transparent text-danger hover:bg-danger-muted",
         variant === "quiet" &&
-          "border-[#3a3e46] bg-[#17191d] text-[#c5cad1] hover:border-[#606670] hover:text-white",
+          "border-border bg-surface text-fg-secondary hover:border-fg-faint hover:text-fg",
       )}
     >
       {label}
@@ -1000,16 +987,14 @@ function DetailSection({
 }) {
   return (
     <section>
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]">
-        {eyebrow}
-      </h3>
+      <h3 className="text-label font-semibold uppercase tracking-label text-fg-muted">{eyebrow}</h3>
       <Markdown
         content={text}
         tone="evidence"
         linkPolicy="withhold"
         className={cn(
           "mt-3",
-          accent ? "border-l-2 border-[#f2b84b] pl-4 text-[#d9dde2]" : "text-[#c5cad1]",
+          accent ? "border-l-2 border-primary pl-4 text-fg-secondary" : "text-fg-secondary",
         )}
       />
     </section>
@@ -1027,7 +1012,7 @@ function ImpactRow({
 }) {
   return (
     <div className="grid grid-cols-[5rem_1fr] gap-3 py-3 text-sm leading-6">
-      <span className={tone === "approve" ? "text-[#75c49d]" : "text-[#ef9a95]"}>{label}</span>
+      <span className={tone === "approve" ? "text-success" : "text-danger"}>{label}</span>
       {/*
         A grid cell rather than a <span>: the impact prose is the caller's own
         words, up to 2000 characters of them, and <Markdown> renders block
@@ -1038,7 +1023,7 @@ function ImpactRow({
           content={value}
           tone="evidence"
           linkPolicy="withhold"
-          className="leading-6 text-[#a5abb4]"
+          className="leading-6 text-fg-muted"
         />
       </div>
     </div>
@@ -1051,7 +1036,7 @@ function SourceDetails({ item }: { item: HITLOperatorItem }) {
     <section aria-labelledby={`source-${item.item_id}`}>
       <h3
         id={`source-${item.item_id}`}
-        className="text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]"
+        className="text-label font-semibold uppercase tracking-label text-fg-muted"
       >
         Source
       </h3>
@@ -1093,7 +1078,7 @@ function CorrelationDetails({
   if (entries.length === 0) return null;
   return (
     <section>
-      <h3 className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.17em] text-[#8e959f]">
+      <h3 className="flex items-center gap-2 text-label font-semibold uppercase tracking-label text-fg-muted">
         <Link2 className="size-3" aria-hidden="true" /> Correlations
       </h3>
       <dl className="mt-3 space-y-3 text-xs">
@@ -1113,10 +1098,10 @@ function CorrelationDetails({
 function MetadataRow({ term, value, detail }: { term: string; value: string; detail?: string }) {
   return (
     <div>
-      <dt className="capitalize text-[#8e959f]">{term}</dt>
-      <dd className="mt-0.5 break-words text-[#c5cad1]">{value}</dd>
+      <dt className="capitalize text-fg-muted">{term}</dt>
+      <dd className="mt-0.5 break-words text-fg-secondary">{value}</dd>
       {detail ? (
-        <dd className="mt-0.5 break-all font-mono text-[10px] text-[#8e959f]">{detail}</dd>
+        <dd className="mt-0.5 break-all font-mono text-caption text-fg-muted">{detail}</dd>
       ) : null}
     </div>
   );
@@ -1135,22 +1120,22 @@ function TerminalOutcome({ item }: { item: HITLOperatorItem }) {
     <section
       className={cn(
         "mt-7 border-l-2 px-4 py-3",
-        positive ? "border-[#4faf83] bg-[#101a16]" : "border-[#d96b67] bg-[#1a1213]",
+        positive ? "border-success bg-success-muted" : "border-danger bg-danger-muted",
       )}
       aria-label="Committed outcome"
     >
-      <div className="flex items-center gap-2 text-sm font-semibold text-[#eef0f2]">
+      <div className="flex items-center gap-2 text-sm font-semibold text-fg">
         {positive ? (
-          <Check className="size-4 text-[#75c49d]" aria-hidden="true" />
+          <Check className="size-4 text-success" aria-hidden="true" />
         ) : (
-          <X className="size-4 text-[#ef9a95]" aria-hidden="true" />
+          <X className="size-4 text-danger" aria-hidden="true" />
         )}
         {humanizeDecision(decision)}
       </div>
       {note ? <OutcomeText label="Note" text={note} /> : null}
       {reply ? <OutcomeText label="Reply" text={reply} /> : null}
       {!note && reason ? <OutcomeText label="Reason" text={reason} /> : null}
-      <p className="mt-2 font-mono text-[10px] text-[#8e959f]">
+      <p className="mt-2 font-mono text-caption text-fg-muted">
         Committed at revision {outcome.interaction_revision}
       </p>
     </section>
@@ -1160,12 +1145,12 @@ function TerminalOutcome({ item }: { item: HITLOperatorItem }) {
 function OutcomeText({ label, text }: { label: string; text: string }) {
   return (
     <div className="mt-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8e959f]">{label}</p>
+      <p className="font-mono text-caption uppercase tracking-label text-fg-muted">{label}</p>
       <Markdown
         content={text}
         tone="evidence"
         linkPolicy="withhold"
-        className="mt-1 leading-6 text-[#aeb4bc]"
+        className="mt-1 leading-6 text-fg-muted"
       />
     </div>
   );
@@ -1175,37 +1160,31 @@ function QueueEmpty({ view, kindFilter }: { view: InboxView; kindFilter: KindFil
   const kindLabel = kindFilter === "approval" ? "approval" : "attention";
   const filtered = kindFilter !== "all";
   return (
-    <div className="px-6 py-16 text-center">
-      <div className="mx-auto flex size-9 items-center justify-center border border-[#343840] text-[#8e959f]">
-        {view === "pending" ? (
-          <Check className="size-4" aria-hidden="true" />
-        ) : (
-          <Clock3 className="size-4" aria-hidden="true" />
-        )}
-      </div>
-      <p className="mt-4 text-sm font-medium text-[#c5cad1]">
-        {filtered
+    <EmptyState
+      variant={filtered ? "no-results" : "empty"}
+      title={
+        filtered
           ? `No ${view === "pending" ? "pending" : "resolved"} ${kindLabel} requests`
           : view === "pending"
             ? "No pending requests"
-            : "No resolved requests yet"}
-      </p>
-      <p className="mt-1 text-xs leading-5 text-[#8e959f]">
-        {filtered
+            : "No resolved requests yet"
+      }
+      description={
+        filtered
           ? `This filter is a view of the same ledger; it does not change ${kindLabel} state or order.`
           : view === "pending"
             ? "New agent requests will enter this FIFO stream."
-            : "Committed outcomes remain available here."}
-      </p>
-    </div>
+            : "Committed outcomes remain available here."
+      }
+    />
   );
 }
 
 function QueueSkeleton() {
   return (
-    <div role="status" aria-label="Loading inbox" className="space-y-px bg-[#25282e]">
+    <div role="status" aria-label="Loading inbox" className="space-y-px bg-divider">
       {[0, 1, 2].map((row) => (
-        <div key={row} className="h-28 animate-pulse bg-[#0d0f12]" />
+        <div key={row} className="h-28 animate-pulse bg-bg-elevated" />
       ))}
     </div>
   );
@@ -1215,13 +1194,13 @@ function NoSelection({ pendingCount }: { pendingCount: number }) {
   return (
     <div className="flex min-h-[32rem] items-center justify-center px-8 text-center">
       <div className="max-w-sm">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#f2b84b]">
+        <p className="font-mono text-caption uppercase tracking-label text-primary">
           No request selected
         </p>
-        <h2 className="mt-3 text-xl font-semibold text-[#e7e9ec]">
+        <h2 className="mt-3 text-xl font-semibold text-fg">
           Inspect the ledger without disturbing it.
         </h2>
-        <p className="mt-2 text-sm leading-6 text-[#8e959f]">
+        <p className="mt-2 text-sm leading-6 text-fg-muted">
           {pendingCount > 0
             ? "Choose any row. The FIFO order stays fixed until an item is resolved or withdrawn."
             : "This surface is always available, even when no agent room is open."}
@@ -1235,17 +1214,17 @@ function MissingItem({ itemID, onBack }: { itemID: string; onBack: () => void })
   return (
     <div className="flex min-h-[32rem] items-center justify-center px-8 text-center">
       <div className="max-w-md">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#d96b67]">
+        <p className="font-mono text-caption uppercase tracking-label text-danger">
           Item unavailable
         </p>
-        <h2 className="mt-3 text-xl font-semibold text-[#e7e9ec]">
+        <h2 className="mt-3 text-xl font-semibold text-fg">
           This deep link does not name a HITL item.
         </h2>
-        <p className="mt-2 break-all font-mono text-xs text-[#8e959f]">{itemID}</p>
+        <p className="mt-2 break-all font-mono text-xs text-fg-muted">{itemID}</p>
         <button
           type="button"
           onClick={onBack}
-          className="mt-6 border border-[#3a3e46] px-4 py-2 text-sm text-[#c5cad1] hover:border-[#606670] hover:text-white"
+          className="mt-6 border border-border px-4 py-2 text-sm text-fg-secondary hover:border-fg-faint hover:text-fg"
         >
           Return to inbox
         </button>
@@ -1256,23 +1235,14 @@ function MissingItem({ itemID, onBack }: { itemID: string; onBack: () => void })
 
 function InboxFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-[#090a0c] px-6 text-center text-[#d7dce2]">
-      <div className="max-w-md border-l-2 border-[#d96b67] pl-5 text-left">
-        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#d96b67]">
-          Inbox unavailable
-        </p>
-        <h1 className="mt-3 text-xl font-semibold text-[#f2f4f6]">
-          Durable state could not be loaded.
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-[#8e959f]">{message}</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-5 inline-flex items-center gap-2 border border-[#3a3e46] px-4 py-2 text-sm hover:border-[#606670] hover:text-white"
-        >
-          <RefreshCw className="size-3.5" aria-hidden="true" /> Retry
-        </button>
-      </div>
+    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-bg px-6 text-center text-fg-secondary">
+      <EmptyState
+        variant="error"
+        eyebrow="Inbox unavailable"
+        title="Durable state could not be loaded."
+        description={message}
+        action={{ label: "Retry", onClick: onRetry }}
+      />
     </main>
   );
 }
