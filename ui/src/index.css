@@ -1,4 +1,14 @@
 @import "tailwindcss";
+
+/* Layer 2 — the token contract, names only. Tangent brings its own values. */
+@import "@hollis-labs/design-tokens/tokens.css";
+/* Layer 3 — those values. The only file in this app that may name a colour. */
+@import "./styles/tangent-theme.css";
+/* Layer 4 — points Tailwind at design-components' shipped class strings, and
+ * defines the two variants and one utility Tailwind lacks. Without this the
+ * components render, render unstyled, and nothing errors. */
+@import "@hollis-labs/design-components/source.css";
+
 @source "./**/*.{ts,tsx}";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -11,12 +21,11 @@ body,
 
 body {
   margin: 0;
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background: #090a0c;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: rgb(242 184 75 / 28%);
+  background: var(--color-selection);
 }
