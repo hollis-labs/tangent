@@ -983,6 +983,113 @@ ORDER BY created_at, id`, resolutionID)
 	return out, nil
 }
 
+type RecordDeliveryOutcomeParams struct {
+	InteractionID      string
+	ResolutionID       string
+	Outcome            DeliveryState
+	RuntimeAuthority   string
+	RuntimeEndpointRef string
+	TerminalReason     string
+}
+
+func (s *Store) RecordDeliveryOutcome(ctx context.Context, params RecordDeliveryOutcomeParams) error {
+	if params.InteractionID == "" && params.ResolutionID == "" {
+		return fmt.Errorf("%w: interaction_id or resolution_id is required", ErrInvalidRecord)
+	}
+	now := time.Now().UTC()
+	var resID string
+	if params.ResolutionID != "" {
+		resID = params.ResolutionID
+	} else {
+		res, err := s.GetResolution(ctx, params.InteractionID)
+		if err != nil {
+			return err
+		}
+		resID = res.ID
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delivery outcome tx: %w", err)
+	}
+	defer rollback(tx)
+
+	rows, err := tx.QueryContext(ctx, `SELECT id, lifecycle_state FROM resolution_deliveries WHERE resolution_id = ?`, resID)
+	if err != nil {
+		return fmt.Errorf("query resolution deliveries: %w", err)
+	}
+	type delRow struct {
+		id    string
+		state DeliveryState
+	}
+	var deliveries []delRow
+	for rows.Next() {
+		var d delRow
+		if err := rows.Scan(&d.id, &d.state); err != nil {
+			closeRows(rows)
+			return err
+		}
+		deliveries = append(deliveries, d)
+	}
+	closeRows(rows)
+
+	for _, d := range deliveries {
+		if d.state == params.Outcome {
+			continue
+		}
+		switch params.Outcome {
+		case DeliveryStateAcknowledged:
+			if d.state == DeliveryStateAcknowledged {
+				continue
+			}
+			if d.state == DeliveryStateQueued {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'delivering', revision = revision + 1, updated_at = ? WHERE id = ? AND lifecycle_state = 'queued'`, now, d.id); err != nil {
+					return err
+				}
+				d.state = DeliveryStateDelivering
+			}
+			if d.state == DeliveryStateDelivering {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'delivered', revision = revision + 1, delivered_at = ?, updated_at = ? WHERE id = ? AND lifecycle_state = 'delivering'`, now, now, d.id); err != nil {
+					return err
+				}
+				d.state = DeliveryStateDelivered
+			}
+			if d.state == DeliveryStateDelivered {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'acknowledged', revision = revision + 1, acknowledged_at = ?, updated_at = ? WHERE id = ? AND lifecycle_state = 'delivered'`, now, now, d.id); err != nil {
+					return err
+				}
+			}
+		case DeliveryStateTerminalFailure:
+			if d.state == DeliveryStateTerminalFailure {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'terminal_failure', revision = revision + 1, terminal_reason = ?, updated_at = ? WHERE id = ?`, params.TerminalReason, now, d.id); err != nil {
+				return err
+			}
+		case DeliveryStateDelivered:
+			if d.state == DeliveryStateQueued {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'delivering', revision = revision + 1, updated_at = ? WHERE id = ? AND lifecycle_state = 'queued'`, now, d.id); err != nil {
+					return err
+				}
+				d.state = DeliveryStateDelivering
+			}
+			if d.state == DeliveryStateDelivering {
+				if _, err := tx.ExecContext(ctx, `
+UPDATE resolution_deliveries SET lifecycle_state = 'delivered', revision = revision + 1, delivered_at = ?, updated_at = ? WHERE id = ? AND lifecycle_state = 'delivering'`, now, now, d.id); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (s *Store) ListTerminalNotifications(ctx context.Context, interactionID string) ([]TerminalNotificationRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, interaction_id, terminal_state, terminal_cause,
