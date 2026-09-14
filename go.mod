@@ -1,6 +1,6 @@
 module github.com/hollis-labs/tangent
 
-go 1.26.1
+go 1.26.2
 
 require (
 	github.com/coder/websocket v1.8.15
@@ -8,6 +8,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/hollis-labs/go-envelopes v0.4.0
+	github.com/hollis-labs/go-tether-client v0.3.0
 	github.com/hollis-labs/plugin-sdk v0.3.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -28,6 +29,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
+	github.com/hollis-labs/go-messaging v0.5.2 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -47,3 +49,7 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/hollis-labs/go-tether-client => ../../libs/go-tether-client
+
+replace github.com/hollis-labs/agentkit => ../../libs/agentkit

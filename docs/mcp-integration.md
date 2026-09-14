@@ -538,6 +538,24 @@ credential and issues no identity, so a write the plugin makes is authorized by
 Tesseract's own policy and by nothing this host vouched for
 (`CW-20260910-0045`).
 
+## Runner (Agent Execution Host)
+
+The lightweight agent execution runner plugin (`CW-20260914-0005`), packaged
+outside Tangent core using `plugin-sdk`. It supervises agent subprocesses
+(Claude streaming stdio, Codex jsonrpc stdio, PTY, ACP) and extracts clean human
+conversational turns at `LiveStateIdle` (suppressing internal thinking and tool
+calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/turns`). It also
+supports direct delegation through Tether (`go-tether-client`).
+
+The plugin contributes four tools:
+
+- `tangent.runner_launch` launches an agent session either as a local supervised
+  subprocess or delegated to the Tether daemon.
+- `tangent.runner_send_turn` delivers an operator turn reply or guidance back to
+  a running agent session.
+- `tangent.runner_health` inspects live session status, turn progress, and resource health.
+- `tangent.runner_stop` terminates or interrupts an active agent run.
+
 ## Cursor
 
 Cursor reads MCP servers from a JSON config at `~/.cursor/mcp.json`.

@@ -47,7 +47,7 @@ build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 # emits, which is the layout `tangent plugin install` consumes. One source for
 # the tool names and schemas — the Go package — rather than a hand-written YAML
 # copy kept in agreement by nobody.
-PLUGINS = torque tesseract
+PLUGINS = torque tesseract runner
 
 build-plugins: ## Build the first-party plugins into dist/plugins/
 	@for p in $(PLUGINS); do \
