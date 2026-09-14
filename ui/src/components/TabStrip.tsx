@@ -54,6 +54,8 @@ export function TabStrip() {
 
   const activeRoomID = location.pathname.startsWith("/r/") ? location.pathname.slice(3) : "";
   const hitlActive = location.pathname === "/hitl" || location.pathname.startsWith("/hitl/items/");
+  const turnsActive =
+    location.pathname === "/turns" || location.pathname.startsWith("/turns/items/");
   const channelsActive = location.pathname.startsWith("/channels");
 
   const closeRoom = async (roomID: string) => {
@@ -92,6 +94,17 @@ export function TabStrip() {
           )}
         >
           Human input
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/turns")}
+          aria-current={turnsActive ? "page" : undefined}
+          className={cn(
+            "shrink-0 border-l border-zinc-800 px-3 py-1 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+            turnsActive ? "text-amber-300" : "text-zinc-400 hover:text-zinc-100",
+          )}
+        >
+          Agent turns
         </button>
         <button
           type="button"

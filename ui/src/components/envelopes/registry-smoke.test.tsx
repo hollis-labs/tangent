@@ -84,9 +84,12 @@ describe("shipped room workflow registry", () => {
   const spaTypes = registeredEnvelopeTypes();
 
   it("registers every server-side envelope extension in the SPA", () => {
-    // hitl-item is the global /hitl ledger, not a room workflow: it has no
-    // room presentation and is deliberately absent from the SPA registry.
-    const roomWorkflows = goTypes.filter((type) => type !== "tangent.hitl-item");
+    // hitl-item and agent-turn are route ledgers/inboxes (/hitl and /turns),
+    // not room workflows: they have no room presentation and are deliberately
+    // absent from the SPA registry.
+    const roomWorkflows = goTypes.filter(
+      (type) => type !== "tangent.hitl-item" && type !== "tangent.agent-turn",
+    );
     expect([...roomWorkflows].sort()).toEqual([...spaTypes].sort());
   });
 
@@ -94,8 +97,10 @@ describe("shipped room workflow registry", () => {
     // The count is derived from the Go side rather than typed here. It moved
     // the first time a workflow was added after this test was written, and a
     // literal that has to be edited alongside the thing it checks is not a
-    // check. `hitl-item` is excluded for the reason given above.
-    const expected = goTypes.filter((type) => type !== "tangent.hitl-item").length;
+    // check. `hitl-item` and `agent-turn` are excluded for the reason given above.
+    const expected = goTypes.filter(
+      (type) => type !== "tangent.hitl-item" && type !== "tangent.agent-turn",
+    ).length;
     expect(new Set(spaTypes).size).toBe(spaTypes.length);
     expect(spaTypes).toHaveLength(expected);
   });

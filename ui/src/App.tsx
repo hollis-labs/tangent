@@ -6,6 +6,7 @@ import ChannelPane from "./routes/ChannelPane";
 import HITLInbox from "./routes/HITLInbox";
 import Index from "./routes/Index";
 import Room from "./routes/Room";
+import TurnsInbox from "./routes/TurnsInbox";
 
 function Layout() {
   // See RouteErrorBoundary's own doc comment for why this is a plain prop
@@ -31,6 +32,8 @@ function App() {
           <Route path="/" element={<Index />} />
           <Route path="/hitl" element={<HITLInbox />} />
           <Route path="/hitl/items/:itemID" element={<HITLInbox />} />
+          <Route path="/turns" element={<TurnsInbox />} />
+          <Route path="/turns/items/:itemID" element={<TurnsInbox />} />
           <Route path="/channels" element={<ChannelPane />} />
           <Route path="/channels/:channelID" element={<ChannelPane />} />
           <Route path="/r/:roomID" element={<Room />} />
