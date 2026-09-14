@@ -68,6 +68,10 @@ type Config struct {
 	// it remains separate from caller-facing MCP and room WebSockets.
 	HITL HITLService
 
+	// Turns is the durable agent turns FIFO inbox application service (CW-20260913-0019).
+	// When set, the server mounts its dedicated browser and daemon APIs.
+	Turns TurnsService
+
 	// Rooms is the browser room API's application service. When set, the
 	// server mounts /api/rooms — the participant-authenticated replacement for
 	// the SPA's direct /mcp POSTs (ADR 0004 §11). Optional in Config for the
@@ -275,6 +279,21 @@ func New(cfg Config) (*Server, error) {
 		register("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", authz.View, hitlHandler.artifactPreview)
 		register("POST /api/hitl/items/{itemID}/present", authz.Draft, hitlHandler.present)
 		register("POST /api/hitl/items/{itemID}/resolve", authz.Resolve, hitlHandler.resolve)
+	}
+
+	if cfg.Turns != nil {
+		turnsHandler := newTurnsHTTPHandler(cfg.Turns)
+		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+		}
+		register("GET /api/turns", authz.View, turnsHandler.inbox)
+		register("GET /api/turns/events", authz.View, turnsHandler.events)
+		register("GET /api/turns/items/{itemID}", authz.View, turnsHandler.item)
+		register("POST /api/turns/items/{itemID}/reply", authz.Resolve, turnsHandler.reply)
+		register("POST /api/turns/items/{itemID}/dismiss", authz.Resolve, turnsHandler.dismiss)
+		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/enqueue", authz.Draft, turnsHandler.enqueue)
+		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/items/{itemID}/ack", authz.Resolve, turnsHandler.ack)
+		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "GET /api/turns/sessions/{sessionID}/replies", authz.View, turnsHandler.sessionReplies)
 	}
 
 	if cfg.Rooms != nil {
