@@ -1,10 +1,10 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:7f8f00870cd3f855623abf9da51b244850ad71d1513206e529d7efcba753e9b8
+// @definition-source sha256:f0da46d72dea745d322b2ad8d8a33be3ea62006105984d5163e0c4b0a2dcc696
 // Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Coverage: 37 registered kinds — 18 go-envelopes core,
-// 19 Tangent-owned (internal/envelope/extensions).
+// Coverage: 38 registered kinds — 18 go-envelopes core,
+// 20 Tangent-owned (internal/envelope/extensions).
 //
 // Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
@@ -618,6 +618,22 @@ export interface TableCardData {
   title?: string;
 }
 
+/** Envelope data for "tangent.agent-turn" — Durable operator-facing agent turn item: captures live agent questions, approvals, checkpoints, failures, and completions in arrival order. */
+export interface TangentAgentTurnData {
+  content: string;
+  contract_version: "1.0";
+  correlations?: { project_id?: string; runtime_ref?: string; task_id?: string };
+  expires_at?: string;
+  idempotency_key: string;
+  kind: "question" | "approval" | "checkpoint" | "failure" | "terminal";
+  options?: { description?: string; label: string; recommended?: boolean; value: string }[];
+  session_id: string;
+  source: { agent_id: string; agent_label?: string; application_id?: string };
+  summary?: string;
+  title: string;
+  turn_id: string;
+}
+
 /** Envelope data for "tangent.app-board" — App board envelope: a domain-free board of agent-supplied cards in columns, with a filter bar, an optional detail pane, and participant view state recorded as tangent-custodied draft revisions. Filters are a VIEW over the card set the caller supplied — the host never re-runs them as a query and cannot reach a record the caller did not send. The application that owns the records supplies them and applies every consequence; nothing here writes to it. */
 export interface TangentAppBoardData {
   board_id: string;
@@ -886,6 +902,7 @@ export type ReportCardEnvelope = EnvelopeBase<"report-card", ReportCardData>;
 export type SessionTaskEnvelope = EnvelopeBase<"session-task", SessionTaskData>;
 export type SubagentSpawnApprovalEnvelope = EnvelopeBase<"subagent-spawn-approval", SubagentSpawnApprovalData>;
 export type TableCardEnvelope = EnvelopeBase<"table-card", TableCardData>;
+export type TangentAgentTurnEnvelope = EnvelopeBase<"tangent.agent-turn", TangentAgentTurnData>;
 export type TangentAppBoardEnvelope = EnvelopeBase<"tangent.app-board", TangentAppBoardData>;
 export type TangentApprovalQueueEnvelope = EnvelopeBase<"tangent.approval-queue", TangentApprovalQueueData>;
 export type TangentBlockDraftEnvelope = EnvelopeBase<"tangent.block-draft", TangentBlockDraftData>;
@@ -926,6 +943,7 @@ export type Envelope =
   | SessionTaskEnvelope
   | SubagentSpawnApprovalEnvelope
   | TableCardEnvelope
+  | TangentAgentTurnEnvelope
   | TangentAppBoardEnvelope
   | TangentApprovalQueueEnvelope
   | TangentBlockDraftEnvelope
@@ -966,6 +984,7 @@ export type EnvelopeType =
   | "session-task"
   | "subagent-spawn-approval"
   | "table-card"
+  | "tangent.agent-turn"
   | "tangent.app-board"
   | "tangent.approval-queue"
   | "tangent.block-draft"
@@ -1006,6 +1025,7 @@ export interface EnvelopeDataMap {
   "session-task": SessionTaskData;
   "subagent-spawn-approval": SubagentSpawnApprovalData;
   "table-card": TableCardData;
+  "tangent.agent-turn": TangentAgentTurnData;
   "tangent.app-board": TangentAppBoardData;
   "tangent.approval-queue": TangentApprovalQueueData;
   "tangent.block-draft": TangentBlockDraftData;
@@ -1048,6 +1068,7 @@ export const EnvelopeKindMap = {
   "session-task": "",
   "subagent-spawn-approval": "components/chat/envelopes/ApprovalCard",
   "table-card": "components/chat/envelopes/primitives/TableCard",
+  "tangent.agent-turn": "",
   "tangent.app-board": "AppBoardView",
   "tangent.approval-queue": "ApprovalQueueView",
   "tangent.block-draft": "BlockDraftView",
@@ -1089,6 +1110,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "session-task",
   "subagent-spawn-approval",
   "table-card",
+  "tangent.agent-turn",
   "tangent.app-board",
   "tangent.approval-queue",
   "tangent.block-draft",
@@ -1112,7 +1134,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:7f8f00870cd3f855623abf9da51b244850ad71d1513206e529d7efcba753e9b8";
+export const DEFINITION_SOURCE_DIGEST = "sha256:f0da46d72dea745d322b2ad8d8a33be3ea62006105984d5163e0c4b0a2dcc696";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.13.0";
@@ -1128,6 +1150,7 @@ export interface DefinitionSourceEntry {
 
 /** Per-kind manifest identity, so drift can name the kind that moved. */
 export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
+  { kind: "tangent.agent-turn", version: "1.0", revision: 1, manifestDigest: "sha256:d7ea9bb48cbdc5a6f901e16e14f572fa147ca573908be93d85c714ad77ded751", contractDigest: "sha256:8b840ca69c1d800d4926f984ceb2f593be62f0595d39db698404534eb5256b76" },
   { kind: "tangent.app-board", version: "0.3", revision: 1, manifestDigest: "sha256:21689b180436900fe77562eaf86f7c435cccc63235baacb0b4870b9d2e064bd5", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
   { kind: "tangent.approval-queue", version: "0.8", revision: 1, manifestDigest: "sha256:40f8023c9c1efa1c83fdba1d80c1e5cab68e037f2296f1f1e5207358ad49bfef", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
   { kind: "tangent.block-draft", version: "0.4", revision: 1, manifestDigest: "sha256:52ff9c8adfffd35ee43826ca5016dd798b1b9f19e8a8755fbd4d816f600218cd", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
@@ -1163,6 +1186,14 @@ export const DEFINITION_DEFS_DIGESTS: Readonly<Record<string, string>> = {
 export const DEFINITION_NAMED_DEFINITIONS: Readonly<
   Record<string, Readonly<Record<string, string>>>
 > = {
+  "tangent.agent-turn": {
+    "AgentTurnHandleV1": "Durable handle returned at turn enqueue.",
+    "AgentTurnItemViewV1": "Operator-facing projection of one agent turn.",
+    "AgentTurnReplyCommandV1": "Operator reply command.",
+    "AgentTurnRequestV1": "Enqueue request root: one live agent turn.",
+    "AgentTurnResponseV1": "Operator reply response payload.",
+    "AgentTurnTerminalOutcomeV1": "Terminal outcome across resolved, canceled, expired, failed, and superseded.",
+  },
   "tangent.hitl-item": {
     "HITLAwaitCommandV1": "Wait for one item's terminal outcome without changing its lifecycle.",
     "HITLGetCommandV1": "Retrieve one item by durable handle.",

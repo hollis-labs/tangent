@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentTurnResponseV1",
+  "type": "object",
+  "required": ["action"],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["respond", "approve", "reject", "dismiss"]
+    },
+    "response_text": {
+      "type": "string",
+      "maxLength": 65536
+    },
+    "selected_option": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 4000
+    }
+  },
+  "additionalProperties": false
+}

@@ -99,6 +99,7 @@ func TestEveryShippedManifestMaterializesAsAvailable(t *testing.T) {
 var responseSchemaBackfilled = []string{
 	HITLItemEnvelopeType,
 	FormCollectEnvelopeType,
+	AgentTurnEnvelopeType,
 }
 
 // TestEveryShippedRendererIsExplicitlyClassified is CW-20260825-0073's
@@ -128,6 +129,7 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 	// contributes cannot reach a higher class than a host-package one — which is
 	// the failure this line exists to make visible.
 	classified := map[string]definition.Isolation{
+		"tangent.agent-turn":         definition.IsolationMainOrigin,
 		"tangent.app-board":          definition.IsolationMainOrigin,
 		"tangent.approval-queue":     definition.IsolationMainOrigin,
 		"tangent.block-draft":        definition.IsolationMainOrigin,
@@ -294,6 +296,7 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		DashboardEnvelopeType:         {"tangent.canvas", definition.OwnershipHostPackage},
 		WizardEnvelopeType:            {"tangent.compound", definition.OwnershipHostPackage},
 		HITLItemEnvelopeType:          {HITLPackageID, definition.OwnershipHostPackage},
+		AgentTurnEnvelopeType:         {TurnsPackageID, definition.OwnershipHostPackage},
 
 		// Its own package, and a host package. It went through the plugin door
 		// until CW-20260911-0036, and this row is the reason that was always
