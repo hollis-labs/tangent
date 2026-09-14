@@ -40,14 +40,16 @@ function mockTurn(
   seq: number,
   kind: "question" | "approval" | "checkpoint" = "question",
   state: "presented" | "resolved" = "presented",
+  agentId = "agent-nanite",
+  agentLabel = "Nanite Worker",
 ): TurnItemView {
   return {
     contract_version: "1.0",
     item_id: id,
     turn_id: `turn-${id}`,
     session_id: "session-1",
-    agent_id: "agent-nanite",
-    agent_label: "Nanite Worker",
+    agent_id: agentId,
+    agent_label: agentLabel,
     application_id: "tether",
     kind,
     title: `Title for ${id}`,
@@ -90,6 +92,49 @@ function mockInbox(pending: TurnItemView[], history: TurnItemView[] = []): Turns
   };
 }
 
+function createFetchRouter(inboxState: TurnsInbox, sessionReplies: TurnItemView[] = []) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input.toString();
+
+    if (url === "/api/turns") {
+      return {
+        ok: true,
+        json: async () => inboxState,
+      } as Response;
+    }
+
+    if (url.startsWith("/api/turns/sessions/")) {
+      return {
+        ok: true,
+        json: async () => ({
+          contract_version: "1.0",
+          session_id: "session-1",
+          replies: sessionReplies,
+        }),
+      } as Response;
+    }
+
+    if (url.includes("/reply")) {
+      return {
+        ok: true,
+        json: async () => ({ ok: true }),
+      } as Response;
+    }
+
+    if (url.includes("/dismiss")) {
+      return {
+        ok: true,
+        json: async () => ({ ok: true }),
+      } as Response;
+    }
+
+    return {
+      ok: true,
+      json: async () => ({}),
+    } as Response;
+  });
+}
+
 describe("<TurnsInboxRoute>", () => {
   beforeEach(() => {
     MockEventSource.instances = [];
@@ -102,10 +147,8 @@ describe("<TurnsInboxRoute>", () => {
   });
 
   it("renders empty inbox state", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([]),
-    } as Response);
+    const fetchMock = createFetchRouter(mockInbox([]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/turns"]}>
@@ -123,10 +166,8 @@ describe("<TurnsInboxRoute>", () => {
     const item1 = mockTurn("turn-1", 1, "question");
     const item2 = mockTurn("turn-2", 2, "approval");
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([item1, item2]),
-    } as Response);
+    const fetchMock = createFetchRouter(mockInbox([item1, item2]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/turns"]}>
@@ -151,11 +192,8 @@ describe("<TurnsInboxRoute>", () => {
   it("submits a reply to a question turn", async () => {
     const item1 = mockTurn("turn-q", 1, "question");
 
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([item1]),
-    } as Response);
+    const fetchMock = createFetchRouter(mockInbox([item1]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/turns/items/turn-q"]}>
@@ -171,18 +209,7 @@ describe("<TurnsInboxRoute>", () => {
     const textarea = screen.getByPlaceholderText("Type your guidance or decision for the agent...");
     fireEvent.change(textarea, { target: { value: "Proceed with caution" } });
 
-    // Mock reply POST and subsequent inbox refresh
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ ...item1, state: "resolved" }),
-    } as Response);
-
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([], [{ ...item1, state: "resolved" }]),
-    } as Response);
-
-    const submitBtn = screen.getByRole("button", { name: "Submit Response" });
+    const submitBtn = screen.getByRole("button", { name: /Submit Response/i });
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -201,14 +228,49 @@ describe("<TurnsInboxRoute>", () => {
     });
   });
 
+  it("supports Cmd+Enter shortcut to submit from textarea", async () => {
+    const item1 = mockTurn("turn-shortcut", 1, "question");
+
+    const fetchMock = createFetchRouter(mockInbox([item1]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/turns/items/turn-shortcut"]}>
+        <Routes>
+          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Title for turn-shortcut" }),
+    ).toBeInTheDocument();
+
+    const textarea = screen.getByPlaceholderText("Type your guidance or decision for the agent...");
+    fireEvent.change(textarea, { target: { value: "Quick reply via shortcut" } });
+    fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/turns/items/turn-shortcut/reply",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            expected_revision: 2,
+            action: "respond",
+            response_text: "Quick reply via shortcut",
+            selected_option: "",
+          }),
+        }),
+      );
+    });
+  });
+
   it("handles dismiss turn", async () => {
     const item1 = mockTurn("turn-dismiss", 1, "checkpoint");
 
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([item1]),
-    } as Response);
+    const fetchMock = createFetchRouter(mockInbox([item1]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
     render(
       <MemoryRouter initialEntries={["/turns/items/turn-dismiss"]}>
@@ -221,16 +283,6 @@ describe("<TurnsInboxRoute>", () => {
     expect(
       await screen.findByRole("heading", { name: "Title for turn-dismiss" }),
     ).toBeInTheDocument();
-
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ ...item1, state: "canceled" }),
-    } as Response);
-
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockInbox([], [{ ...item1, state: "canceled" }]),
-    } as Response);
 
     const dismissBtn = screen.getByRole("button", { name: "Dismiss Turn" });
     fireEvent.click(dismissBtn);
@@ -247,5 +299,77 @@ describe("<TurnsInboxRoute>", () => {
         }),
       );
     });
+  });
+
+  it("filters turns by agent", async () => {
+    const item1 = mockTurn("turn-nanite", 1, "question", "presented", "agent-nanite", "Nanite");
+    const item2 = mockTurn("turn-codex", 2, "question", "presented", "agent-codex", "Codex");
+
+    const fetchMock = createFetchRouter(mockInbox([item1, item2]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/turns"]}>
+        <Routes>
+          <Route path="/turns" element={<TurnsInboxRoute />} />
+          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Title for turn-nanite" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Title for turn-codex")).toBeInTheDocument();
+
+    // Click on Codex filter pill
+    const codexFilterBtn = screen.getByRole("button", { name: /Codex \(1\)/i });
+    fireEvent.click(codexFilterBtn);
+
+    // Only Codex should remain visible in the queue
+    expect(screen.getAllByText("Title for turn-codex").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("Title for turn-nanite")).not.toBeInTheDocument();
+  });
+
+  it("renders session context timeline when earlier session turns exist", async () => {
+    const priorTurn = mockTurn(
+      "turn-prior",
+      1,
+      "question",
+      "resolved",
+      "agent-nanite",
+      "Nanite Worker",
+    );
+    const currentTurn = mockTurn(
+      "turn-current",
+      2,
+      "question",
+      "presented",
+      "agent-nanite",
+      "Nanite Worker",
+    );
+
+    const fetchMock = createFetchRouter(mockInbox([currentTurn], [priorTurn]), [
+      priorTurn,
+      currentTurn,
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/turns/items/turn-current"]}>
+        <Routes>
+          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Title for turn-current" }),
+    ).toBeInTheDocument();
+
+    // Session Context should be visible and show 1 earlier turn
+    expect(await screen.findByText(/Session Context \(1 earlier turns\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/#1 Title for turn-prior/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Looks good/i).length).toBeGreaterThanOrEqual(1);
   });
 });
