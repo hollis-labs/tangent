@@ -37,6 +37,7 @@ import {
  * the box" is true and does not reach this path.
  */
 const SHIPPED_TRUST: Record<string, string> = {
+  "tangent.agent-turn": "main-origin",
   "tangent.app-board": "main-origin",
   "tangent.approval-queue": "main-origin",
   "tangent.block-draft": "main-origin",

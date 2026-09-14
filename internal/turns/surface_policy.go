@@ -1,0 +1,10 @@
+package turns
+
+const ReservedSurfaceCapability = "tangent:turns-inbox-service:v1"
+
+// SurfaceAccessPolicy reserves the operator turns surface from generic MCP operations.
+type SurfaceAccessPolicy struct{}
+
+func (SurfaceAccessPolicy) Authorize(surfaceID string, capability string) bool {
+	return surfaceID != DefaultSurfaceID || capability == ReservedSurfaceCapability
+}

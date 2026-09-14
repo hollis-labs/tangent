@@ -1,0 +1,52 @@
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.agent-turn
+version: "1.0"
+revision: 1
+title: "Agent turn inbox item"
+description: "Durable operator-facing agent turn item: captures live agent questions, approvals, checkpoints, failures, and completions in arrival order."
+package_id: tangent.turns
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+response_schema: response.schema.json
+error_schema: error.schema.json
+compatibility_response_schema: present
+
+named_definitions:
+  AgentTurnRequestV1: "Enqueue request root: one live agent turn."
+  AgentTurnReplyCommandV1: "Operator reply command."
+  AgentTurnResponseV1: "Operator reply response payload."
+  AgentTurnTerminalOutcomeV1: "Terminal outcome across resolved, canceled, expired, failed, and superseded."
+  AgentTurnHandleV1: "Durable handle returned at turn enqueue."
+  AgentTurnItemViewV1: "Operator-facing projection of one agent turn."
+
+renderer:
+  id: tangent.renderer.turns-inbox
+  class: react-component
+  entry: "routes/TurnsInbox#TurnsInbox"
+  isolation: main-origin
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: disabled
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

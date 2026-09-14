@@ -53,6 +53,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
 	"github.com/hollis-labs/tangent/internal/telemetry"
+	"github.com/hollis-labs/tangent/internal/turns"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
 
@@ -118,6 +119,7 @@ type Services struct {
 	Dispatcher  *envelope.Dispatcher
 	Interaction *interaction.Service
 	HITL        *hitl.Service
+	Turns       *turns.Service
 
 	RoomManager     *room.Manager
 	WSHandler       *tangentws.Handler
@@ -355,7 +357,10 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		interactionStore,
 		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion,
 			interaction.WithRetainedMaterialStore(interactionStore)),
-		interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
+		interaction.WithSurfaceAccessPolicy(compoundSurfaceAccessPolicy{
+			hitl.SurfaceAccessPolicy{},
+			turns.SurfaceAccessPolicy{},
+		}),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers
 		// never hold that authority.
@@ -376,6 +381,10 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	hitlService, err := hitl.NewService(interactionService)
 	if err != nil {
 		return release(fmt.Errorf("build hitl service: %w", err))
+	}
+	turnsService, err := turns.NewService(interactionService)
+	if err != nil {
+		return release(fmt.Errorf("build turns service: %w", err))
 	}
 	recovery, err := interactionService.RecoverAfterRestart(context.Background())
 	if err != nil {
@@ -611,6 +620,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		WSHandler:      wsHandler,
 		RoomManager:    roomMgr,
 		HITL:           hitlService,
+		Turns:          turnsService,
 		Rooms:          mcpSrv,
 		Channels:       channelPaneService,
 		Participants:   participantGate,
@@ -630,6 +640,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		Dispatcher:      dispatcher,
 		Interaction:     interactionService,
 		HITL:            hitlService,
+		Turns:           turnsService,
 		RoomManager:     roomMgr,
 		WSHandler:       wsHandler,
 		ParticipantGate: participantGate,
@@ -674,4 +685,15 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 		})
 	}
 	return inventory
+}
+
+type compoundSurfaceAccessPolicy []interaction.SurfaceAccessPolicy
+
+func (c compoundSurfaceAccessPolicy) Authorize(surfaceID string, capability string) bool {
+	for _, p := range c {
+		if !p.Authorize(surfaceID, capability) {
+			return false
+		}
+	}
+	return true
 }

@@ -56,6 +56,13 @@ type lockedPublication struct {
 // contractLock is the committed record. Every shipped kind has an entry, and a
 // kind added or removed without touching this table fails the build.
 var contractLock = map[string]lockedPublication{
+	AgentTurnEnvelopeType: {
+		version: "1.0", revision: 1,
+		contract:  "sha256:8b840ca69c1d800d4926f984ceb2f593be62f0595d39db698404534eb5256b76",
+		class:     definition.RendererReactComponent,
+		isolation: definition.IsolationMainOrigin,
+		response:  definition.ResponseSchemaPresent,
+	},
 	AppBoardEnvelopeType: {
 		// 0.2 is CW-20260911-0008's one-minor-bump reconciliation: the `sync`
 		// block, `sync.note_label` and `cards[].note` were each added under a
@@ -331,6 +338,7 @@ func constantFor(kind string) string {
 }
 
 var kindConstants = []struct{ kind, constant string }{
+	{AgentTurnEnvelopeType, "AgentTurnEnvelopeType"},
 	{AppBoardEnvelopeType, "AppBoardEnvelopeType"},
 	{ApprovalQueueEnvelopeType, "ApprovalQueueEnvelopeType"},
 	{BlockDraftEnvelopeType, "BlockDraftEnvelopeType"},

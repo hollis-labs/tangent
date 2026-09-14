@@ -921,6 +921,34 @@ func (s *Service) AwaitResolution(ctx context.Context, input AwaitResolutionInpu
 	}
 }
 
+type RecordDeliveryOutcomeInput struct {
+	InteractionID      string        `json:"interaction_id"`
+	ResolutionID       string        `json:"resolution_id,omitempty"`
+	Outcome            DeliveryState `json:"outcome"`
+	RuntimeAuthority   string        `json:"runtime_authority,omitempty"`
+	RuntimeEndpointRef string        `json:"runtime_endpoint_ref,omitempty"`
+	TerminalReason     string        `json:"terminal_reason,omitempty"`
+	Capability         string        `json:"-"`
+}
+
+func (s *Service) RecordDeliveryOutcome(ctx context.Context, input RecordDeliveryOutcomeInput) error {
+	current, err := s.store.GetInteraction(ctx, input.InteractionID)
+	if err != nil {
+		return err
+	}
+	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {
+		return ErrUnauthorized
+	}
+	return s.store.RecordDeliveryOutcome(ctx, RecordDeliveryOutcomeParams{
+		InteractionID:      input.InteractionID,
+		ResolutionID:       input.ResolutionID,
+		Outcome:            input.Outcome,
+		RuntimeAuthority:   input.RuntimeAuthority,
+		RuntimeEndpointRef: input.RuntimeEndpointRef,
+		TerminalReason:     input.TerminalReason,
+	})
+}
+
 // authorizeSurfaceSubmit answers whether a caller may create an interaction on
 // a surface it does not necessarily own. The rule is the read rule: the
 // surface's owner, or a caller that opened it — the existing

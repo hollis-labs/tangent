@@ -39,7 +39,7 @@ function registeredKinds(): string[] {
  * dispatched by `EnvelopeRouter`, which is exactly the presentation contract
  * the HITL ledger does not have.
  */
-const ROUTE_RENDERED_KINDS = new Set(["tangent.hitl-item"]);
+const ROUTE_RENDERED_KINDS = new Set(["tangent.hitl-item", "tangent.agent-turn"]);
 
 /**
  * Registered kinds whose manifest classes them as something other than
