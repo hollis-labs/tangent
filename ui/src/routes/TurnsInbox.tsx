@@ -460,11 +460,7 @@ export default function TurnsInboxRoute() {
               </div>
 
               {/* Error Callout if any */}
-              {actionError && (
-                <Callout tone="danger">
-                  {actionError}
-                </Callout>
-              )}
+              {actionError && <Callout tone="danger">{actionError}</Callout>}
 
               {/* Message Content */}
               <div className="rounded-xl border border-zinc-800/80 bg-zinc-900/50 p-5">

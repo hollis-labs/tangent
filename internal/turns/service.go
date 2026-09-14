@@ -56,18 +56,18 @@ type AgentTurnOption struct {
 }
 
 type AgentTurnRequest struct {
-	ContractVersion string          `json:"contract_version"`
-	TurnID          string          `json:"turn_id"`
-	SessionID       string          `json:"session_id"`
-	IdempotencyKey  string          `json:"idempotency_key"`
-	Kind            string          `json:"kind"`
-	Source          AgentTurnSource `json:"source"`
-	Title           string          `json:"title"`
-	Summary         string          `json:"summary,omitempty"`
-	Content         string          `json:"content"`
+	ContractVersion string            `json:"contract_version"`
+	TurnID          string            `json:"turn_id"`
+	SessionID       string            `json:"session_id"`
+	IdempotencyKey  string            `json:"idempotency_key"`
+	Kind            string            `json:"kind"`
+	Source          AgentTurnSource   `json:"source"`
+	Title           string            `json:"title"`
+	Summary         string            `json:"summary,omitempty"`
+	Content         string            `json:"content"`
 	Options         []AgentTurnOption `json:"options,omitempty"`
-	Correlations    map[string]any  `json:"correlations,omitempty"`
-	ExpiresAt       string          `json:"expires_at,omitempty"`
+	Correlations    map[string]any    `json:"correlations,omitempty"`
+	ExpiresAt       string            `json:"expires_at,omitempty"`
 }
 
 type TurnHandle struct {
@@ -245,7 +245,7 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, 
 			return TurnHandle{}, lookupErr
 		}
 		if found {
-			return s.itemHandle(ctx, existing, &req)
+			return s.itemHandle(existing, &req)
 		}
 	}
 	if err != nil {
@@ -254,7 +254,7 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, 
 
 	// Immediately transition staged item to presented for the operator
 	current, loadErr := s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
-		InteractionID: submitHandle.InteractionID,
+		InteractionID:  submitHandle.InteractionID,
 		RequesterScope: input.Caller.Scope,
 		Capability:     ReservedSurfaceCapability,
 	})
@@ -273,14 +273,14 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, 
 		})
 		if presentErr == nil {
 			current, _ = s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
-				InteractionID: submitHandle.InteractionID,
+				InteractionID:  submitHandle.InteractionID,
 				RequesterScope: input.Caller.Scope,
 				Capability:     ReservedSurfaceCapability,
 			})
 		}
 	}
 
-	return s.itemHandle(ctx, current.Interaction, &req)
+	return s.itemHandle(current.Interaction, &req)
 }
 
 func (s *Service) Inbox(ctx context.Context) (TurnsInbox, error) {
@@ -547,7 +547,7 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 	return err
 }
 
-func (s *Service) itemHandle(ctx context.Context, rec interaction.InteractionRecord, req *AgentTurnRequest) (TurnHandle, error) {
+func (s *Service) itemHandle(rec interaction.InteractionRecord, req *AgentTurnRequest) (TurnHandle, error) {
 	turnID := ""
 	sessionID := ""
 	agentID := ""

@@ -22,14 +22,14 @@ func newTestService(t *testing.T) (*Service, *interaction.Service, *sql.DB) {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	if err := tangentdb.RunMigrations(database); err != nil {
+	if err = tangentdb.RunMigrations(database); err != nil {
 		t.Fatalf("db.RunMigrations: %v", err)
 	}
 	envSvc, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	if err := extensions.RegisterAgentTurn(envSvc); err != nil {
+	if err = extensions.RegisterAgentTurn(envSvc); err != nil {
 		t.Fatalf("RegisterAgentTurn: %v", err)
 	}
 	interactions, err := interaction.NewService(
@@ -256,7 +256,7 @@ func TestSessionRepliesAndAck(t *testing.T) {
 	}
 
 	// Tether acks delivery
-	if err := svc.Ack(ctx, AckInput{ItemID: h.ItemID, ReplyID: replies[0].Resolution.ResolutionID}); err != nil {
+	if err = svc.Ack(ctx, AckInput{ItemID: h.ItemID, ReplyID: replies[0].Resolution.ResolutionID}); err != nil {
 		t.Fatalf("Ack: %v", err)
 	}
 

@@ -142,7 +142,7 @@ func TestTurnsHTTP_InboxEmptyAndEvents(t *testing.T) {
 	}
 
 	var inbox turns.TurnsInbox
-	if err := json.NewDecoder(resp.Body).Decode(&inbox); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&inbox); err != nil {
 		t.Fatalf("decode inbox: %v", err)
 	}
 	if inbox.TotalPending != 0 || inbox.TotalTerminal != 0 {
@@ -192,7 +192,7 @@ func TestTurnsHTTP_EnqueueInspectReplyAndAck(t *testing.T) {
 		t.Fatalf("enqueue status = %d, want 201; body = %s", enqueueResp.StatusCode, string(body))
 	}
 	var handle turns.TurnHandle
-	if err := json.NewDecoder(enqueueResp.Body).Decode(&handle); err != nil {
+	if err = json.NewDecoder(enqueueResp.Body).Decode(&handle); err != nil {
 		t.Fatalf("decode handle: %v", err)
 	}
 	if handle.TurnID != "turn-1" || handle.SessionID != "session-42" {
@@ -212,7 +212,7 @@ func TestTurnsHTTP_EnqueueInspectReplyAndAck(t *testing.T) {
 		t.Fatalf("item status = %d, want 200", itemResp.StatusCode)
 	}
 	var itemView turns.TurnItemView
-	if err := json.NewDecoder(itemResp.Body).Decode(&itemView); err != nil {
+	if err = json.NewDecoder(itemResp.Body).Decode(&itemView); err != nil {
 		t.Fatalf("decode item view: %v", err)
 	}
 	if itemView.State != interaction.InteractionStatePresented {
@@ -240,7 +240,7 @@ func TestTurnsHTTP_EnqueueInspectReplyAndAck(t *testing.T) {
 		t.Fatalf("reply status = %d, want 200; body = %s", replyResp.StatusCode, string(body))
 	}
 	var repliedView turns.TurnItemView
-	if err := json.NewDecoder(replyResp.Body).Decode(&repliedView); err != nil {
+	if err = json.NewDecoder(replyResp.Body).Decode(&repliedView); err != nil {
 		t.Fatalf("decode reply view: %v", err)
 	}
 	if repliedView.State != interaction.InteractionStateResolved {
@@ -264,7 +264,7 @@ func TestTurnsHTTP_EnqueueInspectReplyAndAck(t *testing.T) {
 		SessionID       string               `json:"session_id"`
 		Replies         []turns.TurnItemView `json:"replies"`
 	}
-	if err := json.NewDecoder(repliesResp.Body).Decode(&sessionResult); err != nil {
+	if err = json.NewDecoder(repliesResp.Body).Decode(&sessionResult); err != nil {
 		t.Fatalf("decode session result: %v", err)
 	}
 	if len(sessionResult.Replies) != 1 {

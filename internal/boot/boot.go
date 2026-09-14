@@ -697,4 +697,3 @@ func (c compoundSurfaceAccessPolicy) Authorize(surfaceID string, capability stri
 	}
 	return true
 }
-
