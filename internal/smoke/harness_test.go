@@ -216,7 +216,7 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 		t.Fatalf("create plugin directory: %v", err)
 	}
 
-	for _, name := range []string{"torque", "tesseract"} {
+	for _, name := range []string{"torque", "tesseract", "runner"} {
 		staging := filepath.Join(root, "staging", name)
 		if err := os.MkdirAll(staging, 0o750); err != nil {
 			t.Fatalf("create staging directory: %v", err)

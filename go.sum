@@ -38,8 +38,6 @@ github.com/hollis-labs/go-envelopes v0.4.0 h1:kmMZLWQrz4lYvKtYAaRiU85cNK2f84MXpb
 github.com/hollis-labs/go-envelopes v0.4.0/go.mod h1:v45Dt4l4kYVuUf2oTcxXYh1bBRXSND+Bi6CAM/OxwKY=
 github.com/hollis-labs/go-messaging v0.5.2 h1:sMVnZRE1BAm/AN+36Zri5Bdd4SzF+EmCqULL627ztXA=
 github.com/hollis-labs/go-messaging v0.5.2/go.mod h1:hSEDlxOWkgZQAxlqFDfKvQ1hSHNZ8zrwee+0rAKuvXc=
-github.com/hollis-labs/go-tether-client v0.3.0 h1:GEkMKGJS/S5JA9OXwA23I/HcXSFXeN0rq90C3+JkbCY=
-github.com/hollis-labs/go-tether-client v0.3.0/go.mod h1:kVsADpv8/nJa3yd2LfwP11RrsZI53KGUB1VixKfG62g=
 github.com/hollis-labs/plugin-sdk v0.3.1 h1:gLj3CWyRfYWgvMfTwOInuiGovFaQ0zNkSoQB+I3WuWg=
 github.com/hollis-labs/plugin-sdk v0.3.1/go.mod h1:+FcTow9tco3OoINjc5LSCkm8RZzWSLNG1tTCzLSQuHs=
 github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 h1:njuLRcjAuMKr7kI3D85AXWkw6/+v9PwtV6M6o11sWHQ=

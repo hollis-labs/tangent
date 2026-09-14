@@ -1,0 +1,67 @@
+id: tangent.plugin.runner
+name: Agent Runner
+description: Embedded and delegated agent execution runner with conversational turn extraction.
+version: 0.1.0
+protocol: 1
+entrypoint: tangent-plugin-runner
+tools:
+  - name: tangent.runner_launch
+    description: Launch an agent run (embedded subprocess or delegated to Tether)
+    input_schema: |-
+      {
+      	"type": "object",
+      	"properties": {
+      		"session_id": {"type": "string", "description": "Optional explicit session ID"},
+      		"agent_id": {"type": "string", "description": "Logical identifier of the agent"},
+      		"agent_label": {"type": "string", "description": "Human-readable agent label"},
+      		"prompt": {"type": "string", "description": "Initial task prompt or instructions"},
+      		"working_dir": {"type": "string", "description": "Working directory for execution"},
+      		"mode": {"type": "string", "enum": ["embedded", "tether"], "description": "Execution mode (default: embedded)"},
+      		"lifecycle": {"type": "string", "enum": ["streaming_stdio", "jsonrpc_stdio", "pty", "acp"], "description": "Subprocess lifecycle (default: streaming_stdio)"},
+      		"command": {"type": "string", "description": "Binary command to execute (e.g. claude, codex)"},
+      		"args": {"type": "array", "items": {"type": "string"}, "description": "Command-line arguments"},
+      		"correlations": {"type": "object", "description": "Correlations dictionary (task_id, project_id, etc.)"}
+      	},
+      	"required": ["agent_id", "prompt"]
+      }
+  - name: tangent.runner_send_turn
+    description: Deliver operator reply to a running agent session
+    input_schema: |-
+      {
+      	"type": "object",
+      	"properties": {
+      		"session_id": {"type": "string", "description": "Session identifier"},
+      		"response_text": {"type": "string", "description": "Operator reply text or answer"},
+      		"action": {"type": "string", "description": "Resolution action (respond, approve, reject)"},
+      		"selected_option": {"type": "string", "description": "Option choice if options were provided"}
+      	},
+      	"required": ["session_id", "response_text"]
+      }
+  - name: tangent.runner_health
+    description: Inspect live session status, turn progress, and resource health
+    input_schema: |-
+      {
+      	"type": "object",
+      	"properties": {
+      		"session_id": {"type": "string", "description": "Session identifier"}
+      	},
+      	"required": ["session_id"]
+      }
+  - name: tangent.runner_stop
+    description: Terminate/interrupt an active agent run
+    input_schema: |-
+      {
+      	"type": "object",
+      	"properties": {
+      		"session_id": {"type": "string", "description": "Session identifier"},
+      		"reason": {"type": "string", "description": "Optional stop reason"}
+      	},
+      	"required": ["session_id"]
+      }
+routes:
+  - method: POST
+    path: /api/plugins/runner/launch
+    capability: draft
+  - method: GET
+    path: /api/plugins/runner/sessions
+    capability: view
