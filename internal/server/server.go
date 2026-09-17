@@ -367,6 +367,11 @@ func New(cfg Config) (*Server, error) {
 		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/effects", authz.View, effectHandler.request)
 	}
 
+	// Plugin registry endpoint (CW-20260911-0035). Serves registry.Response
+	// so the browser loader can resolve plugins. Registered before plugin-served
+	// routes so it cannot be claimed by a plugin.
+	registerPluginRegistryRoute(mux, logger)
+
 	// Plugin-served routes (ADR 0007 §4, CW-20260910-0030). Mounted last, so
 	// every route this package writes by hand has already claimed its pattern
 	// and a plugin cannot take one; the reserved prefix makes that structural

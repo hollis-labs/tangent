@@ -84,6 +84,7 @@ import {
 } from "./components/envelopes/Whiteboard";
 import { Wizard, type WizardEnvelope, type WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
+import { syncPlugins } from "./lib/plugin-loader";
 import { seedShellClientIdentity } from "./lib/ws-client";
 import "./index.css";
 
@@ -337,6 +338,10 @@ if (!rootEl) {
 // Before the router's first navigation drops the query string: the desktop
 // shell's stable client id and kind ride in on the window URL.
 seedShellClientIdentity();
+
+// Sync plugins from /api/plugins/registry (CW-20260911-0035 minimal proof).
+// Fire-and-forget: plugin load failures should not block app boot.
+syncPlugins();
 
 createRoot(rootEl).render(
   <StrictMode>
