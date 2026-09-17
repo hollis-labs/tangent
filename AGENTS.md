@@ -19,7 +19,11 @@ something new.
   `0007` the collaboration surface, the plugin host and where view state
   lives. `0008` carries the plugin model — what the host is becoming, and what
   is still open — after `0007` §4 was narrowed to the boundary rule alone.
-  `0006` is superseded by `0007`; read `0007` instead.
+  `0009` reduces the renderer trust model to isolation. `0010` corrects `0007`
+  §6: a plugin writing to the application it adapts is the pattern working,
+  not an exception — the boundary `0007` §6 and this file protect is that
+  Tangent's own binary takes no application dependency, not which direction a
+  write travels. `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
   `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
@@ -49,9 +53,11 @@ something new.
 - `internal/plugins/torque/` — the first application plugin, and the only
   file tree here that knows Torque exists. It is the ADR 0007 §6 pattern
   working: a domain-free kind, a mechanical mapping in userland, one agent call
-  in, and a sync button that costs no agent turn. Its compiled-in Torque writes
-  are a knowingly recorded exception to §6, amended there rather than left
-  quietly false; `CW-20260910-0034` is the fix.
+  in, and a sync button that costs no agent turn. It writes to Torque through
+  its own client, with Torque's own authority — that is a plugin doing what a
+  plugin is for, per [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md),
+  not an exception to anything. Tesseract's plugin does the same for
+  Tesseract.
 - `internal/interaction/` + `internal/roomflow/` — the durable substrate and
   the compatibility adapter every room workflow routes through. The
   interaction is the canonical record; `rooms`/`envelopes` are a projection.
@@ -114,10 +120,12 @@ into a plugin and `Set-Cookie` does not cross back out. Both kind doors must
 stay inside the drift tests — `TestPackageTreeMatchesRegistrations`
 covering only `RegisterAll` would narrow ADR 0003 §6's ownership guarantee to
 half the registry without failing. `RegisterCRUDHandler` is deliberately
-unimplemented: the owning application's agent is its client, and no write to an
-application may originate in Tangent's process. Implementing a host surface
-because the SDK offers it, rather than because a consumer needs it, is the
-specific way ADR 0007 says this boundary rots.
+unimplemented: the owning application's agent or plugin is its client, and a
+*host* surface that wrote to applications generically would mean Tangent
+learning their schemas — the domain-free-binary property ADR 0005 protects,
+not a rule against writes ([ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md)).
+Implementing a host surface because the SDK offers it, rather than because a
+consumer needs it, is the specific way ADR 0007 says this boundary rots.
 
 `tangent.app-board` is the first kind whose drafts are Tangent's own records
 (`draft_custody: tangent-custodied`) rather than `localStorage`. Its view state
@@ -128,10 +136,14 @@ nothing in the owning application until the participant presses Sync, so a
 board abandoned with staged changes has changed nothing. The press is the
 decision; do not make a draft into one.
 
-A plugin drives Tangent through `pluginhost.ToolCaller` — an in-process MCP
-client session against Tangent's own tool surface, with the same authority any
-local MCP caller has and no more. Reach for a new typed host method only when a
-tool genuinely cannot express the need; `GetService` stays unimplemented.
+A compiled-in plugin drives Tangent through `pluginhost.ToolCaller` — an
+in-process MCP client session against Tangent's own tool surface, with the
+same authority any local MCP caller has and no more. A subprocess plugin has
+no such channel (the plugin-sdk wire is host-initiated only) and instead
+reaches Tangent as an ordinary local MCP client against `/mcp`, resolving to
+the same host-assigned identity — see [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md)
+§5. Reach for a new typed host method only when a tool genuinely cannot
+express the need; `GetService` stays unimplemented.
 
 **The host holds no plugin configuration, so it can never hold a plugin's
 secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
