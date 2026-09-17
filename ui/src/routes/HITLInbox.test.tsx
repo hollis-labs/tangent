@@ -56,7 +56,7 @@ describe("<HITLInboxRoute>", () => {
     mockFetch(async () => jsonResponse(inbox([], [])));
     renderRoute("/hitl");
 
-    expect(await screen.findByRole("heading", { name: "Human input" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Approvals" })).toBeInTheDocument();
     // The heading is static header markup, so awaiting it proves only that the
     // route mounted — not that the inbox fetch settled. Until it does, the list
     // is a QueueSkeleton and the empty state has not rendered, so this has to

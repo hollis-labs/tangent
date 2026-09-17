@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocItemRequestV1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "idempotency_key",
+    "source",
+    "title",
+    "content_markdown"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "source": {
+      "type": "object",
+      "required": ["agent_id"],
+      "properties": {
+        "agent_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "application_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "agent_label": { "type": "string", "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "content_markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 262144
+    },
+    "requires_ack": {
+      "type": "boolean"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "maxItems": 20
+    },
+    "correlations": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

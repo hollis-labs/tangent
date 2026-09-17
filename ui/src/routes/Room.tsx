@@ -33,6 +33,7 @@ import { useParams } from "react-router-dom";
 
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
+import { PageShell } from "../components/layout/PageShell";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
 import { fetchRoomState } from "../lib/rooms-api";
 import {
@@ -184,7 +185,7 @@ export default function Room() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 p-6">
+    <PageShell as="main" className="overflow-y-auto p-6">
       <header className="mb-4 space-y-2">
         <h1 className="text-lg font-medium">Room {roomID}</h1>
         <ConnectionStatus
@@ -196,8 +197,8 @@ export default function Room() {
           onRelease={() => lifecycleRef.current?.releaseResolver()}
           onResync={() => lifecycleRef.current?.resync()}
         />
-        <p className="text-xs text-zinc-400">status: {status}</p>
-        {error ? <p className="text-xs text-red-400">error: {error}</p> : null}
+        <p className="text-xs text-fg-muted">status: {status}</p>
+        {error ? <p className="text-xs text-danger">error: {error}</p> : null}
       </header>
 
       {pending ? (
@@ -230,9 +231,9 @@ export default function Room() {
         </section>
       ) : null}
       {!pending || submitting ? (
-        <p className="text-sm text-zinc-500">waiting for envelope...</p>
+        <p className="text-sm text-fg-faint">waiting for envelope...</p>
       ) : null}
-    </main>
+    </PageShell>
   );
 }
 

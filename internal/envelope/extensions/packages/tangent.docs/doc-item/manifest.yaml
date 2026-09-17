@@ -1,0 +1,50 @@
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.doc-item
+version: "1.0"
+revision: 1
+title: "Docs inbox item"
+description: "Durable operator-facing document item: a markdown document an agent sends for reading, with independent read/unread tracking and an optional acknowledgment."
+package_id: tangent.docs
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+response_schema: response.schema.json
+error_schema: error.schema.json
+compatibility_response_schema: present
+
+named_definitions:
+  DocItemRequestV1: "Enqueue request root: one document for the operator's Docs inbox."
+  DocItemResponseV1: "Operator acknowledgment payload, when the document requested one."
+  DocItemHandleV1: "Durable handle returned at doc enqueue."
+  DocItemViewV1: "Operator-facing projection of one doc item, including read state."
+
+renderer:
+  id: tangent.renderer.docs-inbox
+  class: react-component
+  entry: "routes/DocsInbox#DocsInbox"
+  isolation: main-origin
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.13.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: disabled
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

@@ -84,6 +84,7 @@ var registrations = []registration{
 	{HITLItemEnvelopeType, HITLPackageID, RegisterHITLItem, false},
 	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, false},
 	{AgentTurnEnvelopeType, TurnsPackageID, RegisterAgentTurn, false},
+	{DocItemEnvelopeType, DocsPackageID, RegisterDocItem, false},
 }
 
 // RegisterAll registers every Tangent-owned interaction definition on svc. It

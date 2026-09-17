@@ -202,6 +202,9 @@ The reserved operator inbox adds four stricter adapters:
 - `tangent.hitl_await`
 - `tangent.hitl_withdraw`
 
+The Docs inbox adds one caller-facing adapter, `tangent.docs_enqueue` — see
+"Durable Docs operator surface" below.
+
 ### WebSocket bridge with per-room state
 
 `internal/ws` — the SPA opens a WS connection scoped to the room ID; the bridge
@@ -284,6 +287,30 @@ terminal outcome. A failed durable refresh closes the stream so the browser
 reports a degraded connection and retries. This channel is intentionally
 separate from both per-room `/ws` and the four caller-facing
 `tangent.hitl_*` MCP tools.
+
+### Durable Docs operator surface
+
+`internal/docs/` owns Tangent's third durable operator inbox, at `/docs`
+(CW-20260917-0009). It sits on the same interaction substrate as HITL and
+Turns — its own surface (`surface_docs_default`) and kind
+(`tangent.doc-item`), not a new table — but answers a different need: a
+document an agent sends the operator to read at their own pace, not a
+decision that blocks anything. A caller enqueues one with
+`tangent.docs_enqueue`; the SPA reads and acts on it through `/api/docs`.
+
+Read/unread is deliberately not the interaction's own resolved/unresolved
+state — a document can be read without being acknowledged, and
+`requires_ack: false` documents are never resolved at all until archived.
+`docs_read_receipts` (migration `0018`) is a small side table scoped to this
+package alone: presence of a row means read, and nothing marks a row present
+except the operator's explicit "mark read" action — never the act of fetching
+or displaying a document. A document that asks for one is acknowledged via
+`POST /api/docs/items/{id}/acknowledge`, which resolves the interaction the
+same way HITL resolves an approval. "Delete" is `POST
+.../archive`, Tangent's usual cancel-and-hide rather than a real row
+deletion — the same terminal-state permanence HITL's withdraw and Turns'
+dismiss already accept, so an already-acknowledged document cannot be
+archived further; it is already out of the active queue.
 
 ### Cooperative relay inbox
 

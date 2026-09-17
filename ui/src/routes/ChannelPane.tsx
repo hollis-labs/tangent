@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
 import {
   type ChannelAgentPresence,
@@ -157,7 +158,7 @@ export default function ChannelPaneRoute() {
   };
 
   return (
-    <main className="flex min-h-[calc(100vh-57px)] bg-zinc-950 text-zinc-100">
+    <PageShell as="main" className="flex overflow-y-auto">
       <section
         className={cn(
           "w-full shrink-0 border-r border-zinc-800 sm:w-80",
@@ -281,7 +282,7 @@ export default function ChannelPaneRoute() {
                         href={item.item_url}
                         className="text-xs text-amber-300 underline decoration-amber-700 underline-offset-2 hover:text-amber-200"
                       >
-                        {item.state.replace(/_/g, " ")} · open in Human input
+                        {item.state.replace(/_/g, " ")} · open in Approvals
                       </a>
                     </li>
                   ))}
@@ -345,7 +346,7 @@ export default function ChannelPaneRoute() {
           </>
         )}
       </section>
-    </main>
+    </PageShell>
   );
 }
 

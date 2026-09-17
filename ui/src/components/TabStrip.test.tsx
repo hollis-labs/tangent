@@ -69,9 +69,9 @@ describe("<TabStrip>", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Human input" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approvals" }));
     expect(await screen.findByTestId("path-probe")).toHaveTextContent("/hitl");
-    expect(screen.getByRole("button", { name: "Human input" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Approvals" })).toHaveAttribute(
       "aria-current",
       "page",
     );

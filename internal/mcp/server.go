@@ -11,6 +11,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/channel"
+	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -51,6 +52,7 @@ type Server struct {
 	roomURLBase  string
 	interactions *interaction.Service
 	hitl         *hitl.Service
+	docs         *docs.Service
 	roomflow     *roomflow.Service
 
 	// packages resolves a wire name to the publisher-owned interaction
@@ -235,6 +237,20 @@ func WithHITLService(service *hitl.Service) Option {
 			return fmt.Errorf("mcp: hitl service is nil")
 		}
 		server.hitl = service
+		return nil
+	}
+}
+
+// WithDocsService enables the tangent.docs_enqueue tool backing the Docs
+// inbox (CW-20260917-0009). Unlike HITL and Turns, Docs has no other MCP
+// tools — the operator acts on a doc through the browser API, never through
+// MCP.
+func WithDocsService(service *docs.Service) Option {
+	return func(server *Server) error {
+		if service == nil {
+			return fmt.Errorf("mcp: docs service is nil")
+		}
+		server.docs = service
 		return nil
 	}
 }
@@ -674,6 +690,11 @@ func (s *Server) registerTools() error {
 	if s.hitl != nil {
 		if err := s.registerHITLTools(); err != nil {
 			return fmt.Errorf("register hitl tools: %w", err)
+		}
+	}
+	if s.docs != nil {
+		if err := s.registerDocsTools(); err != nil {
+			return fmt.Errorf("register docs tools: %w", err)
 		}
 	}
 	if s.channels != nil && s.relay != nil {

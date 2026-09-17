@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocItemErrorV1",
+  "type": "object",
+  "required": ["code", "message"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": ["stale_revision", "idempotency_conflict", "invalid_request", "not_found", "terminal_conflict"]
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "expected_revision": { "type": "integer" },
+    "actual_revision": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

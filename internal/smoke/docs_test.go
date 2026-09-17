@@ -81,6 +81,7 @@ var nonToolMentions = map[string]bool{
 	// with a tool name spelled the same way; the ones that do are real
 	// tools and stay out of this set.
 	"tangent.hitl-item":          true,
+	"tangent.doc-item":           true,
 	"tangent.interview-question": true,
 	"tangent.synthesis-notes":    true,
 	"tangent.block-draft":        true,

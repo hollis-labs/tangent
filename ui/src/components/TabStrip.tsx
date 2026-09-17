@@ -1,6 +1,8 @@
+import { Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { closeRoom as closeRoomRequest, fetchRooms, type RoomSummary } from "@/lib/rooms-api";
 import { cn } from "@/lib/utils";
@@ -57,6 +59,8 @@ export function TabStrip() {
   const turnsActive =
     location.pathname === "/turns" || location.pathname.startsWith("/turns/items/");
   const channelsActive = location.pathname.startsWith("/channels");
+  const docsActive = location.pathname.startsWith("/docs");
+  const settingsActive = location.pathname.startsWith("/settings");
 
   const closeRoom = async (roomID: string) => {
     try {
@@ -93,7 +97,7 @@ export function TabStrip() {
             hitlActive ? "text-amber-300" : "text-zinc-400 hover:text-zinc-100",
           )}
         >
-          Human input
+          Approvals
         </button>
         <button
           type="button"
@@ -116,6 +120,17 @@ export function TabStrip() {
           )}
         >
           Channels
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/docs")}
+          aria-current={docsActive ? "page" : undefined}
+          className={cn(
+            "shrink-0 border-l border-zinc-800 px-3 py-1 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+            docsActive ? "text-amber-300" : "text-zinc-400 hover:text-zinc-100",
+          )}
+        >
+          Docs
         </button>
         <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto" data-testid="tab-strip">
           {rooms.length === 0 ? (
@@ -191,6 +206,22 @@ export function TabStrip() {
         >
           Refresh
         </Button>
+        <div className="flex shrink-0 items-center gap-1 border-l border-zinc-800 pl-2">
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            aria-current={settingsActive ? "page" : undefined}
+            aria-label="Settings"
+            title="Settings"
+            className={cn(
+              "rounded p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+              settingsActive ? "text-amber-300" : "text-zinc-400 hover:text-zinc-100",
+            )}
+          >
+            <Settings className="size-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
   );

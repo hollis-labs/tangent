@@ -1,10 +1,10 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:f0da46d72dea745d322b2ad8d8a33be3ea62006105984d5163e0c4b0a2dcc696
+// @definition-source sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad
 // Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Coverage: 38 registered kinds — 18 go-envelopes core,
-// 20 Tangent-owned (internal/envelope/extensions).
+// Coverage: 39 registered kinds — 18 go-envelopes core,
+// 21 Tangent-owned (internal/envelope/extensions).
 //
 // Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
@@ -707,6 +707,19 @@ export interface TangentDiffReviewData {
   title?: string;
 }
 
+/** Envelope data for "tangent.doc-item" — Durable operator-facing document item: a markdown document an agent sends for reading, with independent read/unread tracking and an optional acknowledgment. */
+export interface TangentDocItemData {
+  content_markdown: string;
+  contract_version: "1.0";
+  correlations?: Record<string, unknown>;
+  idempotency_key: string;
+  requires_ack?: boolean;
+  source: { agent_id: string; agent_label?: string; application_id?: string };
+  summary?: string;
+  tags?: string[];
+  title: string;
+}
+
 /** Envelope data for "tangent.feedback" — Feedback envelope: ask a human to answer a short structured questionnaire. */
 export interface TangentFeedbackData {
   layout?: "inline" | "walkthrough" | "auto";
@@ -909,6 +922,7 @@ export type TangentBlockDraftEnvelope = EnvelopeBase<"tangent.block-draft", Tang
 export type TangentDashboardEnvelope = EnvelopeBase<"tangent.dashboard", TangentDashboardData>;
 export type TangentDesignIterationEnvelope = EnvelopeBase<"tangent.design-iteration", TangentDesignIterationData>;
 export type TangentDiffReviewEnvelope = EnvelopeBase<"tangent.diff-review", TangentDiffReviewData>;
+export type TangentDocItemEnvelope = EnvelopeBase<"tangent.doc-item", TangentDocItemData>;
 export type TangentFeedbackEnvelope = EnvelopeBase<"tangent.feedback", TangentFeedbackData>;
 export type TangentFilePickerEnvelope = EnvelopeBase<"tangent.file-picker", TangentFilePickerData>;
 export type TangentFormCollectEnvelope = EnvelopeBase<"tangent.form-collect", TangentFormCollectData>;
@@ -950,6 +964,7 @@ export type Envelope =
   | TangentDashboardEnvelope
   | TangentDesignIterationEnvelope
   | TangentDiffReviewEnvelope
+  | TangentDocItemEnvelope
   | TangentFeedbackEnvelope
   | TangentFilePickerEnvelope
   | TangentFormCollectEnvelope
@@ -991,6 +1006,7 @@ export type EnvelopeType =
   | "tangent.dashboard"
   | "tangent.design-iteration"
   | "tangent.diff-review"
+  | "tangent.doc-item"
   | "tangent.feedback"
   | "tangent.file-picker"
   | "tangent.form-collect"
@@ -1032,6 +1048,7 @@ export interface EnvelopeDataMap {
   "tangent.dashboard": TangentDashboardData;
   "tangent.design-iteration": TangentDesignIterationData;
   "tangent.diff-review": TangentDiffReviewData;
+  "tangent.doc-item": TangentDocItemData;
   "tangent.feedback": TangentFeedbackData;
   "tangent.file-picker": TangentFilePickerData;
   "tangent.form-collect": TangentFormCollectData;
@@ -1075,6 +1092,7 @@ export const EnvelopeKindMap = {
   "tangent.dashboard": "DashboardView",
   "tangent.design-iteration": "DesignIterationView",
   "tangent.diff-review": "DiffReviewView",
+  "tangent.doc-item": "",
   "tangent.feedback": "FeedbackView",
   "tangent.file-picker": "FilePickerView",
   "tangent.form-collect": "FormCollectView",
@@ -1117,6 +1135,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "tangent.dashboard",
   "tangent.design-iteration",
   "tangent.diff-review",
+  "tangent.doc-item",
   "tangent.feedback",
   "tangent.file-picker",
   "tangent.form-collect",
@@ -1134,7 +1153,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:f0da46d72dea745d322b2ad8d8a33be3ea62006105984d5163e0c4b0a2dcc696";
+export const DEFINITION_SOURCE_DIGEST = "sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.13.0";
@@ -1157,6 +1176,7 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
   { kind: "tangent.dashboard", version: "0.12", revision: 1, manifestDigest: "sha256:24640bcaa0298cb9e89100002712fec80bc8360d5d6bd671beeaeb668425e999", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
   { kind: "tangent.design-iteration", version: "0.3", revision: 1, manifestDigest: "sha256:e98d28afa43b82490d6f2321add7ce8221830cb48f9c2051fa61b0ff9a7a2125", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
   { kind: "tangent.diff-review", version: "0.9", revision: 1, manifestDigest: "sha256:fcdf9efa5c34f896efabcb951e2b0540efc02b147ce75215bfc9aad75d69942d", contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2" },
+  { kind: "tangent.doc-item", version: "1.0", revision: 1, manifestDigest: "sha256:c2202c4352dc999ab9956ea9475d47bc945a405d5970256293c5282807ea0911", contractDigest: "sha256:d5f723e61d24c275a5296cf6d4dd6fa56c372ded33822b73143d893945d9728f" },
   { kind: "tangent.feedback", version: "0.3", revision: 1, manifestDigest: "sha256:c7501f59e1e40a5b1a938f668403837628fb333991b2db965df49823bfac7594", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
   { kind: "tangent.file-picker", version: "0.10", revision: 1, manifestDigest: "sha256:4ef3363ccedea1c8b9afa8797d64233c4ed549c9e0a408ab08bde5dba1788939", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
   { kind: "tangent.form-collect", version: "0.7", revision: 1, manifestDigest: "sha256:a64ffd6d1de303b5d37176c36799ca81c0c4d8817d21020cb2890cb918c942d7", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
@@ -1193,6 +1213,12 @@ export const DEFINITION_NAMED_DEFINITIONS: Readonly<
     "AgentTurnRequestV1": "Enqueue request root: one live agent turn.",
     "AgentTurnResponseV1": "Operator reply response payload.",
     "AgentTurnTerminalOutcomeV1": "Terminal outcome across resolved, canceled, expired, failed, and superseded.",
+  },
+  "tangent.doc-item": {
+    "DocItemHandleV1": "Durable handle returned at doc enqueue.",
+    "DocItemRequestV1": "Enqueue request root: one document for the operator's Docs inbox.",
+    "DocItemResponseV1": "Operator acknowledgment payload, when the document requested one.",
+    "DocItemViewV1": "Operator-facing projection of one doc item, including read state.",
   },
   "tangent.hitl-item": {
     "HITLAwaitCommandV1": "Wait for one item's terminal outcome without changing its lifecycle.",

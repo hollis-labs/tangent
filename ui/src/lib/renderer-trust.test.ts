@@ -44,6 +44,7 @@ const SHIPPED_TRUST: Record<string, string> = {
   "tangent.dashboard": "main-origin",
   "tangent.design-iteration": "sandboxed-frame",
   "tangent.diff-review": "main-origin",
+  "tangent.doc-item": "main-origin",
   "tangent.feedback": "main-origin",
   "tangent.file-picker": "main-origin",
   "tangent.form-collect": "main-origin",

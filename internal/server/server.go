@@ -72,6 +72,12 @@ type Config struct {
 	// When set, the server mounts its dedicated browser and daemon APIs.
 	Turns TurnsService
 
+	// Docs is the durable Docs inbox application service (CW-20260917-0009).
+	// When set, the server mounts its dedicated browser API and revision
+	// event stream. Enqueue happens only through the MCP tool surface, not
+	// this HTTP API — Docs has no daemon-loopback caller the way Turns does.
+	Docs DocsService
+
 	// Rooms is the browser room API's application service. When set, the
 	// server mounts /api/rooms — the participant-authenticated replacement for
 	// the SPA's direct /mcp POSTs (ADR 0004 §11). Optional in Config for the
@@ -294,6 +300,24 @@ func New(cfg Config) (*Server, error) {
 		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/enqueue", authz.Draft, turnsHandler.enqueue)
 		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/items/{itemID}/ack", authz.Resolve, turnsHandler.ack)
 		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "GET /api/turns/sessions/{sessionID}/replies", authz.View, turnsHandler.sessionReplies)
+	}
+
+	if cfg.Docs != nil {
+		// "read" is gated on `draft`, not `resolve` — marking a doc read is
+		// not a terminal decision, it is the same authoring-weight action as
+		// a channel's mark-read route above. Acknowledge and archive both
+		// move a doc toward or into a terminal interaction state, so they
+		// take `resolve`, matching HITL's resolve and Turns' dismiss/reply.
+		docsHandler := newDocsHTTPHandler(cfg.Docs)
+		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+		}
+		register("GET /api/docs", authz.View, docsHandler.inbox)
+		register("GET /api/docs/events", authz.View, docsHandler.events)
+		register("GET /api/docs/items/{itemID}", authz.View, docsHandler.item)
+		register("POST /api/docs/items/{itemID}/read", authz.Draft, docsHandler.markRead)
+		register("POST /api/docs/items/{itemID}/acknowledge", authz.Resolve, docsHandler.acknowledge)
+		register("POST /api/docs/items/{itemID}/archive", authz.Resolve, docsHandler.archive)
 	}
 
 	if cfg.Rooms != nil {

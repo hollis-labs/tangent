@@ -3,9 +3,11 @@ import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { TabStrip } from "./components/TabStrip";
 import ChannelPane from "./routes/ChannelPane";
+import DocsInbox from "./routes/DocsInbox";
 import HITLInbox from "./routes/HITLInbox";
 import Index from "./routes/Index";
 import Room from "./routes/Room";
+import Settings from "./routes/Settings";
 import TurnsInbox from "./routes/TurnsInbox";
 
 function Layout() {
@@ -15,11 +17,13 @@ function Layout() {
   // whether HITLInbox/ChannelPane/Room's instance continues or is replaced.
   const location = useLocation();
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="flex h-screen flex-col bg-bg text-fg">
       <TabStrip />
-      <RouteErrorBoundary locationKey={location.pathname}>
-        <Outlet />
-      </RouteErrorBoundary>
+      <div className="min-h-0 flex-1">
+        <RouteErrorBoundary locationKey={location.pathname}>
+          <Outlet />
+        </RouteErrorBoundary>
+      </div>
     </div>
   );
 }
@@ -34,8 +38,11 @@ function App() {
           <Route path="/hitl/items/:itemID" element={<HITLInbox />} />
           <Route path="/turns" element={<TurnsInbox />} />
           <Route path="/turns/items/:itemID" element={<TurnsInbox />} />
+          <Route path="/docs" element={<DocsInbox />} />
+          <Route path="/docs/items/:itemID" element={<DocsInbox />} />
           <Route path="/channels" element={<ChannelPane />} />
           <Route path="/channels/:channelID" element={<ChannelPane />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/r/:roomID" element={<Room />} />
         </Route>
       </Routes>

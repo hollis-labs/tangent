@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:f0da46d72dea745d322b2ad8d8a33be3ea62006105984d5163e0c4b0a2dcc696
+// @definition-source sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad
 // Run `make generate-envelopes` to regenerate.
 //
-// The renderer binding declared by each of the 20 manifests under
+// The renderer binding declared by each of the 21 manifests under
 // internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the
 // single answer to "what draws this kind"; ui/src/main.tsx is checked against
 // this table rather than being a second source of truth.
@@ -206,6 +206,22 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.review",
     state: "available",
     contractDigest: "sha256:6eee25c706f4eb1c5db3877b10765a55667e38a61986fa93666731b08f97f4d2",
+  },
+  {
+    kind: "tangent.doc-item",
+    version: "1.0",
+    rendererId: "tangent.renderer.docs-inbox",
+    rendererClass: "react-component",
+    entry: "routes/DocsInbox#DocsInbox",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
+    component: "",
+    packageId: "tangent.docs",
+    state: "available",
+    contractDigest: "sha256:d5f723e61d24c275a5296cf6d4dd6fa56c372ded33822b73143d893945d9728f",
   },
   {
     kind: "tangent.feedback",

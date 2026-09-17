@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
 import {
   dismissTurn,
@@ -330,7 +331,7 @@ export default function TurnsInboxRoute() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-53px)] flex-col bg-zinc-950 text-zinc-100">
+    <PageShell className="flex flex-col overflow-hidden">
       {/* Top Navigation & Status Bar */}
       <header className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950/80 px-6 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
@@ -667,7 +668,9 @@ export default function TurnsInboxRoute() {
                 </h2>
 
                 {activeItem.summary && (
-                  <p className="text-sm text-zinc-400">{activeItem.summary}</p>
+                  <div className="text-sm text-zinc-400">
+                    <Markdown content={activeItem.summary} />
+                  </div>
                 )}
 
                 {/* Metadata Badges */}
@@ -766,7 +769,9 @@ export default function TurnsInboxRoute() {
                                 </span>
                                 <span>{new Date(prevTurn.created_at).toLocaleTimeString()}</span>
                               </div>
-                              <div className="text-zinc-300 line-clamp-2">{prevTurn.content}</div>
+                              <div className="text-zinc-300 line-clamp-2">
+                                <Markdown content={prevTurn.content} />
+                              </div>
                               {prevTurn.resolution && (
                                 <div className="mt-1 rounded bg-zinc-950/80 p-2 border border-zinc-800/80 text-zinc-200">
                                   <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
@@ -838,7 +843,9 @@ export default function TurnsInboxRoute() {
                                   )}
                                 </div>
                                 {opt.description && (
-                                  <p className="mt-1 text-xs text-zinc-400">{opt.description}</p>
+                                  <div className="mt-1 text-xs text-zinc-400">
+                                    <Markdown content={opt.description} />
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -1081,6 +1088,6 @@ export default function TurnsInboxRoute() {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

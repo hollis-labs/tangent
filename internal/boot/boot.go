@@ -35,6 +35,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/channelpane"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
+	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
@@ -120,6 +121,7 @@ type Services struct {
 	Interaction *interaction.Service
 	HITL        *hitl.Service
 	Turns       *turns.Service
+	Docs        *docs.Service
 
 	RoomManager     *room.Manager
 	WSHandler       *tangentws.Handler
@@ -360,6 +362,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		interaction.WithSurfaceAccessPolicy(compoundSurfaceAccessPolicy{
 			hitl.SurfaceAccessPolicy{},
 			turns.SurfaceAccessPolicy{},
+			docs.SurfaceAccessPolicy{},
 		}),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers
@@ -385,6 +388,10 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	turnsService, err := turns.NewService(interactionService)
 	if err != nil {
 		return release(fmt.Errorf("build turns service: %w", err))
+	}
+	docsService, err := docs.NewService(interactionService, docs.NewReadStore(sqlDB))
+	if err != nil {
+		return release(fmt.Errorf("build docs service: %w", err))
 	}
 	recovery, err := interactionService.RecoverAfterRestart(context.Background())
 	if err != nil {
@@ -530,6 +537,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		roomURLBase,
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
+		mcp.WithDocsService(docsService),
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
 		mcp.WithTelemetry(recorder, telemetryStore),
@@ -621,6 +629,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		RoomManager:    roomMgr,
 		HITL:           hitlService,
 		Turns:          turnsService,
+		Docs:           docsService,
 		Rooms:          mcpSrv,
 		Channels:       channelPaneService,
 		Participants:   participantGate,
@@ -641,6 +650,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		Interaction:     interactionService,
 		HITL:            hitlService,
 		Turns:           turnsService,
+		Docs:            docsService,
 		RoomManager:     roomMgr,
 		WSHandler:       wsHandler,
 		ParticipantGate: participantGate,
