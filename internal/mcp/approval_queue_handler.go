@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -35,43 +34,39 @@ type approvalQueueSubmitPayload struct {
 
 func (s *Server) handleApprovalQueue(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args approvalQueueInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != approvalQueueEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("tangent.approval-queue rejects envelope type %q; want %q", args.Envelope.Type, approvalQueueEnvelopeType),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "approval-queue", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "approval-queue", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	snapshot := approvalQueueSnapshotFromEnvelope(args.Envelope, room.ProjectApprovalQueueState(phaseState))
 	if _, saveErr := s.manager.SaveApprovalQueueSnapshot(roomID, snapshot); saveErr != nil {
-		return sessionPhaseStateError(roomID, saveErr), nil, nil
+		return nil, sessionPhaseStateError(roomID, saveErr)
 	}
 
 	phaseState, found, err = s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room approval-queue state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room approval-queue state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(

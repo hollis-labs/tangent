@@ -157,8 +157,12 @@ func TestPluginToolIsListedAndCallable(t *testing.T) {
 }
 
 // TestPluginToolArgumentsAreValidatedAgainstItsOwnSchema: the untyped
-// registration path means nothing validates for us. A plugin that declares a
-// schema and then receives something else has a decorative schema.
+// registration path means nothing validates for us inside this file — but
+// inputSchemaValidationMiddleware (schema_validation.go) validates every
+// registered tool's arguments, host and plugin alike, against exactly the
+// schema this plugin declared, before any handler runs. A plugin that
+// declares a schema and then receives something else still has a decorative
+// schema if that middleware is ever bypassed.
 func TestPluginToolArgumentsAreValidatedAgainstItsOwnSchema(t *testing.T) {
 	called := false
 	session, done := connectWithPluginTools(t, []pluginhost.MCPTool{
@@ -182,8 +186,8 @@ func TestPluginToolArgumentsAreValidatedAgainstItsOwnSchema(t *testing.T) {
 	if called {
 		t.Error("the plugin handler ran on arguments its own schema rejects")
 	}
-	if body := extractText(t, result); !strings.Contains(body, "validation-failed") {
-		t.Errorf("refusal = %s, want the validation-failed code", body)
+	if body := extractText(t, result); !strings.Contains(body, `validating "arguments"`) {
+		t.Errorf("refusal = %s, want the schema-validation-middleware refusal", body)
 	}
 }
 

@@ -77,6 +77,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **MCP server and client roles converge onto `go-mcp` (`CW-20260917-0018`).**
+  Tangent drops its direct dependency on the official
+  `modelcontextprotocol/go-sdk` typed `AddTool` generic in favor of
+  `github.com/hollis-labs/go-mcp` v0.5.0's own tool-registration surface, per
+  the portfolio-wide consolidation (`CW-20260917-0011`) every other app in
+  this initiative already completed. `/mcp` and `/sse` are unaffected on the
+  wire — same transports, same stateless streamable-HTTP handling, still
+  built directly against the official SDK's server underneath.
+
+  Two things changed for real, not just mechanically:
+
+  - **Every tool now carries an explicit, reviewed annotation** —
+    `readOnlyHint`/`destructiveHint`/`idempotentHint`/`openWorldHint` — via a
+    single table in `internal/mcp/tool_registry.go`. Nothing set these before;
+    go-mcp makes them mandatory rather than optional or name-inferred.
+    Plugin-contributed tools carry a fixed conservative default (mutating,
+    destructive, non-idempotent, open-world) — the host cannot know a
+    plugin's actual shape, and inferring "safe" from a name is exactly the
+    failure mode this contract exists to rule out.
+  - **Input-schema validation, restored.** go-mcp registers tools through the
+    official SDK's raw, untyped `AddTool` — which does not validate a call's
+    arguments against its declared schema; that responsibility moved to the
+    app. Several of this host's schemas rely on `additionalProperties: false`
+    to reject malformed input (see `gateway_metadata.go`), so a new receiving
+    middleware (`internal/mcp/schema_validation.go`) restores exactly that
+    enforcement — same validation semantics, same
+    `validating "arguments": ...` error text — for every registered tool,
+    host and plugin alike.
+
+  The subprocess plugin callback path (`internal/pluginpkg/hostclient`) and
+  the tool-error wire contract (`{v, kind: "error", error: {code, message}}`,
+  and each surface's own richer shape) are unchanged; a plugin's outbound
+  call now goes through `go-mcp/client`'s pool instead of a hand-rolled
+  session, picking up reconnect and leak-prevention for free.
+
 - **The plugin inventory, corrected (`CW-20260911-0036`).** Two names described
   things that were not what they said.
 

@@ -2,9 +2,9 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // resolveWorkflowRoom names the room one named workflow invocation runs in.
@@ -31,33 +31,34 @@ func (s *Server) resolveWorkflowRoom(
 	ctx context.Context,
 	workflow string,
 	env *envelopes.Envelope,
-) (string, *mcpsdk.CallToolResult, error) {
+) (string, error) {
 	if s.roomflow != nil {
-		bound, known, err := s.roomflow.Recognize(ctx, callerIdentity(nil), env)
+		bound, known, err := s.roomflow.Recognize(ctx, callerIdentity(), env)
 		if err != nil {
-			return "", triageErrorResult(err), nil
+			return "", triageErrorResult(err)
 		}
 		if known && bound != "" {
 			s.logWorkflowRoomReused(workflow, bound, env.ID)
-			return bound, nil, nil
+			return bound, nil
 		}
 	}
 	if roomID, named := metaRoomID(env.Meta); named && roomID != "" {
 		s.logWorkflowRoomReused(workflow, roomID, env.ID)
-		return roomID, nil, nil
+		return roomID, nil
 	}
-	createRes, created, err := s.handleSessionCreate(ctx, nil, sessionCreateInput{
+	created, err := s.handleSessionCreate(ctx, sessionCreateInput{
 		Meta: map[string]any{
 			"envelopeID":   env.ID,
 			"envelopeType": env.Type,
 		},
 	})
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-	if createRes.IsError {
-		return "", createRes, nil
+	result, ok := created.(sessionCreateResult)
+	if !ok {
+		return "", fmt.Errorf("resolve workflow room: unexpected session_create result type %T", created)
 	}
-	s.logWorkflowRoomCreated(workflow, created.RoomID, env.ID)
-	return created.RoomID, nil, nil
+	s.logWorkflowRoomCreated(workflow, result.RoomID, env.ID)
+	return result.RoomID, nil
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -30,42 +29,38 @@ type wizardSubmitDraft struct {
 
 func (s *Server) handleWizard(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args wizardInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != wizardEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("tangent.wizard rejects envelope type %q; want %q", args.Envelope.Type, wizardEnvelopeType),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "wizard", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "wizard", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room wizard state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room wizard state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	snapshot := wizardSnapshotFromEnvelope(args.Envelope, room.ProjectWizardState(phaseState))
 	if _, saveErr := s.manager.SaveWizardSnapshot(roomID, snapshot); saveErr != nil {
-		return sessionPhaseStateError(roomID, saveErr), nil, nil
+		return nil, sessionPhaseStateError(roomID, saveErr)
 	}
 	phaseState, found, err = s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room wizard state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room wizard state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleWizardEnvelope(&args.Envelope, room.ProjectWizardState(phaseState)), args.Completion)

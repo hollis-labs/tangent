@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -43,43 +42,39 @@ type diffReviewSubmitPayload struct {
 
 func (s *Server) handleDiffReview(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args diffReviewInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != diffReviewEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("tangent.diff-review rejects envelope type %q; want %q", args.Envelope.Type, diffReviewEnvelopeType),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "diff-review", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "diff-review", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	snapshot := diffReviewSnapshotFromEnvelope(args.Envelope, room.ProjectDiffReviewState(phaseState))
 	if _, saveErr := s.manager.SaveDiffReviewSnapshot(roomID, snapshot); saveErr != nil {
-		return sessionPhaseStateError(roomID, saveErr), nil, nil
+		return nil, sessionPhaseStateError(roomID, saveErr)
 	}
 
 	phaseState, found, err = s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room diff-review state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room diff-review state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(

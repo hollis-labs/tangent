@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type interviewQuestionInput struct {
@@ -15,26 +14,22 @@ type interviewQuestionInput struct {
 
 func (s *Server) handleInterviewQuestion(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args interviewQuestionInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != interviewQuestionEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.interview_question rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				interviewQuestionEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "interview-question", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "interview-question", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)

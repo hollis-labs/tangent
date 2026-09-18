@@ -37,8 +37,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 
+	gmcpclient "github.com/hollis-labs/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/pluginhost"
@@ -59,24 +59,46 @@ const URLEnv = "TANGENT_MCP_URL"
 // nothing about the real cause.
 var ErrNoHost = errors.New("hostclient: " + URLEnv + " is not set")
 
+// poolServerName is the single entry this client registers in its go-mcp/client
+// pool — there is exactly one host to reach, but the pool is still the right
+// tool: it gives connect-on-first-use, one retry on a recoverable error, and
+// leak-prevention-on-error for free, matching the client package every other
+// app in this portfolio's go-mcp migration converged onto (CW-20260917-0018).
+const poolServerName = "tangent"
+
 // Client is a plugin's connection to Tangent's tool surface.
 //
 // It satisfies the same one-method shape `pluginhost.ToolCaller` does, so plugin
 // code written against the in-process caller works unchanged out of process.
 type Client struct {
-	url string
-
-	mu      sync.Mutex
-	session *mcpsdk.ClientSession
+	pool *gmcpclient.Pool
 }
 
 // New returns a client for the host named by TANGENT_MCP_URL.
+//
+// # Connecting lazily is required, not an optimization
+//
+// The host loads plugins BEFORE the MCP and HTTP servers exist — a
+// plugin-contributed kind has to be in the registry `mcp.New` reads, so plugins
+// necessarily come first. A plugin that dialed its host at startup would dial a
+// port nothing is listening on yet, and the failure would look like a
+// misconfigured URL rather than an ordering problem. Registering a pool entry
+// does not dial; go-mcp/client dials on first use, which is after boot by
+// construction. The compiled-in plugins already resolve their caller at
+// dispatch for exactly this reason.
 func New() (*Client, error) {
 	url := os.Getenv(URLEnv)
 	if url == "" {
 		return nil, ErrNoHost
 	}
-	return &Client{url: url}, nil
+	pool := gmcpclient.NewPool(gmcpclient.WithIdentity("tangent-plugin", "0.1.0"))
+	if err := pool.Register(poolServerName, gmcpclient.ServerConfig{
+		Transport: gmcpclient.TransportHTTP,
+		URL:       url,
+	}); err != nil {
+		return nil, fmt.Errorf("hostclient: register %s: %w", url, err)
+	}
+	return &Client{pool: pool}, nil
 }
 
 // Compile-time proof this is interchangeable with the in-process caller. Plugin
@@ -85,37 +107,13 @@ func New() (*Client, error) {
 var _ pluginhost.ToolCaller = (*Client)(nil)
 
 // CallTool calls one Tangent tool.
-//
-// # Connecting lazily is required, not an optimization
-//
-// The host loads plugins BEFORE the MCP and HTTP servers exist — a
-// plugin-contributed kind has to be in the registry `mcp.New` reads, so plugins
-// necessarily come first. A plugin that dialed its host at startup would dial a
-// port nothing is listening on yet, and the failure would look like a
-// misconfigured URL rather than an ordering problem.
-//
-// So the session is established on first use, which is after boot by
-// construction. The compiled-in plugins already resolve their caller at
-// dispatch for exactly this reason.
 func (c *Client) CallTool(ctx context.Context, name string, arguments any) (pluginhost.ToolResult, error) {
-	session, err := c.connect(ctx)
-	if err != nil {
-		return pluginhost.ToolResult{}, err
-	}
-
 	encoded, err := toArgumentMap(arguments)
 	if err != nil {
 		return pluginhost.ToolResult{}, err
 	}
-	response, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: name, Arguments: encoded,
-	})
+	response, _, err := c.pool.CallTool(ctx, poolServerName, name, encoded)
 	if err != nil {
-		// A failed call drops the session so the next call reconnects. A host
-		// that restarted, or a connection that broke, should cost one call
-		// rather than every later one — the same property
-		// internal/pluginhost/wire.go holds on the other side of the pipe.
-		c.reset(session)
 		return pluginhost.ToolResult{}, fmt.Errorf("hostclient: call %s: %w", name, err)
 	}
 
@@ -128,42 +126,9 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments any) (plug
 	return result, nil
 }
 
-func (c *Client) connect(ctx context.Context) (*mcpsdk.ClientSession, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.session != nil {
-		return c.session, nil
-	}
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{
-		Name: "tangent-plugin", Version: "0.1.0",
-	}, nil)
-	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{Endpoint: c.url}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("hostclient: connect to %s: %w", c.url, err)
-	}
-	c.session = session
-	return session, nil
-}
-
-func (c *Client) reset(stale *mcpsdk.ClientSession) {
-	c.mu.Lock()
-	if c.session == stale {
-		c.session = nil
-	}
-	c.mu.Unlock()
-	_ = stale.Close()
-}
-
-// Close ends the session, if one was established.
+// Close ends the pooled connection, if one was established.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	session := c.session
-	c.session = nil
-	c.mu.Unlock()
-	if session == nil {
-		return nil
-	}
-	return session.Close()
+	return c.pool.Close()
 }
 
 // toArgumentMap converts a caller's arguments into the map the MCP SDK wants,

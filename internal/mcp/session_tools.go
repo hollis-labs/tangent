@@ -9,7 +9,6 @@ import (
 	"time"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
@@ -166,9 +165,8 @@ type sessionListResult struct {
 
 func (s *Server) handleSessionCreate(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionCreateInput,
-) (*mcpsdk.CallToolResult, sessionCreateResult, error) {
+) (any, error) {
 	meta := stringifyMeta(args.Meta)
 	if args.Title != "" {
 		if _, exists := meta["title"]; !exists {
@@ -177,56 +175,51 @@ func (s *Server) handleSessionCreate(
 	}
 	rm, err := s.manager.CreateWithError(meta)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("create room: %v", err)), sessionCreateResult{}, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("create room: %v", err))
 	}
 	// Ownership is recorded with the room rather than at its first advance, so
 	// a room is never briefly an object no authorization check has an answer
 	// for. The new surface's owner scope is the host-derived caller scope; the
 	// caller cannot nominate it.
 	if s.roomflow != nil {
-		if ownErr := s.roomflow.EnsureRoomOwnership(ctx, rm.ID, callerIdentity(request)); ownErr != nil {
-			return toolErrorResult(envelopes.ErrorCodeHostError,
-				fmt.Sprintf("record room ownership: %v", ownErr)), sessionCreateResult{}, nil
+		if ownErr := s.roomflow.EnsureRoomOwnership(ctx, rm.ID, callerIdentity()); ownErr != nil {
+			return nil, toolErrorResult(envelopes.ErrorCodeHostError,
+				fmt.Sprintf("record room ownership: %v", ownErr))
 		}
 	}
-	result := sessionCreateResult{
+	return sessionCreateResult{
 		RoomID: rm.ID,
 		URL:    s.roomURL(rm.ID),
-	}
-	toolRes, payload := toolJSONResult(result)
-	return toolRes, payload, nil
+	}, nil
 }
 
 func (s *Server) handleSessionAdvance(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args sessionAdvanceInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.advanceRoomEnvelope(ctx, args.RoomID, &args.Envelope, nil, args.Completion)
 }
 
 func (s *Server) handleSessionGet(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionGetInput,
-) (*mcpsdk.CallToolResult, sessionGetResult, error) {
+) (any, error) {
 	// Reads stay authority-wide. `session_*` is ADR 0001 §10 compatibility
 	// vocabulary, and narrowing a read would break "show me all my rooms"
 	// without buying isolation that `standalone-local` partitions can back.
 	// Cross-authority is still refused, and as not-found.
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
 		authz.View, authz.AuthorityWide); err != nil {
-		return roomAuthorizationError(args.RoomID, err), emptySessionGetResult(), nil
+		return nil, roomAuthorizationError(args.RoomID, err)
 	}
 	result, found, err := s.roomProjection(ctx, args.RoomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error()), emptySessionGetResult(), nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, err.Error())
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), emptySessionGetResult(), nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID))
 	}
-	toolRes, payload := toolJSONResult(result)
-	return toolRes, payload, nil
+	return result, nil
 }
 
 // roomProjection assembles one room's full projection.
@@ -289,53 +282,48 @@ func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetR
 
 func (s *Server) handleSessionAdvancePhase(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionAdvancePhaseInput,
-) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+) (any, error) {
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
 		authz.Submit, authz.PartitionScoped); err != nil {
-		return roomAuthorizationError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+		return nil, roomAuthorizationError(args.RoomID, err)
 	}
 	phaseState, err := s.manager.AdvancePhase(args.RoomID, args.ToPhase, args.Reason)
 	if err != nil {
-		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+		return nil, sessionPhaseStateError(args.RoomID, err)
 	}
-	toolRes, payload := toolJSONResult(sessionPhaseStateResult{
+	return sessionPhaseStateResult{
 		RoomID:        args.RoomID,
 		CurrentPhase:  phaseState.CurrentPhase,
 		PhasesVisited: phaseState.PhasesVisited,
 		PhaseOutputs:  phaseState.PhaseOutputs,
-	})
-	return toolRes, payload, nil
+	}, nil
 }
 
 func (s *Server) handleSessionSetPhaseOutput(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionSetPhaseOutputInput,
-) (*mcpsdk.CallToolResult, sessionPhaseStateResult, error) {
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(request),
+) (any, error) {
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
 		authz.Submit, authz.PartitionScoped); err != nil {
-		return roomAuthorizationError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+		return nil, roomAuthorizationError(args.RoomID, err)
 	}
 	phaseState, err := s.manager.SetPhaseOutput(args.RoomID, args.Phase, args.Key, args.Value)
 	if err != nil {
-		return sessionPhaseStateError(args.RoomID, err), emptySessionPhaseStateResult(args.RoomID), nil
+		return nil, sessionPhaseStateError(args.RoomID, err)
 	}
-	toolRes, payload := toolJSONResult(sessionPhaseStateResult{
+	return sessionPhaseStateResult{
 		RoomID:        args.RoomID,
 		CurrentPhase:  phaseState.CurrentPhase,
 		PhasesVisited: phaseState.PhasesVisited,
 		PhaseOutputs:  phaseState.PhaseOutputs,
-	})
-	return toolRes, payload, nil
+	}, nil
 }
 
 func (s *Server) handleSessionClose(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionCloseInput,
-) (*mcpsdk.CallToolResult, sessionCloseResult, error) {
+) (any, error) {
 	status := args.Status
 	if status == "" {
 		status = "closed"
@@ -344,44 +332,41 @@ func (s *Server) handleSessionClose(
 	// deliberate exception to treating `session_*` as compatibility
 	// vocabulary: closing dispositions another partition's pending human work.
 	// Reads stay authority-wide; only the destructive operation is narrowed.
-	caller := callerIdentity(request)
+	caller := callerIdentity()
 	if err := s.authorizeRoom(ctx, args.RoomID, caller, authz.Close, authz.PartitionScoped); err != nil {
-		return roomAuthorizationError(args.RoomID, err), sessionCloseResult{}, nil
+		return nil, roomAuthorizationError(args.RoomID, err)
 	}
 	// Closing a room is an explicit, authorized caller action — one of the two
 	// things permitted to terminalize outstanding work. The canonical surface
 	// disposition is recorded first so the legacy room rows written below are
 	// a projection of that decision rather than a competing claim about it.
 	if err := s.closeRoomDurably(ctx, args.RoomID, status, caller); err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room interactions: %v", err)), sessionCloseResult{}, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room interactions: %v", err))
 	}
 	if err := s.manager.Close(args.RoomID, status); err != nil {
 		if errors.Is(err, room.ErrRoomNotFound) {
-			return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID)), sessionCloseResult{}, nil
+			return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", args.RoomID))
 		}
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room: %v", err)), sessionCloseResult{}, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("close room: %v", err))
 	}
-	toolRes, payload := toolJSONResult(sessionCloseResult{
+	return sessionCloseResult{
 		OK:     true,
 		RoomID: args.RoomID,
 		Status: status,
-	})
-	return toolRes, payload, nil
+	}, nil
 }
 
 func (s *Server) handleSessionList(
 	ctx context.Context,
-	request *mcpsdk.CallToolRequest,
 	args sessionListInput,
-) (*mcpsdk.CallToolResult, sessionListResult, error) {
+) (any, error) {
 	rooms, err := s.manager.List(ctx, args.ActiveOnly)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("list rooms: %v", err)), sessionListResult{}, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("list rooms: %v", err))
 	}
-	toolRes, payload := toolJSONResult(sessionListResult{
-		Rooms: s.visibleRooms(ctx, rooms, callerIdentity(request)),
-	})
-	return toolRes, payload, nil
+	return sessionListResult{
+		Rooms: s.visibleRooms(ctx, rooms, callerIdentity()),
+	}, nil
 }
 
 // visibleRooms drops rooms belonging to another authority.
@@ -432,24 +417,24 @@ func (s *Server) advanceRoomEnvelope(
 	request *envelopes.Envelope,
 	presented *envelopes.Envelope,
 	completion completionInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if request == nil {
-		return toolErrorResult(envelopes.ErrorCodeValidationFailed, "envelope is required"), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeValidationFailed, "envelope is required")
 	}
 	if presented == nil {
 		presented = request
 	}
 	if err := s.envSvc.Validate(presented); err != nil {
-		return triageErrorResult(err), nil, nil
+		return nil, triageErrorResult(err)
 	}
 	// Every named workflow and tangent.session_advance passes through here, so
 	// this is where the seventeen workflow tools stop being able to reuse an
 	// arbitrary caller-supplied room and receive that room's human response.
 	// A room the caller just created has no owner yet, which AuthorizeRoom
 	// permits; one another authority owns is refused as not-found.
-	caller := callerIdentity(nil)
+	caller := callerIdentity()
 	if err := s.authorizeRoom(ctx, roomID, caller, authz.Submit, authz.PartitionScoped); err != nil {
-		return roomAuthorizationError(roomID, err), nil, nil
+		return nil, roomAuthorizationError(roomID, err)
 	}
 	if s.roomflow != nil {
 		return s.advanceRoomEnvelopeDurable(ctx, roomID, request, presented, completion, caller)
@@ -467,17 +452,17 @@ func (s *Server) advanceRoomEnvelopeLegacy(
 	ctx context.Context,
 	roomID string,
 	env *envelopes.Envelope,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	rm, ok := s.manager.Get(roomID)
 	if !ok {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 	if !rm.TryClaimAdvance() {
-		return toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID))
 	}
 	defer rm.ReleaseAdvance()
 	if rm.HasPending() {
-		return toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeSessionBusy, fmt.Sprintf("room %q already has a pending envelope", roomID))
 	}
 
 	resp, err := rm.PushWithResponseTransform(ctx, env, func(resp *envelopes.Response) (*envelopes.Response, error) {
@@ -492,13 +477,11 @@ func (s *Server) advanceRoomEnvelopeLegacy(
 				Status:      envelopes.ResponseStatusCanceled,
 				CompletedAt: nowRFC3339(),
 			}
-			toolRes, payload := toolJSONResult(cancelled)
-			return toolRes, payload, nil
+			return cancelled, nil
 		}
-		return triageErrorResult(err), nil, nil
+		return nil, triageErrorResult(err)
 	}
-	toolRes, payload := toolJSONResult(resp)
-	return toolRes, payload, nil
+	return resp, nil
 }
 
 func (s *Server) roomURL(roomID string) string {
@@ -533,7 +516,7 @@ func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
+func sessionPhaseStateError(roomID string, err error) error {
 	switch {
 	case errors.Is(err, room.ErrRoomNotFound):
 		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
@@ -593,14 +576,6 @@ func sessionPhaseStateError(roomID string, err error) *mcpsdk.CallToolResult {
 	}
 }
 
-func emptySessionPhaseStateResult(roomID string) sessionPhaseStateResult {
-	return sessionPhaseStateResult{
-		RoomID:        roomID,
-		PhasesVisited: []string{},
-		PhaseOutputs:  map[string]room.PhaseOutput{},
-	}
-}
-
 func emptySessionGetResult() sessionGetResult {
 	return sessionGetResult{
 		PhasesVisited:         []string{},
@@ -609,16 +584,6 @@ func emptySessionGetResult() sessionGetResult {
 		ProseRevisionOutcomes: []room.ProseRevisionOutcome{},
 		EnvelopesHistory:      []room.EnvelopeHistory{},
 	}
-}
-
-func toolJSONResult[T any](payload T) (*mcpsdk.CallToolResult, T) {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("marshal tool result: %v", err)), payload
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(body)}},
-	}, payload
 }
 
 // logWorkflowRoomCreated logs the room identifier and never the assembled URL.

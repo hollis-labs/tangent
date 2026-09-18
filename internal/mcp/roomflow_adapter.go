@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/roomflow"
@@ -147,7 +146,7 @@ func (s *Server) advanceRoomEnvelopeDurable(
 	presented *envelopes.Envelope,
 	completion completionInput,
 	caller interaction.ActorBinding,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	// Recovery outranks admission control, and outranks the room's own
 	// existence. A caller retrying a request Tangent already owns must reach
 	// its own result even when the room has moved on to other work or been
@@ -155,21 +154,21 @@ func (s *Server) advanceRoomEnvelopeDurable(
 	// hide the very outcome the retry exists to recover.
 	_, known, err := s.roomflow.Recognize(ctx, caller, request)
 	if err != nil {
-		return triageErrorResult(err), nil, nil
+		return nil, triageErrorResult(err)
 	}
 	if !known {
 		rm, ok := s.manager.Get(roomID)
 		if !ok {
-			return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+			return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 		}
 		if !rm.TryClaimAdvance() {
-			return toolErrorResult(errorCodeSessionBusy,
-				fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
+			return nil, toolErrorResult(errorCodeSessionBusy,
+				fmt.Sprintf("room %q already has a pending envelope", roomID))
 		}
 		defer rm.ReleaseAdvance()
 		if rm.HasPendingOther(request.ID) {
-			return toolErrorResult(errorCodeSessionBusy,
-				fmt.Sprintf("room %q already has a pending envelope", roomID)), nil, nil
+			return nil, toolErrorResult(errorCodeSessionBusy,
+				fmt.Sprintf("room %q already has a pending envelope", roomID))
 		}
 	}
 
@@ -179,28 +178,26 @@ func (s *Server) advanceRoomEnvelopeDurable(
 	})
 	if err != nil {
 		if errors.Is(err, roomflow.ErrRoomNotFound) {
-			return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+			return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 		}
-		return triageErrorResult(err), nil, nil
+		return nil, triageErrorResult(err)
 	}
 	switch outcome.Status {
 	case roomflow.StatusResolved, roomflow.StatusCancelled:
-		toolRes, payload := toolJSONResult(outcome.Response)
-		return toolRes, payload, nil
+		return outcome.Response, nil
 	case roomflow.StatusPendingOutcome:
-		toolRes, payload := toolJSONResult(outcome.Receipt)
-		return toolRes, payload, nil
+		return outcome.Receipt, nil
 	case roomflow.StatusConflict:
-		return toolErrorResult(errorCodeIdempotencyConflict, fmt.Sprintf(
+		return nil, toolErrorResult(errorCodeIdempotencyConflict, fmt.Sprintf(
 			"envelope %q of type %q is already bound to interaction %q with a different payload; "+
 				"use a new envelope id or retry the identical payload",
-			request.ID, request.Type, outcome.ExistingInteractionID)), nil, nil
+			request.ID, request.Type, outcome.ExistingInteractionID))
 	default:
 		code := outcome.TerminalErrorCode
 		if code == "" {
 			code = envelopes.ErrorCodeHostError
 		}
-		return toolErrorResult(code, outcome.TerminalMessage), nil, nil
+		return nil, toolErrorResult(code, outcome.TerminalMessage)
 	}
 }
 
@@ -213,9 +210,8 @@ type interactionAcknowledgeInput struct {
 
 func (s *Server) handleInteractionAcknowledge(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionAcknowledgeInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.AcknowledgeTerminalOutcome(ctx, interaction.AcknowledgeTerminalOutcomeInput{
 		InteractionID:        input.InteractionID,
 		RequesterScope:       requesterScope(input.RequesterScope),

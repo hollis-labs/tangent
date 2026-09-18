@@ -8,7 +8,6 @@ import (
 	"time"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -42,47 +41,43 @@ type spreadsheetReviewSubmitPayload struct {
 
 func (s *Server) handleSpreadsheetReview(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args spreadsheetReviewInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != spreadsheetReviewEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.spreadsheet-review rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				spreadsheetReviewEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "spreadsheet-review", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "spreadsheet-review", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	snapshot := spreadsheetReviewSnapshotFromEnvelope(args.Envelope, room.ProjectSpreadsheetReviewState(phaseState))
 	if _, saveErr := s.manager.SaveSpreadsheetReviewSnapshot(roomID, snapshot); saveErr != nil {
-		return sessionPhaseStateError(roomID, saveErr), nil, nil
+		return nil, sessionPhaseStateError(roomID, saveErr)
 	}
 
 	phaseState, found, err = s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room spreadsheet state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room spreadsheet state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(

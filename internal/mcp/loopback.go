@@ -47,7 +47,7 @@ type LoopbackCaller struct {
 // and a production process would not.
 func (s *Server) NewLoopbackCaller(ctx context.Context) (*LoopbackCaller, error) {
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
-	serverSession, err := s.mcp.Connect(ctx, serverTransport, nil)
+	serverSession, err := s.mcp.SDKServer().Connect(ctx, serverTransport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: connect loopback server session: %w", err)
 	}

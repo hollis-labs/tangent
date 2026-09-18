@@ -3,8 +3,6 @@ package mcp
 import (
 	"context"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 )
 
@@ -49,16 +47,15 @@ func (s *Server) registerRetentionTool() error {
 
 func (s *Server) handleRetentionStatus(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input retentionStatusInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if s.maintenanceDB == nil {
 		// An error result rather than a synthesized empty one, for the reason
 		// tangent.health_report gives: a caller that receives a custody report
 		// assumes something measured it.
-		return toolErrorResult("retention_unavailable",
+		return nil, toolErrorResult("retention_unavailable",
 			"this build serves MCP without a database handle for maintenance reporting, so the "+
-				"custody posture cannot be measured; deploy a build that wires it"), nil, nil
+				"custody posture cannot be measured; deploy a build that wires it")
 	}
 	limit := input.OperationLimit
 	if limit <= 0 {
@@ -70,7 +67,7 @@ func (s *Server) handleRetentionStatus(
 	status, err := tangentdb.Status(ctx, s.maintenanceDB, s.maintenanceDBPath,
 		tangentdb.DefaultRetentionWindows(), limit)
 	if err != nil {
-		return toolErrorResult("retention_unavailable", err.Error()), nil, nil
+		return nil, toolErrorResult("retention_unavailable", err.Error())
 	}
-	return nil, status, nil
+	return status, nil
 }

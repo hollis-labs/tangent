@@ -3,8 +3,6 @@ package mcp
 import (
 	"context"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/health"
 )
@@ -67,17 +65,16 @@ func (s *Server) registerHealthTool() error {
 
 func (s *Server) handleHealthReport(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input healthReportInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if s.health == nil {
 		// Deliberately an error result rather than a synthesized "unknown"
 		// report. A caller that receives a health document assumes something
 		// measured it; answering with one that measured nothing is the same
 		// class of lie as a 200 from a process whose database is gone.
-		return toolErrorResult("health_unavailable",
+		return nil, toolErrorResult("health_unavailable",
 			"this build serves MCP without a health reporter installed, so readiness and "+
-				"capability health cannot be evaluated; deploy a build that wires it"), nil, nil
+				"capability health cannot be evaluated; deploy a build that wires it")
 	}
 	result := healthReportResult{
 		HostVersion:     HostVersion,
@@ -89,9 +86,9 @@ func (s *Server) handleHealthReport(
 	if input.Kind != "" {
 		report := s.health.Capability(input.Kind)
 		result.Capability = &report
-		return nil, result, nil
+		return result, nil
 	}
 	summary := s.health.CapabilitySummary()
 	result.CapabilitySummary = &summary
-	return nil, result, nil
+	return result, nil
 }

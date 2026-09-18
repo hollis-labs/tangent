@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
@@ -74,57 +73,53 @@ func (s *Server) handlePackagedRoomWorkflow(
 	ctx context.Context,
 	kind string,
 	args packagedWorkflowInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != kind {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("%s rejects envelope type %q; want %q", kind, args.Envelope.Type, kind),
-		), nil, nil
+		)
 	}
 
 	pkg, ok := s.packages.Lookup(kind)
 	if !ok {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("%s: %v: no interaction package is installed for this kind", kind, interactionpkg.ErrPackageUnavailable),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, workflowLogLabel(kind), &args.Envelope)
+	roomID, roomErr := s.resolveWorkflowRoom(ctx, workflowLogLabel(kind), &args.Envelope)
 	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+		return nil, roomErr
 	}
 
 	// The room's existence is checked before the package runs so a missing
 	// room still surfaces as ROOM_NOT_FOUND rather than as whatever the
 	// package's first store call happens to return.
 	if _, found, err := s.manager.GetPhaseState(ctx, roomID); err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room state: %v", err))
 	} else if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	presented, err := pkg.PresentRequest(ctx, s.packageStore(), roomID, &args.Envelope)
 	if err != nil {
-		return sessionPhaseStateError(roomID, err), nil, nil
+		return nil, sessionPhaseStateError(roomID, err)
 	}
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, presented, args.Completion)
 }
 
 // packagedWorkflowHandler binds one kind to the shared packaged-workflow body,
-// producing the typed handler the MCP SDK's AddTool generic wants. It is what
-// replaces a hand-written handle<Kind> function per packaged kind.
+// producing the handler addTool wants. It is what replaces a hand-written
+// handle<Kind> function per packaged kind.
 func (s *Server) packagedWorkflowHandler(
 	kind string,
-) func(context.Context, *mcpsdk.CallToolRequest, packagedWorkflowInput) (*mcpsdk.CallToolResult, any, error) {
+) func(context.Context, packagedWorkflowInput) (any, error) {
 	return func(
 		ctx context.Context,
-		_ *mcpsdk.CallToolRequest,
 		args packagedWorkflowInput,
-	) (*mcpsdk.CallToolResult, any, error) {
+	) (any, error) {
 		return s.handlePackagedRoomWorkflow(ctx, kind, args)
 	}
 }
