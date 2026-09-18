@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -49,43 +48,39 @@ type progressPanelSubmitError struct {
 
 func (s *Server) handleProgressPanel(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args progressPanelInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != progressPanelEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("tangent.progress-panel rejects envelope type %q; want %q", args.Envelope.Type, progressPanelEnvelopeType),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "progress-panel", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "progress-panel", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	snapshot := progressPanelSnapshotFromEnvelope(args.Envelope, room.ProjectProgressPanelState(phaseState))
 	if _, saveErr := s.manager.SaveProgressPanelSnapshot(roomID, snapshot); saveErr != nil {
-		return sessionPhaseStateError(roomID, saveErr), nil, nil
+		return nil, sessionPhaseStateError(roomID, saveErr)
 	}
 
 	phaseState, found, err = s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room progress-panel state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("reload room progress-panel state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(

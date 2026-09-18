@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	gmcpserver "github.com/hollis-labs/go-mcp/server"
 
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
@@ -19,7 +19,7 @@ func (s *Server) registerDocsTools() error {
 	if err != nil {
 		return fmt.Errorf("build tangent.docs_enqueue input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.docs_enqueue",
 		Description: "Enqueue one durable document in the operator's Docs inbox for reading at their own pace, with an optional acknowledgment request.",
 		InputSchema: schema,
@@ -41,12 +41,11 @@ func buildDocsInputSchema() (*jsonschema.Schema, error) {
 
 func (s *Server) handleDocsEnqueue(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input map[string]any,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	source, ok := objectField(input, "source")
 	if !ok {
-		return s.docsError(fmt.Errorf("%w: source is required", docs.ErrInvalidRequest))
+		return nil, s.docsError(fmt.Errorf("%w: source is required", docs.ErrInvalidRequest))
 	}
 	applicationID, _ := source["application_id"].(string)
 	agentID, _ := source["agent_id"].(string)
@@ -55,14 +54,14 @@ func (s *Server) handleDocsEnqueue(
 	}))
 }
 
-func (s *Server) docsResult(value any, err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) docsResult(value any, err error) (any, error) {
 	if err != nil {
-		return s.docsError(err)
+		return nil, s.docsError(err)
 	}
-	return nil, value, nil
+	return value, nil
 }
 
-func (s *Server) docsError(err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) docsError(err error) error {
 	body := map[string]any{
 		"contract_version": docs.ContractVersion,
 		"code":             "docs_error",
@@ -78,11 +77,5 @@ func (s *Server) docsError(err error) (*mcpsdk.CallToolResult, any, error) {
 	case errors.Is(err, interaction.ErrDefinitionValidation), errors.Is(err, docs.ErrInvalidRequest):
 		body["code"] = "validation_failed"
 	}
-	raw, marshalErr := json.Marshal(body)
-	if marshalErr != nil {
-		raw = []byte(fmt.Sprintf(`{"contract_version":"1.0","code":"docs_error","message":%q}`, err.Error()))
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(raw)}}, IsError: true,
-	}, nil, nil
+	return &rawToolError{message: err.Error(), body: body}
 }

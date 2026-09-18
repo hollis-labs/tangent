@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type appBoardInput struct {
@@ -44,25 +43,21 @@ type appBoardInput struct {
 // pending for as long as the work takes.
 func (s *Server) handleAppBoard(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args appBoardInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != appBoardEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.app-board rejects envelope type %q; want %q",
 				args.Envelope.Type, appBoardEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "app-board", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "app-board", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	// The presented envelope is the request. There is nothing persisted to

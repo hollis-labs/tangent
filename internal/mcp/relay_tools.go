@@ -5,8 +5,6 @@ import (
 	"errors"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/relay"
 )
@@ -131,16 +129,15 @@ type relayOpenChannelOutput struct {
 
 func (s *Server) handleRelayOpenChannel(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayOpenChannelInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.OpenChannel(ctx, relay.OpenChannelParams{
 		Title: input.Title, ProjectRef: input.ProjectRef,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relayOpenChannelOutput{
+	return relayOpenChannelOutput{
 		ContractVersion: relayContractVersion, ChannelID: result.Channel.ID,
 		OperatorParticipantID: result.Operator.ID, CreatedAt: result.Channel.CreatedAt,
 	}, nil
@@ -182,17 +179,16 @@ type relayAttachOutput struct {
 
 func (s *Server) handleRelayAttach(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayAttachInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.Attach(ctx, relay.AttachParams{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 		RuntimeAuthority: input.Runtime.Authority, RuntimeEndpointRef: input.Runtime.EndpointRef,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relayAttachOutput{
+	return relayAttachOutput{
 		ContractVersion: relayContractVersion, ParticipantID: result.Participant.ID, ChannelID: result.ChannelID,
 		Generation: result.Binding.Generation, RuntimeAuthority: result.Binding.RuntimeAuthority,
 		RuntimeEndpointRef: result.Binding.RuntimeEndpointRef, AttachedAt: result.Binding.BoundAt,
@@ -215,16 +211,15 @@ type relayDetachOutput struct {
 
 func (s *Server) handleRelayDetach(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayDetachInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.Detach(ctx, relay.DetachParams{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relayDetachOutput{
+	return relayDetachOutput{
 		ContractVersion: relayContractVersion, ParticipantID: result.Participant.ID,
 		ChannelID: result.ChannelID, DetachedAt: result.DetachedAt,
 	}, nil
@@ -266,18 +261,17 @@ type relaySendOutput struct {
 
 func (s *Server) handleRelaySend(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relaySendInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.Send(ctx, relay.SendParams{
 		ChannelID: input.ChannelID, IdempotencyKey: input.IdempotencyKey, Source: input.Source.toRelaySource(),
 		RecipientApplicationID: input.RecipientApplicationID, RecipientAgentID: input.RecipientAgentID,
 		SubjectID: input.SubjectID, ReplyToExchangeID: input.ReplyToExchangeID, Body: input.Body,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relaySendOutput{
+	return relaySendOutput{
 		ContractVersion: relayContractVersion, ExchangeID: result.Exchange.ID, ChannelID: result.Exchange.ChannelID,
 		Sequence: result.Exchange.Sequence, Sender: relayRefFor(result.Sender), Recipient: relayRefFor(result.Recipient),
 		RecipientBindingCurrent: result.RecipientBindingCurrent, SubjectID: result.Exchange.SubjectID,
@@ -334,16 +328,15 @@ type relayReceiveOutput struct {
 
 func (s *Server) handleRelayReceive(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayReceiveInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	page, err := s.relayProvider.Receive(ctx, relay.InboxQuery{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 		Cursor: input.Cursor, Wait: time.Duration(input.WaitMs) * time.Millisecond, Limit: int(input.Limit),
 		UnackedOnly: input.UnackedOnly,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
 	status := "ok"
 	if page.TimedOut {
@@ -357,7 +350,7 @@ func (s *Server) handleRelayReceive(
 			Body: item.Exchange.Body, CreatedAt: item.Exchange.CreatedAt,
 		})
 	}
-	return nil, relayReceiveOutput{
+	return relayReceiveOutput{
 		ContractVersion: relayContractVersion, Status: status, Items: items,
 		NextCursor: page.NextCursor, Presence: relayPresenceFor(page.Presence),
 	}, nil
@@ -380,16 +373,15 @@ type relayAckOutput struct {
 
 func (s *Server) handleRelayAck(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayAckInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.Ack(ctx, relay.AckParams{
 		Source: input.Source.toRelaySource(), ExchangeID: input.ExchangeID,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relayAckOutput{
+	return relayAckOutput{
 		ContractVersion: relayContractVersion, ExchangeID: result.Receipt.ExchangeID,
 		ParticipantID: result.Receipt.ParticipantID, AckedAt: result.Receipt.AckedAt, AlreadyAcked: result.AlreadyAcked,
 	}, nil
@@ -429,16 +421,15 @@ type relayCapabilitiesOutput struct {
 
 func (s *Server) handleRelayCapabilities(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input relayCapabilitiesInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.relayProvider.Capabilities(ctx, relay.CapabilitiesParams{
 		ChannelID: input.ChannelID, ApplicationID: input.ApplicationID, AgentID: input.AgentID,
 	})
 	if err != nil {
-		return relayErrorResult(err)
+		return nil, relayErrorResult(err)
 	}
-	return nil, relayCapabilitiesOutput{
+	return relayCapabilitiesOutput{
 		ContractVersion: relayContractVersion, Adapter: result.Adapter,
 		Capabilities: relayCapabilitiesSet{
 			Receive: result.Capabilities.Receive, Ack: result.Capabilities.Ack, BoundedWait: result.Capabilities.BoundedWait,
@@ -451,7 +442,7 @@ func (s *Server) handleRelayCapabilities(
 
 // ── errors ──────────────────────────────────────────────────────────────
 
-func relayErrorResult(err error) (*mcpsdk.CallToolResult, any, error) {
+func relayErrorResult(err error) error {
 	code := "relay_error"
 	var ambiguous *relay.AmbiguousRecipientError
 	switch {
@@ -468,5 +459,5 @@ func relayErrorResult(err error) (*mcpsdk.CallToolResult, any, error) {
 	case errors.Is(err, relay.ErrIdempotencyConflict):
 		code = "idempotency_conflict"
 	}
-	return toolErrorResult(code, err.Error()), nil, nil
+	return toolErrorResult(code, err.Error())
 }

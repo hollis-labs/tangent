@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -18,41 +17,37 @@ type blockDraftInput struct {
 
 func (s *Server) handleBlockDraft(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args blockDraftInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != blockDraftEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.block_draft rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				blockDraftEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "block-draft", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "block-draft", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
-	toolRes, payload, err := s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
-	if err != nil || toolRes == nil || toolRes.IsError {
-		return toolRes, payload, err
+	result, err := s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
+	if err != nil {
+		return nil, err
 	}
 
-	resp, ok := payload.(*envelopes.Response)
+	resp, ok := result.(*envelopes.Response)
 	if !ok || resp == nil {
-		return toolRes, payload, nil
+		return result, nil
 	}
 	if err := maybeStoreAcceptedDraftBlock(s.manager, roomID, &args.Envelope, resp); err != nil {
-		return sessionPhaseStateError(roomID, err), nil, nil
+		return nil, sessionPhaseStateError(roomID, err)
 	}
-	return toolRes, payload, nil
+	return result, nil
 }
 
 func maybeStoreAcceptedDraftBlock(

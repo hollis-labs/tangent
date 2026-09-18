@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
@@ -89,18 +87,17 @@ func (s *Server) registerTelemetryTool() error {
 
 func (s *Server) handleTelemetryQuery(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input telemetryQueryInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if s.telemetry == nil {
 		// An error result rather than an empty one, for the reason
 		// tangent.health_report gives: a caller that receives a telemetry
 		// document assumes something recorded it, and answering with one that
 		// recorded nothing is the same class of lie as a 200 from a process
 		// whose database is gone.
-		return toolErrorResult("telemetry_unavailable",
+		return nil, toolErrorResult("telemetry_unavailable",
 			"this build serves MCP without a telemetry recorder installed, so no interaction "+
-				"correlation was recorded; deploy a build that wires it"), nil, nil
+				"correlation was recorded; deploy a build that wires it")
 	}
 	result := telemetryQueryResult{Events: []telemetry.Record{}}
 	if input.IncludeMetrics {
@@ -111,7 +108,7 @@ func (s *Server) handleTelemetryQuery(
 		result.Note = "this build records metrics in process memory but has no durable telemetry " +
 			"store, so no per-invocation observation can be retrieved; the metric snapshot is the " +
 			"whole of what it can answer"
-		return nil, result, nil
+		return result, nil
 	}
 
 	query := telemetry.Query{
@@ -133,9 +130,9 @@ func (s *Server) handleTelemetryQuery(
 	if input.TraceID != "" {
 		trace, parsed := telemetry.ParseTraceID(input.TraceID)
 		if !parsed {
-			return toolErrorResult("telemetry_invalid_trace",
+			return nil, toolErrorResult("telemetry_invalid_trace",
 				"a trace id is 32 hexadecimal characters; copy it verbatim from a health "+
-					"report's correlation block"), nil, nil
+					"report's correlation block")
 		}
 		records, err = s.telemetryStore.Trace(ctx, trace, input.Limit)
 	} else {
@@ -145,7 +142,7 @@ func (s *Server) handleTelemetryQuery(
 		// The store's errors never carry the driver's message, so this is safe
 		// to hand back verbatim — and it is the store's own text rather than a
 		// summary, so a reader can tell a query failure from an empty result.
-		return toolErrorResult("telemetry_unavailable", err.Error()), nil, nil
+		return nil, toolErrorResult("telemetry_unavailable", err.Error())
 	}
 	result.Events = records
 	result.Truncated = len(records) >= boundedLimit(input.Limit)
@@ -159,7 +156,7 @@ func (s *Server) handleTelemetryQuery(
 			result.Aggregate = aggregate
 		}
 	}
-	return nil, result, nil
+	return result, nil
 }
 
 // boundedLimit mirrors the store's own clamp so `truncated` means what it says.

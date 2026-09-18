@@ -2,12 +2,10 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/room"
@@ -65,9 +63,8 @@ type triageInput struct {
 // without code changes.
 func (s *Server) handleListWorkflows(
 	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
 	_ struct{},
-) (*mcpsdk.CallToolResult, listWorkflowsResult, error) {
+) (any, error) {
 	all := s.envSvc.All()
 	workflows := make([]workflowEntry, 0, len(all))
 	for _, spec := range all {
@@ -89,14 +86,7 @@ func (s *Server) handleListWorkflows(
 		})
 	}
 
-	res := listWorkflowsResult{Workflows: workflows}
-	textPayload, err := json.Marshal(res)
-	if err != nil {
-		return nil, res, fmt.Errorf("marshal list_workflows result: %w", err)
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(textPayload)}},
-	}, res, nil
+	return listWorkflowsResult{Workflows: workflows}, nil
 }
 
 // handleTriage validates the inbound triage envelope through Tangent's
@@ -111,26 +101,22 @@ func (s *Server) handleListWorkflows(
 // real dispatch.
 func (s *Server) handleTriage(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args triageInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	// Defensive: SDK input validation passes the schema, but the typed
 	// struct has no way to enforce e.g. "type must equal triage" beyond
 	// what the schema enforces. Belt-and-suspenders here keeps the
 	// invariant explicit on the server side.
 	if args.Envelope.Type != triageEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("tangent.triage rejects envelope type %q; want %q", args.Envelope.Type, triageEnvelopeType),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "triage", &args.Envelope)
-	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+	roomID, err := s.resolveWorkflowRoom(ctx, "triage", &args.Envelope)
+	if err != nil {
+		return nil, err
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, nil, args.Completion)
@@ -156,7 +142,7 @@ func (s *Server) handleTriage(
 //   - context.Canceled            -> user-canceled
 //   - ErrSchemaValidation         -> validation-failed
 //   - everything else             -> host-error (with the verbatim message)
-func triageErrorResult(err error) *mcpsdk.CallToolResult {
+func triageErrorResult(err error) error {
 	switch {
 	case errors.Is(err, envelope.ErrNoHandler):
 		return toolErrorResult(errorCodeNotWired, fmt.Sprintf("no handler registered for triage envelope: %v", err))
@@ -172,39 +158,5 @@ func triageErrorResult(err error) *mcpsdk.CallToolResult {
 		return toolErrorResult(envelopes.ErrorCodeValidationFailed, err.Error())
 	default:
 		return toolErrorResult(envelopes.ErrorCodeHostError, err.Error())
-	}
-}
-
-// toolErrorResult builds a CallToolResult flagged as an error, embedding
-// a JSON envelope-style error body in a single text content block.
-//
-// We deliberately echo the canonical envelope error-code vocabulary
-// (validation-failed, unsupported-type, host-error, NOT_WIRED) so
-// clients that already speak the envelope protocol can branch on the
-// `code` field without learning a second taxonomy.
-//
-// We do NOT use CallToolResult.SetError here: SetError is destructive
-// (it overwrites Content with the error.Error() string), which would
-// drop our structured JSON body. Instead we set IsError=true directly
-// and keep the JSON payload as the lone TextContent block.
-func toolErrorResult(code, message string) *mcpsdk.CallToolResult {
-	body := map[string]any{
-		"v":    envelopes.ProtocolVersion,
-		"kind": string(envelopes.ResponseKindError),
-		"error": map[string]any{
-			"code":    code,
-			"message": message,
-		},
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		// json.Marshal of a fixed-shape map cannot realistically fail;
-		// fall back to a plain text marker so callers still see SOMETHING
-		// rather than a truncated frame.
-		raw = []byte(fmt.Sprintf(`{"kind":"error","error":{"code":%q,"message":%q}}`, code, message))
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(raw)}},
-		IsError: true,
 	}
 }

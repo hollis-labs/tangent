@@ -6,7 +6,6 @@ import (
 	"time"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -18,26 +17,22 @@ type outputRenderInput struct {
 
 func (s *Server) handleOutputRender(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args outputRenderInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != outputRenderEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.output_render rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				outputRenderEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "output-render", &args.Envelope)
+	roomID, roomErr := s.resolveWorkflowRoom(ctx, "output-render", &args.Envelope)
 	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+		return nil, roomErr
 	}
 
 	if _, err := s.manager.SetFinalOutput(roomID, room.FinalOutputView{
@@ -48,15 +43,15 @@ func (s *Server) handleOutputRender(
 		Summary:   readStringValue(args.Envelope.Data, "summary"),
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		return sessionPhaseStateError(roomID, err), nil, nil
+		return nil, sessionPhaseStateError(roomID, err)
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	return s.advanceRoomEnvelope(ctx, roomID, &args.Envelope, buildVisibleOutputRenderEnvelope(&args.Envelope, room.ProjectFinalOutput(phaseState)), args.Completion)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -17,38 +16,34 @@ type synthesisNotesInput struct {
 
 func (s *Server) handleSynthesisNotes(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	args synthesisNotesInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if args.Envelope.Type != synthesisNotesEnvelopeType {
-		return toolErrorResult(
+		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
 				"tangent.synthesis_notes rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				synthesisNotesEnvelopeType,
 			),
-		), nil, nil
+		)
 	}
 
-	roomID, roomResult, roomErr := s.resolveWorkflowRoom(ctx, "synthesis-notes", &args.Envelope)
+	roomID, roomErr := s.resolveWorkflowRoom(ctx, "synthesis-notes", &args.Envelope)
 	if roomErr != nil {
-		return nil, nil, roomErr
-	}
-	if roomResult != nil {
-		return roomResult, nil, nil
+		return nil, roomErr
 	}
 
 	if err := storeSynthesisOutputs(s.manager, roomID, args.Envelope.Data); err != nil {
-		return sessionPhaseStateError(roomID, err), nil, nil
+		return nil, sessionPhaseStateError(roomID, err)
 	}
 
 	phaseState, found, err := s.manager.GetPhaseState(ctx, roomID)
 	if err != nil {
-		return toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err)), nil, nil
+		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("load room phase state: %v", err))
 	}
 	if !found {
-		return toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID)), nil, nil
+		return nil, toolErrorResult(errorCodeRoomNotFound, fmt.Sprintf("room %q not found", roomID))
 	}
 
 	safeEnvelope := buildVisibleSynthesisEnvelope(&args.Envelope, room.ProjectSynthesisNotes(phaseState))

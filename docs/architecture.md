@@ -96,7 +96,8 @@ which uses React Router to pick up the ID and connect over WS.
 
 ### MCP server (Streamable HTTP + SSE)
 
-`internal/mcp/` — built on the official MCP Go SDK
+`internal/mcp/` — built on `github.com/hollis-labs/go-mcp`, the portfolio's
+shared MCP library, itself a thin wrapper around the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable
 HTTP) and `/sse` (legacy SSE) on the same port as the SPA. Runs in
 **stateless + JSONResponse** mode: one-shot `tools/list` and

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	gmcpserver "github.com/hollis-labs/go-mcp/server"
 
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -22,7 +22,7 @@ func (s *Server) registerHITLTools() error {
 		description string
 		definition  string
 		output      string
-		handler     mcpsdk.ToolHandlerFor[map[string]any, any]
+		handler     func(context.Context, map[string]any) (any, error)
 	}{
 		{
 			name: "tangent.hitl_enqueue", definition: extensions.HITLItemRequestDefinition,
@@ -58,7 +58,7 @@ func (s *Server) registerHITLTools() error {
 		if err != nil {
 			return fmt.Errorf("build %s output schema: %w", tool.name, err)
 		}
-		addTool(s, &mcpsdk.Tool{
+		addTool(s, gmcpserver.Tool{
 			Name: tool.name, Description: tool.description,
 			InputSchema: schema, OutputSchema: outputSchema,
 		}, tool.handler)
@@ -107,12 +107,11 @@ func buildHITLSchema(definition string) (*jsonschema.Schema, error) {
 
 func (s *Server) handleHITLEnqueue(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input map[string]any,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	source, ok := objectField(input, "source")
 	if !ok {
-		return s.hitlError(fmt.Errorf("%w: source is required", hitl.ErrInvalidRequest))
+		return nil, s.hitlError(fmt.Errorf("%w: source is required", hitl.ErrInvalidRequest))
 	}
 	applicationID, _ := source["application_id"].(string)
 	agentID, _ := source["agent_id"].(string)
@@ -123,12 +122,11 @@ func (s *Server) handleHITLEnqueue(
 
 func (s *Server) handleHITLGet(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input map[string]any,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	caller, ok := objectField(input, "caller")
 	if !ok {
-		return s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
+		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
 	}
 	return s.hitlResult(s.hitl.Get(ctx, hitl.GetInput{
 		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(caller),
@@ -138,18 +136,17 @@ func (s *Server) handleHITLGet(
 
 func (s *Server) handleHITLAwait(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input map[string]any,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	caller, ok := objectField(input, "caller")
 	if !ok {
-		return s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
+		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
 	}
 	var wait *time.Duration
 	if rawWait, exists := input["wait_ms"]; exists {
 		milliseconds, ok := integerField(rawWait)
 		if !ok {
-			return s.hitlError(fmt.Errorf("%w: wait_ms must be an integer", hitl.ErrInvalidRequest))
+			return nil, s.hitlError(fmt.Errorf("%w: wait_ms must be an integer", hitl.ErrInvalidRequest))
 		}
 		duration := time.Duration(milliseconds) * time.Millisecond
 		wait = &duration
@@ -162,18 +159,17 @@ func (s *Server) handleHITLAwait(
 
 func (s *Server) handleHITLWithdraw(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input map[string]any,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	caller, ok := objectField(input, "caller")
 	if !ok {
-		return s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
+		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
 	}
 	var expected *int64
 	if value, exists := input["expected_revision"]; exists {
 		revision, ok := integerField(value)
 		if !ok {
-			return s.hitlError(fmt.Errorf("%w: expected_revision must be an integer", hitl.ErrInvalidRequest))
+			return nil, s.hitlError(fmt.Errorf("%w: expected_revision must be an integer", hitl.ErrInvalidRequest))
 		}
 		expected = &revision
 	}
@@ -183,14 +179,14 @@ func (s *Server) handleHITLWithdraw(
 	}))
 }
 
-func (s *Server) hitlResult(value any, err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) hitlResult(value any, err error) (any, error) {
 	if err != nil {
-		return s.hitlError(err)
+		return nil, s.hitlError(err)
 	}
-	return nil, value, nil
+	return value, nil
 }
 
-func (s *Server) hitlError(err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) hitlError(err error) error {
 	body := map[string]any{
 		"contract_version": hitl.ContractVersion,
 		"code":             "hitl_error",
@@ -229,13 +225,7 @@ func (s *Server) hitlError(err error) (*mcpsdk.CallToolResult, any, error) {
 	case errors.Is(err, context.DeadlineExceeded):
 		body["code"] = "await_timeout"
 	}
-	raw, marshalErr := json.Marshal(body)
-	if marshalErr != nil {
-		raw = []byte(fmt.Sprintf(`{"contract_version":"1.0","code":"hitl_error","message":%q}`, err.Error()))
-	}
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(raw)}}, IsError: true,
-	}, nil, nil
+	return &rawToolError{message: err.Error(), body: body}
 }
 
 // directHITLActor derives the caller identity behind one hitl_* call.

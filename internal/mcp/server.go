@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	gmcpserver "github.com/hollis-labs/go-mcp/server"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/channel"
@@ -109,7 +110,14 @@ type Server struct {
 	claimedTools  map[string]bool
 	toolConflicts []string
 
-	mcp *mcpsdk.Server
+	// resolvedSchemas backs inputSchemaValidationMiddleware (schema_validation.go):
+	// go-mcp registers tools through the official SDK's raw, untyped AddTool,
+	// which does not validate arguments against a tool's declared InputSchema —
+	// that responsibility moved to this host. Populated once, by
+	// resolveToolSchemas, after every host and plugin tool has registered.
+	resolvedSchemas map[string]*jsonschema.Resolved
+
+	mcp *gmcpserver.Server
 }
 
 // Option customizes optional MCP application-service dependencies.
@@ -293,14 +301,7 @@ func New(
 		return nil, fmt.Errorf("mcp: room manager is required")
 	}
 
-	mcpServer := mcpsdk.NewServer(&mcpsdk.Implementation{
-		Name:    implementationName,
-		Version: implementationVersion,
-	}, nil)
-	// Ahead of every tool's schema validation, which the SDK runs inside the
-	// typed handler it wraps around ours. See gateway_metadata.go.
-	mcpServer.AddReceivingMiddleware(gatewayMetadataMiddleware)
-
+	mcpServer := gmcpserver.NewServer(implementationName, implementationVersion)
 	s := &Server{
 		envSvc:      envSvc,
 		dispatcher:  dispatcher,
@@ -308,6 +309,14 @@ func New(
 		roomURLBase: roomURLBase,
 		mcp:         mcpServer,
 	}
+	// gatewayMetadataMiddleware must run before inputSchemaValidationMiddleware:
+	// it strips gateway-injected keys (`_traceparent`/`_tracestate`) that would
+	// otherwise fail an `additionalProperties: false` schema, and validation
+	// must see arguments with those keys already gone. A single
+	// AddReceivingMiddleware call executes its arguments left to right, so
+	// listing gatewayMetadataMiddleware first is what puts it first in
+	// execution order (see the official SDK's AddReceivingMiddleware doc).
+	mcpServer.SDKServer().AddReceivingMiddleware(gatewayMetadataMiddleware, s.inputSchemaValidationMiddleware)
 	for _, option := range options {
 		if option == nil {
 			continue
@@ -331,12 +340,19 @@ func New(
 	if err := s.registerTools(); err != nil {
 		return nil, fmt.Errorf("mcp: register tools: %w", err)
 	}
+	// Resolved last, after every host and plugin tool has registered: this is
+	// what lets inputSchemaValidationMiddleware validate a plugin-contributed
+	// tool's arguments the same way it validates a host tool's, with nothing
+	// plugin-specific in the middleware itself.
+	if err := s.resolveToolSchemas(); err != nil {
+		return nil, fmt.Errorf("mcp: resolve tool input schemas: %w", err)
+	}
 	return s, nil
 }
 
-// MCP returns the underlying SDK server. Exposed for tests that need to
+// MCP returns the underlying official-SDK server, for tests that need to
 // connect via NewInMemoryTransports; not intended for production callers.
-func (s *Server) MCP() *mcpsdk.Server { return s.mcp }
+func (s *Server) MCP() *mcpsdk.Server { return s.mcp.SDKServer() }
 
 // HTTPHandler returns the streamable-HTTP handler suitable for mounting
 // at /mcp. The SDK reuses the same *mcp.Server for every request via the
@@ -358,9 +374,14 @@ func (s *Server) MCP() *mcpsdk.Server { return s.mcp }
 // PR 4+ may revisit the trade-off when the WebSocket bridge introduces
 // long-running, stateful workflows. For PR 3 the surface is request/
 // response only.
+// Built directly against the official SDK server rather than go-mcp's
+// transport/http wrapper: that wrapper does not expose JSONResponse, and
+// forcing it is the whole point of the trade-off documented above — go-mcp
+// deliberately leaves prompts, resources, and every transport not common to
+// every consumer for a caller to drive directly against SDKServer().
 func (s *Server) HTTPHandler() http.Handler {
 	return mcpsdk.NewStreamableHTTPHandler(
-		func(*http.Request) *mcpsdk.Server { return s.mcp },
+		func(*http.Request) *mcpsdk.Server { return s.mcp.SDKServer() },
 		&mcpsdk.StreamableHTTPOptions{
 			Stateless:    true,
 			JSONResponse: true,
@@ -374,7 +395,7 @@ func (s *Server) HTTPHandler() http.Handler {
 // stream.
 func (s *Server) SSEHandler() http.Handler {
 	return mcpsdk.NewSSEHandler(func(*http.Request) *mcpsdk.Server {
-		return s.mcp
+		return s.mcp.SDKServer()
 	}, nil)
 }
 
@@ -393,7 +414,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build list_workflows input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.list_workflows",
 		Description: "List the envelope-typed workflows Tangent currently exposes. Returns each registered handler's type, response kind, description, and (v0.4+) capabilities.",
 		InputSchema: listSchema,
@@ -403,7 +424,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build triage input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.triage",
 		Description: "Dispatch a triage-kind envelope through Tangent. Public contract is unchanged from v0.1; internally this creates or reuses a room and advances the session.",
 		InputSchema: triageSchema,
@@ -413,7 +434,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build feedback input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.feedback",
 		Description: "Dispatch a feedback-kind envelope through Tangent. Creates or reuses a room and waits for a structured questionnaire response.",
 		InputSchema: feedbackSchema,
@@ -423,7 +444,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build form-collect input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.form-collect",
 		Description: "Dispatch a generalized schema-driven form through Tangent. Persists canonical form state on the room and waits for explicit submit/cancel.",
 		InputSchema: formCollectSchema,
@@ -433,7 +454,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build design-iteration input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.design-iteration",
 		Description: "Dispatch a design-iteration envelope through Tangent. Renders sandboxed HTML and returns the user's selected action for each iteration.",
 		InputSchema: designIterationSchema,
@@ -443,7 +464,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build interview-question input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.interview_question",
 		Description: "Dispatch an interview-question envelope through Tangent. Creates or reuses a room and waits for one long-form answer.",
 		InputSchema: interviewQuestionSchema,
@@ -453,7 +474,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build block-draft input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.block_draft",
 		Description: "Dispatch a block-draft envelope through Tangent. Accepted responses append durable draft blocks on the room.",
 		InputSchema: blockDraftSchema,
@@ -463,7 +484,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build prose-revision input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.prose_revision",
 		Description: "Dispatch a prose-revision envelope through Tangent. Persists explicit accept/reject/comment outcomes per suggestion on the room.",
 		InputSchema: proseRevisionSchema,
@@ -473,7 +494,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build output-render input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.output_render",
 		Description: "Dispatch an output-render envelope through Tangent. Persists the room's final markdown artifact and renders it with copy/export affordances.",
 		InputSchema: outputRenderSchema,
@@ -483,7 +504,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build whiteboard input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.whiteboard",
 		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
 		InputSchema: whiteboardSchema,
@@ -493,7 +514,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build app-board input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name: "tangent.app-board",
 		Description: "Dispatch an app-board envelope through Tangent: a board of the cards you supply, " +
 			"arranged in columns, with a filter bar and an optional detail pane. Domain-free — you " +
@@ -509,7 +530,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build dashboard input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.dashboard",
 		Description: "Dispatch a dashboard envelope through Tangent. Persists room-backed tiles, layouts, query state, and explicit refresh/update affordances.",
 		InputSchema: dashboardSchema,
@@ -519,7 +540,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build file-picker input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.file-picker",
 		Description: "Dispatch a file-picker envelope through Tangent. Persists allowed roots, selected artifact refs, and canonical picker query state with explicit submit.",
 		InputSchema: filePickerSchema,
@@ -529,7 +550,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build progress-panel input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.progress-panel",
 		Description: "Dispatch a progress-panel envelope through Tangent. Persists canonical progress items, summary state, and explicit operator updates.",
 		InputSchema: progressPanelSchema,
@@ -539,7 +560,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build wizard input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.wizard",
 		Description: "Dispatch a guided wizard envelope through Tangent. Persists room-backed step definitions, progress, branch selections, and explicit partial/final completion state.",
 		InputSchema: wizardSchema,
@@ -549,7 +570,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build diff-review input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.diff-review",
 		Description: "Dispatch a diff-review envelope through Tangent. Persists file and hunk decisions, filter state, comments, artifact refs, and exportable review summaries.",
 		InputSchema: diffReviewSchema,
@@ -559,7 +580,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build spreadsheet-review input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.spreadsheet-review",
 		Description: "Dispatch a spreadsheet-review envelope through Tangent. Persists canonical table state and renders a room-backed table host with explicit submit/cancel.",
 		InputSchema: spreadsheetReviewSchema,
@@ -569,7 +590,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build approval-queue input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.approval-queue",
 		Description: "Dispatch an approval-queue envelope through Tangent. Persists queue decisions, evidence context, and audit export metadata with an explicit submit boundary.",
 		InputSchema: approvalQueueSchema,
@@ -579,7 +600,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.synthesis_notes",
 		Description: "Dispatch a synthesis-notes envelope through Tangent. Persists private notes on the room and only exposes the phase-gated preview to the user.",
 		InputSchema: synthesisNotesSchema,
@@ -589,7 +610,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_create input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_create",
 		Description: "Create a Tangent room and return its room ID plus SPA URL. The room is owned by your caller scope. The URL is a locator, not a credential: opening it in a browser is what grants access, so sharing or logging it transfers nothing.",
 		InputSchema: sessionCreateSchema,
@@ -599,7 +620,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_advance input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_advance",
 		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it. Only rooms in your own caller partition accept an advance.",
 		InputSchema: sessionAdvanceSchema,
@@ -613,7 +634,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_get output schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:         "tangent.session_get",
 		Description:  "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema:  sessionGetSchema,
@@ -624,7 +645,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_advance_phase input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_advance_phase",
 		Description: "Set the current workflow phase for a Tangent room and append it to the room's visited phase history.",
 		InputSchema: sessionAdvancePhaseSchema,
@@ -634,7 +655,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_set_phase_output input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_set_phase_output",
 		Description: "Write a top-level key into a room's versioned JSON output blob for a workflow phase.",
 		InputSchema: sessionSetPhaseOutputSchema,
@@ -644,7 +665,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_close input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_close",
 		Description: "Close a Tangent room explicitly and remove its live UI tab. Only rooms in your own caller partition can be closed, because closing dispositions another caller's outstanding human work.",
 		InputSchema: sessionCloseSchema,
@@ -654,7 +675,7 @@ func (s *Server) registerTools() error {
 	if err != nil {
 		return fmt.Errorf("build session_list input schema: %w", err)
 	}
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.session_list",
 		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present. The listing spans every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema: sessionListSchema,

@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
-
 	"github.com/google/jsonschema-go/jsonschema"
+	gmcpserver "github.com/hollis-labs/go-mcp/server"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
@@ -25,15 +23,16 @@ import (
 // about the wire says a tool came from a plugin, and nothing should: an agent
 // choosing a tool is not making a trust decision, the host already made it.
 //
-// # Why the untyped AddTool
+// # Why this file registers a raw handler rather than a typed one
 //
-// Every host tool goes through the SDK's generic AddTool, which binds a Go
-// struct and gets schema validation for free. A plugin tool has no Go type
-// here — its schema arrives as JSON — so it takes the untyped registration,
-// and the responsibilities the generic was carrying become this file's:
-// unmarshaling arguments, validating them against the declared schema, and
-// shaping the result. That is the whole reason this file is longer than the
-// registration it performs.
+// go-mcp's Tool.Handler is untyped — func(ctx, args map[string]any) (any,
+// error) — for every tool, host and plugin alike (see tool_registry.go's
+// addTool, which wraps a typed Go struct around the same untyped contract).
+// A plugin tool has no Go struct to wrap in the first place — its schema
+// arrives as JSON from across the plugin boundary — so it registers directly
+// against go-mcp's own contract instead of going through addTool. Argument
+// validation is not this file's job either way: it runs once, centrally, for
+// every registered tool (schema_validation.go).
 //
 // # Three things a plugin cannot do to the surface
 //
@@ -60,6 +59,14 @@ const (
 
 // registerPluginTools installs every plugin-contributed tool. It runs last in
 // registerTools so the host surface has already claimed its names.
+//
+// Every plugin-contributed tool carries the same conservative annotation —
+// mutating, destructive, non-idempotent, open-world — the "unaudited name
+// defaults to the dangerous assumption" posture: the host has no way to know
+// a plugin tool's actual read/write shape, and inferring "safe" from a name
+// is the exact bug the go-mcp annotation contract exists to make impossible.
+// A plugin that wants a more permissive hint has no way to declare one today;
+// that is a narrower, deliberate gap, not an oversight.
 func (s *Server) registerPluginTools() error {
 	for _, tool := range s.pluginTools {
 		if s.isToolNameClaimed(tool.Name) {
@@ -77,15 +84,14 @@ func (s *Server) registerPluginTools() error {
 		if err != nil {
 			return err
 		}
-		resolved, err := schema.Resolve(nil)
-		if err != nil {
-			return fmt.Errorf("resolve plugin tool %s input schema: %w", tool.Name, err)
-		}
-		s.mcp.AddTool(&mcpsdk.Tool{
-			Name:        tool.Name,
-			Description: tool.Description,
-			InputSchema: schema,
-		}, pluginToolHandler(tool, resolved))
+		s.mcp.RegisterTool(gmcpserver.Tool{
+			Name:            tool.Name,
+			Description:     tool.Description,
+			InputSchema:     schema,
+			Handler:         pluginToolHandler(tool),
+			DestructiveHint: true,
+			OpenWorldHint:   true,
+		})
 	}
 	return nil
 }
@@ -104,41 +110,38 @@ func pluginToolSchema(tool pluginhost.MCPTool) (*jsonschema.Schema, error) {
 	return &schema, nil
 }
 
-// pluginToolHandler adapts one plugin's SDK dispatch interface to the MCP
-// SDK's untyped tool handler.
+// pluginToolHandler adapts one plugin's SDK dispatch interface to go-mcp's
+// untyped tool handler.
 //
-// It never returns a non-nil error. Every failure — bad arguments, a plugin
-// error, a plugin panic — comes back as an isError tool result carrying the
-// envelope error-code vocabulary the rest of this package already speaks, so a
-// caller branches on `code` rather than on which layer broke.
+// Argument validation against the plugin's own declared schema is no longer
+// this function's job: inputSchemaValidationMiddleware (schema_validation.go)
+// validates every registered tool's arguments — host and plugin alike —
+// before any handler runs, from the same resolved schema this file supplies
+// at registration. A bad-arguments failure therefore never reaches here.
 func pluginToolHandler(
 	tool pluginhost.MCPTool,
-	resolved *jsonschema.Resolved,
-) mcpsdk.ToolHandler {
+) gmcpserver.ToolHandler {
 	return func(
 		ctx context.Context,
-		request *mcpsdk.CallToolRequest,
-	) (result *mcpsdk.CallToolResult, err error) {
+		arguments map[string]any,
+	) (result any, err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				// Contained here rather than left to the SDK: a panic that
 				// escapes this handler takes down the connection serving every
 				// other tool, and the caller learns nothing about which plugin
 				// did it.
-				result = toolErrorResult(errorCodePluginPanicked,
+				result = nil
+				err = toolErrorResult(errorCodePluginPanicked,
 					fmt.Sprintf("plugin tool %s panicked: %v", tool.Name, recovered))
-				err = nil
 			}
 		}()
 
-		arguments, argErr := pluginToolArguments(request)
-		if argErr != nil {
-			return toolErrorResult(envelopes.ErrorCodeValidationFailed,
-				fmt.Sprintf("%s arguments are not a JSON object: %v", tool.Name, argErr)), nil
-		}
-		if validateErr := resolved.Validate(arguments); validateErr != nil {
-			return toolErrorResult(envelopes.ErrorCodeValidationFailed,
-				fmt.Sprintf("%s arguments do not match the tool's schema: %v", tool.Name, validateErr)), nil
+		if arguments == nil {
+			// Absent arguments decode to an empty object rather than nil, so a
+			// schema with no required properties accepts a call that passed
+			// none — which is what every other tool on this surface does.
+			arguments = map[string]any{}
 		}
 
 		// SessionID is deliberately empty. Tangent's MCP transports run
@@ -150,8 +153,8 @@ func pluginToolHandler(
 			Arguments: arguments,
 		})
 		if callErr != nil {
-			return toolErrorResult(errorCodePluginFailed,
-				fmt.Sprintf("plugin tool %s: %v", tool.Name, callErr)), nil
+			return nil, toolErrorResult(errorCodePluginFailed,
+				fmt.Sprintf("plugin tool %s: %v", tool.Name, callErr))
 		}
 		if len(call.Envelopes) > 0 {
 			// The SDK lets a plugin emit envelopes alongside a tool result.
@@ -160,40 +163,22 @@ func pluginToolHandler(
 			// substrate, which is what the room-backed tools do and what a
 			// plugin tool can do by calling them. Accepting the field and
 			// dropping it would be a plugin believing it displayed something.
-			return toolErrorResult(errorCodePluginFailed,
+			return nil, toolErrorResult(errorCodePluginFailed,
 				fmt.Sprintf("plugin tool %s returned %d envelope(s); this host does not emit envelopes "+
 					"from a tool result — present them on a room instead",
-					tool.Name, len(call.Envelopes))), nil
+					tool.Name, len(call.Envelopes)))
 		}
 
-		body := string(call.Content)
-		if body == "" {
-			body = "{}"
+		body := call.Content
+		if len(body) == 0 {
+			body = json.RawMessage("{}")
 		}
-		return &mcpsdk.CallToolResult{
-			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: body}},
-			IsError: call.IsError,
-		}, nil
+		if call.IsError {
+			return nil, &rawToolError{
+				message: fmt.Sprintf("plugin tool %s reported an error", tool.Name),
+				body:    body,
+			}
+		}
+		return body, nil
 	}
-}
-
-// pluginToolArguments decodes a call's arguments into the shape both the
-// validator and the SDK's plugin contract want.
-//
-// Absent arguments decode to an empty object rather than nil, so a schema with
-// no required properties accepts a call that passed none — which is what every
-// other tool on this surface does.
-func pluginToolArguments(request *mcpsdk.CallToolRequest) (map[string]any, error) {
-	arguments := map[string]any{}
-	if request == nil || request.Params == nil {
-		return arguments, nil
-	}
-	raw := request.Params.Arguments
-	if len(raw) == 0 || string(raw) == "null" {
-		return arguments, nil
-	}
-	if err := json.Unmarshal(raw, &arguments); err != nil {
-		return nil, err
-	}
-	return arguments, nil
 }

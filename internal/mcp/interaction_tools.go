@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	gmcpserver "github.com/hollis-labs/go-mcp/server"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
@@ -137,7 +137,7 @@ func (s *Server) addInteractionAwaitTool() error {
 	}
 	waitSchema.Minimum = jsonschema.Ptr(1.0)
 	waitSchema.Maximum = jsonschema.Ptr(50_000.0)
-	addTool(s, &mcpsdk.Tool{
+	addTool(s, gmcpserver.Tool{
 		Name:        "tangent.interaction_await",
 		Description: "Wait up to 50 seconds for a durable interaction terminal outcome; timeout never changes interaction lifecycle.",
 		InputSchema: schema,
@@ -145,33 +145,17 @@ func (s *Server) addInteractionAwaitTool() error {
 	return nil
 }
 
-func addInteractionTool[Input any](
-	server *Server,
-	name string,
-	description string,
-	handler mcpsdk.ToolHandlerFor[Input, any],
-) error {
-	schema, err := jsonschema.For[Input](nil)
-	if err != nil {
-		return fmt.Errorf("build %s input schema: %w", name, err)
-	}
-	addTool(server, &mcpsdk.Tool{Name: name, Description: description, InputSchema: schema}, handler)
-	return nil
-}
-
 func (s *Server) handleInteractionListKinds(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	_ interactionListKindsInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.ListInteractionKinds(ctx))
 }
 
 func (s *Server) handleInteractionResolveDefinition(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionResolveDefinitionInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.ResolveInteractionDefinition(ctx, interaction.DefinitionRef{
 		Kind: input.Kind, Version: input.Version,
 	}))
@@ -179,9 +163,8 @@ func (s *Server) handleInteractionResolveDefinition(
 
 func (s *Server) handleSurfaceOpen(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input surfaceOpenInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	caller := directMCPActor(input.Caller)
 	// The owner scope is the caller's own, derived here. A wire-supplied
 	// `owner_scope` used to be accepted unchecked, which let a caller open a
@@ -197,9 +180,8 @@ func (s *Server) handleSurfaceOpen(
 
 func (s *Server) handleSurfaceGet(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input surfaceGetInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.GetSurface(ctx, interaction.GetSurfaceInput{
 		SurfaceID: input.SurfaceID, RequesterScope: requesterScope(input.RequesterScope),
 	}))
@@ -207,9 +189,8 @@ func (s *Server) handleSurfaceGet(
 
 func (s *Server) handleSurfaceClose(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input surfaceCloseInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.CloseSurface(ctx, interaction.CloseSurfaceInput{
 		SurfaceID: input.SurfaceID, ExpectedRevision: input.ExpectedRevision,
 		Requester: directMCPActor(input.Requester), Reason: input.Reason, PolicyRef: input.PolicyRef,
@@ -219,9 +200,8 @@ func (s *Server) handleSurfaceClose(
 
 func (s *Server) handleInteractionSubmit(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionSubmitInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.SubmitInteraction(ctx, interaction.SubmitInteractionInput{
 		ID: input.InteractionID, SurfaceID: input.SurfaceID, Caller: directMCPActor(input.Caller),
 		IdempotencyKey: input.IdempotencyKey, Definition: input.Definition,
@@ -231,9 +211,8 @@ func (s *Server) handleInteractionSubmit(
 
 func (s *Server) handleInteractionGet(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionGetInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
 		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
@@ -242,9 +221,8 @@ func (s *Server) handleInteractionGet(
 
 func (s *Server) handleInteractionAwait(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionAwaitInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	return s.interactionResult(s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
 		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		MaximumWaitMillis:    input.MaximumWaitMillis,
@@ -254,12 +232,11 @@ func (s *Server) handleInteractionAwait(
 
 func (s *Server) handleInteractionCancel(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionCancelInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if input.Cause != interaction.TerminalCauseCallerWithdrawn &&
 		input.Cause != interaction.TerminalCauseCallerCanceled {
-		return s.interactionError(interaction.ErrUnauthorized)
+		return nil, s.interactionError(interaction.ErrUnauthorized)
 	}
 	result, err := s.interactions.CancelInteraction(ctx, interaction.CancelInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
@@ -271,9 +248,8 @@ func (s *Server) handleInteractionCancel(
 
 func (s *Server) handleInteractionSupersede(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input interactionSupersedeInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	result, err := s.interactions.SupersedeInteraction(ctx, interaction.SupersedeInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		ReplacementInteractionID: input.ReplacementInteractionID,
@@ -307,14 +283,14 @@ func (s *Server) retireRoomPresentation(err error, result interaction.Terminaliz
 	s.roomflow.RetirePresentation(record.LegacyRoomID, record.LegacyEnvelopeID)
 }
 
-func (s *Server) interactionResult(value any, err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) interactionResult(value any, err error) (any, error) {
 	if err != nil {
-		return s.interactionError(err)
+		return nil, s.interactionError(err)
 	}
-	return nil, value, nil
+	return value, nil
 }
 
-func (s *Server) interactionError(err error) (*mcpsdk.CallToolResult, any, error) {
+func (s *Server) interactionError(err error) error {
 	code := "interaction_error"
 	// A definition this host cannot serve is a distinguishable state, not one
 	// opaque failure (ADR 0003 §8 C7): a caller's next move differs between
@@ -324,7 +300,7 @@ func (s *Server) interactionError(err error) (*mcpsdk.CallToolResult, any, error
 	// no caller can have been relying on the collapsed code.
 	var definitionState *interaction.DefinitionStateError
 	if errors.As(err, &definitionState) {
-		return toolErrorResult("definition_"+definitionState.State, definitionState.Error()), nil, nil
+		return toolErrorResult("definition_"+definitionState.State, definitionState.Error())
 	}
 	switch {
 	case errors.Is(err, interaction.ErrIdempotencyConflict):
@@ -354,7 +330,7 @@ func (s *Server) interactionError(err error) (*mcpsdk.CallToolResult, any, error
 	case errors.Is(err, context.DeadlineExceeded):
 		code = "await_timeout"
 	}
-	return toolErrorResult(code, err.Error()), nil, nil
+	return toolErrorResult(code, err.Error())
 }
 
 func rawJSON(value any) json.RawMessage {

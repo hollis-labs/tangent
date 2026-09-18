@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sort"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
@@ -235,12 +233,11 @@ func (s *Server) registerDefinitionTools() error {
 
 func (s *Server) handleDefinitionRegistryList(
 	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input definitionRegistryListInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if input.State != "" && !knownMaterializationState(input.State) {
-		return toolErrorResult("invalid_request",
-			fmt.Sprintf("unknown materialization state %q", input.State)), nil, nil
+		return nil, toolErrorResult("invalid_request",
+			fmt.Sprintf("unknown materialization state %q", input.State))
 	}
 	limit := input.Limit
 	switch {
@@ -279,33 +276,32 @@ func (s *Server) handleDefinitionRegistryList(
 	result.Definitions = page
 	digest, err := s.envSvc.DefinitionSourceDigest()
 	if err != nil {
-		return toolErrorResult("definition_unavailable", err.Error()), nil, nil
+		return nil, toolErrorResult("definition_unavailable", err.Error())
 	}
 	result.SourceDigest = digest
-	return nil, result, nil
+	return result, nil
 }
 
 func (s *Server) handleDefinitionGet(
 	_ context.Context,
-	_ *mcpsdk.CallToolRequest,
 	input definitionGetInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	if input.Kind == "" {
-		return toolErrorResult("invalid_request", "kind is required"), nil, nil
+		return nil, toolErrorResult("invalid_request", "kind is required")
 	}
 	version := input.Version
 	if version == "" {
 		spec, ok := s.envSvc.Lookup(input.Kind)
 		if !ok {
-			return toolErrorResult("definition_not_found", input.Kind+" is not registered"), nil, nil
+			return nil, toolErrorResult("definition_not_found", input.Kind+" is not registered")
 		}
 		version = spec.Version
 	}
 	material, ok := s.envSvc.LookupDefinitionMaterialVersion(input.Kind, version)
 	if !ok || material.Definition == nil {
-		return toolErrorResult("definition_not_found",
+		return nil, toolErrorResult("definition_not_found",
 			fmt.Sprintf("%s@%s has no retained manifest; go-envelopes core definitions carry no source bytes",
-				input.Kind, version)), nil, nil
+				input.Kind, version))
 	}
 	materialized := *material.Definition
 	manifest := materialized.Manifest
@@ -359,14 +355,13 @@ func (s *Server) handleDefinitionGet(
 	detail.ErrorSchema = projectSchema(
 		material.ErrorSchema, materialized.Derived.ErrorSchemaDigest, input.IncludeSchemas,
 		manifest.ErrorSchemaRef != "")
-	return nil, detail, nil
+	return detail, nil
 }
 
 func (s *Server) handleDefinitionRegistryDiagnostics(
 	ctx context.Context,
-	_ *mcpsdk.CallToolRequest,
 	_ definitionRegistryDiagnosticsInput,
-) (*mcpsdk.CallToolResult, any, error) {
+) (any, error) {
 	materialized := s.envSvc.MaterializedDefinitions()
 	result := definitionRegistryDiagnosticsResult{
 		HostVersion:         HostVersion,
@@ -397,7 +392,7 @@ func (s *Server) handleDefinitionRegistryDiagnostics(
 
 	digest, err := s.envSvc.DefinitionSourceDigest()
 	if err != nil {
-		return toolErrorResult("definition_unavailable", err.Error()), nil, nil
+		return nil, toolErrorResult("definition_unavailable", err.Error())
 	}
 	result.SourceDigest = digest
 
@@ -407,7 +402,7 @@ func (s *Server) handleDefinitionRegistryDiagnostics(
 			result.RetainedDefinitions = count
 		}
 	}
-	return nil, result, nil
+	return result, nil
 }
 
 func summarize(materialized definition.Materialized) definitionSummary {

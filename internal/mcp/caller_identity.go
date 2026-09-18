@@ -6,8 +6,6 @@ import (
 	"errors"
 	"strings"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/roomflow"
@@ -39,7 +37,7 @@ import (
 //
 // When a trusted in-process adapter composes a verified caller binding (ADR
 // 0004 §10.1), this is the one place that binding is read.
-func callerIdentity(_ *mcpsdk.CallToolRequest) interaction.ActorBinding {
+func callerIdentity() interaction.ActorBinding {
 	return roomflow.DefaultCaller
 }
 
@@ -119,7 +117,7 @@ func (s *Server) authorizeRoom(
 // existence. In-authority denial says only that the caller is not authorized:
 // it never names the required capability, the owning scope, the session, or
 // the participant.
-func roomAuthorizationError(roomID string, err error) *mcpsdk.CallToolResult {
+func roomAuthorizationError(roomID string, err error) error {
 	if isNotFound(err) {
 		return toolErrorResult(errorCodeRoomNotFound, "room \""+roomID+"\" not found")
 	}

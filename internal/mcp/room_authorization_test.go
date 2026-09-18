@@ -3,14 +3,13 @@ package mcp
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	envelopes "github.com/hollis-labs/go-envelopes"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -49,10 +48,11 @@ func TestSessionCloseIsPartitionEnforcingWhileReadsStayAuthorityWide(t *testing.
 
 	// List is authority-wide: a caller sees its own partition and its
 	// neighbors', and never another authority's.
-	_, listed, err := server.handleSessionList(ctx, nil, sessionListInput{ActiveOnly: true})
+	listedAny, err := server.handleSessionList(ctx, sessionListInput{ActiveOnly: true})
 	if err != nil {
 		t.Fatalf("handleSessionList: %v", err)
 	}
+	listed := listedAny.(sessionListResult)
 	visible := map[string]bool{}
 	for _, summary := range listed.Rooms {
 		visible[summary.ID] = true
@@ -67,36 +67,24 @@ func TestSessionCloseIsPartitionEnforcingWhileReadsStayAuthorityWide(t *testing.
 	// Get is authority-wide too, and cross-authority reads are not-found
 	// rather than forbidden, so a foreign authority cannot probe for
 	// existence.
-	neighbor, _, neighborErr := server.handleSessionGet(ctx, nil, sessionGetInput{RoomID: otherPartition})
+	_, neighborErr := server.handleSessionGet(ctx, sessionGetInput{RoomID: otherPartition})
 	if neighborErr != nil {
-		t.Fatalf("handleSessionGet: %v", neighborErr)
+		t.Fatalf("session_get refused a same-authority room: %v", neighborErr)
 	}
-	if isToolError(neighbor) {
-		t.Fatalf("session_get refused a same-authority room: %s", toolText(neighbor))
-	}
-	result, _, err := server.handleSessionGet(ctx, nil, sessionGetInput{RoomID: foreignAuthority})
-	if err != nil {
-		t.Fatalf("handleSessionGet: %v", err)
-	}
-	assertToolErrorCode(t, result, errorCodeRoomNotFound)
+	_, err = server.handleSessionGet(ctx, sessionGetInput{RoomID: foreignAuthority})
+	assertToolErrorCode(t, err, errorCodeRoomNotFound)
 
 	// Close is partition-enforcing. Own room: allowed.
-	closed, _, err := server.handleSessionClose(ctx, nil, sessionCloseInput{RoomID: ownRoom})
+	_, err = server.handleSessionClose(ctx, sessionCloseInput{RoomID: ownRoom})
 	if err != nil {
-		t.Fatalf("handleSessionClose: %v", err)
-	}
-	if isToolError(closed) {
-		t.Fatalf("a caller could not close its own room: %s", toolText(closed))
+		t.Fatalf("a caller could not close its own room: %v", err)
 	}
 
 	// Another partition inside the same authority: forbidden, and the message
 	// names neither the required capability nor the owning scope.
-	refused, _, err := server.handleSessionClose(ctx, nil, sessionCloseInput{RoomID: otherPartition})
-	if err != nil {
-		t.Fatalf("handleSessionClose: %v", err)
-	}
-	assertToolErrorCode(t, refused, errorCodeRoomForbidden)
-	if text := toolText(refused); strings.Contains(text, "another-agent") || strings.Contains(text, "close") {
+	_, err = server.handleSessionClose(ctx, sessionCloseInput{RoomID: otherPartition})
+	assertToolErrorCode(t, err, errorCodeRoomForbidden)
+	if text := err.Error(); strings.Contains(text, "another-agent") || strings.Contains(text, "close") {
 		t.Fatalf("the refusal described the authorization decision: %s", text)
 	}
 	if _, open := manager.Get(otherPartition); !open {
@@ -104,11 +92,8 @@ func TestSessionCloseIsPartitionEnforcingWhileReadsStayAuthorityWide(t *testing.
 	}
 
 	// Another authority: not-found, so existence does not leak.
-	foreign, _, err := server.handleSessionClose(ctx, nil, sessionCloseInput{RoomID: foreignAuthority})
-	if err != nil {
-		t.Fatalf("handleSessionClose: %v", err)
-	}
-	assertToolErrorCode(t, foreign, errorCodeRoomNotFound)
+	_, err = server.handleSessionClose(ctx, sessionCloseInput{RoomID: foreignAuthority})
+	assertToolErrorCode(t, err, errorCodeRoomNotFound)
 	if _, open := manager.Get(foreignAuthority); !open {
 		t.Fatal("a cross-authority close still tore the room down")
 	}
@@ -127,18 +112,12 @@ func TestWorkflowToolsCannotPushIntoAnotherCallersRoom(t *testing.T) {
 	foreignAuthority := seedRoom(t, server, nil, gatewayCaller())
 
 	request := triageEnvelope("env-cross-partition")
-	result, _, err := server.advanceRoomEnvelope(ctx, otherPartition, request, nil, completionInput{})
-	if err != nil {
-		t.Fatalf("advanceRoomEnvelope: %v", err)
-	}
-	assertToolErrorCode(t, result, errorCodeRoomForbidden)
+	_, err := server.advanceRoomEnvelope(ctx, otherPartition, request, nil, completionInput{})
+	assertToolErrorCode(t, err, errorCodeRoomForbidden)
 
-	result, _, err = server.advanceRoomEnvelope(
+	_, err = server.advanceRoomEnvelope(
 		ctx, foreignAuthority, triageEnvelope("env-cross-authority"), nil, completionInput{})
-	if err != nil {
-		t.Fatalf("advanceRoomEnvelope: %v", err)
-	}
-	assertToolErrorCode(t, result, errorCodeRoomNotFound)
+	assertToolErrorCode(t, err, errorCodeRoomNotFound)
 }
 
 // TestSessionCreateRecordsOwnershipImmediately: a room with no owner is a room
@@ -149,10 +128,11 @@ func TestSessionCreateRecordsOwnershipImmediately(t *testing.T) {
 	server, _ := newAuthorizationFixture(t)
 	ctx := context.Background()
 
-	_, created, err := server.handleSessionCreate(ctx, nil, sessionCreateInput{Title: "Fresh"})
+	createdAny, err := server.handleSessionCreate(ctx, sessionCreateInput{Title: "Fresh"})
 	if err != nil {
 		t.Fatalf("handleSessionCreate: %v", err)
 	}
+	created := createdAny.(sessionCreateResult)
 	owner, found, err := server.roomflow.OwnerScope(ctx, created.RoomID)
 	if err != nil {
 		t.Fatalf("OwnerScope: %v", err)
@@ -282,34 +262,34 @@ func triageEnvelope(id string) *envelopes.Envelope {
 	}
 }
 
-func isToolError(result *mcpsdk.CallToolResult) bool { return result != nil && result.IsError }
-
-func toolText(result *mcpsdk.CallToolResult) string {
-	if result == nil || len(result.Content) == 0 {
-		return ""
+// toolErrorCode extracts the envelope-style error code toolErrorResult builds
+// (internal/mcp/tool_errors.go: {v, kind: "error", error: {code, message}}),
+// by reading the *rawToolError's structured body directly rather than
+// round-tripping it through JSON.
+func toolErrorCode(t *testing.T, err error) string {
+	t.Helper()
+	var rte *rawToolError
+	if !errors.As(err, &rte) {
+		t.Fatalf("error is not a tool error: %v", err)
 	}
-	text, ok := result.Content[0].(*mcpsdk.TextContent)
+	body, ok := rte.body.(map[string]any)
 	if !ok {
-		return ""
+		t.Fatalf("tool error body is not a map: %#v", rte.body)
 	}
-	return text.Text
+	errObj, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("tool error body has no error object: %#v", body)
+	}
+	code, _ := errObj["code"].(string)
+	return code
 }
 
-func assertToolErrorCode(t *testing.T, result *mcpsdk.CallToolResult, want string) {
+func assertToolErrorCode(t *testing.T, err error, want string) {
 	t.Helper()
-	if !isToolError(result) {
+	if err == nil {
 		t.Fatalf("expected a %s tool error, got a success", want)
 	}
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	text := toolText(result)
-	if err := json.Unmarshal([]byte(text), &body); err != nil {
-		t.Fatalf("tool error %q is not JSON: %v", text, err)
-	}
-	if body.Error.Code != want {
-		t.Fatalf("tool error code = %q, want %q (body %s)", body.Error.Code, want, text)
+	if got := toolErrorCode(t, err); got != want {
+		t.Fatalf("tool error code = %q, want %q (err: %v)", got, want, err)
 	}
 }
