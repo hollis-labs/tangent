@@ -1,9 +1,11 @@
 package pluginhost
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	plugin "github.com/hollis-labs/plugin-sdk"
@@ -257,6 +259,42 @@ type PluginRecord struct {
 	At time.Time `json:"at"`
 	// Error is why a refused load was refused. Empty for a loaded plugin.
 	Error string `json:"error,omitempty"`
+
+	// Restarts is how many automatic restart attempts this plugin has made
+	// (CW-20260911-0068), successful or not. Zero for a plugin that has never
+	// crashed and for a compiled-in plugin, which has no process to restart —
+	// the two are indistinguishable here on purpose: "never needed a restart"
+	// is the only fact this field states.
+	Restarts int `json:"restarts,omitempty"`
+
+	// Healthy is the last plugin/health verdict this host has cached for this
+	// plugin (CW-20260911-0069), or nil if it has never been probed — which is
+	// the normal state until something asks for a health report. A pointer
+	// rather than a bare bool because the important case is Healthy pointing
+	// at false, and omitempty on a bare bool would hide exactly that.
+	Healthy *bool `json:"healthy,omitempty"`
+	// HealthMessage is the plugin's own message on its last health answer, or
+	// this host's account of why the probe itself failed (a timeout, a dead
+	// process). Empty when Healthy is true or nil.
+	HealthMessage string `json:"health_message,omitempty"`
+	// HealthCheckedAt is when the cached verdict above was obtained. Zero when
+	// Healthy is nil.
+	HealthCheckedAt time.Time `json:"health_checked_at,omitempty"`
+}
+
+// healthProber is a host-local optional interface, the same pattern
+// HealthChecker is for the SDK's plugin-side surface: a compiled-in plugin
+// has no process to probe, so it simply does not implement this, and
+// Inventory treats that exactly like "not probed yet" rather than an error.
+type healthProber interface {
+	probeHealth(ctx context.Context) pluginHealth
+}
+
+// restartReporter is the same pattern for CW-20260911-0068's restart count —
+// declared where it is consumed rather than on plugin.Plugin, because only a
+// subprocess plugin can ever answer it.
+type restartReporter interface {
+	Restarts() int
 }
 
 // PluginInventory is what this host loaded and what it refused.
@@ -296,7 +334,14 @@ const attributionNote = "contributed kinds, tools and routes are host-wide: the 
 // than leaving an operator to infer it from a tool list — which is inference
 // from the wrong evidence: a plugin can load and contribute no tool at all,
 // which is exactly what the kind-contributing plugin in this build does.
-func (h *Host) Inventory() PluginInventory {
+//
+// It takes a context because a loaded subprocess plugin is asked plugin/health
+// as part of building this document (CW-20260911-0069) — on demand, exactly
+// here and nowhere else in this host, which is the whole reason readiness's
+// existing probeBudget bounds this call too rather than a separate one being
+// invented for it. Every plugin implementing the probe is asked concurrently,
+// so the wall-clock cost of N plugins is the slowest one, not the sum.
+func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	h.mu.Lock()
 	attempts := make([]*loadAttempt, len(h.attempts))
 	copy(attempts, h.attempts)
@@ -305,6 +350,8 @@ func (h *Host) Inventory() PluginInventory {
 		stillLoaded[id] = true
 	}
 	h.mu.Unlock()
+
+	health := probeHealthConcurrently(ctx, attempts, stillLoaded)
 
 	inventory := PluginInventory{
 		Plugins:          make([]PluginRecord, 0, len(attempts)),
@@ -335,6 +382,13 @@ func (h *Host) Inventory() PluginInventory {
 		}
 		if record.Loaded && attempt.p != nil {
 			record.Enabled = safeStatus(attempt.p).Enabled
+			record.Restarts = safeRestarts(attempt.p)
+		}
+		if probed, wasProbed := health[attempt.id]; wasProbed {
+			healthy := probed.ok
+			record.Healthy = &healthy
+			record.HealthMessage = probed.message
+			record.HealthCheckedAt = probed.checked
 		}
 		if attempt.err != "" {
 			inventory.Refused++
@@ -344,6 +398,67 @@ func (h *Host) Inventory() PluginInventory {
 		inventory.Plugins = append(inventory.Plugins, record)
 	}
 	return inventory
+}
+
+// probeHealthConcurrently asks every still-loaded plugin that implements
+// healthProber for its cached verdict, in parallel. A plugin that does not
+// implement it (every compiled-in plugin, and any subprocess plugin this
+// host has not yet loaded) is simply absent from the result — Inventory reads
+// that as "never probed," not as unhealthy.
+func probeHealthConcurrently(
+	ctx context.Context, attempts []*loadAttempt, stillLoaded map[string]bool,
+) map[string]pluginHealth {
+	var (
+		wg  sync.WaitGroup
+		mu  sync.Mutex
+		out = map[string]pluginHealth{}
+	)
+	for _, attempt := range attempts {
+		if attempt.p == nil || !stillLoaded[attempt.id] {
+			continue
+		}
+		prober, ok := attempt.p.(healthProber)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(id string, prober healthProber) {
+			defer wg.Done()
+			result := safeProbeHealth(ctx, prober)
+			mu.Lock()
+			out[id] = result
+			mu.Unlock()
+		}(attempt.id, prober)
+	}
+	wg.Wait()
+	return out
+}
+
+// safeProbeHealth calls a plugin's health probe without letting a defect in
+// it fail the whole inventory — the same posture safeStatus already takes
+// toward Status().
+func safeProbeHealth(ctx context.Context, prober healthProber) (result pluginHealth) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = pluginHealth{ok: false, message: fmt.Sprintf("panicked: %v", recovered), checked: time.Now().UTC()}
+		}
+	}()
+	return prober.probeHealth(ctx)
+}
+
+// safeRestarts reads a plugin's restart count without letting a defect in it
+// fail the whole inventory.
+func safeRestarts(p plugin.Plugin) (count int) {
+	reporter, ok := p.(restartReporter)
+	if !ok {
+		return 0
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			count = 0
+		}
+	}()
+	return reporter.Restarts()
 }
 
 // safeStatus reads a plugin's self-reported status without letting a defect in

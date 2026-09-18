@@ -46,6 +46,17 @@ func (p *echoPlugin) Load(context.Context) (subprocess.LoadResult, error) {
 
 func (p *echoPlugin) Unload(context.Context) error { return nil }
 
+// Health answers plugin/health, controllable via ECHO_PLUGIN_HEALTH so a test
+// can make this plugin report unhealthy without a second test fixture. Empty
+// or "ok" reports healthy; any other value is reported as the message on an
+// unhealthy answer.
+func (p *echoPlugin) Health(context.Context) (subprocess.HealthStatus, error) {
+	if message := os.Getenv("ECHO_PLUGIN_HEALTH"); message != "" && message != "ok" {
+		return subprocess.HealthStatus{OK: false, Message: message}, nil
+	}
+	return subprocess.HealthStatus{OK: true}, nil
+}
+
 // MCPCallTool answers the two tools the test registers.
 func (p *echoPlugin) MCPCallTool(
 	_ context.Context,

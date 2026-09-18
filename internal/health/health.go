@@ -33,6 +33,7 @@
 package health
 
 import (
+	"context"
 	"database/sql"
 	"time"
 
@@ -212,7 +213,7 @@ type Reporter struct {
 	// plugins reports which plugins the host loaded and which it refused. Nil
 	// is a valid state and reads as a warning rather than a failure: a build
 	// with no probe is not a build with broken plugins. See plugins.go.
-	plugins func() PluginInventory
+	plugins func(ctx context.Context) PluginInventory
 	runtime Runtime
 
 	// telemetry records readiness transitions and links failures to the trace

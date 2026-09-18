@@ -186,7 +186,7 @@ func TestAPanickingLoadFailsTheBootWithoutCrashingIt(t *testing.T) {
 	if !strings.Contains(err.Error(), "panicked") {
 		t.Errorf("err = %v, want it to name the panic", err)
 	}
-	inventory := host.Inventory()
+	inventory := host.Inventory(context.Background())
 	if inventory.Refused != 1 || inventory.Loaded != 0 {
 		t.Fatalf("inventory = %+v, want one refusal", inventory)
 	}
@@ -210,7 +210,7 @@ func TestInventoryReportsWhatLoadedAndWhatRefused(t *testing.T) {
 		t.Fatal("a plugin with a missing dependency loaded")
 	}
 
-	inventory := host.Inventory()
+	inventory := host.Inventory(context.Background())
 	if inventory.Loaded != 1 || inventory.Refused != 1 {
 		t.Fatalf("inventory = %+v, want one loaded and one refused", inventory)
 	}
@@ -240,7 +240,7 @@ func TestInventoryReportsWhatLoadedAndWhatRefused(t *testing.T) {
 	if err := host.Unload(loaded.id); err != nil {
 		t.Fatalf("Unload: %v", err)
 	}
-	after := host.Inventory()
+	after := host.Inventory(context.Background())
 	if after.Loaded != 0 {
 		t.Errorf("inventory still reports %d loaded after unloading the only one", after.Loaded)
 	}

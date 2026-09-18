@@ -61,6 +61,11 @@ func LoadInstalled(
 	logger *slog.Logger,
 	envSvc *envelope.Service,
 	root string,
+	// disableHealthGate turns off the CW-20260911-0069 health gate for every
+	// plugin this call loads. Named for the opt-out, like boot.Config's field
+	// it carries: false (the zero value, what a caller that omits it gets) is
+	// the gate staying on.
+	disableHealthGate bool,
 ) (*pluginhost.Host, error) {
 	host, err := pluginhost.New(ctx, logger, envSvc)
 	if err != nil {
@@ -83,7 +88,8 @@ func LoadInstalled(
 
 	for _, entry := range installed {
 		child := pluginhost.NewChildPlugin(
-			specFor(entry), toolsFor(entry), routesFor(entry))
+			specFor(entry), toolsFor(entry), routesFor(entry),
+			pluginhost.WithHealthGate(!disableHealthGate))
 		if loadErr := host.Load(child); loadErr != nil {
 			logger.Warn("plugins: installed plugin failed to load",
 				"plugin", entry.Manifest.ID, "error", loadErr)

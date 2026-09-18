@@ -19,13 +19,14 @@ import (
 )
 
 const (
-	defaultPort        = 7842
-	envPort            = "TANGENT_HTTP_PORT"
-	envDevFrontendURL  = "TANGENT_DEV_FRONTEND_URL"
-	envDBPath          = "TANGENT_DB_PATH"
-	envManagedResource = "TANGENT_MANAGED_RESOURCE"
-	envOpenTelemetry   = "TANGENT_OTEL"
-	ownerLabel         = "tangent-app"
+	defaultPort                = 7842
+	envPort                    = "TANGENT_HTTP_PORT"
+	envDevFrontendURL          = "TANGENT_DEV_FRONTEND_URL"
+	envDBPath                  = "TANGENT_DB_PATH"
+	envManagedResource         = "TANGENT_MANAGED_RESOURCE"
+	envOpenTelemetry           = "TANGENT_OTEL"
+	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
+	ownerLabel                 = "tangent-app"
 )
 
 func main() {
@@ -34,13 +35,14 @@ func main() {
 
 	shell, err := appshell.New(appshell.Config{
 		Config: boot.Config{
-			DBPath:          os.Getenv(envDBPath),
-			Port:            resolvePort(),
-			DevFrontendURL:  os.Getenv(envDevFrontendURL),
-			ManagedResource: os.Getenv(envManagedResource),
-			OTel:            os.Getenv(envOpenTelemetry) != "",
-			OwnerLabel:      ownerLabel,
-			Logger:          logger,
+			DBPath:                  os.Getenv(envDBPath),
+			Port:                    resolvePort(),
+			DevFrontendURL:          os.Getenv(envDevFrontendURL),
+			ManagedResource:         os.Getenv(envManagedResource),
+			OTel:                    os.Getenv(envOpenTelemetry) != "",
+			DisablePluginHealthGate: os.Getenv(envDisablePluginHealthGate) != "",
+			OwnerLabel:              ownerLabel,
+			Logger:                  logger,
 		},
 	})
 	if err != nil {

@@ -69,7 +69,7 @@ func TestReadinessObservesTransitionsRatherThanSamples(t *testing.T) {
 		// the plugin probe out too would make this assert "two transitions
 		// collapse to one observation", which is a different claim than the one
 		// the test is named for.
-		WithPlugins(func() PluginInventory {
+		WithPlugins(func(context.Context) PluginInventory {
 			return PluginInventory{Loaded: 1, Plugins: []PluginRecord{{ID: "x", Loaded: true}}}
 		}),
 		WithTelemetry(telemetry.New(telemetry.WithSink(sink))),
