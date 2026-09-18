@@ -228,6 +228,12 @@ func TestAChildThatDiesFailsItsCallersRatherThanHangingThem(t *testing.T) {
 	if err := host.Load(child); err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+	// CW-20260911-0068 means a killed child would otherwise be restarted a
+	// second or so later. Unloading before that closes the restart
+	// supervisor's stopping channel, so this test's kill produces exactly the
+	// one dead process it asserts about rather than a respawned one nothing
+	// here then cleans up.
+	t.Cleanup(func() { _ = child.Unload() })
 
 	failed := make(chan error, 1)
 	go func() {

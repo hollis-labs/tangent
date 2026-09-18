@@ -144,7 +144,7 @@ func healthyReporter(t *testing.T) *Reporter {
 		WithDeliveryWorker(func() DeliveryWorker {
 			return DeliveryWorker{Authorized: true, Scope: "tangent:room-workflow-delivery"}
 		}),
-		WithPlugins(func() PluginInventory {
+		WithPlugins(func(context.Context) PluginInventory {
 			return PluginInventory{
 				Loaded:           1,
 				Plugins:          []PluginRecord{{ID: "tangent.plugin.example", Loaded: true, Enabled: true}},

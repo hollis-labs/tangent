@@ -1,6 +1,7 @@
 package health
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strconv"
@@ -44,6 +45,23 @@ type PluginRecord struct {
 	// Error is why a refused load was refused, bounded like every other
 	// explanation in this package. It is the host's error text, not a stack.
 	Error string `json:"error,omitempty"`
+
+	// Restarts is how many automatic restart attempts this plugin has made
+	// (CW-20260911-0068). Zero for a plugin that never needed one, which reads
+	// the same as "not a subprocess plugin" here — that distinction lives in
+	// Loaded/Error, not in this count.
+	Restarts int `json:"restarts,omitempty"`
+	// Healthy is the last plugin/health verdict this host has cached, or nil
+	// if it has never been probed (the normal state until a health report is
+	// requested). A pointer because the case that matters is Healthy pointing
+	// at false, and a bare bool's omitempty would hide exactly that.
+	Healthy *bool `json:"healthy,omitempty"`
+	// HealthMessage is the plugin's own message, bounded like Error, or this
+	// host's account of why the probe itself failed. Empty when Healthy is
+	// true or nil.
+	HealthMessage string `json:"health_message,omitempty"`
+	// HealthCheckedAt is when the cached verdict above was obtained.
+	HealthCheckedAt time.Time `json:"health_checked_at,omitempty"`
 }
 
 // PluginInventory is what the plugin host loaded and what it refused.
@@ -74,7 +92,12 @@ const CheckPlugins = "plugins"
 // this package keeps depending on vocabularies and not on another subsystem's
 // lifecycle — the same reason DefinitionRegistry is an interface. The
 // composition root does the one-line adaptation.
-func WithPlugins(probe func() PluginInventory) Option {
+//
+// It takes a context because building the inventory sends plugin/health to
+// every loaded subprocess plugin (CW-20260911-0069) — a real round trip, not
+// a pure read, and bounded by whatever budget the caller (Readiness, or
+// tangent.health_report directly) passes down.
+func WithPlugins(probe func(ctx context.Context) PluginInventory) Option {
 	return func(r *Reporter) { r.plugins = probe }
 }
 
@@ -87,7 +110,14 @@ func WithPlugins(probe func() PluginInventory) Option {
 // installed warns rather than fails — "nobody wired the reporter" and "the
 // plugins are broken" are different incidents, and conflating them is the
 // defect this package exists to close.
-func (r *Reporter) checkPlugins() Check {
+//
+// An unhealthy plugin (CW-20260911-0069) is a warning, not a failure, at this
+// level: it can still mean the process overall serves traffic fine while one
+// dependency it proxies to is unreachable, which is degraded rather than
+// unavailable — the same distinction SummaryDegraded exists to keep separate
+// from SummaryUnavailable. A refusal already outranks it via the early return
+// above.
+func (r *Reporter) checkPlugins(ctx context.Context) Check {
 	if r.plugins == nil {
 		return Check{
 			Name:   CheckPlugins,
@@ -98,7 +128,7 @@ func (r *Reporter) checkPlugins() Check {
 				"rather than as absent." + r.redeployHint(),
 		}
 	}
-	inventory := r.plugins()
+	inventory := r.plugins(ctx)
 	if inventory.Refused > 0 {
 		var refused []string
 		for _, record := range inventory.Plugins {
@@ -129,6 +159,18 @@ func (r *Reporter) checkPlugins() Check {
 				"expected.",
 		}
 	}
+	if unhealthy := unhealthyPlugins(inventory); len(unhealthy) > 0 {
+		return Check{
+			Name:   CheckPlugins,
+			Status: StatusWarn,
+			Detail: bound(fmt.Sprintf("%d of %d loaded plugin(s) reported unhealthy: %s",
+				len(unhealthy), inventory.Loaded, joinBounded(unhealthy))),
+			Action: "The plugin is loaded and answering, but its own plugin/health check " +
+				"failed — read the per-plugin health_message in this report's plugin " +
+				"inventory for what it said. A caller's tool and route calls to it may be " +
+				"refused; see internal/pluginhost's health gate.",
+		}
+	}
 	return Check{
 		Name:   CheckPlugins,
 		Status: StatusPass,
@@ -139,20 +181,34 @@ func (r *Reporter) checkPlugins() Check {
 	}
 }
 
+// unhealthyPlugins names every loaded plugin whose cached health verdict is
+// false, sorted for a stable report.
+func unhealthyPlugins(inventory PluginInventory) []string {
+	var names []string
+	for _, record := range inventory.Plugins {
+		if record.Loaded && record.Healthy != nil && !*record.Healthy {
+			names = append(names, record.ID)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 // Plugins returns the inventory for a caller that wants the detail behind the
 // check. It is bounded and empty-safe: a build with no probe answers with a
 // zero inventory rather than nil, so a consumer never has to distinguish
 // `null` from `[]` before it can read the document.
-func (r *Reporter) Plugins() PluginInventory {
+func (r *Reporter) Plugins(ctx context.Context) PluginInventory {
 	if r.plugins == nil {
 		return PluginInventory{Plugins: []PluginRecord{}}
 	}
-	inventory := r.plugins()
+	inventory := r.plugins(ctx)
 	if inventory.Plugins == nil {
 		inventory.Plugins = []PluginRecord{}
 	}
 	for i := range inventory.Plugins {
 		inventory.Plugins[i].Error = bound(inventory.Plugins[i].Error)
+		inventory.Plugins[i].HealthMessage = bound(inventory.Plugins[i].HealthMessage)
 	}
 	return inventory
 }

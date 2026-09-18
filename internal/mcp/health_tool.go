@@ -57,9 +57,11 @@ func (s *Server) registerHealthTool() error {
 			"responding), readiness (database, migrations, definition registry, renderer host, "+
 			"delivery worker), and capability health for one requested interaction kind or, with "+
 			"no kind, a bounded summary over all of them. Also reports which plugins loaded and "+
-			"which refused and why, so that is read rather than inferred from a tool list. Every "+
-			"non-passing check carries the operator action that fixes it. Payload-bounded; "+
-			"carries no participant content, path, or session.",
+			"which refused and why, so that is read rather than inferred from a tool list — plus, "+
+			"per subprocess plugin, its live plugin/health verdict (probed here, on demand) and how "+
+			"many times it has been automatically restarted after a crash. Every non-passing check "+
+			"carries the operator action that fixes it. Payload-bounded; carries no participant "+
+			"content, path, or session.",
 		s.handleHealthReport)
 }
 
@@ -82,7 +84,7 @@ func (s *Server) handleHealthReport(
 		ProtocolVersion: envelope.ProtocolVersion,
 		Liveness:        health.Live(),
 		Readiness:       s.health.Readiness(ctx),
-		Plugins:         s.health.Plugins(),
+		Plugins:         s.health.Plugins(ctx),
 	}
 	if input.Kind != "" {
 		report := s.health.Capability(input.Kind)

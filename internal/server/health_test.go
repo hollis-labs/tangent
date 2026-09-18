@@ -173,7 +173,7 @@ func TestReadinessAnswers200WhenEveryDependencyIsPresent(t *testing.T) {
 		}),
 		// The plugin probe is a dependency like the others: a reporter without
 		// one warns, and this test is the "every dependency present" baseline.
-		health.WithPlugins(func() health.PluginInventory {
+		health.WithPlugins(func(context.Context) health.PluginInventory {
 			return health.PluginInventory{
 				Loaded:  1,
 				Plugins: []health.PluginRecord{{ID: "tangent.plugin.fixture", Loaded: true}},

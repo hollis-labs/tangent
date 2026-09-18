@@ -103,6 +103,15 @@ type Config struct {
 	// directory it owns rather than at the operator's real plugins.
 	PluginDir string
 
+	// DisablePluginHealthGate turns off the health gate: normally, a
+	// subprocess plugin's cached plugin/health verdict can refuse a caller's
+	// tool or route call (CW-20260911-0069). Named for the opt-out rather than
+	// the feature so the zero value — what any caller gets that never sets
+	// this field, including cmd/tangent-app and every test boot — is the safe
+	// default: gate ON. An operator turns it off on purpose; nothing turns it
+	// off by omission.
+	DisablePluginHealthGate bool
+
 	// Logger receives every constructed service's structured logs. Nil
 	// defaults to slog.Default(). Boot does not call slog.SetDefault —
 	// that is a process-global side effect the caller owns.
@@ -327,7 +336,8 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		}
 		pluginRoot = resolved
 	}
-	pluginHost, pluginErr := plugins.LoadInstalled(context.Background(), logger, envSvc, pluginRoot)
+	pluginHost, pluginErr := plugins.LoadInstalled(
+		context.Background(), logger, envSvc, pluginRoot, cfg.DisablePluginHealthGate)
 	if pluginErr != nil {
 		return release(fmt.Errorf("load installed plugins: %w", pluginErr))
 	}
@@ -480,8 +490,8 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// adaptation is here rather than in internal/health so that package
 		// keeps depending on vocabularies instead of on the plugin host's
 		// lifecycle.
-		health.WithPlugins(func() health.PluginInventory {
-			return pluginInventory(pluginHost.Inventory())
+		health.WithPlugins(func(ctx context.Context) health.PluginInventory {
+			return pluginInventory(pluginHost.Inventory(ctx))
 		}),
 		health.WithRuntime(health.Runtime{ManagedResource: cfg.ManagedResource}),
 		health.WithTelemetry(recorder),
@@ -685,13 +695,17 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 	}
 	for _, record := range source.Plugins {
 		inventory.Plugins = append(inventory.Plugins, health.PluginRecord{
-			ID:      record.ID,
-			Name:    record.Name,
-			Version: record.Version,
-			Loaded:  record.Loaded,
-			Enabled: record.Enabled,
-			At:      record.At,
-			Error:   record.Error,
+			ID:              record.ID,
+			Name:            record.Name,
+			Version:         record.Version,
+			Loaded:          record.Loaded,
+			Enabled:         record.Enabled,
+			At:              record.At,
+			Error:           record.Error,
+			Restarts:        record.Restarts,
+			Healthy:         record.Healthy,
+			HealthMessage:   record.HealthMessage,
+			HealthCheckedAt: record.HealthCheckedAt,
 		})
 	}
 	return inventory

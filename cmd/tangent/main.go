@@ -64,6 +64,14 @@ const (
 	// build with no SDK installed changes nothing observable, which is the
 	// honest state of the seam. See internal/telemetry/otel.go.
 	envOpenTelemetry = "TANGENT_OTEL"
+
+	// envDisablePluginHealthGate turns off CW-20260911-0069's health gate: by
+	// default, a subprocess plugin whose cached plugin/health verdict is
+	// unhealthy refuses a caller's tool or route call rather than forwarding
+	// it. An operator sets this to opt OUT on purpose, the same posture
+	// envOpenTelemetry takes toward opting in — unset means the safer
+	// behavior, here staying gated rather than staying off.
+	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
 )
 
 // main is a thin wrapper so that every exit path runs the deferred cleanup
@@ -280,13 +288,14 @@ func run() int {
 	// so cmd/tangent-app's adopt-or-boot path can call the exact same
 	// function this does.
 	_, srv, closer, bootErr := boot.Boot(boot.Config{
-		DBPath:          dbPath,
-		Port:            *port,
-		DevFrontendURL:  os.Getenv(envDevFrontendURL),
-		ManagedResource: os.Getenv(envManagedResource),
-		OTel:            os.Getenv(envOpenTelemetry) != "",
-		OwnerLabel:      "tangent serve",
-		Logger:          logger,
+		DBPath:                  dbPath,
+		Port:                    *port,
+		DevFrontendURL:          os.Getenv(envDevFrontendURL),
+		ManagedResource:         os.Getenv(envManagedResource),
+		OTel:                    os.Getenv(envOpenTelemetry) != "",
+		DisablePluginHealthGate: os.Getenv(envDisablePluginHealthGate) != "",
+		OwnerLabel:              "tangent serve",
+		Logger:                  logger,
 	})
 	if bootErr != nil {
 		fmt.Fprintf(os.Stderr, "tangent: %v\n", bootErr)

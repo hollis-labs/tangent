@@ -34,7 +34,7 @@ func (r *Reporter) Readiness(ctx context.Context) ReadinessReport {
 		// Immediately after the registry, because a plugin-contributed kind is
 		// in that registry and a refused plugin is why one would be missing
 		// from it (ADR 0007 §4).
-		r.checkPlugins(),
+		r.checkPlugins(ctx),
 		r.checkRendererHost(),
 		r.checkDeliveryWorker(),
 	}

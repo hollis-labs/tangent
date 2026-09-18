@@ -98,7 +98,7 @@ func healthOptions(db *sql.DB) func(*envelope.Service) []tangentmcp.Option {
 			// A reporter with no plugin probe warns, which would make every
 			// readiness assertion in this file read `degraded`. The probe is a
 			// dependency like the others.
-			health.WithPlugins(func() health.PluginInventory {
+			health.WithPlugins(func(context.Context) health.PluginInventory {
 				return health.PluginInventory{
 					Loaded: 1,
 					Plugins: []health.PluginRecord{
