@@ -28,6 +28,22 @@ const (
 	InboxURL          = "/turns"
 )
 
+const (
+	// DefaultAwaitWait is how long Await waits when the caller names no limit.
+	DefaultAwaitWait = 30 * time.Second
+	// MaximumAwaitWait is the longest a single Await may hold a call open. It
+	// matches HITL's ceiling: a caller that needs longer calls again, and
+	// nothing is lost between calls because the reply is durable.
+	MaximumAwaitWait = 50 * time.Second
+
+	defaultAwaitPoll = 500 * time.Millisecond
+
+	// AwaitStatusReplies means Await returned at least one undelivered reply.
+	AwaitStatusReplies = "replies"
+	// AwaitStatusTimeout means the wait elapsed with nothing to deliver.
+	AwaitStatusTimeout = "timeout"
+)
+
 var (
 	ErrInvalidRequest   = errors.New("turns: invalid request")
 	ErrTerminalConflict = errors.New("turns: another terminal outcome won")
@@ -163,13 +179,42 @@ type AckInput struct {
 	ReplyID string
 }
 
+// AwaitInput asks for the operator replies a session has not yet acknowledged.
+// A nil Wait takes DefaultAwaitWait; zero means look once and return.
+type AwaitInput struct {
+	SessionID string
+	Wait      *time.Duration
+}
+
+// AwaitResult is what Await returns. Replies is never nil, so a timeout
+// serializes as an empty list rather than null.
+type AwaitResult struct {
+	ContractVersion string         `json:"contract_version"`
+	SessionID       string         `json:"session_id"`
+	WaitStatus      string         `json:"wait_status"`
+	Replies         []TurnItemView `json:"replies"`
+}
+
 type Service struct {
 	interactions  *interaction.Service
 	requestSchema *jsonschemav6.Schema
 	now           func() time.Time
+	awaitPoll     time.Duration
 }
 
-func NewService(interactions *interaction.Service) (*Service, error) {
+// Option configures a Service.
+type Option func(*Service)
+
+// WithAwaitPollInterval sets how often Await re-reads the inbox while it waits.
+func WithAwaitPollInterval(interval time.Duration) Option {
+	return func(s *Service) {
+		if interval > 0 {
+			s.awaitPoll = interval
+		}
+	}
+}
+
+func NewService(interactions *interaction.Service, opts ...Option) (*Service, error) {
 	if interactions == nil {
 		return nil, fmt.Errorf("%w: interaction service is required", ErrInvalidRequest)
 	}
@@ -186,11 +231,16 @@ func NewService(interactions *interaction.Service) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: compile embedded turn schema: %w", ErrInvalidRequest, err)
 	}
-	return &Service{
+	svc := &Service{
 		interactions:  interactions,
 		requestSchema: requestSchema,
 		now:           func() time.Time { return time.Now().UTC() },
-	}, nil
+		awaitPoll:     defaultAwaitPoll,
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc, nil
 }
 
 func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, error) {
@@ -507,6 +557,18 @@ func (s *Service) Ack(ctx context.Context, input AckInput) error {
 	if current.Interaction.Definition.Kind != extensions.AgentTurnEnvelopeType {
 		return ErrNotFound
 	}
+	// A turn nobody has answered has nothing to acknowledge. Saying so here,
+	// rather than letting the store fail to find a resolution, keeps the caller
+	// from reading "not found" as "the item does not exist".
+	if current.Resolution == nil {
+		return fmt.Errorf("%w: turn %s has no reply to acknowledge", ErrInvalidRequest, input.ItemID)
+	}
+	// reply_id is optional, but a caller that names one is asserting which
+	// reply it delivered, and acknowledging a different one silently would
+	// defeat the point of naming it.
+	if input.ReplyID != "" && input.ReplyID != current.Resolution.ID {
+		return fmt.Errorf("%w: reply_id does not match the reply recorded for turn %s", ErrInvalidRequest, input.ItemID)
+	}
 	// Record delivery outcome to acknowledged
 	return s.interactions.RecordDeliveryOutcome(ctx, interaction.RecordDeliveryOutcomeInput{
 		InteractionID:      input.ItemID,
@@ -533,6 +595,112 @@ func (s *Service) SessionReplies(ctx context.Context, sessionID string) ([]TurnI
 		}
 	}
 	return matches, nil
+}
+
+// Await returns the operator replies a session has not yet acknowledged,
+// waiting up to input.Wait for one to arrive.
+//
+// It is the long-poll form of SessionReplies, and it differs in one way that
+// matters: it leaves out replies already acknowledged. SessionReplies is a
+// history read and returns every reply; an Await that did the same would return
+// at once forever after the first reply, and a caller looping on it would spin.
+// Withholding acknowledged replies is what makes await → handle → ack a loop
+// that ends, and leaving unacknowledged ones in is what makes delivery
+// at-least-once: a caller that dies between receiving and acking sees the reply
+// again.
+//
+// A timeout is a normal result, not an error, and changes no lifecycle state.
+func (s *Service) Await(ctx context.Context, input AwaitInput) (AwaitResult, error) {
+	if input.SessionID == "" {
+		return AwaitResult{}, fmt.Errorf("%w: session_id is required", ErrInvalidRequest)
+	}
+	wait := DefaultAwaitWait
+	if input.Wait != nil {
+		wait = *input.Wait
+	}
+	if wait < 0 || wait > MaximumAwaitWait {
+		return AwaitResult{}, fmt.Errorf("%w: wait must be between 0 and %d milliseconds",
+			ErrInvalidRequest, MaximumAwaitWait.Milliseconds())
+	}
+
+	var deadline <-chan time.Time
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		deadline = timer.C
+	}
+	ticker := time.NewTicker(s.awaitPoll)
+	defer ticker.Stop()
+
+	for {
+		replies, err := s.undeliveredReplies(ctx, input.SessionID)
+		if err != nil {
+			return AwaitResult{}, err
+		}
+		if len(replies) > 0 || wait == 0 {
+			return s.awaitResult(input.SessionID, replies), nil
+		}
+		select {
+		case <-ctx.Done():
+			return AwaitResult{}, ctx.Err()
+		case <-deadline:
+			// One last look, so a reply recorded in the final poll interval is
+			// delivered rather than reported as a timeout.
+			replies, err = s.undeliveredReplies(ctx, input.SessionID)
+			if err != nil {
+				return AwaitResult{}, err
+			}
+			return s.awaitResult(input.SessionID, replies), nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Service) awaitResult(sessionID string, replies []TurnItemView) AwaitResult {
+	status := AwaitStatusTimeout
+	if len(replies) > 0 {
+		status = AwaitStatusReplies
+	}
+	if replies == nil {
+		replies = make([]TurnItemView, 0)
+	}
+	return AwaitResult{
+		ContractVersion: ContractVersion,
+		SessionID:       sessionID,
+		WaitStatus:      status,
+		Replies:         replies,
+	}
+}
+
+// undeliveredReplies lists a session's answered turns whose reply still needs
+// delivering, in the order the operator answered them.
+//
+// terminal_failure is excluded along with acknowledged: it records that the
+// runtime confirmed the session gone, and the reply is kept in history rather
+// than offered to whoever asks next.
+func (s *Service) undeliveredReplies(ctx context.Context, sessionID string) ([]TurnItemView, error) {
+	inbox, err := s.Inbox(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []TurnItemView
+	for _, item := range inbox.History {
+		if item.SessionID != sessionID || item.Resolution == nil {
+			continue
+		}
+		switch item.DeliveryState {
+		case interaction.DeliveryStateAcknowledged, interaction.DeliveryStateTerminalFailure:
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].Resolution.ResolvedAt.Equal(out[j].Resolution.ResolvedAt) {
+			return out[i].Resolution.ResolvedAt.Before(out[j].Resolution.ResolvedAt)
+		}
+		return out[i].QueueSequence < out[j].QueueSequence
+	})
+	return out, nil
 }
 
 func (s *Service) ensureDefaultSurface(ctx context.Context) error {

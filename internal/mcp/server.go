@@ -23,6 +23,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
+	"github.com/hollis-labs/tangent/internal/turns"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
@@ -54,6 +55,7 @@ type Server struct {
 	interactions *interaction.Service
 	hitl         *hitl.Service
 	docs         *docs.Service
+	turns        *turns.Service
 	roomflow     *roomflow.Service
 
 	// packages resolves a wire name to the publisher-owned interaction
@@ -259,6 +261,21 @@ func WithDocsService(service *docs.Service) Option {
 			return fmt.Errorf("mcp: docs service is nil")
 		}
 		server.docs = service
+		return nil
+	}
+}
+
+// WithTurnsService enables the agent-turn tools — tangent.turns_enqueue,
+// tangent.turn_await and tangent.turn_ack — backing the /turns inbox
+// (CW-20260913-0019). They are the MCP form of the enqueue, replies and ack
+// routes an agent's runtime already had over HTTP. The operator's side, reading
+// the inbox and replying, stays in the browser API and is not a tool.
+func WithTurnsService(service *turns.Service) Option {
+	return func(server *Server) error {
+		if service == nil {
+			return fmt.Errorf("mcp: turns service is nil")
+		}
+		server.turns = service
 		return nil
 	}
 }
@@ -716,6 +733,11 @@ func (s *Server) registerTools() error {
 	if s.docs != nil {
 		if err := s.registerDocsTools(); err != nil {
 			return fmt.Errorf("register docs tools: %w", err)
+		}
+	}
+	if s.turns != nil {
+		if err := s.registerTurnsTools(); err != nil {
+			return fmt.Errorf("register turns tools: %w", err)
 		}
 	}
 	if s.channels != nil && s.relay != nil {

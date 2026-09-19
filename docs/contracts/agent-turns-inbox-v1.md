@@ -47,7 +47,9 @@ Intermediate thoughts, internal scratchpad iterations, and automatic tool teleme
 
 ## 4. Item Request Contract (`AgentTurnRequestV1`)
 
-Required fields when enqueuing a turn into Tangent:
+Required fields when enqueuing a turn into Tangent. The MCP tool `tangent.turns_enqueue`
+takes this request as its arguments, and `POST /api/turns/enqueue` takes it as the body; both
+validate against the same schema.
 
 | Field | Type | Description |
 |---|---|---|
@@ -80,7 +82,10 @@ When the operator responds to a turn in Tangent:
 3. **Delivery Channels:**
    * **Push / Callback:** If Tether registered an active callback or streaming subscriber, Tangent immediately dispatches the reply event.
    * **Durable Pull / Resume:** If the agent disconnected, restarted, or the HTTP connection expired, the agent/Tether polls or resumes via `tangent.turn_await` or `GET /api/turns/sessions/{session_id}/replies`.
-4. **Acknowledgement:** Once Tether delivers the reply to the agent session, Tether submits `tangent.turn_ack` with `reply_id`. Tangent marks `delivery_state = acknowledged`.
+     * `tangent.turn_await` takes a `session_id` and an optional `wait_ms` (0–50,000; 30,000 by default) and returns the session's replies that are not yet acknowledged, oldest answer first, as `{ wait_status: "replies" | "timeout", replies: [...] }`. A timeout is a result, not an error, and changes no state. A reply is returned again until it is acknowledged, so delivery is at-least-once.
+     * `GET /api/turns/sessions/{session_id}/replies` is the history read: every reply for the session, acknowledged or not.
+     * A dismissed turn has no reply and appears in neither.
+4. **Acknowledgement:** Once Tether delivers the reply to the agent session, Tether submits `tangent.turn_ack` (or `POST /api/turns/items/{item_id}/ack`) with the turn's `item_id` and, optionally, `reply_id`. Tangent marks `delivery_state = acknowledged`. A `reply_id` that is not that turn's reply is refused, a turn nobody has answered cannot be acknowledged, and repeating an acknowledgement changes nothing.
 5. **Session Disappearance:** If Tether confirms the target session has permanently exited before delivery, Tether posts an explicit notification. Tangent records `delivery_state = terminal_failure` with cause `session_offline`. The operator's response is preserved in history and never silently lost.
 
 ---

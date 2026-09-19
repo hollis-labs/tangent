@@ -1,11 +1,14 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -155,14 +158,12 @@ func TestEngine_EmbeddedSubprocessLifecycle(t *testing.T) {
 		t.Fatal("expected auto-enqueue turn call on tangent.turns_enqueue, but none received")
 	}
 
-	// Inspect enqueued turn payload
-	argReq, ok := calls[0].Arguments["request"].(string)
-	if !ok {
-		t.Fatalf("expected request argument as string, got %T", calls[0].Arguments["request"])
-	}
-	var enqueued map[string]any
-	if err = json.Unmarshal([]byte(argReq), &enqueued); err != nil {
-		t.Fatalf("unmarshal enqueued turn: %v", err)
+	// The turn is the tool's arguments, not a JSON string wrapped in a field:
+	// that wrapper is refused by the real tool's schema (see
+	// TestRunnerTurnsReachTheInboxThroughTheRealTool in internal/mcp).
+	enqueued := calls[0].Arguments
+	if _, wrapped := enqueued["request"]; wrapped {
+		t.Fatalf("turn is wrapped in a request field: %v", enqueued)
 	}
 	if enqueued["session_id"] != "sess-embed-1" {
 		t.Errorf("expected session_id 'sess-embed-1', got %v", enqueued["session_id"])
@@ -209,6 +210,54 @@ func TestEngine_EmbeddedSubprocessLifecycle(t *testing.T) {
 	if healthStopped.Alive {
 		t.Errorf("expected alive=false after stop, got %v", healthStopped.Alive)
 	}
+}
+
+// refusingTools answers every call the way a tool that refuses does: no
+// transport error, IsError set. It is the case the engine used to drop.
+type refusingTools struct{ body string }
+
+func (r refusingTools) CallTool(context.Context, string, any) (pluginhost.ToolResult, error) {
+	return pluginhost.ToolResult{Content: json.RawMessage(r.body), IsError: true}, nil
+}
+
+func TestEngine_LogsARefusedEnqueueInsteadOfDroppingIt(t *testing.T) {
+	var logs bytes.Buffer
+	var mu sync.Mutex
+	engine := NewEngine(slog.New(slog.NewTextHandler(lockedWriter{&mu, &logs}, nil)))
+	engine.SetToolCaller(refusingTools{body: `{"code":"validation_failed"}`})
+
+	if _, err := engine.Launch(context.Background(), LaunchParams{
+		SessionID: "sess-refused", AgentID: "agent", Prompt: "Please confirm this?", Command: "cat",
+	}); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	defer func() { _ = engine.Stop("sess-refused") }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := logs.String()
+		mu.Unlock()
+		if strings.Contains(got, "refused the enqueued turn") && strings.Contains(got, "validation_failed") {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	t.Fatalf("a refused enqueue was not logged; log was:\n%s", logs.String())
+}
+
+// lockedWriter lets the engine's goroutine log while the test reads the buffer.
+type lockedWriter struct {
+	mu  *sync.Mutex
+	buf *bytes.Buffer
+}
+
+func (w lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
 }
 
 func TestEngine_ACPLifecycle(t *testing.T) {
