@@ -548,6 +548,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
+		mcp.WithTurnsService(turnsService),
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
 		mcp.WithTelemetry(recorder, telemetryStore),

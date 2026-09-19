@@ -26,6 +26,12 @@ const (
 	// Routes served by the runner plugin.
 	LaunchPath   = "/api/plugins/runner/launch"
 	SessionsPath = "/api/plugins/runner/sessions"
+
+	// Tangent tools the runner calls back into: the agent-turns inbox, in the
+	// order a turn uses them. These are the host's tools, not the runner's own.
+	EnqueueTurnTool = "tangent.turns_enqueue"
+	AwaitTurnTool   = "tangent.turn_await"
+	AckTurnTool     = "tangent.turn_ack"
 )
 
 // Mode determines whether execution runs as a local supervised subprocess

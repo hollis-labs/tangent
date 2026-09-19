@@ -145,6 +145,13 @@ var toolAnnotationTable = map[string]toolHints{
 	// Docs inbox.
 	"tangent.docs_enqueue": {Idempotent: true},
 
+	// Agent turns inbox. turns_enqueue is idempotent by its idempotency_key,
+	// turn_await only reads, and turn_ack converges: acknowledging twice leaves
+	// the same state as acknowledging once.
+	"tangent.turns_enqueue": {Idempotent: true},
+	"tangent.turn_await":    {ReadOnly: true},
+	"tangent.turn_ack":      {Idempotent: true},
+
 	// Cooperative relay inbox.
 	"tangent.relay_open_channel": {},
 	"tangent.relay_attach":       {},

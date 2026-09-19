@@ -410,6 +410,69 @@ metadata becomes previewable only through an explicitly registered
 authority/capability adapter; a path, `file:` URI, or agent's ambient access is
 never retrieval authority.
 
+## Agent turns inbox
+
+The turns inbox is where a running agent puts a turn it needs the operator for —
+a question, an approval, a checkpoint, a failure, or its final result — and gets
+the operator's answer back. It is a second durable FIFO on the same substrate as
+HITL, at `http://127.0.0.1:7842/turns`. The agent's side is three MCP tools; the
+operator's side (reading the inbox, replying, dismissing) is the browser API and
+is deliberately not a tool.
+
+- `tangent.turns_enqueue` takes one turn and returns its handle: the durable
+  `item_id`, the global FIFO `queue_sequence`, and the turn's `state`. The
+  arguments are the turn itself — `contract_version`, `session_id`, `turn_id`,
+  `idempotency_key`, `kind`, `source.agent_id`, `title` and `content`, plus
+  optional `options`, `correlations` and `expires_at` — exactly what
+  `POST /api/turns/enqueue` accepts. Repeating an `idempotency_key` returns the
+  original item rather than creating a second.
+- `tangent.turn_await` takes a `session_id` and waits 0–50,000 ms (30,000 ms by
+  default) for the operator to answer a turn in that session. It returns the
+  replies not yet acknowledged, oldest answer first, with `wait_status` of
+  `replies` or `timeout`. A timeout returns an empty list, is not an error, and
+  never changes a turn.
+- `tangent.turn_ack` takes an `item_id` and tells Tangent the reply reached its
+  agent. It is idempotent. Pass the reply's `resolution_id` as `reply_id` to
+  assert which reply you delivered; a `reply_id` that is not that turn's reply is
+  refused. A turn nobody has answered has nothing to acknowledge and is refused.
+
+The loop is await → handle → ack. A reply stays in `turn_await`'s results until it
+is acknowledged, so an agent that dies between receiving a reply and acting on it
+sees the reply again — delivery is at-least-once, and an agent should treat a
+repeated `item_id` as a repeat. Once acknowledged, a reply no longer appears in
+`turn_await`; `GET /api/turns/sessions/{session_id}/replies` still lists every
+reply, acknowledged or not, as a history read.
+
+A minimal turn:
+
+```json
+{
+  "contract_version": "1.0",
+  "session_id": "my-session",
+  "turn_id": "t1",
+  "idempotency_key": "my-session:t1",
+  "kind": "question",
+  "source": { "agent_id": "my-agent", "agent_label": "My Agent" },
+  "title": "Which branch should I target?",
+  "content": "main or release/2.x?",
+  "options": [
+    { "label": "main", "value": "main" },
+    { "label": "release/2.x", "value": "rel" }
+  ]
+}
+```
+
+Two limits are worth knowing. A turn the operator dismisses without answering
+has no reply, so `turn_await` never returns it: an agent waiting on a dismissed
+turn sees only timeouts, and should stop waiting on its own deadline. And the
+caller scope is derived from `source.application_id`, as it is for HITL — an
+advisory partition, not a security boundary; see
+[Room access and caller scope](#room-access-and-caller-scope). Nothing here
+authenticates which agent asks for a session's replies.
+
+The request shape, delivery states and retention are in
+[`contracts/agent-turns-inbox-v1.md`](./contracts/agent-turns-inbox-v1.md).
+
 ## The Torque board
 
 The first application plugin (`CW-20260910-0031`), and the pilot for the ADR
@@ -544,8 +607,27 @@ The lightweight agent execution runner plugin (`CW-20260914-0005`), packaged
 outside Tangent core using `plugin-sdk`. It supervises agent subprocesses
 (Claude streaming stdio, Codex jsonrpc stdio, PTY, ACP) and extracts clean human
 conversational turns at `LiveStateIdle` (suppressing internal thinking and tool
-calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/turns`). It also
-supports direct delegation through Tether (`go-tether-client`).
+calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/turns`) through
+`tangent.turns_enqueue`. It also supports direct delegation through Tether
+(`go-tether-client`).
+
+The operator's answer comes back the way the turn went out. While a supervised
+subprocess session runs, the runner polls `tangent.turn_await` for that session
+on a short interval, writes each answer to the agent's stdin, and acknowledges it
+with `tangent.turn_ack`, so the turn's `delivery_state` reaches `acknowledged`
+once the agent has been told. The agent reads one line: the operator's typed
+reply, or else the option they picked, or else the action itself (`approve`,
+`reject`), with any note appended after a colon. For a JSON-RPC or ACP agent the
+action and the selected option also travel as fields. An answer is written once
+even when its acknowledgement has to be retried, replies are delivered in the
+order the operator gave them, and a failed poll backs off instead of retrying at
+full rate.
+
+A session launched with `mode: tether` is not polled: whatever supervises it
+there delivers its answers, and a second writer would deliver twice. A reply the
+operator gives after a session has ended has no process to receive it and stays
+undelivered. `tangent.runner_send_turn` remains for guidance that is not an
+answer to a turn.
 
 The plugin contributes four tools:
 

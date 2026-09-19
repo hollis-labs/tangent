@@ -34,12 +34,32 @@ type ActiveSession struct {
 	StartedAt    time.Time
 	Correlations map[string]any
 	cancel       context.CancelFunc
+
+	// stopped is closed once, when the session ends by any route: the process
+	// exiting, or Stop. It is what tells a session's reply pump to leave.
+	stopped  chan struct{}
+	stopOnce sync.Once
+
+	// writeMu makes one write to the process's stdin atomic. Two writers now
+	// share it — an operator calling runner_send_turn and the reply pump — and
+	// a line split by another writer's bytes is a corrupted prompt.
+	writeMu sync.Mutex
 }
 
 func (s *ActiveSession) SetLiveState(state string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.LiveState = state
+}
+
+// markStopped records that the session has ended and releases anything waiting
+// on it. It is safe to call from every route that can end a session, and more
+// than once.
+func (s *ActiveSession) markStopped() {
+	s.SetLiveState("stopped")
+	if s.stopped != nil {
+		s.stopOnce.Do(func() { close(s.stopped) })
+	}
 }
 
 func (s *ActiveSession) StateSnapshot() (liveState string, turnID string, turnsCount int) {
@@ -64,6 +84,7 @@ type Engine struct {
 	tetherClient *tether.Client
 	toolCaller   pluginhost.ToolCaller
 	logger       *slog.Logger
+	replyPoll    time.Duration
 }
 
 // NewEngine constructs a runner Engine.
@@ -72,8 +93,19 @@ func NewEngine(logger *slog.Logger) *Engine {
 		logger = slog.Default()
 	}
 	return &Engine{
-		sessions: make(map[string]*ActiveSession),
-		logger:   logger,
+		sessions:  make(map[string]*ActiveSession),
+		logger:    logger,
+		replyPoll: DefaultReplyPollInterval,
+	}
+}
+
+// SetReplyPollInterval sets how often each embedded session asks Tangent for
+// the operator's answers.
+func (e *Engine) SetReplyPollInterval(interval time.Duration) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if interval > 0 {
+		e.replyPoll = interval
 	}
 }
 
@@ -241,6 +273,7 @@ func (e *Engine) launchEmbedded(
 		StartedAt:    time.Now(),
 		Correlations: params.Correlations,
 		cancel:       cancel,
+		stopped:      make(chan struct{}),
 	}
 
 	e.mu.Lock()
@@ -249,6 +282,14 @@ func (e *Engine) launchEmbedded(
 
 	// Launch async reader loop for combined stdout and stderr
 	go e.superviseOutput(active, stdout, stderr)
+
+	// Turns this session puts in the inbox get their answers carried back in.
+	// Only embedded sessions: the runner enqueues their turns and owns their
+	// stdin. A session delegated to Tether is delivered to by whatever
+	// supervises it there, and a second writer would deliver twice.
+	if e.currentToolCaller() != nil {
+		go e.pumpReplies(cmdCtx, active)
+	}
 
 	// Write the initial prompt
 	if lifecycle == LifecycleACP || lifecycle == LifecycleJSONRPCStdio {
@@ -362,18 +403,24 @@ func (e *Engine) onSessionIdle(s *ActiveSession) {
 				"turns_count":       turnsCount,
 			},
 		}
-		raw, _ := json.Marshal(req)
-
-		// Call tangent.turns_enqueue
+		// tangent.turns_enqueue takes the turn itself as its arguments, like
+		// every other enqueue tool, not a JSON string wrapped in a field.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, err := caller.CallTool(ctx, "tangent.turns_enqueue", map[string]any{
-			"request": string(raw),
-		})
-		if err != nil {
+		result, err := caller.CallTool(ctx, EnqueueTurnTool, req)
+		switch {
+		case err != nil:
 			e.logger.Warn("runner: auto-enqueue turn to tangent failed",
 				"session_id", s.ID,
 				"err", err,
+			)
+		case result.IsError:
+			// A refusal is an answer, not a transport failure, so it arrives
+			// with a nil err. Dropping it here is how a turn goes missing
+			// without a trace.
+			e.logger.Warn("runner: tangent refused the enqueued turn",
+				"session_id", s.ID,
+				"refusal", string(result.Content),
 			)
 		}
 	}
@@ -384,7 +431,7 @@ func (e *Engine) markSessionStopped(sessionID string) {
 	s, ok := e.sessions[sessionID]
 	e.mu.RUnlock()
 	if ok {
-		s.SetLiveState("stopped")
+		s.markStopped()
 	}
 }
 
@@ -446,7 +493,9 @@ func (e *Engine) SendTurn(ctx context.Context, params SendTurnParams) (SendTurnR
 		payload = []byte(params.ResponseText + "\n")
 	}
 
+	sess.writeMu.Lock()
 	_, err := stdin.Write(payload)
+	sess.writeMu.Unlock()
 	if err != nil {
 		return SendTurnResult{}, fmt.Errorf("runner: write stdin: %w", err)
 	}
@@ -508,7 +557,7 @@ func (e *Engine) Stop(sessionID string) error {
 		return fmt.Errorf("runner: session %s not found", sessionID)
 	}
 
-	sess.SetLiveState("stopped")
+	sess.markStopped()
 	sess.mu.Lock()
 	cancel := sess.cancel
 	stdin := sess.StdinPipe
