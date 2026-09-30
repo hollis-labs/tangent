@@ -138,7 +138,6 @@ type Manifest struct {
 type RecallFilters struct {
 	Statuses      []string `json:"Statuses,omitempty"`
 	Tags          []string `json:"Tags,omitempty"`
-	Origins       []string `json:"Origins,omitempty"`
 	ConfidenceMin float64  `json:"ConfidenceMin,omitempty"`
 	// Since and Until are RFC3339 bounds. They are strings here and decode
 	// into *time.Time server-side; modeling them as time.Time would mean

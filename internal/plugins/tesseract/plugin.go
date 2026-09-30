@@ -110,6 +110,9 @@ const EnvelopeType = "tangent.app-board"
 // Plugin is the Tesseract review board adapter.
 type Plugin struct {
 	client *Client
+	// namespaces is the board's default recall scope, from NamespacesEnv.
+	// Empty means a caller must name one.
+	namespaces []string
 
 	mu   sync.Mutex
 	host Host
@@ -133,7 +136,10 @@ type Host interface {
 // deliberately unimplemented, and a plugin reading its own environment is
 // userland doing userland's job.
 func New() *Plugin {
-	return &Plugin{client: NewClient(os.Getenv(BaseURLEnv), os.Getenv(TokenEnv))}
+	return &Plugin{
+		client:     NewClient(os.Getenv(BaseURLEnv), os.Getenv(TokenEnv)),
+		namespaces: parseNamespaces(os.Getenv(NamespacesEnv)),
+	}
 }
 
 // NewWithClient returns a plugin over a supplied Tesseract client. Tests use

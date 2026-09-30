@@ -554,7 +554,11 @@ and the agent hydrates a body by revision id when it acts.
 
 Tesseract is reached over its HTTP API at `http://127.0.0.1:8089` by default, or
 `TANGENT_TESSERACT_API_URL`, with an optional `TANGENT_TESSERACT_TOKEN` sent
-only when set. The plugin is the only thing in this repository that knows
+only when set. `TANGENT_TESSERACT_NAMESPACES` (comma-separated, e.g.
+`user/<name>/memory`) is the recall scope a board opens over when the agent
+names none. It has no built-in default: with it unset, `tangent.tesseract_review`
+refuses a call that names no namespaces rather than aiming the board at a
+namespace nobody chose. The plugin is the only thing in this repository that knows
 Tesseract exists. **If Tesseract is down, the plugin reports it and every other
 Tangent surface keeps working.**
 

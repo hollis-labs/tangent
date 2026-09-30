@@ -34,7 +34,7 @@ func TestLiveTesseract(t *testing.T) {
 
 	namespace := os.Getenv("TANGENT_TESSERACT_LIVE_NAMESPACE")
 	if namespace == "" {
-		namespace = "user/chrispian/memory/decisions"
+		namespace = "user/example/memory/decisions"
 	}
 	input := RecallInput{
 		Namespaces: []string{namespace},

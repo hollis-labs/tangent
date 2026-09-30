@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -86,24 +87,46 @@ type OpenInput struct {
 	Requests []Request `json:"requests,omitempty"`
 }
 
-// DefaultNamespaces is what a board opens over when the caller names none.
+// NamespacesEnv names the namespaces a board opens over when the caller names
+// none, comma-separated. The prefix form matches every memory type under it
+// (decisions, followups, learnings, limitations…), which is the set a review
+// pass is actually over.
 //
-// The prefix form matches every memory type under it (decisions, followups,
-// learnings, limitations…), which is the set a review pass is actually over.
-// It is a default rather than a constraint: any namespace the caller names is
-// passed through untouched.
-var DefaultNamespaces = []string{"user/chrispian/memory"}
+// It is read from the plugin's own environment for the same reason BaseURLEnv
+// is: the host holds no plugin configuration. It is a default rather than a
+// constraint — any namespace the caller names is passed through untouched.
+//
+// Unset means there is no default, and a board opened without namespaces is
+// refused rather than aimed somewhere. No namespace is neutral: every one
+// belongs to somebody, and a recall over the wrong one either shows a clean
+// board that is not clean or reads records the caller never asked for.
+const NamespacesEnv = "TANGENT_TESSERACT_NAMESPACES"
+
+// ErrNoNamespaces is Open's refusal when neither the caller nor NamespacesEnv
+// names a namespace.
+var ErrNoNamespaces = errors.New("tesseract: no namespaces named: pass namespaces, or set " + NamespacesEnv + " to give the board a default")
+
+// parseNamespaces splits a NamespacesEnv value, dropping blanks.
+func parseNamespaces(raw string) []string {
+	var namespaces []string
+	for _, namespace := range strings.Split(raw, ",") {
+		if namespace = strings.TrimSpace(namespace); namespace != "" {
+			namespaces = append(namespaces, namespace)
+		}
+	}
+	return namespaces
+}
 
 // recall projects the tool input onto the Tesseract query.
 //
 // Ranking defaults the way Tesseract's own default does — relevance when there
 // is a query, activation otherwise — rather than being pinned here, so a caller
 // who passes a query and no ranking gets the mode that answers it.
+//
+// Namespaces are passed through as given; Open fills the default in before
+// this runs.
 func (in OpenInput) recall() RecallInput {
 	namespaces := in.Namespaces
-	if len(namespaces) == 0 {
-		namespaces = DefaultNamespaces
-	}
 	ranking := in.Ranking
 	if ranking == "" {
 		if in.Query != "" {
@@ -162,6 +185,12 @@ func (p *Plugin) Open(ctx context.Context, input OpenInput) (OpenResult, error) 
 		return OpenResult{}, err
 	}
 
+	if len(input.Namespaces) == 0 {
+		if len(p.namespaces) == 0 {
+			return OpenResult{}, ErrNoNamespaces
+		}
+		input.Namespaces = p.namespaces
+	}
 	recall := input.recall()
 	result, err := p.client.Recall(ctx, recall)
 	if err != nil {

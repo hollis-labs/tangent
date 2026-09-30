@@ -34,7 +34,7 @@ func surfaceWithBoard(
 	pending map[string]Request,
 ) string {
 	t.Helper()
-	recall := OpenInput{Namespaces: []string{"user/chrispian/memory/decisions"}}.recall()
+	recall := OpenInput{Namespaces: []string{"user/example/memory/decisions"}}.recall()
 	data := BuildBoard(
 		"board-1", "Tesseract review", revisions,
 		Source{App: "tesseract", Label: "Tesseract"},
@@ -165,7 +165,7 @@ func TestSyncHandsAPromotionBackInsteadOfApplyingIt(t *testing.T) {
 	// re-deriving anything.
 	if request.RevisionID != "rev-1" || request.ToStatus != "canonical" ||
 		request.FromStatus != "draft" || request.MemoryID != "mem-1" ||
-		request.Namespace != "user/chrispian/memory/decisions" ||
+		request.Namespace != "user/example/memory/decisions" ||
 		request.MemoryKey != "portfolio_ui_layering" {
 		t.Errorf("request = %+v, want it to name the revision, memory, namespace, key and both statuses",
 			request)
