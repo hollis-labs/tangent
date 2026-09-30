@@ -6,7 +6,7 @@ server, and a React SPA embedded in it, opened in a browser (or the
 MCP-speaking agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI — can
 summon a room, hand it a decision, and get a structured response back.
 
-> **Pre-release.** Tangent has tagged builds (latest **`v0.13.0`**) that its
+> **Pre-release.** Tangent has tagged builds (latest **`v0.14.0`**) that its
 > author runs day to day, but it is not a supported release and has no
 > outside consumers. It's being built in the open: the code, the docs, and
 > this README describe what exists today, not a pitch for what's planned.
@@ -79,7 +79,8 @@ domain — a plugin is the only thing that does.
   child of a Nanite session. Direction only — nothing in the tree implements
   it yet.
 - **Desktop shell hardening.** System tray, close-to-hide, single-instance
-  UX, code signing, and notarization, on top of the `v0.13.0` shell.
+  UX, code signing, and notarization, on top of the unsigned shell that
+  shipped in `v0.13.0`.
 
 See [`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
 
@@ -99,7 +100,7 @@ git clone https://github.com/hollis-labs/tangent.git && cd tangent
 mise install            # pins Node; see mise.toml
 (cd ui && npm ci)
 make build              # → ./tangent, with the UI embedded
-make build-plugins      # optional: the first-party plugins, into dist/plugins/
+make install-plugins    # optional: build and install the first-party plugins
 # `make build-app` additionally assembles Tangent.app on macOS.
 ```
 

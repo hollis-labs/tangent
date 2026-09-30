@@ -437,6 +437,13 @@ The request shape, delivery states and retention are in
 
 ## The Torque board
 
+The Torque, Tesseract and runner surfaces below are installed plugins, not part
+of the `tangent` binary: `make install-plugins` builds and installs them, and
+`tangent plugin list` shows what is installed. Each runs as its own process and
+inherits the environment of the `tangent` that spawns it, so the
+`TANGENT_TORQUE_*` and `TANGENT_TESSERACT_*` variables below belong wherever
+`tangent` itself runs. A plugin that is not installed contributes no tools.
+
 The first application plugin (`CW-20260910-0031`), and the pilot for the ADR
 0007 §6 app-plugin pattern. The plugin is named for the application rather than
 for this surface — it carries Torque, and a board is the first thing it carries

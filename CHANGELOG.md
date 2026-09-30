@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.14.0] - 2026-09-30
+
+The plugin cycle, and the public repository. Tangent gains a plugin host whose
+application plugins are installed subprocesses rather than code linked into the
+binary, the two application plugins that shaped it (Torque and Tesseract), the
+cooperative relay and channel substrate, and an agent-turns inbox. It closes
+with the preparation for the repository going public on 2026-09-30:
+clone-and-build install, no local `replace` directives, CI green end to end,
+and the transport-boundary gate from the Hollis Labs service-layer standard.
+
 ### Added
 
 - **Plugin host (`internal/pluginhost`, `internal/plugins`).** Tangent
@@ -18,13 +28,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   host will let it do, and **a registration without a manifest is refused**. A
   plugin names a kind; it cannot author that kind's trust class, capabilities,
   assurance or digests, and a component that tries is refused by name rather
-  than silently downgraded. `RegisterCRUDHandler` is deliberately
-  unimplemented, and `register_all.go` keeps one row per kind with a column
-  saying which door it comes through, so the drift tests walk both.
+  than silently downgraded. `RegisterMCPTool` and `RegisterHTTPRoute` let a
+  plugin contribute an agent-callable tool and a browser route under
+  `/api/plugins/`; `RegisterCRUDHandler` is deliberately unimplemented, and
+  `register_all.go` keeps one row per kind with a column saying which door it
+  comes through, so the drift tests walk both.
 
-  This host is **compiled-in only** — no subprocess spawn, no runtime asset
-  loading — and that is the dogfood concession rather than the shape. See
-  [ADR 0008](docs/adr/0008-the-plugin-model.md) under *Changed*.
+- **Plugins are installed subprocesses (`CW-20260911-0070`).** Application
+  plugins are separate programs (`cmd/tangent-plugin-*`) speaking the
+  plugin-sdk JSON-RPC wire over stdin/stdout, installed into
+  `~/.tangent/plugins/` with `tangent plugin install <dir>` / `list` / `remove`,
+  and spawned by the host at startup; `make install-plugins` builds and installs
+  the first-party ones. There is no compiled-in roster: `go list -deps ./cmd/tangent`
+  names no plugin, so the binary is domain-free by its dependency graph rather
+  than by review. A crashed plugin is restarted with exponential backoff (1 s to
+  30 s, at most three attempts), and its calls are gated on its health; a plugin
+  reaches Tangent back as an ordinary local MCP client
+  (`internal/pluginpkg/hostclient`). [ADR 0008](docs/adr/0008-the-plugin-model.md)
+  records the model.
+
+- **Torque board plugin (`tangent.plugin.torque`).** `tangent.torque_open_board`
+  queries Torque with its own list filters, shapes the tasks into a
+  `tangent.app-board` and opens a room; a staged card move is view state until
+  the participant presses Sync, which applies the moves through Torque's API with
+  no agent turn (`tangent.torque_sync_board` is the agent-side equivalent). A
+  bounded card set says it was bounded.
+
+- **Tesseract review plugin (`tangent.plugin.tesseract`).**
+  `tangent.tesseract_review` recalls Tesseract records into a board whose
+  columns are the lifecycle statuses; Sync deprecates what the participant
+  retired and hands promotions, rewords and supersedes back to the agent as a
+  work list (`tangent.tesseract_review_sync`), because a Tesseract revision is
+  immutable except for deprecation. See the Changed entry below for its
+  namespace default.
+
+- **Agent runner plugin (`tangent.plugin.runner`).** Runs an agent either as an
+  embedded subprocess (streaming stdio, JSON-RPC, PTY, ACP) or through a Tether
+  daemon session, sieves the stream down to conversational turns, enqueues them
+  to the agent-turns inbox, and carries the operator's answer back to the agent.
+
+- **Plugin scaffold.** `go run ./cmd/tangent-new-plugin -package <name>` writes
+  a plugin that loads, from two presets (`application` fills an existing kind;
+  `kind` contributes one) that the generator refuses to combine.
+  [`docs/writing-a-plugin.md`](docs/writing-a-plugin.md) carries the
+  classification it encodes.
+
+- **Plugin registry endpoint.** `/api/plugins/registry` serves a
+  `registry.Response` and the SPA loads it through
+  `@hollis-labs/plugin-registry`. A minimal proof: the registry is empty and no
+  plugin ships browser contributions through it yet.
 
 - **`tangent.app-board`.** A domain-free board: caller-supplied cards in
   columns, a filter bar, and an optional detail pane composed inside the one
@@ -36,6 +88,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   host re-runs; the manifest, the tool description and the board itself all say
   so. The owning application supplies the records and applies every
   consequence: nothing in Tangent's process writes to it.
+
+- **`tangent.app-board` per-card notes and drag staging.** A participant can
+  write a note on a card as well as move it; both are draft view state until
+  Sync, and a note already on record comes back with the refreshed board
+  (`cards[].note`).
 
 - **Participant view state is readable by the caller.** `Service.SaveDraft` had
   no callers; it now has one. A long-lived surface opened with
@@ -75,12 +132,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   tool list cannot answer it: a plugin can load, refuse, or load and register
   nothing a caller can see.
 
+- **Channels, threads and participant bindings (`internal/channel`,
+  migration 0013).** The storage for ADR 0006's channel / subject / participant /
+  runtime-binding vocabulary. Partitions and project references are advisory
+  navigation metadata, not enforcement.
+
+- **The relay (`internal/relay`, migration 0014) and `tangent.relay_*`.** An
+  immutable exchange journal with a transactional outbox and per-recipient
+  replay cursors, exposed as the cooperative MCP inbox: open a channel, attach
+  and detach a participant, send, receive (`unacked_only` gives a relaunched
+  session a durable check-in), acknowledge, and read capabilities.
+
+- **Operator channel pane.** A minimal channel view in the SPA over the same
+  stores, the operator's own send/read path rather than the MCP surface.
+
+- **Relay content is erasable.** `tangent --erase-exchange` and
+  `--erase-channel` redact exchange bodies and delivery evidence, with the same
+  `--confirm` requirement and single-writer-lock exclusivity as the existing
+  erase flags, recorded in `retention_operations`.
+
+- **Agent-turns inbox (`internal/turns`, `/turns`).** A strict-FIFO inbox for
+  turns an agent is waiting on: the `tangent.agent-turn` kind, `/api/turns` REST
+  and SSE, an operator UI with keyboard driving and canned replies, a Tether
+  bridge (`internal/turns/tetherbridge`) that delivers a reply immediately to an
+  idle session or at its next stop, and MCP tools — `tangent.turns_enqueue`,
+  `tangent.turn_await` (at-least-once, a timeout is a result) and
+  `tangent.turn_ack`.
+
+- **Docs inbox, layout shell and theme toggle.** A Docs tab beside Approvals
+  (renamed from "Human input") and Agent turns; a `PageShell` layout that ended
+  the tab-to-tab layout shift; a system / light / dark toggle.
+
+- **Agent-authored markdown renders.** One shared renderer
+  (`components/markdown/Markdown.tsx`, react-markdown + remark-gfm) for approval
+  bodies, evidence panes, triage, turns and agent prose. It builds a React tree
+  rather than HTML, and raw HTML in the source stays visible as inert text.
+
+- **A route's render crash is contained.** A `RouteErrorBoundary` around the
+  route outlet keeps the shell and navigation mounted when one route throws,
+  with "Try again" and "Go home".
+
+- **Design-kit adoption.** The HITL inbox is on `@hollis-labs/design-kit`
+  tokens instead of 150 hardcoded hex values; the design packages come from npm.
+
+- **Transport-boundary gate (`.golangci.transport.yml`, `CW-20260930-0091`).**
+  The Hollis Labs service-layer standard's lint at hard block, in `make lint`
+  and CI: `internal/server`, `internal/mcp` and `internal/ws` must not import
+  `internal/db` or run raw SQL. `tangent.retention_status` now reads through a
+  new `internal/retention` service, which was the one finding.
+
 ### Changed
+
+- **`tangent.tesseract_review` has no built-in namespace default (operator-facing).**
+  It used to recall from a hardcoded maintainer namespace when the caller named
+  none. The default now comes from the plugin's own environment,
+  `TANGENT_TESSERACT_NAMESPACES` (comma-separated, e.g. `user/<name>/memory`).
+  **With it unset, a call that names no namespaces is refused** rather than
+  aimed at a namespace nobody chose. To keep the old behavior, set it in the
+  environment of the process that runs the Tesseract plugin. The unused
+  `RecallFilters.Origins` field, which Tesseract's recall route would have
+  rejected, is removed.
+
+- **Install is clone-and-build.** `go install …/cmd/tangent@<version>` builds a
+  binary with no web UI (`internal/server/ui_dist` is a placeholder in git), so
+  the README installs by clone, `(cd ui && npm ci)`, `make build`. The UI takes
+  `@hollis-labs/plugin-registry` from npm (`^0.1.0`) instead of a sibling
+  `plugin-sdk` checkout, so a fresh clone needs nothing beside it. Documentation
+  URLs name `127.0.0.1`, which is what the daemon binds.
+
+- **Go 1.26.6, no `replace` directives, dependencies current.** The `go` line is
+  the portfolio floor, and CI reads it from `go.mod`. The local `replace` for
+  `go-tether-client` (which broke a clean clone's runner-plugin build) and the
+  dead one for `agentkit` are gone.
+
+  | Module | v0.13.0 | v0.14.0 |
+  |---|---|---|
+  | go-envelopes | v0.1.0 | v0.4.0 |
+  | go-mcp | — | v0.13.0 |
+  | go-tether-client | — | v0.4.0 |
+  | plugin-sdk | — | v0.5.0 |
+  | modelcontextprotocol/go-sdk | v1.6.1 | v1.8.0 |
+  | wails/v3 | v3.0.0-beta.16 | v3.0.0-beta.26 |
+  | modernc.org/sqlite | v1.44.3 | v1.60.1 |
+
+  The UI moved to Vite 8, Vitest 5, TypeScript 7, lucide-react 1.x and
+  @testing-library/jest-dom 7, plus minor and patch updates.
+
+- **Cancellation vocabulary is US spelling.** Tangent emits `canceled` /
+  `user-canceled`, reads the legacy British values as their canonical form, and
+  migration 0017 rewrites stored envelope rows. go-envelopes v0.5.0 removes the
+  British values, so this closes the compatibility window.
 
 - **MCP server and client roles converge onto `go-mcp` (`CW-20260917-0018`).**
   Tangent drops its direct dependency on the official
   `modelcontextprotocol/go-sdk` typed `AddTool` generic in favor of
-  `github.com/hollis-labs/go-mcp` v0.5.0's own tool-registration surface, per
+  `github.com/hollis-labs/go-mcp`'s own tool-registration surface (adopted at v0.5.0; v0.13.0 as released), per
   the portfolio-wide consolidation (`CW-20260917-0011`) every other app in
   this initiative already completed. `/mcp` and `/sse` are unaffected on the
   wire — same transports, same stateless streamable-HTTP handling, still
@@ -173,6 +319,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `Proposed` and promoting only on his approval is now the standing convention**;
   an agent cannot write an approval line for a document he has not seen.
 
+- **[ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md):
+  the boundary is coupling, not write direction.** Supersedes ADR 0007 §6's
+  no-write test. A plugin writing to the application it adapts is the pattern
+  working; what Tangent's own binary must not do is take an application
+  dependency.
+
 - **The renderer trust model is reduced to isolation (`CW-20260911-0060`).**
   Five trust classes became four isolations, and `renderer.trust_class` is now
   `renderer.isolation`. [**ADR 0009**](docs/adr/0009-renderer-trust-reduced-to-isolation.md)
@@ -208,31 +360,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   knowingly false comments in the `tangent.app-board` manifest have been waiting
   since `adca3ff` for a change that moved those bytes anyway.
 
+- **The repository is public.** Internal prompts and working plans are no
+  longer tracked, the README follows the portfolio template, and personal paths
+  and private references are scrubbed from user-facing docs. `AGENTS.md` (the
+  agent contract, with `CLAUDE.md` pointing at it) stays tracked and is covered
+  by the documentation gate.
+
+### Fixed
+
+- A draft-bearing board no longer breaks after a reload or reconnect: the
+  `stale_draft` frame carries the revision the record expects, so a client that
+  lost its draft sequence resynchronizes instead of guessing.
+- `tangent` returns from `main` through one `run() int`, so deferred cleanup
+  (plugin unload, database close, ownership release) runs on every exit path.
+- `TestUSEnglishCanceledErrorCodeMigrationRewritesAndRollsBack` pins its target
+  to migration 17; after 0018 landed it had been rolling back the wrong one.
+- The channel pane serializes an empty HITL list as `[]`, not `null`.
+
 ### Known limitations
 
 - **The host holds no plugin configuration, and that is the answer**
   (`CW-20260910-0036`). `GetConfig`, `SetConfig` and `RegisterConfigSchema` stay
   unimplemented; a plugin reads its own environment. It keeps ADR 0005 §3.1's
   secret boundary true by construction rather than by policy — there is no store
-  to leak, migrate or redact. Reopening it needs a plugin with no environment to
-  read, which in practice means subprocess mode (`CW-20260910-0034`).
-- **There is no runtime plugin enable/disable.** `internal/plugins/shipped.go`
-  is the enable set and changing it is a rebuild. Deferred with the reason:
-  nothing has a caller for a toggle, and not building it is how Tangent avoids
-  inheriting Tether's enabled-but-unreachable proxy stall.
-- **A plugin handler that ignores its context leaks a goroutine.** The dispatch
-  budget releases the *caller*; it cannot stop the plugin, because Go cannot
-  interrupt a goroutine that will not yield. Compiled-in plugins share this
-  process by design.
+  to leak, migrate or redact.
+- **There is no runtime plugin enable/disable.** The installed set is read at
+  startup; `tangent plugin install` / `remove` and a restart is how it changes.
+- **A dispatch budget releases the caller, not the plugin.** A contributed tool
+  or route call that overruns its budget returns to the caller, but the plugin
+  process may keep working on it; the host cannot interrupt it.
+- **The plugin registry is a proof.** `/api/plugins/registry` is served and
+  loaded, but it is empty: no plugin ships browser contributions through it.
+- **The LaunchAgent plist carries only `TANGENT_HTTP_PORT` and
+  `TANGENT_DB_PATH`.** Any other environment an installed plugin reads, such as
+  `TANGENT_TESSERACT_NAMESPACES`, has to be added by hand and is dropped by a
+  reinstall.
 - **An additive version bump takes pending interactions of that kind out of
   service** (ADR 0003 §8 C1). The old payloads are still valid by construction,
   but the pinned definition goes `unavailable` for new submissions anyway.
   Narrowing C1 for an `additive` compatibility class is the honest fix and is
   deliberately not in this change; proceed and fix the breakage as it is felt.
-- `stale_draft` is not recoverable in-session. The error frame echoes the
-  revision the client sent rather than the one the record expects, so a client
-  that falls behind cannot resynchronize without a reload. Single-tab drafting
-  is unaffected.
 - ADR 0002 uses "custody" for the retention axis and `draft_custody` uses it
   for a location axis — two meanings, one word, in adjacent documents. Not
   renamed; recorded so a reader who trips on it knows it is known.
@@ -1095,7 +1262,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.14.0...HEAD
+[v0.14.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.14.0
 [v0.13.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.13.0
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
 [v0.10.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.10.0

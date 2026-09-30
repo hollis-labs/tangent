@@ -47,7 +47,3 @@ coverage.html
 
 # Built first-party plugins (`make build-plugins`)
 /dist/
-
-# Local agent docs (not published)
-/AGENTS.md
-/CLAUDE.md
