@@ -6,11 +6,10 @@ The piece that makes "always running" survive a reboot. A user LaunchAgent at
 appearing at every login is unwanted, and the app adopts a running daemon when
 the user opens it (see the adopt-or-boot design in `internal/appshell`).
 
-This document describes the facility (`CW-20260905-0031`). It is **not
-installed on the reference development machine**: there, Cerberus supervises
-the dev instance (`.agent-ops/project.yaml`, `deployment.type: dev_session`).
-The stable install that performs the real install is `CW-20260907-0020`, after
-`CW-20260907-0018` moves dev to its own port and database.
+This document describes the facility. `make install-macos` writes and loads
+the LaunchAgent as part of the stable install; see
+[`installing.md`](./installing.md). A dev instance run with `make dev` is not
+managed by it.
 
 ## Decisions
 

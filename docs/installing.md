@@ -2,10 +2,7 @@
 
 This is the install and upgrade recipe for the **stable** Tangent a person
 uses every day: the headless `tangent` daemon under a user LaunchAgent, and
-`Tangent.app` in the Applications folder, both built from one tagged tree. It
-is the code half of `CW-20260907-0020`; the first cutover on the reference
-machine is a sequenced operator action recorded on that task and summarised
-at the end of this page.
+`Tangent.app` in the Applications folder, both built from one tagged tree.
 
 The version the install places is whatever the tagged tree says: one source,
 `ui/package.json`, asserted against everything else by
@@ -17,10 +14,10 @@ The version the install places is whatever the tagged tree says: one source,
 |---|---|---|
 | Port | `7842` (the daemon default) | `7843` (`DEV_PORT`) |
 | Database | `~/.tangent/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` |
-| Launch authority | LaunchAgent `com.hollislabs.tangent`, headless daemon | Cerberus resource `tangent-dev` |
-| Logs | `~/.tangent/logs/tangent.log` | Cerberus |
+| Launch authority | LaunchAgent `com.hollislabs.tangent`, headless daemon | `make dev` / `make dev-go` in your checkout |
+| Logs | `~/.tangent/logs/tangent.log` | the terminal running `make dev` |
 | Binary and app | `~/.local/bin/tangent`, `~/Applications/Tangent.app` | the workspace build |
-| Tether catalog entry | `tangent` (what agents reach by default) | `tangent-dev` (present, **disabled**; reach dev via a scratch catalog or `--only tangent-dev`, CW-20260907-0037) |
+| MCP endpoint | `http://127.0.0.1:7842/mcp` (what agents reach by default) | `http://127.0.0.1:7843/mcp` |
 
 Different ports and database paths mean different `.owner` lock files, so the
 two never collide on the single-writer flock. See
@@ -103,44 +100,23 @@ that is what you mean.
   and adopts it; it does not boot a second one, so there is no flock refusal.
 - `tangent --version` prints the installed release; `curl -fsS
   http://127.0.0.1:7842/readyz` shows the checks.
-- Agents reach the stable daemon through the `tangent` Tether catalog entry,
+- Agents keep reaching the stable daemon at `http://127.0.0.1:7842/mcp`,
   unchanged by the install.
 
-## The first cutover on the reference machine
+## Moving from a dev build to the stable install
 
-Recorded on `CW-20260907-0020` and run on 2026-09-07. The order keeps the
-stable port from ever being dead for a session that loads mux, and the notes
-are what the run taught:
+If a workspace build has been serving the stable port, move it off first:
 
 1. `tangent --db-backup` of the existing database; keep the sidecar manifest.
-2. Stop the Cerberus `tangent-dev` resource, which until then served the stable
-   port from the workspace build. **Then wait for its pid to exit**, not just
-   for the port to close: the process still holds the database flock while it
-   drains, and the stable daemon's first start fails with "another process holds
-   the Tangent database" if it starts inside that window (`CW-20260907-0035`
-   makes the installer wait for the lock itself).
+2. Stop the process serving port `7842` and **wait for it to exit**, not just
+   for the port to close: it holds the database lock while it drains, and the
+   stable daemon's first start fails with "another process holds the Tangent
+   database" if it starts inside that window.
 3. `make install-macos` from the tagged tree; confirm `/readyz`.
-4. Bring dev up on the dev port against the workspace database. The prepared
-   Cerberus file is the repo-root `tangent.cerberus.yaml`, but **do not run
-   any Cerberus lifecycle verb against `tangent-dev` until the Cerberus daemon
-   has re-read that file**: its in-memory spec keeps the old port and it finds
-   "the running process" by `lsof` on it, so `stop`, `reload`, `apply`, and
-   `deploy` would signal the stable daemon (`CW-20260907-0036`). Reconcile with
-   `cerberus daemon restart` while the operator watches (other dev sessions are
-   that daemon's children), confirm `cerberus resource status tangent-dev` says
-   stopped and `inspect` shows the dev port, then `apply`. Until then, run dev by
-   hand with `make dev-go` or the equivalent environment. Cerberus's `deploy`
-   also needs the pinned Node on its PATH (`CW-20260905-0017`).
-5. Leave the `tangent-dev` Tether catalog entry **disabled**. Enabling it beside
-   `tangent` makes mux rename one side's identical tool names and route the
-   bare `tangent.*` names to the other (`CW-20260907-0037`). Reach dev through a
-   scratch catalog copy or `mux mcp --proxy --only tangent-dev`.
-6. Collision test: both instances up, neither refuses on the flock or the
-   port, `--db-check` under each instance's environment reports its own
-   database, a room opened on each.
-7. The HITL end-to-end pass from a Claude Code session through the default
-   mux configuration against stable
-   ([`manual-tests/hitl-inbox-e2e.md`](./manual-tests/hitl-inbox-e2e.md)).
+4. Run dev on the dev port against the workspace database with `make dev`.
+5. Check both instances: neither refuses on the lock or the port, `--db-check`
+   under each instance's environment reports its own database, and a room
+   opens on each.
 
 ## Where the code is
 

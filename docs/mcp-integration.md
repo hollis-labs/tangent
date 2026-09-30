@@ -40,7 +40,7 @@ operations — is **untagged**, so build from source to get it.
 go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
 
 # Current behaviour (untagged):
-git clone git@github.com:hollis-labs/tangent.git
+git clone https://github.com/hollis-labs/tangent.git
 cd tangent
 make build         # produces ./tangent
 ```
@@ -97,48 +97,30 @@ agent, or a supervisor such as Cerberus — and if a runbook tells you to `cd`
 into the repo and run `./tangent` while a supervisor owns it, that
 instruction is stale.
 
-### Two instances on the reference machine: stable and dev
+### Two instances: stable and dev
 
-Stable and dev are separate processes by design (`CW-20260907-0018`), so a
-development build never lands in the install the operator relies on:
+Stable and dev are separate processes by design, so a development build never
+lands in the install you rely on:
 
 | | Stable | Dev |
 |---|---|---|
 | Port | `7842` (the daemon default) | `7843` (`DEV_PORT`) |
 | Database | `~/.tangent/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` (`DEV_DB_PATH`) |
-| Launch authority | launchd user agent, headless daemon ([`launch-at-login.md`](./launch-at-login.md)) | Cerberus resource `tangent-dev` (`dev_session`) |
-| Tether catalog entry | `tangent` — the only enabled Tangent upstream in the shared catalog | `tangent-dev` — present but **disabled**; reach dev with a scratch catalog or `mux mcp --proxy --only tangent-dev` |
-| Started by | the install script (`CW-20260907-0020`) | `make dev`, `make dev-go`, or `cerberus resource deploy tangent-dev` |
+| Launch authority | launchd user agent, headless daemon ([`launch-at-login.md`](./launch-at-login.md)) | `make dev` or `make dev-go` in your checkout |
+| MCP endpoint | `http://127.0.0.1:7842/mcp` | `http://127.0.0.1:7843/mcp` |
 
 Different ports and different database paths mean different `.owner` lock
-files, so the two can never collide on the single-writer flock.
+files, so the two can never collide on the single-writer flock. Register them
+with an agent under different server names, or register only one: identical
+tool names from two servers collide in most MCP clients.
 
-**State of the switch.** The cutover ran on 2026-09-07 (`CW-20260907-0020`):
-stable is the tagged build under launchd on 7842; dev runs on 7843 against the
-workspace database. Two things learned there, both load-bearing:
+### Supervised: Cerberus and Tether (optional)
 
-- **`tangent-dev` must stay disabled in the shared catalog.** When two
-  upstreams expose identical tool names, `mux` gives the bare `tangent.*`
-  names to one of them and renames the other's (`tangent__tangent.*`); with
-  both enabled, a session on the default configuration sent its HITL item to
-  dev. Until Tether namespaces duplicate names (`CW-20260907-0037`), reach dev
-  through a scratch catalog copy or `mux mcp --proxy --only tangent-dev`, never
-  by enabling the shared entry.
-- **No Cerberus lifecycle verb may target `tangent-dev` until the Cerberus
-  daemon has re-read the 7843 spec.** The daemon keeps a resource's port in
-  memory and finds "the running process" by `lsof` on it; after the port changed
-  on disk it identified the stable daemon as `tangent-dev`, so `stop`, `reload`,
-  `apply`, and `deploy` would have signalled stable (`CW-20260907-0036`). Dev is
-  hand-run until a `cerberus daemon restart` is done with the operator watching.
-
-### Managed: Cerberus owns the process, Tether fronts the surface
-
-This is how Tangent runs on the machine this repository is developed on, and
-it is two separate things that fail separately.
-
-**Cerberus owns the lifecycle.** The resource is `tangent-dev` (mode
-`dev_session`, run from the workspace, port 7842), defined in
-the repo-root `tangent.cerberus.yaml`:
+Tangent can also run under [Cerberus](https://github.com/hollis-labs/cerberus)
+as its process supervisor and behind the
+[Tether](https://github.com/hollis-labs/tether) gateway. The repo-root
+`tangent.cerberus.yaml` is an example resource definition; adjust its `dir` to
+your checkout.
 
 ```bash
 cerberus resource status tangent-dev    # what the supervisor believes
@@ -146,51 +128,36 @@ cerberus resource deploy tangent-dev    # rebuild and restart — the way to res
 cerberus resource doctor  tangent-dev   # reads /readyz, not just supervisor state
 ```
 
-Do not run `./tangent` by hand while this resource is running: you get two
-launch authorities racing for `:7842` and a split room store. The stable
-install will use a user LaunchAgent as its launch authority instead of
-Cerberus; that facility is documented in
-[`launch-at-login.md`](./launch-at-login.md) and is not installed on this
-machine today. And remember that
-`status: running` is supervisor bookkeeping, not a probe — reconcile it against
-`/healthz` (see "Cold-start check" above).
+Do not run `./tangent` by hand while a supervisor owns the same port: you get
+two launch authorities racing for it and a split room store. `status: running`
+is supervisor bookkeeping, not a probe — reconcile it against `/healthz` (see
+"Cold-start check" below).
 
-**Tether fronts the tool surface.** The MCP upstream is declared in
-`~/.tether/catalog/mcp-servers/tangent.yaml` (`transport: sse`, pointing at
-`<base>/sse`, `enabled: true`); there is deliberately no Tether *launch-project*
-entry, because Cerberus owns launching. An agent behind the gateway reaches
-Tangent through `mux`:
+Behind Tether, declare Tangent as an MCP upstream (`transport: sse`, pointing
+at `<base>/sse`) and reach it through `mux`:
 
 ```bash
-mux mcp --proxy --servers torque,tesseract,cerberus   # default proxy: Tangent tools via mux_call
-mux mcp --proxy --only tangent                        # native-flat: Tangent tools under their own names
+mux mcp --proxy --only tangent        # Tangent tools under their own names
 ```
 
-Both modes work against the strict tool schemas. The default proxy's
-`mux_call` writes the caller's W3C trace context into the arguments as
-`_traceparent` (and `_tracestate`); Tangent strips exactly those keys at its
-MCP boundary before schema validation and records the trace as an upstream
-link on its telemetry (`CW-20260907-0022`). Any other unknown key is still
-rejected.
+The proxy's `mux_call` writes the caller's W3C trace context into the
+arguments as `_traceparent` (and `_tracestate`); Tangent strips exactly those
+keys at its MCP boundary before schema validation and records the trace as an
+upstream link on its telemetry. Any other unknown key is still rejected.
 
 Discovery is dynamic — the gateway lists whatever the upstream advertises — so
-a gateway serving a cached list is the single most common way Tangent "loses"
-tools. That is the `CATALOG_STALE` and `UPSTREAM_ABSENT` half of
-[`mcp-smoketest.md`](./mcp-smoketest.md), and it is what the gated smoke run
-checks:
+a gateway serving a cached list is the most common way Tangent "loses" tools.
+That is the `CATALOG_STALE` and `UPSTREAM_ABSENT` half of
+[`mcp-smoketest.md`](./mcp-smoketest.md), which the gated smoke run checks:
 
 ```bash
 TANGENT_SMOKE_ENV=1 make smoke
 ```
 
-Four hops means four different fixes. Restart the process, restart the gateway,
-refresh the catalog, or investigate one capability — the finding's leading mode
-token says which.
-
 ### Direct local: no supervisor, no gateway
 
-If none of the above is installed on your machine — which is the normal case
-for anyone who just cloned the repo — Tangent is a plain binary and this is the
+Without a supervisor or gateway — the normal case for anyone who just cloned
+the repo — Tangent is a plain binary and this is the
 whole story:
 
 ```bash

@@ -18,7 +18,7 @@ the scaffold — [`writing-a-plugin.md`](./writing-a-plugin.md).
 ## First-time setup
 
 ```bash
-git clone git@github.com:hollis-labs/tangent.git
+git clone https://github.com/hollis-labs/tangent.git
 cd tangent
 mise install
 make install-hooks      # lefthook install — sets up pre-commit/pre-push
@@ -40,11 +40,10 @@ reachable on `:7843` during dev.
 
 The daemon's own defaults (`:7842`, `~/.tangent/tangent.db`) belong to the
 **stable** install the operator uses every day. Nothing agent-facing rewires
-for the split: the Tether catalog entry `tangent` still points at 7842, and the
-`tangent-dev` entry stays **disabled** in the shared catalog. Enabling both
-makes mux rename one side's identical tool names and route the bare `tangent.*`
-names to the other (`CW-20260907-0037`); point a session at dev with a scratch
-catalog copy or `mux mcp --proxy --only tangent-dev` instead.
+for the split: agents configured for `http://127.0.0.1:7842/mcp` keep reaching
+stable. Point an agent at dev explicitly (`http://127.0.0.1:7843/mcp`) rather
+than registering both under the same server name, since identical tool names
+from two servers collide in most MCP clients.
 
 Every dev-facing `make` target (`dev`, `dev-go`, `db-migrate`, `db-rollback`,
 and the environment-coupled arm of `smoke`) runs the **dev** instance instead,
@@ -91,9 +90,8 @@ happens to have.
 database in a temp directory, and checks direct `/mcp`, legacy `/sse`, one
 read-only tool call, and the three health probes. It touches no live instance
 and no shared catalog, and because `internal/smoke` carries no build tag,
-`go test ./...` runs it too. `TANGENT_SMOKE_ENV=1 make smoke` adds the live
-deployment, its Cerberus resource, and the Tether gateway — see
-[`mcp-smoketest.md`](./mcp-smoketest.md).
+`go test ./...` runs it too. `TANGENT_SMOKE_ENV=1 make smoke` also checks a live
+deployment — see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
 Notable suites:
 
