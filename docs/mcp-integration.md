@@ -438,7 +438,9 @@ The request shape, delivery states and retention are in
 ## The Torque board
 
 The Torque, Tesseract and runner surfaces below are installed plugins, not part
-of the `tangent` binary: `make install-plugins` builds and installs them, and
+of the `tangent` binary, and they live in
+[`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins):
+`make install-plugins` installs the release `tangent-plugins.version` pins, and
 `tangent plugin list` shows what is installed. Each runs as its own process and
 inherits the environment of the `tangent` that spawns it, so the
 `TANGENT_TORQUE_*` and `TANGENT_TESSERACT_*` variables below belong wherever

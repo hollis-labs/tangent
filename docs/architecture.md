@@ -683,9 +683,11 @@ discovery, no directory scan and no subprocess spawn — compiled-in only — so
 the **dogfood concession** rather than the target shape: it was authorized so
 the Torque integration could be used sooner, and ADR 0008 §5 records subprocess
 plus runtime UI loading as where this is going, tracked by `CW-20260910-0034`.
-`internal/plugins/torque/` and `internal/plugins/tesseract/` each fill the
-host's board kind with one application's records; both live in-tree, which
-ADR 0007 §4 is explicit is convenience rather than permission. Every plugin
+The Torque and Tesseract plugins each fill the host's board kind with one
+application's records. They, and the runner, live in their own repository,
+[`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins) (`CW-20260930-0102`), written
+against `pkg/plugin` and installed at the release `tangent-plugins.version`
+pins. Every plugin
 this build ships holds a real application dependency, and that is the
 inventory correction `CW-20260911-0036` made: `appboard` held none, because
 the kind it named is the host's own (see below).
@@ -814,7 +816,7 @@ is the decision.
 
 ### The app-plugin composition pattern
 
-`tangent.torque_open_board` (`internal/plugins/torque/`) is ADR 0007 §6's
+`tangent.torque_open_board` (the Torque plugin, `torque/` in tangent-plugins) is ADR 0007 §6's
 pattern working end to end, and the shape is worth stating because it is meant
 to generalize:
 
@@ -846,7 +848,7 @@ reaches Tangent only through the tool surface an agent uses.
 
 #### What the second plugin found
 
-`tangent.tesseract_review` (`internal/plugins/tesseract/`) is the same five
+`tangent.tesseract_review` (the Tesseract plugin, `tesseract/` in tangent-plugins) is the same five
 steps against a different application, which is what it was built to test
 (`CW-20260910-0054`). Steps 1 through 3 held unchanged: a domain-free kind, a
 mechanical mapping in userland, one agent call in. Step 4 did not.

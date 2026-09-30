@@ -7,10 +7,10 @@ go run ./cmd/tangent-new-plugin -package almanac -app Almanac -hands-back-work
 That writes a plugin that loads. The rest of this document is why it is shaped
 the way it is, and which parts of it you still have to do yourself.
 
-The scaffold is **extracted, not designed**. Two of the shipped plugins —
-`internal/plugins/torque` and `internal/plugins/tesseract`, which fill the
-host's `tangent.app-board` kind with two different applications' records — are
-what everything in the `application` preset was measured off. Nothing in
+The scaffold is **extracted, not designed**. Two of the first-party plugins —
+Torque and Tesseract, which fill the host's `tangent.app-board` kind with two
+different applications' records, and which now live in
+[`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins) — are what everything in the `application` preset was measured off. Nothing in
 it anticipates a third.
 
 The `kind` preset is the other half, and it has no shipped instance: nothing
@@ -204,13 +204,17 @@ The generator prints these when it runs. They are two-place edits and
 measurements, and a generator that stayed silent about them would produce a
 plugin that builds and does not load.
 
-1. **Give it a process and install it.** A plugin runs as its own program, and
-   the generator writes the package, not the program. Add
-   `cmd/tangent-plugin-<name>/main.go` modeled on
-   `cmd/tangent-plugin-tesseract/main.go` (it serves the plugin over the
-   plugin-sdk subprocess wire and answers `--manifest`), add `<name>` to
-   `PLUGINS` in the `Makefile`, then `make install-plugins` and restart
-   `tangent`; `tangent plugin list` shows what is installed. A contributed kind
+1. **Give it a home, a process, and install it.** A plugin is its own module
+   and its own program, and first-party plugins live in
+   [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins): a `<name>/` module with
+   `cmd/tangent-plugin-<name>/main.go` (modeled on
+   `tesseract/cmd/tangent-plugin-tesseract`; it serves the plugin over the
+   plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
+   `internal/<name>/`, added to that repository's `PLUGINS`. The generator still
+   writes into this repository and does not write the program
+   (`CW-20260930-0118`), so move what it renders. Then `make dist`,
+   `tangent plugin install`, and restart `tangent`; `tangent plugin list` shows
+   what is installed. A contributed kind
    also needs a row in `internal/envelope/extensions/register_all.go` with
    `contributedByPlugin: true`; a manifest the tree carries that nothing
    registers fails `TestPackageTreeMatchesRegistrations`, and so does the
@@ -324,5 +328,5 @@ packages, so `go build ./...` compiles them and their own generated tests load
 them onto the real plugin host. That is what makes "the template produces a
 plugin that loads" a checked claim rather than an assertion.
 
-They have no `cmd/` program and are not in the `Makefile`'s `PLUGINS`, so
-nothing installs them and no build serves their tools.
+They have no `cmd/` program and are not a tangent-plugins module, so nothing
+installs them and no build serves their tools.

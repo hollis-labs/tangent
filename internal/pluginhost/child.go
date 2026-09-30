@@ -18,8 +18,8 @@ import (
 // # What this buys, which is the whole point of the task
 //
 // A compiled-in application plugin puts that application's client code inside
-// Tangent's binary. `internal/plugins/torque/torque.go` is the only file in the
-// repository that knows Torque exists, and it is linked into the server. A
+// Tangent's binary; the Torque plugin used to be linked into the server this
+// way. A
 // subprocess plugin holds its dependency in its own process, so Tangent's
 // binary stays domain-free, a plugin crash cannot take the host with it, and a
 // plugin versions independently of a Tangent release.

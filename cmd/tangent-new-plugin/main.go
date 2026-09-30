@@ -110,9 +110,10 @@ func nextSteps(options plugintemplate.Options) string {
 			"     A manifest in the package tree that nothing registers fails\n" +
 				"     TestPackageTreeMatchesRegistrations, and so does the reverse.\n")
 		out.WriteString(
-			"  2. Give it a process: cmd/tangent-plugin-<name>/main.go modeled on\n" +
-				"     cmd/tangent-plugin-tesseract, add it to PLUGINS in the Makefile,\n" +
-				"     then `make install-plugins` and restart tangent.\n")
+			"  2. Move it to a module in hollis-labs/tangent-plugins: <name>/ with\n" +
+				"     cmd/tangent-plugin-<name>/main.go modeled on\n" +
+				"     tesseract/cmd/tangent-plugin-tesseract, added to that repo's PLUGINS;\n" +
+				"     then make dist, tangent plugin install, and restart tangent.\n")
 		out.WriteString(
 			"  3. Register the renderer component in the UI and run\n" +
 				"     `make generate-envelopes`; `make check-envelopes` is the staleness gate.\n")
@@ -122,9 +123,10 @@ func nextSteps(options plugintemplate.Options) string {
 				"     not an endorsement.\n")
 	default:
 		out.WriteString(
-			"  1. Give it a process: cmd/tangent-plugin-<name>/main.go modeled on\n" +
-				"     cmd/tangent-plugin-tesseract, add it to PLUGINS in the Makefile,\n" +
-				"     then `make install-plugins` and restart tangent.\n")
+			"  1. Move it to a module in hollis-labs/tangent-plugins: <name>/ with\n" +
+				"     cmd/tangent-plugin-<name>/main.go modeled on\n" +
+				"     tesseract/cmd/tangent-plugin-tesseract, added to that repo's PLUGINS;\n" +
+				"     then make dist, tangent plugin install, and restart tangent.\n")
 		fmt.Fprintf(&out,
 			"  2. Document both tools in a file internal/smoke/docs_test.go names in\n"+
 				"     documentedToolFiles. A plugin tool is a shipped tool: an undocumented\n"+

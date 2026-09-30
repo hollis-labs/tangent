@@ -3,8 +3,8 @@
 //
 // # It is extracted, not designed
 //
-// Two plugins exist and the template is what they have in common:
-// internal/plugins/torque and internal/plugins/tesseract fill the host's
+// Two plugins exist and the template is what they have in common: the Torque
+// and Tesseract plugins (now in github.com/hollis-labs/tangent-plugins) fill the host's
 // tangent.app-board kind with two different applications' records. Everything
 // in PresetApplication was measured off those two. Nothing here anticipates a
 // third.

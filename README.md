@@ -64,10 +64,11 @@ result back — no context-switch into a different tool for the parts of the
 job a chat window renders badly.
 
 **Composition.** The Torque and Tesseract integrations are plugins, not core
-features: `internal/plugins/torque` syncs a Tangent board to a Torque board
-through Torque's own client and authority, and the Tesseract plugin does the
-same for review write-back. Tangent's own binary knows nothing about either
-domain — a plugin is the only thing that does.
+features: the Torque plugin syncs a Tangent board to a Torque board through
+Torque's own client and authority, and the Tesseract plugin does the same for
+review write-back. Tangent's own binary knows nothing about either domain — a
+plugin is the only thing that does, and the first-party plugins live in their
+own repository, [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins).
 
 ## Roadmap
 
@@ -100,7 +101,7 @@ git clone https://github.com/hollis-labs/tangent.git && cd tangent
 mise install            # pins Node; see mise.toml
 (cd ui && npm ci)
 make build              # → ./tangent, with the UI embedded
-make install-plugins    # optional: build and install the first-party plugins
+make install-plugins    # optional: the first-party plugins, at the release tangent-plugins.version pins
 # `make build-app` additionally assembles Tangent.app on macOS.
 ```
 

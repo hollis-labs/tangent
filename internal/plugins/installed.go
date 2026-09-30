@@ -18,8 +18,9 @@
 //
 // `internal/plugins/torque/torque.go` used to be the only file in the
 // repository that knew Torque existed, and it was linked into the server. It is
-// now a separate program. Tangent's binary is domain-free by construction
-// rather than by a boundary somebody maintains.
+// now a separate program in its own repository,
+// github.com/hollis-labs/tangent-plugins (CW-20260930-0102). Tangent's binary
+// is domain-free by construction rather than by a boundary somebody maintains.
 package plugins
 
 import (

@@ -41,27 +41,28 @@ build-ui: check-node ## Build frontend (Vite production build)
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
 
-# The first-party plugins, each its own program.
+# The first-party plugins live in github.com/hollis-labs/tangent-plugins, one
+# module each (CW-20260930-0102). tangent-plugins.version pins the release this
+# Tangent documents and smoke-tests against; install-plugins installs exactly
+# that, the way a user does: go install the pinned module, let the binary emit
+# its plugin.yaml, and `tangent plugin install` the result.
 #
-# They are built into dist/plugins/<id>/ with the plugin.yaml the binary itself
-# emits, which is the layout `tangent plugin install` consumes. One source for
-# the tool names and schemas — the Go package — rather than a hand-written YAML
-# copy kept in agreement by nobody.
-PLUGINS = torque tesseract runner
+# TANGENT_PLUGINS_SRC=/path/to/tangent-plugins builds from that checkout
+# instead, for changing a plugin and Tangent in the same sitting.
+PLUGINS = runner tesseract torque
+TANGENT_PLUGINS_VERSION := $(shell cat tangent-plugins.version)
 
-build-plugins: ## Build the first-party plugins into dist/plugins/
-	@for p in $(PLUGINS); do \
-		id="tangent.plugin.$$p"; \
-		out="dist/plugins/$$id"; \
-		mkdir -p "$$out"; \
-		go build -o "$$out/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p; \
-		"$$out/tangent-plugin-$$p" --manifest > "$$out/plugin.yaml"; \
-		echo "built $$id"; \
-	done
-
-install-plugins: build-plugins build-go ## Install the first-party plugins for this user
-	@for p in $(PLUGINS); do \
-		./tangent plugin install "dist/plugins/tangent.plugin.$$p"; \
+install-plugins: build-go ## Install the pinned first-party plugins (tangent-plugins.version) for this user
+	@set -e; stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
+	for p in $(PLUGINS); do \
+		dir="$$stage/tangent.plugin.$$p"; mkdir -p "$$dir"; \
+		if [ -n "$$TANGENT_PLUGINS_SRC" ]; then \
+			(cd "$$TANGENT_PLUGINS_SRC/$$p" && go build -o "$$dir/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p); \
+		else \
+			GOBIN="$$dir" go install github.com/hollis-labs/tangent-plugins/$$p/cmd/tangent-plugin-$$p@$(TANGENT_PLUGINS_VERSION); \
+		fi; \
+		"$$dir/tangent-plugin-$$p" --manifest > "$$dir/plugin.yaml"; \
+		./tangent plugin install "$$dir"; \
 	done
 
 build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
