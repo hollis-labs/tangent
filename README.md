@@ -6,7 +6,7 @@ server, and a React SPA embedded in it, opened in a browser (or the
 MCP-speaking agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI — can
 summon a room, hand it a decision, and get a structured response back.
 
-> **Pre-release.** Tangent has tagged builds (latest **`v0.14.0`**) that its
+> **Pre-release.** Tangent has tagged builds (latest **`v0.15.0`**) that its
 > author runs day to day, but it is not a supported release and has no
 > outside consumers. It's being built in the open: the code, the docs, and
 > this README describe what exists today, not a pitch for what's planned.
