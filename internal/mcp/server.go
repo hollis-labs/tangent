@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/relay"
+	"github.com/hollis-labs/tangent/internal/retention"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -77,14 +77,12 @@ type Server struct {
 	telemetry      *telemetry.Recorder
 	telemetryStore *telemetry.SQLStore
 
-	// maintenanceDB answers tangent.retention_status. It is the same handle
-	// everything else shares — a custody posture read from a different
-	// connection could describe a different transaction — and it is read-only
-	// here by discipline rather than by type: the retention *operations* are
-	// operator commands on the machine, never tools (see retention_tool.go).
-	// Nil is valid, and the tool says so.
-	maintenanceDB     *sql.DB
-	maintenanceDBPath string
+	// retention answers tangent.retention_status through the service layer
+	// (internal/retention), so this transport holds no database handle. It is
+	// read-only: the retention *operations* are operator commands on the
+	// machine, never tools (see retention_tool.go). Nil is valid; the tool is
+	// then not registered.
+	retention *retention.Reporter
 
 	// channels and relay answer the tangent.relay_* tools (CW-20260906-0066):
 	// the cooperative MCP inbox over channels/participants/bindings
@@ -170,19 +168,13 @@ func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Opti
 	}
 }
 
-// WithMaintenance enables tangent.retention_status by giving the MCP server
-// the database handle and the configured database path.
-//
-// The path is needed for exactly one thing — probing the single-writer lock
-// sidecar — and it never leaves this process: internal/db.Status returns
-// whether the lock is held and by which role, never where it lives.
-func WithMaintenance(database *sql.DB, databasePath string) Option {
+// WithRetentionReporter enables tangent.retention_status.
+func WithRetentionReporter(reporter *retention.Reporter) Option {
 	return func(server *Server) error {
-		if database == nil {
-			return fmt.Errorf("mcp: maintenance database handle is nil")
+		if reporter == nil {
+			return fmt.Errorf("mcp: retention reporter is nil")
 		}
-		server.maintenanceDB = database
-		server.maintenanceDBPath = databasePath
+		server.retention = reporter
 		return nil
 	}
 }
@@ -191,7 +183,7 @@ func WithMaintenance(database *sql.DB, databasePath string) Option {
 // cooperative MCP inbox over channels, participants, bindings, and the
 // exchange journal. Both stores share whatever *sql.DB they were
 // constructed with; that handle is not taken here because unlike
-// WithMaintenance's read posture, the relay tools write, and one shared
+// WithRetentionReporter's read posture, the relay tools write, and one shared
 // connection pool per process is Tangent's whole safety story for it (see
 // internal/relay.Store.AcceptExchange's sequence-assignment comment).
 func WithRelay(channels *channel.Store, relayStore *relay.Store) Option {
@@ -711,11 +703,11 @@ func (s *Server) registerTools() error {
 	if err := s.registerTelemetryTool(); err != nil {
 		return err
 	}
-	// Registered only when a database handle was supplied. Unlike health and
+	// Registered only when a retention reporter was supplied. Unlike health and
 	// telemetry, there is no useful "unavailable" answer to advertise: a build
 	// with no database has no custody posture to report, and a tool that always
 	// refuses is a tool that costs a listing entry for nothing.
-	if s.maintenanceDB != nil {
+	if s.retention != nil {
 		if err := s.registerRetentionTool(); err != nil {
 			return err
 		}

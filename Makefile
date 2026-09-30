@@ -139,14 +139,15 @@ smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live DEV deployment, 
 
 lint: check-node lint-go lint-frontend ## All lint (Go + frontend)
 
-lint-go: ## golangci-lint + go vet + gofmt check
+lint-go: ## golangci-lint (incl. the transport-boundary gate) + go vet + gofmt check
 	@unformatted=$$(gofmt -l . | grep -v '^ui/node_modules/' | grep -v '^internal/server/ui_dist/'); \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt: unformatted files:"; echo "$$unformatted"; exit 1; \
 	fi
 	go vet ./...
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
+		golangci-lint run && \
+		GOWORK=off golangci-lint run --config .golangci.transport.yml ./...; \
 	else \
 		echo "golangci-lint not installed — skipping (install: https://golangci-lint.run)"; \
 	fi

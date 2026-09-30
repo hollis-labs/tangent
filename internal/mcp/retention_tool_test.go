@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/retention"
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
@@ -34,7 +36,7 @@ func TestRetentionStatusIsReadOnlyAndPayloadBounded(t *testing.T) {
 	}
 	server, err := tangentmcp.New(
 		envelopeService, envelope.NewDispatcher(envelopeService), room.NewManager(nil), "",
-		tangentmcp.WithMaintenance(database, databasePath),
+		tangentmcp.WithRetentionReporter(retentionReporter(t, database, databasePath)),
 	)
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
@@ -100,4 +102,13 @@ func TestRetentionStatusIsReadOnlyAndPayloadBounded(t *testing.T) {
 	if strings.Contains(body, databasePath) || strings.Contains(body, filepath.Dir(databasePath)) {
 		t.Fatalf("the retention status leaked a filesystem path: %s", body)
 	}
+}
+
+func retentionReporter(t *testing.T, database *sql.DB, databasePath string) *retention.Reporter {
+	t.Helper()
+	reporter, err := retention.NewReporter(database, databasePath)
+	if err != nil {
+		t.Fatalf("retention.NewReporter: %v", err)
+	}
+	return reporter
 }

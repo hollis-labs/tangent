@@ -50,6 +50,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/pluginpkg"
 	"github.com/hollis-labs/tangent/internal/plugins"
 	"github.com/hollis-labs/tangent/internal/relay"
+	"github.com/hollis-labs/tangent/internal/retention"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -540,6 +541,13 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		return release(fmt.Errorf("construct channel pane service: %w", err))
 	}
 
+	// tangent.retention_status reads through this reporter so the MCP
+	// transport holds no database handle (.golangci.transport.yml).
+	retentionReporter, err := retention.NewReporter(sqlDB, cfg.DBPath)
+	if err != nil {
+		return release(fmt.Errorf("construct retention reporter: %w", err))
+	}
+
 	mcpSrv, err := mcp.New(
 		envSvc,
 		dispatcher,
@@ -556,7 +564,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// operations are CLI commands, because erasure authority belongs
 		// to the local user and MCP has no authenticated caller identity
 		// to hold it.
-		mcp.WithMaintenance(sqlDB, cfg.DBPath),
+		mcp.WithRetentionReporter(retentionReporter),
 		// tangent.relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
 		// Whatever the shipped plugins contributed (ADR 0007 §4). Empty is

@@ -128,6 +128,19 @@ make lint-go
 make lint-frontend
 ```
 
+`make lint-go` also runs `.golangci.transport.yml`, the transport-boundary gate
+from the Hollis Labs service-layer standard. The transports —
+`internal/server`, `internal/mcp` and `internal/ws` — call services and never
+import `internal/db` or run raw SQL; a service such as `internal/retention` or
+`internal/health` sits between them and the database, and `internal/boot` wires
+it. The gate is at hard block, in CI as well: any finding fails. A new
+transport directory has to be added to both rules in that file, or it goes
+unchecked.
+
+```bash
+GOWORK=off golangci-lint run --config .golangci.transport.yml ./...
+```
+
 ## Conventions
 
 - **Branches.** `feat/...`, `fix/...`, `docs/...`, `chore/...`. The

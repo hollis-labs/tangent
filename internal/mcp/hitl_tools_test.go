@@ -59,7 +59,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	server, err := tangentmcp.New(
 		envelopeService, envelope.NewDispatcher(envelopeService), room.NewManager(nil), "",
 		tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService),
-		tangentmcp.WithMaintenance(database, ""),
+		tangentmcp.WithRetentionReporter(retentionReporter(t, database, "")),
 	)
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
