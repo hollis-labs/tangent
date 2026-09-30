@@ -360,9 +360,11 @@ and the transport-boundary gate from the Hollis Labs service-layer standard.
   knowingly false comments in the `tangent.app-board` manifest have been waiting
   since `adca3ff` for a change that moved those bytes anyway.
 
-- **The repository is public.** Agent-facing working files are no longer
-  tracked, the README follows the portfolio template, and personal paths and
-  private references are scrubbed from user-facing docs.
+- **The repository is public.** Internal prompts and working plans are no
+  longer tracked, the README follows the portfolio template, and personal paths
+  and private references are scrubbed from user-facing docs. `AGENTS.md` (the
+  agent contract, with `CLAUDE.md` pointing at it) stays tracked and is covered
+  by the documentation gate.
 
 ### Fixed
 
