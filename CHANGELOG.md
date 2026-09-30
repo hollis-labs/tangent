@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`tangent-plugins.version` pins v0.1.1** (`runner/v0.1.1`, `tesseract/v0.1.1`,
+  `torque/v0.1.1`, built against tangent v0.16.0). The runner now validates
+  every turn it sends against `plugin.TurnsEnqueueInputSchema`, which closes
+  `CW-20260930-0102`. Tesseract and torque are unchanged apart from their
+  version.
+
 ## [v0.16.0] - 2026-09-30
 
 The first-party plugins leave the repository. Tangent is now the host,
