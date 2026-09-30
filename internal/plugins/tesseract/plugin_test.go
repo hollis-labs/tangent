@@ -283,7 +283,7 @@ func revisions() []Revision {
 func summaryRevision(revisionID, memoryID, key, status string, confidence float64) Revision {
 	revision := Revision{
 		RevisionID: revisionID, MemoryID: memoryID, Domain: "memory",
-		Namespace: "user/chrispian/memory/decisions", MemoryKey: key,
+		Namespace: "user/example/memory/decisions", MemoryKey: key,
 		Status: status, CreatedAt: "2026-09-10T20:00:00Z",
 		Confidence: confidence, Tags: []string{"decision", "project:tangent"},
 	}
@@ -294,6 +294,7 @@ func summaryRevision(revisionID, memoryID, key, status string, confidence float6
 func loadedPlugin(t *testing.T, fake *fakeTesseract) (*Plugin, *fakeHost) {
 	t.Helper()
 	board := NewWithClient(NewClient(fake.server.URL, ""))
+	board.namespaces = []string{"user/example/memory"}
 	host := &fakeHost{tools: newFakeTools()}
 	if err := board.Load(host); err != nil {
 		t.Fatalf("Load: %v", err)
@@ -396,7 +397,7 @@ func TestOpenSendsTesseractsOwnRecallShape(t *testing.T) {
 	board, _ := loadedPlugin(t, fake)
 
 	if _, err := board.Open(context.Background(), OpenInput{
-		Namespaces: []string{"user/chrispian/memory/decisions"},
+		Namespaces: []string{"user/example/memory/decisions"},
 		Statuses:   []string{"draft", "reviewed"},
 		Tags:       []string{"decision"},
 	}); err != nil {
@@ -580,7 +581,7 @@ func TestTesseractDownIsItsOwnSentence(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	_, err := board.Open(context.Background(), OpenInput{})
+	_, err := board.Open(context.Background(), OpenInput{Namespaces: []string{"user/example/memory"}})
 	if err == nil {
 		t.Fatal("Open succeeded against a dead Tesseract")
 	}
@@ -591,5 +592,48 @@ func TestTesseractDownIsItsOwnSentence(t *testing.T) {
 	// worse than no board.
 	if _, created := host.tools.called("tangent.session_create"); created {
 		t.Error("a room was created even though Tesseract never answered")
+	}
+}
+
+// TestOpenWithNoNamespaceAndNoDefaultIsRefused: with NamespacesEnv unset there
+// is no default, and the board is refused before Tesseract is asked anything
+// rather than aimed at a namespace nobody chose.
+func TestOpenWithNoNamespaceAndNoDefaultIsRefused(t *testing.T) {
+	fake := startFakeTesseract(t, revisions())
+	board, host := loadedPlugin(t, fake)
+	board.namespaces = nil
+
+	_, err := board.Open(context.Background(), OpenInput{})
+	if !errors.Is(err, ErrNoNamespaces) {
+		t.Fatalf("Open = %v, want ErrNoNamespaces", err)
+	}
+	if _, created := host.tools.called("tangent.session_create"); created {
+		t.Error("a room was created for a board with no namespace")
+	}
+}
+
+// TestOpenFallsBackToTheConfiguredNamespaces: a caller naming none gets the
+// plugin's configured default.
+func TestOpenFallsBackToTheConfiguredNamespaces(t *testing.T) {
+	fake := startFakeTesseract(t, revisions())
+	board, _ := loadedPlugin(t, fake)
+	board.namespaces = []string{"user/example/memory", "project/example/memory"}
+
+	if _, err := board.Open(context.Background(), OpenInput{}); err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	got, _ := fake.recallBody(t)["namespaces"].([]any)
+	if len(got) != 2 || got[0] != "user/example/memory" || got[1] != "project/example/memory" {
+		t.Errorf("default recall namespaces = %v", got)
+	}
+}
+
+func TestParseNamespaces(t *testing.T) {
+	got := parseNamespaces(" user/example/memory, ,project/example/memory,")
+	if len(got) != 2 || got[0] != "user/example/memory" || got[1] != "project/example/memory" {
+		t.Errorf("parseNamespaces = %q", got)
+	}
+	if got := parseNamespaces(""); len(got) != 0 {
+		t.Errorf(`parseNamespaces("") = %q, want none`, got)
 	}
 }

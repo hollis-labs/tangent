@@ -20,7 +20,7 @@ import "encoding/json"
 // OpenToolSchema advertises the open tool's input.
 var OpenToolSchema = json.RawMessage(`{
   "title": "tangent.tesseract_review input",
-  "description": "Which Tesseract records the review board shows. Every field is optional.",
+  "description": "Which Tesseract records the review board shows. Every field is optional, except namespaces when the plugin has no default.",
   "type": "object",
   "properties": {
     "title": {
@@ -30,7 +30,7 @@ var OpenToolSchema = json.RawMessage(`{
     "namespaces": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Tesseract namespaces. The prefix form (user/chrispian/memory) matches every memory type under it. Defaults to user/chrispian/memory."
+      "description": "Tesseract namespaces. The prefix form (user/<name>/memory) matches every memory type under it. Defaults to the plugin's TANGENT_TESSERACT_NAMESPACES; with that unset, this field is required."
     },
     "statuses": {
       "type": "array",

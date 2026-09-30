@@ -64,8 +64,9 @@ func (s *served) Init(_ context.Context, _ subprocess.InitParams) (subprocess.In
 		return subprocess.InitResult{}, err
 	}
 	s.client = client
-	// The plugin reads its own environment for TANGENT_TORQUE_API_URL, exactly
-	// as it did compiled in. The host sends an empty config map and holds no
+	// The plugin reads its own environment for TANGENT_TESSERACT_API_URL,
+	// TANGENT_TESSERACT_TOKEN and TANGENT_TESSERACT_NAMESPACES, exactly as it
+	// did compiled in. The host sends an empty config map and holds no
 	// plugin configuration, so it can never hold this plugin's credentials.
 	s.inner = tesseract.New().WithToolCaller(client)
 	return subprocess.InitResult{
