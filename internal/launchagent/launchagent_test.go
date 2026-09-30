@@ -327,3 +327,143 @@ func TestProgramArgumentsSkipsUnrelatedKeys(t *testing.T) {
 		t.Fatal("garbage must be an error")
 	}
 }
+
+// TestRenderWritesExtraEnvSortedAndRefusesManagedOrInvalidNames: extra env is
+// rendered in a stable order, and the three variables Config sets by field
+// cannot be smuggled in (or contradicted) through Env.
+func TestRenderWritesExtraEnvSortedAndRefusesManagedOrInvalidNames(t *testing.T) {
+	cfg := Config{Binary: "/opt/tangent", Env: map[string]string{
+		"TANGENT_TESSERACT_NAMESPACES": "user/example/memory",
+		"A_FIRST":                      "x&y",
+	}}
+	raw, err := Render(cfg, "/home/example")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	body := string(raw)
+	first := strings.Index(body, "<key>A_FIRST</key>")
+	second := strings.Index(body, "<key>TANGENT_TESSERACT_NAMESPACES</key>")
+	if first < 0 || second < 0 || first > second {
+		t.Fatalf("extra env missing or unsorted:\n%s", body)
+	}
+	if !strings.Contains(body, "<string>x&amp;y</string>") {
+		t.Errorf("env value was not escaped:\n%s", body)
+	}
+	env, err := EnvironmentVariables(raw)
+	if err != nil || env["A_FIRST"] != "x&y" || env["TANGENT_TESSERACT_NAMESPACES"] != "user/example/memory" {
+		t.Errorf("EnvironmentVariables round trip = %v, %v", env, err)
+	}
+
+	for _, bad := range []map[string]string{
+		{"TANGENT_DB_PATH": "/tmp/x.db"},
+		{"TANGENT_HTTP_PORT": "1"},
+		{"1BAD": "x"},
+		{"HAS-DASH": "x"},
+	} {
+		if _, err := Render(Config{Binary: "/opt/tangent", Env: bad}, "/home/example"); err == nil {
+			t.Errorf("Render accepted env %v", bad)
+		}
+	}
+}
+
+// TestInstallKeepsExtraEnvAReinstallDidNotName is CW-20260930-0104: an extra
+// variable already in the installed plist (hand-added, or from an earlier
+// --env) survives an install that does not mention it; a named one overrides
+// it; ReplaceEnv drops it.
+func TestInstallKeepsExtraEnvAReinstallDidNotName(t *testing.T) {
+	inst, _, home := newInstaller(t)
+	binary := fakeBinary(t, t.TempDir())
+	ctx := context.Background()
+
+	if _, err := inst.Install(ctx, Config{Binary: binary, Port: 7842, Env: map[string]string{
+		"TANGENT_TESSERACT_NAMESPACES": "user/example/memory",
+		"OTHER":                        "kept",
+	}}); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+
+	// A plain reinstall, as an upgrade does: no env named.
+	if _, err := inst.Install(ctx, Config{Binary: binary, Port: 7842}); err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+	env := installedEnv(t, home)
+	if env["TANGENT_TESSERACT_NAMESPACES"] != "user/example/memory" || env["OTHER"] != "kept" {
+		t.Fatalf("reinstall dropped extra env: %v", env)
+	}
+	if env["TANGENT_HTTP_PORT"] != "7842" {
+		t.Fatalf("managed env missing: %v", env)
+	}
+
+	// Named overrides; unnamed stays.
+	if _, err := inst.Install(ctx, Config{Binary: binary, Env: map[string]string{"OTHER": "changed"}}); err != nil {
+		t.Fatalf("override install: %v", err)
+	}
+	env = installedEnv(t, home)
+	if env["OTHER"] != "changed" || env["TANGENT_TESSERACT_NAMESPACES"] != "user/example/memory" {
+		t.Fatalf("override install = %v", env)
+	}
+	// A managed variable comes only from its field: dropping --port drops it.
+	if _, ok := env["TANGENT_HTTP_PORT"]; ok {
+		t.Fatalf("a managed variable was carried over from the old plist: %v", env)
+	}
+
+	// ReplaceEnv writes exactly what was asked.
+	if _, err := inst.Install(ctx, Config{Binary: binary, ReplaceEnv: true, Env: map[string]string{"ONLY": "this"}}); err != nil {
+		t.Fatalf("replace install: %v", err)
+	}
+	env = installedEnv(t, home)
+	if len(env) != 1 || env["ONLY"] != "this" {
+		t.Fatalf("ReplaceEnv install = %v", env)
+	}
+}
+
+// TestEnvironmentVariablesReadsAPlistBuddyEditedFile: the shape a person gets
+// from PlistBuddy or Xcode (different indentation, the dict not last) parses.
+func TestEnvironmentVariablesReadsAPlistBuddyEditedFile(t *testing.T) {
+	raw := []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TANGENT_DB_PATH</key>
+		<string>/Users/example/.tangent/tangent.db</string>
+		<key>TANGENT_TESSERACT_NAMESPACES</key>
+		<string>user/example/memory</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>com.hollislabs.tangent</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/example/.local/bin/tangent</string>
+	</array>
+</dict>
+</plist>
+`)
+	env, err := EnvironmentVariables(raw)
+	if err != nil {
+		t.Fatalf("EnvironmentVariables: %v", err)
+	}
+	if len(env) != 2 || env["TANGENT_TESSERACT_NAMESPACES"] != "user/example/memory" {
+		t.Fatalf("env = %v", env)
+	}
+	args, err := ProgramArguments(raw)
+	if err != nil || len(args) != 1 {
+		t.Fatalf("ProgramArguments = %v, %v", args, err)
+	}
+}
+
+func installedEnv(t *testing.T, home string) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(PlistPath(home)) //nolint:gosec // test path
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := EnvironmentVariables(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env
+}

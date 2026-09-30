@@ -3,7 +3,7 @@
 // of CW-20260907-0020; scripts/install-macos.sh and `make install-macos`
 // wrap it.
 //
-//	tangent-install install   [--artifacts DIR] [--bin-dir DIR] [--apps-dir DIR] [--port N] [--db PATH] [--log-dir DIR] [--wait SECONDS] [--dry-run]
+//	tangent-install install   [--artifacts DIR] [--bin-dir DIR] [--apps-dir DIR] [--port N] [--db PATH] [--log-dir DIR] [--env KEY=VALUE ...] [--wait SECONDS] [--dry-run]
 //	tangent-install uninstall [--bin-dir DIR] [--apps-dir DIR] [--dry-run]
 //
 // Install and upgrade are the same command: it validates the artifact pair,
@@ -58,14 +58,15 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
-  tangent-install install   [--artifacts DIR] [--bin-dir DIR] [--apps-dir DIR] [--port N] [--db PATH] [--log-dir DIR] [--wait SECONDS] [--dry-run]
+  tangent-install install   [--artifacts DIR] [--bin-dir DIR] [--apps-dir DIR] [--port N] [--db PATH] [--log-dir DIR] [--env KEY=VALUE ...] [--wait SECONDS] [--dry-run]
   tangent-install uninstall [--bin-dir DIR] [--apps-dir DIR] [--dry-run]
 
 install is also the upgrade: same command, newer artifacts. Defaults:
 artifacts . (tangent and Tangent.app from make build / make build-app),
 bin-dir ~/.local/bin, apps-dir ~/Applications, port 7842,
 db ~/.tangent/tangent.db, log-dir ~/.tangent/logs. The database is never
-removed by uninstall.
+removed by uninstall. --env (repeatable) adds daemon environment; the extra
+variables the installed LaunchAgent already carries are kept.
 `)
 }
 
@@ -95,6 +96,17 @@ func run(args []string, install bool) error {
 	flags.IntVar(&layout.Port, "port", layout.Port, "the stable daemon's port")
 	flags.StringVar(&layout.DBPath, "db", layout.DBPath, "the stable database")
 	flags.StringVar(&layout.LogDir, "log-dir", layout.LogDir, "directory for tangent.log")
+	flags.Func("env", "KEY=VALUE for the daemon's environment; repeatable", func(assignment string) error {
+		key, value, parseErr := launchagent.ParseEnvAssignment(assignment)
+		if parseErr != nil {
+			return parseErr
+		}
+		if layout.Env == nil {
+			layout.Env = map[string]string{}
+		}
+		layout.Env[key] = value
+		return nil
+	})
 	wait := flags.Int("wait", 30, "seconds to wait for /readyz after loading the agent")
 	dryRun := flags.Bool("dry-run", false, "probe and print every action without performing it")
 	if parseErr := flags.Parse(args); parseErr != nil {

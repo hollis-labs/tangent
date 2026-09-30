@@ -15,6 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `CW-20260930-0102`. Tesseract and torque are unchanged apart from their
   version.
 
+### Fixed
+
+- **A LaunchAgent reinstall no longer drops the daemon's extra environment**
+  (`CW-20260930-0104`). `tangent-launchagent install` and `tangent-install
+  install` keep every variable the installed plist already carries beyond
+  port, database and plugin directory. Those are how a launchd-started plugin
+  gets its settings, e.g. `TANGENT_TESSERACT_NAMESPACES`. `--env KEY=VALUE`
+  (repeatable) adds or overrides one, and `tangent-launchagent install
+  --replace-env` writes exactly what is given. `tangent-launchagent` also gains
+  `--plugin-dir`, which `Config` already supported.
+
 ## [v0.16.0] - 2026-09-30
 
 The first-party plugins leave the repository. Tangent is now the host,

@@ -39,6 +39,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -68,6 +70,39 @@ type Config struct {
 	// LogDir receives tangent.log (stdout and stderr). Empty means
 	// DefaultLogDir(home).
 	LogDir string
+	// Env is any further environment the daemon runs with, written into the
+	// plist beside the variables above. It exists because a plugin reads its
+	// own environment — the host holds no plugin configuration — and the
+	// daemon's environment is the only place a LaunchAgent-started plugin can
+	// get, for example, TANGENT_TESSERACT_NAMESPACES. The three variables this
+	// Config manages by field are refused here; set them with their fields.
+	Env map[string]string
+	// ReplaceEnv makes Install write exactly Env. Without it, Install keeps
+	// every extra variable the plist on disk already carries and Env adds to
+	// or overrides them, so a reinstall or an upgrade cannot silently drop
+	// configuration somebody put there (CW-20260930-0104).
+	ReplaceEnv bool
+}
+
+// managedEnv are the variables Config sets from its own fields.
+var managedEnv = map[string]bool{
+	"TANGENT_HTTP_PORT":  true,
+	"TANGENT_DB_PATH":    true,
+	"TANGENT_PLUGIN_DIR": true,
+}
+
+var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ParseEnvAssignment splits a KEY=VALUE flag argument.
+func ParseEnvAssignment(assignment string) (string, string, error) {
+	key, value, ok := strings.Cut(assignment, "=")
+	if !ok {
+		return "", "", fmt.Errorf("launch agent: env %q is not KEY=VALUE", assignment)
+	}
+	if !envName.MatchString(key) {
+		return "", "", fmt.Errorf("launch agent: env name %q is not a valid variable name", key)
+	}
+	return key, value, nil
 }
 
 // PlistPath is where the agent lives for the given home directory.
@@ -126,6 +161,17 @@ func Render(cfg Config, home string) ([]byte, error) {
 		logDir = DefaultLogDir(home)
 	}
 	logPath := filepath.Join(logDir, "tangent.log")
+	extra := make([]string, 0, len(cfg.Env))
+	for key := range cfg.Env {
+		if !envName.MatchString(key) {
+			return nil, fmt.Errorf("launch agent: env name %q is not a valid variable name", key)
+		}
+		if managedEnv[key] {
+			return nil, fmt.Errorf("launch agent: %s is set by its own option, not as extra env", key)
+		}
+		extra = append(extra, key)
+	}
+	sort.Strings(extra)
 
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>` + "\n")
@@ -135,7 +181,7 @@ func Render(cfg Config, home string) ([]byte, error) {
 	b.WriteString("\t<key>ProgramArguments</key>\n\t<array>\n")
 	b.WriteString("\t\t<string>" + html.EscapeString(cfg.Binary) + "</string>\n")
 	b.WriteString("\t</array>\n")
-	if cfg.Port != 0 || cfg.DBPath != "" || cfg.PluginDir != "" {
+	if cfg.Port != 0 || cfg.DBPath != "" || cfg.PluginDir != "" || len(extra) > 0 {
 		b.WriteString("\t<key>EnvironmentVariables</key>\n\t<dict>\n")
 		if cfg.Port != 0 {
 			b.WriteString("\t\t<key>TANGENT_HTTP_PORT</key>\n\t\t<string>" + strconv.Itoa(cfg.Port) + "</string>\n")
@@ -145,6 +191,9 @@ func Render(cfg Config, home string) ([]byte, error) {
 		}
 		if cfg.PluginDir != "" {
 			b.WriteString("\t\t<key>TANGENT_PLUGIN_DIR</key>\n\t\t<string>" + html.EscapeString(cfg.PluginDir) + "</string>\n")
+		}
+		for _, key := range extra {
+			b.WriteString("\t\t<key>" + key + "</key>\n\t\t<string>" + html.EscapeString(cfg.Env[key]) + "</string>\n")
 		}
 		b.WriteString("\t</dict>\n")
 	}
@@ -228,6 +277,16 @@ func (i Installer) Install(ctx context.Context, cfg Config) (Result, error) {
 	existing, readErr := os.ReadFile(path) //nolint:gosec // the path is derived from Home and a constant label
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return result, fmt.Errorf("launch agent: read existing plist: %w", readErr)
+	}
+	if !cfg.ReplaceEnv && len(existing) > 0 {
+		kept, envErr := EnvironmentVariables(existing)
+		if envErr != nil {
+			return result, fmt.Errorf("launch agent: read the existing plist's environment to keep it: %w (pass ReplaceEnv to overwrite it)", envErr)
+		}
+		cfg.Env = mergeEnv(kept, cfg.Env)
+		if rendered, err = Render(cfg, i.Home); err != nil {
+			return result, err
+		}
 	}
 	result.Changed = !bytes.Equal(existing, rendered)
 
@@ -396,6 +455,92 @@ func ProgramArguments(raw []byte) ([]string, error) {
 		}
 		return array.Strings, nil
 	}
+}
+
+// EnvironmentVariables extracts the EnvironmentVariables dict from plist XML,
+// the counterpart of ProgramArguments. A plist without one yields an empty map.
+func EnvironmentVariables(raw []byte) (map[string]string, error) {
+	decoder := xml.NewDecoder(bytes.NewReader(raw))
+	decoder.Strict = false
+	if _, err := seekStart(decoder, "plist"); err != nil {
+		return nil, err
+	}
+	if _, err := seekStart(decoder, "dict"); err != nil {
+		return nil, err
+	}
+	env := map[string]string{}
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return env, nil
+			}
+			return nil, err
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			if end, isEnd := token.(xml.EndElement); isEnd && end.Name.Local == "dict" {
+				return env, nil
+			}
+			continue
+		}
+		if start.Name.Local != "key" {
+			if skipErr := decoder.Skip(); skipErr != nil {
+				return nil, skipErr
+			}
+			continue
+		}
+		var key string
+		if decodeErr := decoder.DecodeElement(&key, &start); decodeErr != nil {
+			return nil, decodeErr
+		}
+		if strings.TrimSpace(key) != "EnvironmentVariables" {
+			continue
+		}
+		var dict struct {
+			Items []struct {
+				XMLName xml.Name
+				Value   string `xml:",chardata"`
+			} `xml:",any"`
+		}
+		dictStart, err := seekStart(decoder, "dict")
+		if err != nil {
+			return nil, err
+		}
+		if err := decoder.DecodeElement(&dict, &dictStart); err != nil {
+			return nil, err
+		}
+		var pending string
+		for _, item := range dict.Items {
+			switch item.XMLName.Local {
+			case "key":
+				pending = strings.TrimSpace(item.Value)
+			case "string":
+				if pending != "" {
+					env[pending] = item.Value
+				}
+				pending = ""
+			default:
+				return nil, fmt.Errorf("EnvironmentVariables value for %q is <%s>, not <string>", pending, item.XMLName.Local)
+			}
+		}
+		return env, nil
+	}
+}
+
+// mergeEnv keeps the extra (unmanaged) variables from the plist on disk and
+// lets the requested ones add to or override them.
+func mergeEnv(kept, requested map[string]string) map[string]string {
+	merged := make(map[string]string, len(kept)+len(requested))
+	for key, value := range kept {
+		if !managedEnv[key] {
+			merged[key] = value
+		}
+	}
+	for key, value := range requested {
+		merged[key] = value
+	}
+	return merged
 }
 
 // seekStart advances the decoder to the next start element named local and

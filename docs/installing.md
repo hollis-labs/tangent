@@ -71,7 +71,10 @@ What `install` does, in order, and where it stops:
    removed only after the new one is in place).
 6. **Writes and (re)loads the LaunchAgent** with `bootout` then `bootstrap`,
    so the running daemon is always the one on disk. The plist names the
-   binary, port, database, and log file explicitly.
+   binary, port, database, and log file explicitly, and keeps any extra
+   environment the installed plist already carries (plugin settings such as
+   `TANGENT_TESSERACT_NAMESPACES`); `--env KEY=VALUE` adds more. See
+   [`launch-at-login.md`](./launch-at-login.md#plugin-settings-live-in-the-daemons-environment).
 7. **Waits for `/readyz`** and confirms the serving release is the artifact's.
    If that never happens within the wait, the command exits non-zero and says
    where the log is.
