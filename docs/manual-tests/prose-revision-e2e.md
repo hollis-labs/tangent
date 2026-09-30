@@ -6,7 +6,7 @@ Manual recipe for exercising one `tangent.prose-revision` pass for each lens:
 ## Setup
 
 ```bash
-cd ~/dev/hollis-labs/apps/tangent
+cd tangent  # your clone of the repo
 make build
 ./tangent --port=7842
 ```

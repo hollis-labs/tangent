@@ -63,7 +63,7 @@ trap 'rm -rf -- "$iconset_root"' EXIT
 iconset_dir="$iconset_root/AppIcon.iconset"
 mkdir -p "$iconset_dir"
 # Same size/scale table as Tachyon's packaging/macos icon generation
-# (~/dev/projects/tachyon/scripts/build-macos.sh) so both apps' icons
+# (hollis-labs/tachyon scripts/build-macos.sh) so both apps' icons
 # render identically sharp across Finder, Dock, and Spotlight.
 for spec in "16:16" "16:32" "32:32" "32:64" "128:128" "128:256" "256:256" "256:512" "512:512" "512:1024"; do
 	name="${spec%%:*}"

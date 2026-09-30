@@ -22,7 +22,7 @@ and no inventory.
 
 **Baseline reviewed:** `1bb93d4`
 
-**Source:** `~/dev/agent-os/workspaces/planning/tangent-vnext-20260906/ARCHITECTURE.md`
+**Source:** the Tangent vNext architecture capture (internal draft, not published)
 §1 (identity and ownership), with §2, §4, §5 and §6 for vocabulary, the
 conductor scenario, relay bindings and history custody; and
 [`0005-product-boundary-and-portfolio-composition.md`](0005-product-boundary-and-portfolio-composition.md),
@@ -258,8 +258,8 @@ capability this ADR describes exists.** Specifically:
   between turns. A session on the default mux proxy could not call any HITL
   tool at all, because the proxy adds gateway trace metadata the strict schema
   rejects (`CW-20260907-0022`). Those are the measured distances between this
-  section's current and its target; the full note is
-  `~/dev/agent-os/workspaces/drafts/tangent/cooperative-loop-spike.md`.
+  section's current and its target, recorded in the cooperative-loop spike
+  note (internal draft, not published).
 
 The plan that moves from current to target is `CW-20260907-0014` (the personal
 MVP) and, beyond it, `CW-20260906-0052` (Tangent vNext). The first step, a
@@ -360,10 +360,6 @@ deleted. Open direction goes to Torque tasks; decisions go to ADRs.
   canonical current-limitations list
 - [`../contracts/hitl-inbox-v1.md`](../contracts/hitl-inbox-v1.md) — the one
   shipped attention surface
-- `~/dev/agent-os/workspaces/planning/tangent-vnext-20260906/ARCHITECTURE.md`
-  §1, §2, §4, §5, §6 — the source capture; `APP-AGENT.md` and `PLAN.md` beside it
-- `~/dev/agent-os/workspaces/drafts/tangent/personal-mvp-plan.md` — the
-  thinner slice that starts the move from §6's current to its target
 - Torque: `CW-20260906-0056` (this record), `CW-20260906-0052` (vNext),
   `CW-20260907-0014` (personal MVP), `CW-20260907-0016` (cooperative-loop
   spike), `CW-20260906-0064`, `0065`, `0066`, `0071` (relay core),

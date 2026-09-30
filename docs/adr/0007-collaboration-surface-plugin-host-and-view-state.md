@@ -27,9 +27,8 @@ days — is deleted rather than refreshed.
 ADR 0006 §2 enumerated. That enumeration is restated in §2 below so this
 document stands alone. Every other section of ADR 0005 stands.
 
-**Source:** `~/dev/agent-os/workspaces/drafts/tangent/torque-plugin-mvp.md`,
-and `~/dev/agent-os/workspaces/planning/tangent-vnext-20260906/ARCHITECTURE.md`
-§1 by way of ADR 0006.
+**Source:** the Torque plugin MVP design and the Tangent vNext architecture
+capture (internal drafts, not published), §1 by way of ADR 0006.
 
 ## Context
 
@@ -520,4 +519,3 @@ unverifiable.
 - [ADR 0006](0006-collaboration-surface-and-relay-boundary.md) — superseded by this document
 - [ADR 0008](0008-the-plugin-model.md) — the plugin model, extracted from §4
 - `docs/renderer-trust-classes.md` — the shipped isolation model
-- `~/dev/agent-os/workspaces/drafts/tangent/torque-plugin-mvp.md` — the pilot design

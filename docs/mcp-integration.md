@@ -92,12 +92,10 @@ several agents can connect to the one process at once. Adding a Claude
 Code / Cursor / Codex entry does not create a second runtime — those
 only dial an already-running server. Only add a *launch* entry once.
 
-For this workspace the authority is recorded in
-[`.agent-ops/project.yaml`](../.agent-ops/project.yaml) under `build.authority`
-and `build.resource`; `deployment.type` says how the process is supervised.
-Treat that file as the answer to "who starts Tangent here?" — and if a
-skill, runbook, or agent prompt tells you to `cd` into the repo and run
-`./tangent` while a supervisor owns it, that instruction is stale.
+Decide once who starts Tangent on a given machine — you by hand, a launch
+agent, or a supervisor such as Cerberus — and if a runbook tells you to `cd`
+into the repo and run `./tangent` while a supervisor owns it, that
+instruction is stale.
 
 ### Two instances on the reference machine: stable and dev
 
@@ -132,9 +130,6 @@ workspace database. Two things learned there, both load-bearing:
   on disk it identified the stable daemon as `tangent-dev`, so `stop`, `reload`,
   `apply`, and `deploy` would have signalled stable (`CW-20260907-0036`). Dev is
   hand-run until a `cerberus daemon restart` is done with the operator watching.
-
-`.agent-ops/project.yaml` `deployment.instances.current` records which is true
-at any moment.
 
 ### Managed: Cerberus owns the process, Tether fronts the surface
 

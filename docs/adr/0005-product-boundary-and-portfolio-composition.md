@@ -515,8 +515,8 @@ as questions rather than converted to tasks.
 ### Open questions this ADR deliberately does not answer
 
 These have no answer at `a332e76` and are recorded so a future architecture
-session does not rediscover them. They are also held in Tesseract knowledge
-under `user/chrispian/knowledge/tangent/questions`.
+session does not rediscover them. They are also held in the maintainer's Tesseract
+knowledge store.
 
 - **Q2 — Is a surface caller-owned, user-owned, or jointly scoped?** ADR 0004
   gives capabilities per principal and never states surface *ownership*;
@@ -577,5 +577,5 @@ under `user/chrispian/knowledge/tangent/questions`.
 - Torque project `PRJ-20260825-0002`; tasks `CW-20260825-0067` (this
   disposition), `CW-20260825-0079` (documentation reconciliation),
   `CW-20260904-0171` (browser verification of the sandbox)
-- Tesseract knowledge `user/chrispian/knowledge/tangent/investigations` —
+- The maintainer's Tesseract knowledge (Tangent investigations) —
   the claim-by-claim adjudication of the retired source document

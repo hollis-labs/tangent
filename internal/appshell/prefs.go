@@ -31,7 +31,7 @@ const (
 	// written therefore returns a value one or two points off. Persisting
 	// that difference shrank the saved size on every launch — measured
 	// drifting 1100 -> 1099 -> 1097 -> 1096 across three restarts (see
-	// ~/dev/projects/tachyon/internal/shell/prefs.go, where this was first
+	// Tachyon's internal/shell/prefs.go, where this was first
 	// measured; this repo lifts it verbatim).
 	//
 	// A person resizing a window moves it by more than this; the readback
@@ -105,7 +105,7 @@ func (g WindowGeometry) near(other WindowGeometry) bool {
 // production and set only by tests.
 //
 // Every guard this file carries is lifted from
-// ~/dev/projects/tachyon/internal/shell/prefs.go, not re-derived.
+// Tachyon's internal/shell/prefs.go, not re-derived.
 type Prefs struct {
 	// ClientID is generated once, on first run, and never changes. It is
 	// deliberately not derived from anything the OS can hand out differently

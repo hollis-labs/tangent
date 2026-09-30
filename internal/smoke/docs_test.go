@@ -45,7 +45,6 @@ import (
 // in any of them must be real; a real tool must appear in at least one.
 var documentedToolFiles = []string{
 	"README.md",
-	"AGENTS.md",
 	"docs/architecture.md",
 	"docs/mcp-integration.md",
 	"docs/developing.md",
@@ -260,7 +259,7 @@ func TestNoDocumentPinsTheToolCount(t *testing.T) {
 		regexp.MustCompile(`(?i)` + count + `\s+MCP tools`),
 		regexp.MustCompile(`(?i)tools/list\D{0,20}` + count),
 	}
-	for _, rel := range append(documentedToolFiles, "CHANGELOG.md", "CLAUDE.md") {
+	for _, rel := range append(documentedToolFiles, "CHANGELOG.md") {
 		body := readDoc(t, rel)
 		for _, pattern := range patterns {
 			if match := pattern.FindString(body); match != "" {

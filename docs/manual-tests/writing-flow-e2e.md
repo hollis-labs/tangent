@@ -6,7 +6,7 @@ explicit jump-back from `revision` to `drafting`.
 ## Setup
 
 ```bash
-cd ~/dev/hollis-labs/apps/tangent
+cd tangent  # your clone of the repo
 make build
 ./tangent --port=7842
 ```

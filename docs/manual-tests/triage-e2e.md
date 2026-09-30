@@ -16,7 +16,7 @@ the same loop. The recipe below is the real-LLM verification.
 
 ## Prerequisites
 
-- Repo cloned at `~/dev/hollis-labs/apps/tangent` (or equivalent).
+- A local clone of the repo.
 - `make build` produced `./tangent` in the repo root.
 - Claude Code installed (`claude` CLI on `$PATH`).
 - A modern browser pointing at `localhost`.
@@ -26,7 +26,7 @@ the same loop. The recipe below is the real-LLM verification.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/dev/hollis-labs/apps/tangent
+cd tangent  # your clone of the repo
 ./tangent
 ```
 

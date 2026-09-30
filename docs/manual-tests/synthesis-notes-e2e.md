@@ -13,7 +13,7 @@ gating checked via `session_get`.
 ## 1. Boot Tangent
 
 ```bash
-cd ~/dev/hollis-labs/apps/tangent
+cd tangent  # your clone of the repo
 ./tangent
 ```
 

@@ -1,8 +1,6 @@
 // Package appshell is the Tangent desktop window: adopt-or-boot against a
 // running or absent server, and the Wails v3 webview pointed at it. See
-// docs/adr/0006 (once CW-20260905-0051 lands) and
-// ~/dev/agent-os/workspaces/drafts/tangent/desktop-shell-architecture.md for
-// the design this implements.
+// docs/adr/0006 for the design this implements.
 //
 // Wails is a dependency of this package and cmd/tangent-app only. Nothing in
 // internal/server, internal/mcp, or the service layer learns it exists.

@@ -1,6 +1,6 @@
 // Package packagecheck asserts that a built macOS .app bundle is
 // well-formed before it ships. It is modeled on Tachyon's
-// cmd/tachyon-packagecheck (~/dev/projects/tachyon/cmd/tachyon-packagecheck)
+// cmd/tachyon-packagecheck (github.com/hollis-labs/tachyon)
 // — a build-time Go assertion instead of discovering a malformed bundle at
 // runtime — but checks a different thing: Tachyon's packagecheck verifies
 // embedded frontend assets; Tangent's frontend is already gated by `make

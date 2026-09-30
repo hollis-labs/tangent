@@ -1219,8 +1219,8 @@ supervisor polling on a timer does not bury the moment something changed.
 
 ## Current limitations
 
-Stamped against `ce4aca8`. This is the canonical list — `README.md`,
-`AGENTS.md`, and `developing.md` point here rather than keeping their own
+Stamped against `ce4aca8`. This is the canonical list — `README.md` and
+`developing.md` point here rather than keeping their own
 copies. Every entry is either a permanent scope decision or names the Torque
 task that closes it. **An entry that omits a limitation is worse than an
 entry that admits one:** the direction document this repository just retired

@@ -6,9 +6,12 @@ server, and a React SPA embedded in it, opened in a browser (or the
 MCP-speaking agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI — can
 summon a room, hand it a decision, and get a structured response back.
 
-> **Personal-use release.** **`v0.13.0`** is the first stable cut: a real
-> desktop app and daemon Chrispian runs day to day, not a public or
-> supported release. Localhost and single-user only — see
+> **Pre-release.** Tangent has tagged builds (latest `v0.13.0`) that its
+> author runs day to day, but it is not a supported release and has no
+> outside consumers. It's being built in the open: the code, the docs, and
+> this README describe what exists today, not a pitch for what's planned.
+> Interfaces and behavior change without notice, and there are no
+> compatibility guarantees yet. Localhost and single-user only — see
 > [Current limitations](docs/architecture.md#current-limitations) for what's
 > enforced versus merely declared.
 
@@ -55,8 +58,8 @@ a spreadsheet instead of a scrollback.
 ## Examples
 
 **Daily use.** Claude Code or Nanite calls a workflow tool (diff review,
-approval queue, a form) mid-session; Tangent logs a room URL, Chrispian opens
-it, resolves the workflow in the browser, and the agent gets a structured
+approval queue, a form) mid-session; Tangent logs a room URL, the operator
+opens it, resolves the workflow in the browser, and the agent gets a structured
 result back — no context-switch into a different tool for the parts of the
 job a chat window renders badly.
 
@@ -78,9 +81,12 @@ domain — a plugin is the only thing that does.
 - **Desktop shell hardening.** System tray, close-to-hide, single-instance
   UX, code signing, and notarization, on top of the `v0.13.0` shell.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for what's shipped and the in-repo
-Roadmap section history; open work is tracked in Torque under project
-`PRJ-20260825-0002`.
+See [`CHANGELOG.md`](CHANGELOG.md) for what's shipped.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
 
 ## Quickstart
 
@@ -135,7 +141,3 @@ canonical limitations list), [`docs/adr/`](docs/adr/) (accepted decision
 records), [`docs/developing.md`](docs/developing.md) (contributor
 onboarding), [`docs/installing.md`](docs/installing.md) (macOS install and
 upgrade).
-
-## License
-
-MIT — see [LICENSE](LICENSE).

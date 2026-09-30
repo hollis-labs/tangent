@@ -32,7 +32,7 @@ posture stand unchanged and stay there.
 
 **Baseline reviewed:** `adca3ff`.
 
-**Source:** `~/dev/agent-os/workspaces/drafts/tangent/adr-0007-s4-replacement.md`,
+**Source:** the ADR 0007 §4 replacement draft (internal, not published),
 reviewed 2026-09-11. Tesseract `nanite_plugin_model_is_the_portfolio_model`.
 
 ## Context
@@ -106,8 +106,8 @@ longer. An instance stamp in a boundary section is how all of this happened.
 
 **Decided by Chrispian, 2026-09-11:** *"We go with Nanite's model."*
 
-Nanite's shape, read from source at `apps/nanite/ui/src/lib/plugin-loader.ts`
-and `apps/nanite/internal/api/plugins_registry.go`:
+Nanite's shape, read from source at Nanite's `ui/src/lib/plugin-loader.ts`
+and `internal/api/plugins_registry.go`:
 
 - The host publishes a **manifest-authoritative registry** at
   `GET /api/plugins/registry`.
@@ -329,5 +329,4 @@ design-kit holds no stake in the wire contract it would have to track.
 - [ADR 0007](0007-collaboration-surface-plugin-host-and-view-state.md) §4 — the plugin host boundary this document was extracted from
 - `docs/renderer-trust-classes.md` — the shipped isolation model, and open question 1's constraint
 - `docs/writing-a-plugin.md` — the scaffold and the eight-item classification it encodes
-- `apps/nanite/ui/src/lib/plugin-loader.ts`, `apps/nanite/internal/api/plugins_registry.go` — the model adopted in §3
-- `~/dev/agent-os/workspaces/drafts/tangent/adr-0007-s4-replacement.md` — the reviewed draft this was cut from
+- Nanite's `ui/src/lib/plugin-loader.ts` and `internal/api/plugins_registry.go` — the model adopted in §3
