@@ -209,7 +209,7 @@ export default function HITLInboxRoute() {
   }, [postDisposition, selectedItemID]);
 
   useEffect(() => {
-    if (!selected || selected.state !== "staged" || presentingItems.current.has(selected.item_id)) {
+    if (selected?.state !== "staged" || presentingItems.current.has(selected.item_id)) {
       return;
     }
     const stagedItem = selected;
