@@ -1265,19 +1265,19 @@ bounded cost that has a task.
   `RegisterConfigSchema` are unimplemented and ratified as such: a plugin reads
   its own process environment. This is what keeps ADR 0005 §3.1's secret
   boundary true by construction rather than by policy — there is no store to
-  leak, migrate, or redact. A subprocess plugin with no environment to read
-  (`CW-20260910-0034`) is what would reopen it.
-- **There is no runtime enable/disable.** `internal/plugins/shipped.go` is the
-  enable set and changing it is a rebuild. Deferred with the reason rather than
-  omitted: Tether's equivalent flag carries a documented enabled-but-unreachable
+  leak, migrate, or redact. A plugin process inherits the environment of the
+  `tangent` process that spawns it, so an operator sets a plugin's variables
+  where `tangent` runs.
+- **There is no runtime enable/disable.** The installed set in the plugin
+  directory is read at startup; `tangent plugin install` / `remove` and a
+  restart is how it changes. Deferred with the reason rather than omitted: Tether's equivalent flag carries a documented enabled-but-unreachable
   stall, and nothing here has a caller for a toggle.
-- **A plugin handler that ignores its context leaks a goroutine.** Every
-  contributed tool and route is bounded at registration, and a blown budget
-  releases the *caller* — it does not stop the plugin, because Go cannot
-  interrupt a goroutine that will not yield. The leak lasts as long as the
-  process and nothing reports it. Compiled-in plugins share this process by
-  design; `CW-20260910-0034`'s subprocess mode is what turns "the goroutine
-  leaked" into "the process was killed".
+- **A blown dispatch budget releases the caller, not the plugin.** Every
+  contributed tool and route is bounded at registration, and a call that
+  overruns returns to its caller; the plugin's own process may keep working on
+  it, and nothing reports that. Plugins run as separate processes, so a crash is
+  contained and restarted (backoff, at most three attempts), but a plugin that
+  ignores its context still holds that work until it finishes.
 
 ### An additive version bump takes pending interactions out of service
 

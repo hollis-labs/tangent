@@ -7,10 +7,10 @@ go run ./cmd/tangent-new-plugin -package almanac -app Almanac -hands-back-work
 That writes a plugin that loads. The rest of this document is why it is shaped
 the way it is, and which parts of it you still have to do yourself.
 
-The scaffold is **extracted, not designed**. Two plugins exist —
+The scaffold is **extracted, not designed**. Two of the shipped plugins —
 `internal/plugins/torque` and `internal/plugins/tesseract`, which fill the
-host's `tangent.app-board` kind with two different applications' records — and
-everything in the `application` preset was measured off those two. Nothing in
+host's `tangent.app-board` kind with two different applications' records — are
+what everything in the `application` preset was measured off. Nothing in
 it anticipates a third.
 
 The `kind` preset is the other half, and it has no shipped instance: nothing
@@ -204,12 +204,17 @@ The generator prints these when it runs. They are two-place edits and
 measurements, and a generator that stayed silent about them would produce a
 plugin that builds and does not load.
 
-1. **Register it.** `internal/plugins/shipped.go`, after the plugin that
-   contributes the kind it fills — the host refuses a plugin whose stated
-   dependency is not already loaded. A contributed kind also needs a row in
-   `internal/envelope/extensions/register_all.go` with `contributedByPlugin:
-   true`; a manifest the tree carries that nothing registers fails
-   `TestPackageTreeMatchesRegistrations`, and so does the reverse.
+1. **Give it a process and install it.** A plugin runs as its own program, and
+   the generator writes the package, not the program. Add
+   `cmd/tangent-plugin-<name>/main.go` modeled on
+   `cmd/tangent-plugin-tesseract/main.go` (it serves the plugin over the
+   plugin-sdk subprocess wire and answers `--manifest`), add `<name>` to
+   `PLUGINS` in the `Makefile`, then `make install-plugins` and restart
+   `tangent`; `tangent plugin list` shows what is installed. A contributed kind
+   also needs a row in `internal/envelope/extensions/register_all.go` with
+   `contributedByPlugin: true`; a manifest the tree carries that nothing
+   registers fails `TestPackageTreeMatchesRegistrations`, and so does the
+   reverse.
 2. **Document the tools**, per the gate above.
 3. **Fill in the live check and run it** before writing the mapping.
 4. **Measure the card bounds.**
@@ -234,12 +239,10 @@ credential. Holding nothing keeps that boundary true by construction: there is
 no store to leak, none to migrate, and none to redact out of a health report.
 
 So read a base URL and, where one is needed, a token from your own process
-environment. Both shipped plugins do; the scaffold writes it for you. Name the
-variables after your plugin and document them where an operator will look.
-
-What would reopen it is a plugin with no process environment to read — in
-practice a subprocess plugin under `CW-20260910-0034` — and the secret question
-gets answered before the surface gets built.
+environment. The shipped plugins do; the scaffold writes it for you. Name the
+variables after your plugin and document them where an operator will look. Your
+process inherits the environment of the `tangent` that spawns it, so that is
+where an operator sets them.
 
 ### Unload drops your state and unregisters nothing
 
@@ -261,9 +264,9 @@ replaced it.
 
 ### There is no enable/disable flag, deliberately
 
-For a compiled-in plugin the enable set is `internal/plugins/shipped.go`:
-in the slice is enabled, out of it is disabled, and changing that is a rebuild.
-Nothing has a caller for a runtime toggle. Tether's catalog has the flag and the
+The enable set is the plugin directory: installed is enabled, removed is not,
+and `tangent` reads it at startup, so `tangent plugin install` / `remove` and a
+restart is how it changes. Nothing has a caller for a runtime toggle. Tether's catalog has the flag and the
 failure mode that came with it — an entry marked enabled but unreachable stalls
 its proxy for 120 seconds — and the way not to inherit that is not to build the
 flag until something needs it.
@@ -272,15 +275,15 @@ flag until something needs it.
 
 Every contributed tool and route is wrapped at registration
 (`internal/pluginhost/isolation.go`). A panic comes back as a named refusal
-rather than taking the process down, and a handler that does not return within
-its dispatch budget is abandoned — the *caller* is released, which is the only
-promise a compiled-in host can honestly make, because Go cannot interrupt a
-goroutine that ignores its context. Shutdown releases every in-flight dispatch
-at once rather than waiting out the budget.
+rather than taking the host down, and a call that does not return within its
+dispatch budget is abandoned — the *caller* is released. Your process is
+separate, so a crash is contained and restarted with backoff (at most three
+attempts), and calls are gated on your health. Shutdown releases every
+in-flight dispatch at once rather than waiting out the budget.
 
-None of that makes a hang cheap. The leaked goroutine is real, it lasts as long
-as the process does, and `tangent.health_report` will not tell you about it.
-Honor your context.
+None of that makes a hang cheap. An abandoned call keeps running in your
+process until it finishes, and `tangent.health_report` will not tell you about
+it. Honor your context.
 
 ### Being legible
 
@@ -294,9 +297,9 @@ cannot unregister — the host does not know who registered what.
 If the work needs a change to `internal/pluginhost/`, `internal/room/`,
 `internal/mcp/` or `internal/interaction/`, stop. The last two plugins each
 found real host defects that way, and both became their own tasks — filing one
-is a good outcome, not a delay. A plugin drives Tangent through
-`pluginhost.ToolCaller`, an in-process MCP client against Tangent's own tool
-surface with the same authority any local caller has and no more. Reach for a
+is a good outcome, not a delay. A plugin drives Tangent as an ordinary local
+MCP client against its own tool surface (`internal/pluginpkg/hostclient`), with
+the same authority any local caller has and no more. Reach for a
 new typed host method only when a tool genuinely cannot express the need.
 
 `RegisterCRUDHandler` and `GetService` are deliberately unimplemented.
@@ -312,5 +315,5 @@ packages, so `go build ./...` compiles them and their own generated tests load
 them onto the real plugin host. That is what makes "the template produces a
 plugin that loads" a checked claim rather than an assertion.
 
-They are not in `internal/plugins/shipped.go`, so this build serves none of
-their tools.
+They have no `cmd/` program and are not in the `Makefile`'s `PLUGINS`, so
+nothing installs them and no build serves their tools.

@@ -110,8 +110,9 @@ func nextSteps(options plugintemplate.Options) string {
 			"     A manifest in the package tree that nothing registers fails\n" +
 				"     TestPackageTreeMatchesRegistrations, and so does the reverse.\n")
 		out.WriteString(
-			"  2. Add the plugin to internal/plugins/shipped.go, before any plugin\n" +
-				"     that declares it as a dependency.\n")
+			"  2. Give it a process: cmd/tangent-plugin-<name>/main.go modeled on\n" +
+				"     cmd/tangent-plugin-tesseract, add it to PLUGINS in the Makefile,\n" +
+				"     then `make install-plugins` and restart tangent.\n")
 		out.WriteString(
 			"  3. Register the renderer component in the UI and run\n" +
 				"     `make generate-envelopes`; `make check-envelopes` is the staleness gate.\n")
@@ -121,9 +122,9 @@ func nextSteps(options plugintemplate.Options) string {
 				"     not an endorsement.\n")
 	default:
 		out.WriteString(
-			"  1. Add the plugin to internal/plugins/shipped.go, after the plugin that\n" +
-				"     contributes the kind it fills. The host refuses a plugin whose stated\n" +
-				"     dependency is not already loaded.\n")
+			"  1. Give it a process: cmd/tangent-plugin-<name>/main.go modeled on\n" +
+				"     cmd/tangent-plugin-tesseract, add it to PLUGINS in the Makefile,\n" +
+				"     then `make install-plugins` and restart tangent.\n")
 		fmt.Fprintf(&out,
 			"  2. Document both tools in a file internal/smoke/docs_test.go names in\n"+
 				"     documentedToolFiles. A plugin tool is a shipped tool: an undocumented\n"+
