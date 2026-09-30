@@ -42,7 +42,7 @@ something new.
   compiled and load-tested here but installed by nothing.
 - `internal/pluginhost/` + `internal/plugins/installed.go` — the ADR 0007 §4
   plugin host and the loader for the plugins this Tangent has **installed**.
-  There is no compiled-in roster (`CW-20260911-0070`): each plugin is its own
+  There is no compiled-in roster: each plugin is its own
   program (`cmd/tangent-plugin-*` in tangent-plugins), installed into
   `~/.tangent/plugins/` with `tangent plugin install` (`make install-plugins`
   does the first-party ones), spawned as a subprocess over the plugin-sdk wire,
@@ -107,8 +107,8 @@ two more rules over the document set its `documentedToolFiles` names: every
 `tangent.<tool>` those documents mention must exist in the shipped surface, and
 every shipped tool must appear in at least one of them. Adding a tool without
 documenting it fails the build, and so does removing the last mention of one.
-This file is in that set, and `TestNoDocumentPinsTheToolCount` reads `CLAUDE.md`
-as well, so both must stay readable.
+This file is in that set, and `TestNoDocumentPinsTheToolCount` reads
+`CHANGELOG.md` as well, so both must stay readable.
 
 `docs/architecture.md#current-limitations` is the canonical limitations list —
 this file, `README.md` and `docs/developing.md` point there rather than keeping
@@ -119,8 +119,8 @@ authorities, and nothing downstream may present a partition as isolation.
 
 `.agents/skills/` is product surface, not this repo's agent configuration: it
 holds the consumer-facing launcher skills for Tangent's own workflows, and
-`README.md` and four documents link into it. A sweep that clears project-level
-agent directories must not take it.
+`README.md` and four documents link into it. Do not delete it as stray agent
+configuration.
 
 Nothing a plugin contributes is privileged. A kind goes through the same
 manifest, trust classification and renderer isolation as every other; a
@@ -161,7 +161,7 @@ express the need; `GetService` stays unimplemented.
 
 **The host holds no plugin configuration, so it can never hold a plugin's
 secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
-unimplemented (`CW-20260910-0036`): a plugin reads its own environment, which
+unimplemented: a plugin reads its own environment, which
 keeps ADR 0005 §3.1's secret boundary true by construction instead of by policy.
 `Unload` is the same posture — it drops the plugin's own state and unregisters
 nothing, because neither the envelope registry nor an unattributable tool
@@ -200,3 +200,6 @@ rewrite from when `go-envelopes` was private. Frontend dependencies stay
 minimal — editor, chart and DnD libraries get added when a real workflow needs
 one, not preemptively. The top-level `LICENSE` is sufficient; do not add
 per-file license headers.
+
+Open a pull request for changes; a maintainer will review it. See
+`CONTRIBUTING.md`.
