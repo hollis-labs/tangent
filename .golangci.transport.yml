@@ -1,0 +1,64 @@
+# .golangci.transport.yml — the transport-boundary gate: transports call the
+# service layer, not the store. From tools/folio preset go-service-app,
+# adopted at R3 (hard block, ceiling 0) under the Hollis Labs service-layer
+# standard (CW-20260930-0091). Run from the module root:
+#
+#   GOWORK=off golangci-lint run --config .golangci.transport.yml ./...
+#
+# `make lint` and CI both run it. It is a second config rather than a merge into
+# .golangci.yml: forbidigo has no per-path setting, so this file scopes its
+# rules by exclusion.
+#
+# Transports here are internal/server (HTTP), internal/mcp (MCP tools) and
+# internal/ws (the WebSocket bridge). The composition roots (cmd/, and
+# internal/boot, which wires the services) open the database and sit outside
+# the scope by construction.
+#
+# Tangent has no store-handle type for Rule A to name: it holds a *sql.DB and
+# per-domain stores (channel.Store, relay.Store, telemetry.SQLStore) that are
+# its service interfaces. So the gate is Rule C (no raw SQL in a transport) plus
+# Rule B (no transport imports internal/db). Both measured 0 before this config
+# was enabled; any finding is a regression.
+#
+# CI requirements: setup-go with `go-version-file: go.mod`, and golangci-lint
+# >= v2.11.4.
+version: "2"
+
+run:
+  tests: false
+  relative-path-mode: gomod        # REQUIRED: path-except is otherwise relative to this file's directory
+
+linters:
+  default: none
+  enable: [forbidigo, depguard]
+  settings:
+    forbidigo:
+      analyze-types: true          # REQUIRED: without it the pattern sees source text only
+      forbid:
+        # Rule C: raw SQL inside a transport.
+        - pattern: '^sql\.(DB|Tx|Conn|Stmt)\.(Exec|Query|Prepare|Begin)[A-Za-z]*$'
+          msg: "transport-boundary: no raw SQL in a transport"
+    depguard:
+      rules:
+        # Rule B: the import ban. Affordable because the baseline is 0.
+        transports-not-store:
+          files:
+            - "**/internal/server/**"
+            - "**/internal/mcp/**"
+            - "**/internal/ws/**"
+            - "!$test"
+          deny:
+            - pkg: "github.com/hollis-labs/tangent/internal/db"
+              desc: "transport-boundary: transports call the service layer, not internal/db"
+  exclusions:
+    generated: lax
+    rules:
+      # forbidigo has no per-path setting: scope its rules by exclusion.
+      - text: 'transport-boundary'
+        linters: [forbidigo]
+        path-except: '^internal/(server|mcp|ws)/'
+
+issues:
+  max-issues-per-linter: 0         # the default caps at 50 and silently truncates
+  max-same-issues: 0
+  uniq-by-line: false

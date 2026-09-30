@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 )
 
 // tangent.retention_status is the read half of CW-20260825-0072, and it is
@@ -25,7 +23,7 @@ import (
 // without any authority at all, and it is what this tool returns.
 //
 // It carries no payload, no participant text, no filesystem path, no hostname,
-// and no process identity — internal/db.Status is shaped to ADR 0002 §8's floor
+// and no process identity — internal/db.Status, behind internal/retention, is shaped to ADR 0002 §8's floor
 // rather than filtered down to it.
 
 type retentionStatusInput struct {
@@ -49,12 +47,12 @@ func (s *Server) handleRetentionStatus(
 	ctx context.Context,
 	input retentionStatusInput,
 ) (any, error) {
-	if s.maintenanceDB == nil {
+	if s.retention == nil {
 		// An error result rather than a synthesized empty one, for the reason
 		// tangent.health_report gives: a caller that receives a custody report
 		// assumes something measured it.
 		return nil, toolErrorResult("retention_unavailable",
-			"this build serves MCP without a database handle for maintenance reporting, so the "+
+			"this build serves MCP without a retention reporter, so the "+
 				"custody posture cannot be measured; deploy a build that wires it")
 	}
 	limit := input.OperationLimit
@@ -64,8 +62,7 @@ func (s *Server) handleRetentionStatus(
 	if limit > 200 {
 		limit = 200
 	}
-	status, err := tangentdb.Status(ctx, s.maintenanceDB, s.maintenanceDBPath,
-		tangentdb.DefaultRetentionWindows(), limit)
+	status, err := s.retention.Status(ctx, limit)
 	if err != nil {
 		return nil, toolErrorResult("retention_unavailable", err.Error())
 	}

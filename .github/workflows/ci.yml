@@ -68,6 +68,14 @@ jobs:
           version: v2.11.4
           args: --timeout=5m ${{ steps.server-packages.outputs.packages }}
 
+      # The transport-boundary gate (.golangci.transport.yml), at R3: any
+      # finding fails. Transports call the service layer, not internal/db.
+      - name: Transport-boundary lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.11.4
+          args: --config .golangci.transport.yml --timeout=5m ${{ steps.server-packages.outputs.packages }}
+
       - name: go vet
         run: go vet ${{ steps.server-packages.outputs.packages }}
 
