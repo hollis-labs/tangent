@@ -149,7 +149,8 @@ A plugin reaches Tangent as an ordinary local MCP client against `/mcp`
 has and no more: the plugin-sdk wire is host-initiated only, so there is no
 back channel, and the plugin resolves to the same host-assigned identity — see
 [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md) §5.
-`pluginhost.ToolCaller` remains the in-process form of the same thing. Reach for a new typed host method only when a tool genuinely cannot
+`pluginhost.ToolCaller` remains the in-process form of the same thing.
+Reach for a new typed host method only when a tool genuinely cannot
 express the need; `GetService` stays unimplemented.
 
 **The host holds no plugin configuration, so it can never hold a plugin's
@@ -177,7 +178,8 @@ Keep the HTTP layer separate from app logic, and never import `cmd/tangent`
 from `internal/...` — the dependency is one-way. The transports
 (`internal/server`, `internal/mcp`, `internal/ws`) call services, never
 `internal/db` or raw SQL: `.golangci.transport.yml` is that gate, at hard block
-in `make lint` and CI, and a new transport directory has to be added to it. Wails is a real dependency
+in `make lint` and CI, and a new transport directory has to be added to it.
+Wails is a real dependency
 today, confined to `cmd/tangent-app` and `internal/appshell`; that binary
 carries no `go:embed` of its own because the server already holds `ui_dist`.
 
