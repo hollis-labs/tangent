@@ -1062,7 +1062,10 @@ INSERT INTO interactions (
 		t.Fatalf("seed legacy interaction: %v", err)
 	}
 
-	if err := RunMigrations(database); err != nil {
+	// migrateTo, not RunMigrations: RollbackOne below undoes the NEWEST
+	// migration, so this test has to stop at 0017 or it rolls back whatever
+	// landed after it (0018 did, and the down assertions went red).
+	if err := migrateTo(database, 17); err != nil {
 		t.Fatalf("apply 0017: %v", err)
 	}
 
@@ -1094,7 +1097,7 @@ INSERT INTO interactions (
 		`{"code":"user-cancelled","message":"context canceled"}`, "envelopes.response_payload after down")
 	// Re-applying is the real-world case: a row already carrying the US
 	// spelling must not be double-rewritten into something else.
-	if err := RunMigrations(database); err != nil {
+	if err := migrateTo(database, 17); err != nil {
 		t.Fatalf("re-apply after rollback: %v", err)
 	}
 	assertScalar(t, database,

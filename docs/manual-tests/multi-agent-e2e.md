@@ -22,13 +22,13 @@ cd tangent  # your clone of the repo
 In terminal A:
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 In terminal B:
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 Fallback for older clients: use `--transport sse` with `/sse`.

@@ -10,11 +10,11 @@ Manual smoke for the dashboard workflow. This validates:
 ## Setup
 
 - Run Tangent locally: `make dev`
-- Use a browser against `http://localhost:7842`
+- Use a browser against `http://127.0.0.1:7842`
 - Add the MCP server to your client:
 
 ```sh
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 ## Drive One Dashboard Turn

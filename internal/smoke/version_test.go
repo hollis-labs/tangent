@@ -74,19 +74,19 @@ func TestChangelogLeadsWithTheReleaseVersion(t *testing.T) {
 	}
 }
 
-// TestReadmeNamesTheReleaseVersionOnly: the README's install line and status
-// line name the source version, and no other v0.x is presented as the current
-// release. Older versions may appear in the roadmap history, so the check is
-// on the two lines a reader acts on.
+// TestReadmeNamesTheReleaseVersionOnly: the README's status line names the
+// source version, and so does any `go install` line, so no other v0.x is
+// presented as the current release. Older versions may appear in the roadmap
+// history, so the check is on the lines a reader acts on.
+//
+// A `go install` line is not required: it builds a binary with no web UI
+// (ui_dist is a placeholder in git), so the README installs by clone-and-build
+// instead (CW-20260930-0072).
 func TestReadmeNamesTheReleaseVersionOnly(t *testing.T) {
 	version := releaseVersion(t)
 	body := readDoc(t, "README.md")
 	install := regexp.MustCompile(`go install github\.com/hollis-labs/tangent/cmd/tangent@(v[\d.]+)`)
-	matches := install.FindAllStringSubmatch(body, -1)
-	if len(matches) == 0 {
-		t.Fatal("README.md has no `go install ...@vX.Y.Z` line")
-	}
-	for _, match := range matches {
+	for _, match := range install.FindAllStringSubmatch(body, -1) {
 		if match[1] != "v"+version {
 			t.Fatalf("README.md installs %s; %s says %s", match[1], versionSource, version)
 		}

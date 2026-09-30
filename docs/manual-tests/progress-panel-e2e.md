@@ -23,7 +23,7 @@ Verify that Tangent can:
 Create a room:
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"progress-e2e"}}}'
 ```
@@ -31,7 +31,7 @@ curl -fsS -X POST http://localhost:7842/mcp \
 Call `tangent.progress-panel` using the returned `roomID`:
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.progress-panel","arguments":{"envelope":{"v":1,"id":"progress-e2e-1","type":"tangent.progress-panel","meta":{"roomID":"<room-id>"},"data":{"panel_id":"panel-e2e","items":[{"item_id":"scan","label":"Scan repo","status":"running"},{"item_id":"summary","label":"Write summary","status":"queued"}],"summary":{"current_status":"running","headline":"1 running"}}}}}'
 ```
@@ -106,7 +106,7 @@ Expected result:
 Run:
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_get","arguments":{"roomID":"<room-id>"}}}' \
   | jq -r '.result.content[0].text' | jq '.progress_panel'

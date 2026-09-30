@@ -34,13 +34,13 @@ claude mcp add fast-triage --transport http http://localhost:5177/mcp
 Replace it with Tangent:
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 If your client still prefers SSE, Tangent also serves:
 
 ```bash
-claude mcp add --transport sse tangent http://localhost:7842/sse
+claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 ```
 
 Tangent now issues room URLs on `http://127.0.0.1:7842/r/<roomID>` when a

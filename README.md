@@ -90,30 +90,33 @@ MIT — see [LICENSE](LICENSE).
 
 ## Quickstart
 
-Install:
+Install by building from source. `go install` is not an install path: the web UI
+is built by Vite and embedded at build time, and a module fetch carries only an
+empty placeholder where it belongs, so the binary it produces serves no UI.
 
 ```bash
-# Latest tagged release (the headless daemon):
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.13.0
-
-# Or build from source; `make build-app` additionally assembles Tangent.app on macOS:
-git clone https://github.com/hollis-labs/tangent.git && cd tangent && make build
+git clone https://github.com/hollis-labs/tangent.git && cd tangent
+mise install            # pins Node; see mise.toml
+(cd ui && npm ci)
+make build              # → ./tangent, with the UI embedded
+make build-plugins      # optional: the first-party plugins, into dist/plugins/
+# `make build-app` additionally assembles Tangent.app on macOS.
 ```
 
 Run:
 
 ```bash
-tangent
-# tangent listening addr=:7842
-# MCP server ready http_url=http://localhost:7842/mcp sse_url=http://localhost:7842/sse
+./tangent
+# tangent listening addr=127.0.0.1:7842
+# MCP server ready http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 ```
 
 Wire it into Claude Code:
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 # or, if your claude rejects --transport http:
-claude mcp add --transport sse tangent http://localhost:7842/sse
+claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 ```
 
 For Cursor, Codex, curl verification, and troubleshooting, see
@@ -124,7 +127,8 @@ asynchronous approvals, see the `tangent.hitl_*` tools and
 ## Development
 
 ```bash
-mise install && make install-hooks && cd ui && npm install && cd ..
+# after the Quickstart's clone and installs:
+make install-hooks     # lefthook: pre-commit / pre-push
 make build             # frontend → embedded into Go binary → ./tangent
 make dev               # Go server proxies non-API requests to Vite at :5173
 make lint              # gofmt + go vet + golangci-lint + biome

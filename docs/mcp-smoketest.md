@@ -175,8 +175,8 @@ toolchain, or for probing something the harness cannot reach.
 
 The MCP surface is mounted on the same port as the SPA:
 
-- Streamable HTTP: `http://localhost:7842/mcp` (modern clients).
-- SSE legacy: `http://localhost:7842/sse` (older Claude Code; long-lived event
+- Streamable HTTP: `http://127.0.0.1:7842/mcp` (modern clients).
+- SSE legacy: `http://127.0.0.1:7842/sse` (older Claude Code; long-lived event
   stream, and the transport the Tether gateway dials).
 
 The streamable handler is **stateless + JSONResponse**, which is why one-shot
@@ -187,7 +187,7 @@ by hand needs a real client — `make smoke` drives one.
 ### Probe 1 — tool catalog
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools | length'
@@ -213,7 +213,7 @@ the definition-registry diagnostics, and the operability probes
 ### Probe 2 — the read-only tool call
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.health_report","arguments":{}}}' \
   | jq '.result.structuredContent.readiness.status'
@@ -230,7 +230,7 @@ HTTP client for `/readyz`.
 ### Probe 3 — strict schema rejection
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.triage","arguments":{"envelope":{"v":1,"id":"smoke-1","type":"triage","data":{}}}}}' \
   | jq '.result'
@@ -248,7 +248,7 @@ participant session; see
 
 ```bash
 npx @modelcontextprotocol/inspector
-# Transport=Streamable HTTP, URL=http://localhost:7842/mcp.
+# Transport=Streamable HTTP, URL=http://127.0.0.1:7842/mcp.
 ```
 
 ### Shutdown
