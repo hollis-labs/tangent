@@ -7,9 +7,8 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/hollis-labs/plugin-sdk/subprocess"
-
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // This file is the third registration surface this host honors: an HTTP route
@@ -49,8 +48,9 @@ import (
 // response is a status, headers and a body — there is no flush, no SSE, and
 // this host does not invent one.
 
-// RoutePrefix is the reserved mount point for every plugin-served route.
-const RoutePrefix = "/api/plugins/"
+// RoutePrefix is plugin.RoutePrefix, the reserved mount point for every
+// plugin-served route.
+const RoutePrefix = plugin.RoutePrefix
 
 // pluginRoutePath requires a plugin-owned segment under the prefix and a
 // literal path beneath it. `{` is refused because http.ServeMux would read it
@@ -69,23 +69,8 @@ var (
 	ErrUnholdableCapability = errors.New("pluginhost: route capability is one a participant never holds")
 )
 
-// HTTPRoute is one plugin-served browser route.
-type HTTPRoute struct {
-	// Method is GET or POST.
-	Method string
-	// Path is the literal mount path. It must be under RoutePrefix and must
-	// carry a plugin-owned segment: /api/plugins/<plugin>/<path>.
-	Path string
-	// Capability is the ADR 0004 §2 capability the route exercises, checked
-	// against the participant's session before the handler runs. It must be
-	// one KindParticipant can hold.
-	Capability authz.Capability
-	// Handler services requests. It is the SDK's own dispatch interface.
-	Handler subprocess.HTTPHandler
-}
-
-// Pattern is the http.ServeMux pattern this route mounts at.
-func (r HTTPRoute) Pattern() string { return r.Method + " " + r.Path }
+// HTTPRoute is one plugin-served browser route. See plugin.HTTPRoute.
+type HTTPRoute = plugin.HTTPRoute
 
 // RegisterHTTPRoute records one plugin-served route.
 //

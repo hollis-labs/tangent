@@ -5,7 +5,7 @@ import "encoding/json"
 // The tool contracts.
 //
 // They are raw JSON rather than a Go struct with reflection, for the reason
-// pluginhost.MCPTool takes raw JSON: this is what a subprocess plugin would put
+// tangentplugin.MCPTool takes raw JSON: this is what a subprocess plugin would put
 // on the wire, so the declaration a compiled-in plugin writes today is the one
 // it keeps when CW-20260910-0034 makes subprocess mode real.
 //

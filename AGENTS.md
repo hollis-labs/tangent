@@ -56,6 +56,9 @@ something new.
   agent-callable tool, and `RegisterHTTPRoute` (`http.go`) contributes a
   browser route under `/api/plugins/`. Both are recorded at load and installed
   later — plugins load before the MCP and HTTP servers exist.
+- `pkg/plugin/` — the public surface a plugin is written against, and the only
+  Tangent package a plugin imports. The host aliases its types; it must never
+  import `internal/` (`TestPublicPluginSurfaceIsALeaf`).
 - `internal/plugins/torque/` + `cmd/tangent-plugin-torque/` — the first
   application plugin, and the only code here that knows Torque exists; it is
   not linked into `tangent`. It is the ADR 0007 §6 pattern working: a
@@ -145,7 +148,7 @@ board abandoned with staged changes has changed nothing. The press is the
 decision; do not make a draft into one.
 
 A plugin reaches Tangent as an ordinary local MCP client against `/mcp`
-(`internal/pluginpkg/hostclient`), with the same authority any local MCP caller
+(`pkg/plugin/hostclient`), with the same authority any local MCP caller
 has and no more: the plugin-sdk wire is host-initiated only, so there is no
 back channel, and the plugin resolves to the same host-assigned identity — see
 [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md) §5.

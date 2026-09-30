@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // These tests hold CW-20260910-0054's flows end to end, against a fake
@@ -35,36 +35,36 @@ type toolCall struct {
 type fakeTools struct {
 	mu      sync.Mutex
 	calls   []toolCall
-	answers map[string]pluginhost.ToolResult
+	answers map[string]tangentplugin.ToolResult
 }
 
 func newFakeTools() *fakeTools {
-	return &fakeTools{answers: map[string]pluginhost.ToolResult{}}
+	return &fakeTools{answers: map[string]tangentplugin.ToolResult{}}
 }
 
 func (f *fakeTools) answer(name string, body string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.answers[name] = pluginhost.ToolResult{Content: json.RawMessage(body)}
+	f.answers[name] = tangentplugin.ToolResult{Content: json.RawMessage(body)}
 }
 
 func (f *fakeTools) CallTool(
 	_ context.Context, name string, arguments any,
-) (pluginhost.ToolResult, error) {
+) (tangentplugin.ToolResult, error) {
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, toolCall{Name: name, Arguments: decoded})
 	answer, ok := f.answers[name]
 	f.mu.Unlock()
 	if !ok {
-		answer = pluginhost.ToolResult{Content: json.RawMessage(`{}`)}
+		answer = tangentplugin.ToolResult{Content: json.RawMessage(`{}`)}
 	}
 	return answer, nil
 }
@@ -96,23 +96,23 @@ func (f *fakeTools) names() []string {
 type fakeHost struct {
 	baseHostOnly
 	tools  *fakeTools
-	mcp    []pluginhost.MCPTool
-	routes []pluginhost.HTTPRoute
+	mcp    []tangentplugin.MCPTool
+	routes []tangentplugin.HTTPRoute
 }
 
-func (h *fakeHost) RegisterMCPTool(tool pluginhost.MCPTool) error {
+func (h *fakeHost) RegisterMCPTool(tool tangentplugin.MCPTool) error {
 	h.mcp = append(h.mcp, tool)
 	return nil
 }
 
-func (h *fakeHost) RegisterHTTPRoute(route pluginhost.HTTPRoute) error {
+func (h *fakeHost) RegisterHTTPRoute(route tangentplugin.HTTPRoute) error {
 	h.routes = append(h.routes, route)
 	return nil
 }
 
-func (h *fakeHost) Tools() (pluginhost.ToolCaller, error) {
+func (h *fakeHost) Tools() (tangentplugin.ToolCaller, error) {
 	if h.tools == nil {
-		return nil, pluginhost.ErrToolCallerUnavailable
+		return nil, tangentplugin.ErrToolCallerUnavailable
 	}
 	return h.tools, nil
 }
@@ -347,7 +347,7 @@ func TestLoadRegistersBothToolsAndTheSyncRoute(t *testing.T) {
 	if len(host.routes) != 1 || host.routes[0].Path != SyncPath {
 		t.Errorf("registered routes = %#v, want one at %s", host.routes, SyncPath)
 	}
-	// authz.Draft, not submit: a sync is the participant applying what they
+	// tangentplugin.CapabilityDraft, not submit: a sync is the participant applying what they
 	// staged. The pluginhost refuses a capability a participant cannot hold, so
 	// this asserts the intent rather than the enforcement.
 	if got := string(host.routes[0].Capability); got != "draft" {

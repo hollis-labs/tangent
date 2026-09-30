@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // Syncing a review board, in one press.
@@ -550,7 +550,7 @@ type boardState struct {
 // readBoard hydrates the surface and finds the pending board.
 func readBoard(
 	ctx context.Context,
-	tools pluginhost.ToolCaller,
+	tools tangentplugin.ToolCaller,
 	roomID string,
 ) (boardState, error) {
 	result, err := tools.CallTool(ctx, "tangent.surface_get", map[string]any{
@@ -645,7 +645,7 @@ func stringField(fields map[string]any, key string) string {
 // changing the interaction underneath this sync.
 func withdraw(
 	ctx context.Context,
-	tools pluginhost.ToolCaller,
+	tools tangentplugin.ToolCaller,
 	roomID string,
 	board boardState,
 ) error {
@@ -674,7 +674,7 @@ func isStaleRevision(err error) bool {
 
 func cancelInteraction(
 	ctx context.Context,
-	tools pluginhost.ToolCaller,
+	tools tangentplugin.ToolCaller,
 	interactionID string,
 	revision int64,
 ) error {

@@ -298,9 +298,18 @@ If the work needs a change to `internal/pluginhost/`, `internal/room/`,
 `internal/mcp/` or `internal/interaction/`, stop. The last two plugins each
 found real host defects that way, and both became their own tasks — filing one
 is a good outcome, not a delay. A plugin drives Tangent as an ordinary local
-MCP client against its own tool surface (`internal/pluginpkg/hostclient`), with
+MCP client against its own tool surface (`pkg/plugin/hostclient`), with
 the same authority any local caller has and no more. Reach for a
 new typed host method only when a tool genuinely cannot express the need.
+
+**A plugin imports `pkg/plugin`, never `internal/`.** `pkg/plugin` is the public
+plugin surface — `ToolCaller`, `ToolResult`, `MCPTool`, `HTTPRoute`,
+`Capability`, the `plugin.yaml` types (`Manifest`, `ToolDecl`, `RouteDecl`) and
+`AgentTurnContractVersion` — and `pkg/plugin/hostclient` is the caller over MCP.
+Everything else is the host's. The host aliases these types, so they are the
+same types it registers. `internal/smoke`'s `TestPublicPluginSurfaceIsALeaf`
+keeps `pkg/plugin` free of host internals, which is what lets a plugin in
+another module import it.
 
 `RegisterCRUDHandler` and `GetService` are deliberately unimplemented.
 Implementing a host surface because the SDK offers it, rather than because a

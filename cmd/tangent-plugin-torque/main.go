@@ -30,10 +30,9 @@ import (
 
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginpkg"
-	"github.com/hollis-labs/tangent/internal/pluginpkg/hostclient"
 	"github.com/hollis-labs/tangent/internal/plugins/torque"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
+	"github.com/hollis-labs/tangent/pkg/plugin/hostclient"
 )
 
 // served adapts the plugin to the SDK's subprocess lifecycle.
@@ -114,14 +113,14 @@ var (
 // before installation, read by the host at install and at boot, and fixed from
 // then on. A RUNNING child is still never asked what it serves.
 func emitManifest(out io.Writer) error {
-	manifest := pluginpkg.Manifest{
+	manifest := tangentplugin.Manifest{
 		ID:          torque.ID,
 		Name:        torque.New().Name(),
 		Description: torque.New().Description(),
 		Version:     torque.New().Version(),
 		Protocol:    subprocess.ProtocolVersion,
 		Entrypoint:  "tangent-plugin-torque",
-		Tools: []pluginpkg.ToolDecl{
+		Tools: []tangentplugin.ToolDecl{
 			{
 				Name:        torque.OpenTool,
 				Description: torque.OpenToolDescription,
@@ -133,10 +132,10 @@ func emitManifest(out io.Writer) error {
 				InputSchema: string(torque.SyncToolSchema),
 			},
 		},
-		Routes: []pluginpkg.RouteDecl{{
+		Routes: []tangentplugin.RouteDecl{{
 			Method:     http.MethodPost,
 			Path:       torque.SyncPath,
-			Capability: string(authz.Draft),
+			Capability: string(tangentplugin.CapabilityDraft),
 		}},
 	}
 	if err := manifest.Validate(); err != nil {

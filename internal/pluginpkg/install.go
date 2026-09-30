@@ -57,7 +57,7 @@ func Install(src, root string) (InstallResult, error) {
 	// install that a plugin cannot run on this host costs one command; finding
 	// out at the next boot costs a debugging session, and the operator has by
 	// then forgotten they installed anything.
-	if err := manifest.CheckCompatible(); err != nil {
+	if err := CheckCompatible(manifest); err != nil {
 		return InstallResult{}, err
 	}
 

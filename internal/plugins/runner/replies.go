@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 const (
@@ -84,7 +84,7 @@ func nextReplyWait(current, base time.Duration, healthy bool) time.Duration {
 	return next
 }
 
-func (e *Engine) currentToolCaller() pluginhost.ToolCaller {
+func (e *Engine) currentToolCaller() tangentplugin.ToolCaller {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.toolCaller
@@ -208,7 +208,7 @@ func (e *Engine) deliverReplies(ctx context.Context, s *ActiveSession, delivered
 // is recognized as already delivered, and is acknowledged again.
 func (e *Engine) acknowledgeReply(
 	ctx context.Context,
-	caller pluginhost.ToolCaller,
+	caller tangentplugin.ToolCaller,
 	s *ActiveSession,
 	itemID, replyID string,
 ) bool {

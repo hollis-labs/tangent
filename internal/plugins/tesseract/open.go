@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // Opening a review board.
@@ -317,7 +317,7 @@ func boardEnvelope(
 // createRoom opens a browser room through tangent.session_create.
 func createRoom(
 	ctx context.Context,
-	tools pluginhost.ToolCaller,
+	tools tangentplugin.ToolCaller,
 	title string,
 ) (roomID string, url string, err error) {
 	result, err := tools.CallTool(ctx, "tangent.session_create", map[string]any{
@@ -349,7 +349,7 @@ func createRoom(
 // means holding a browser request open across one.
 func advance(
 	ctx context.Context,
-	tools pluginhost.ToolCaller,
+	tools tangentplugin.ToolCaller,
 	roomID string,
 	envelope map[string]any,
 ) error {

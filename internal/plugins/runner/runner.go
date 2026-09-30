@@ -13,8 +13,8 @@ import (
 	"time"
 
 	tether "github.com/hollis-labs/go-tether-client"
-	"github.com/hollis-labs/tangent/internal/envelope/extensions"
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // ActiveSession represents one running agent session under supervision.
@@ -82,7 +82,7 @@ type Engine struct {
 	mu           sync.RWMutex
 	sessions     map[string]*ActiveSession
 	tetherClient *tether.Client
-	toolCaller   pluginhost.ToolCaller
+	toolCaller   tangentplugin.ToolCaller
 	logger       *slog.Logger
 	replyPoll    time.Duration
 }
@@ -110,7 +110,7 @@ func (e *Engine) SetReplyPollInterval(interval time.Duration) {
 }
 
 // SetToolCaller assigns the in-process ToolCaller for turn enqueuing.
-func (e *Engine) SetToolCaller(caller pluginhost.ToolCaller) {
+func (e *Engine) SetToolCaller(caller tangentplugin.ToolCaller) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.toolCaller = caller
@@ -386,7 +386,7 @@ func (e *Engine) onSessionIdle(s *ActiveSession) {
 
 	if caller != nil {
 		req := map[string]any{
-			"contract_version": extensions.AgentTurnContractVersion,
+			"contract_version": tangentplugin.AgentTurnContractVersion,
 			"turn_id":          extracted.TurnID,
 			"session_id":       s.ID,
 			"idempotency_key":  fmt.Sprintf("runner:%s:%s", s.ID, extracted.TurnID),

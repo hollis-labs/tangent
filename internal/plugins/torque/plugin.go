@@ -67,8 +67,7 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // ID is the plugin identifier, and the name that appears in host logs.
@@ -95,14 +94,14 @@ const (
 )
 
 // SyncPath is the plugin-served route the board's Sync button POSTs to. It is
-// under pluginhost.RoutePrefix, which is what keeps it from colliding with
+// under tangentplugin.RoutePrefix, which is what keeps it from colliding with
 // /api/hitl, /api/rooms, /api/channels, /api/effects or the SPA.
 //
 // It stays scoped to the board rather than following the package to
 // `torque/sync`, for the reason the tool names above were chosen: this plugin
 // grows surfaces, and a route named for the plugin would be the one this
 // surface happened to claim first.
-const SyncPath = pluginhost.RoutePrefix + "torque-board/sync"
+const SyncPath = tangentplugin.RoutePrefix + "torque-board/sync"
 
 // EnvelopeType is the domain-free kind this plugin supplies content to. It is
 // host plumbing, installed by extensions.RegisterAll and owned by nothing in
@@ -116,7 +115,7 @@ type Plugin struct {
 	mu   sync.Mutex
 	host Host
 	// caller is set only in subprocess mode; see WithToolCaller.
-	caller pluginhost.ToolCaller
+	caller tangentplugin.ToolCaller
 	status plugin.PluginStatus
 }
 
@@ -124,9 +123,9 @@ type Plugin struct {
 // declared here, at the consumer, so the plugin depends on what it uses rather
 // than on the concrete host type.
 type Host interface {
-	RegisterMCPTool(pluginhost.MCPTool) error
-	RegisterHTTPRoute(pluginhost.HTTPRoute) error
-	Tools() (pluginhost.ToolCaller, error)
+	RegisterMCPTool(tangentplugin.MCPTool) error
+	RegisterHTTPRoute(tangentplugin.HTTPRoute) error
+	Tools() (tangentplugin.ToolCaller, error)
 }
 
 // New returns an unloaded Torque board plugin pointed at the local Torque.
@@ -176,7 +175,7 @@ func (p *Plugin) Load(host plugin.Host) error {
 				"(RegisterMCPTool, RegisterHTTPRoute); got %T", host)
 	}
 
-	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
+	if err := tangentHost.RegisterMCPTool(tangentplugin.MCPTool{
 		Name:        OpenTool,
 		Description: OpenToolDescription,
 		InputSchema: OpenToolSchema,
@@ -184,7 +183,7 @@ func (p *Plugin) Load(host plugin.Host) error {
 	}); err != nil {
 		return p.failLoad(err)
 	}
-	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
+	if err := tangentHost.RegisterMCPTool(tangentplugin.MCPTool{
 		Name:        SyncTool,
 		Description: SyncToolDescription,
 		InputSchema: SyncToolSchema,
@@ -197,10 +196,10 @@ func (p *Plugin) Load(host plugin.Host) error {
 	// what they staged — authoring, not settling. The board interaction is
 	// still pending afterwards, which is the test for whether `resolve` would
 	// have been the right word.
-	if err := tangentHost.RegisterHTTPRoute(pluginhost.HTTPRoute{
+	if err := tangentHost.RegisterHTTPRoute(tangentplugin.HTTPRoute{
 		Method:     http.MethodPost,
 		Path:       SyncPath,
-		Capability: authz.Draft,
+		Capability: tangentplugin.CapabilityDraft,
 		Handler:    p,
 	}); err != nil {
 		return p.failLoad(err)
@@ -247,7 +246,7 @@ func (p *Plugin) Status() plugin.PluginStatus {
 // Not at Load: plugins load before the MCP server exists, because a
 // plugin-contributed envelope kind has to be in the registry the MCP server
 // reads. Holding a handle from Load would mean holding nil.
-func (p *Plugin) tools() (pluginhost.ToolCaller, error) {
+func (p *Plugin) tools() (tangentplugin.ToolCaller, error) {
 	p.mu.Lock()
 	host, caller := p.host, p.caller
 	p.mu.Unlock()
@@ -274,7 +273,7 @@ func (p *Plugin) tools() (pluginhost.ToolCaller, error) {
 // the tools and the sync are the same code; only where the tool calls go
 // differs, which is what makes the migration a change of wiring rather than a
 // rewrite.
-func (p *Plugin) WithToolCaller(caller pluginhost.ToolCaller) *Plugin {
+func (p *Plugin) WithToolCaller(caller tangentplugin.ToolCaller) *Plugin {
 	p.mu.Lock()
 	p.caller = caller
 	p.mu.Unlock()

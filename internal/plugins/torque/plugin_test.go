@@ -15,7 +15,7 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // These tests hold CW-20260910-0031's two flows end to end, against a fake
@@ -37,13 +37,13 @@ type toolCall struct {
 type fakeTools struct {
 	mu      sync.Mutex
 	calls   []toolCall
-	answers map[string]pluginhost.ToolResult
+	answers map[string]tangentplugin.ToolResult
 	err     map[string]error
 }
 
 func newFakeTools() *fakeTools {
 	return &fakeTools{
-		answers: map[string]pluginhost.ToolResult{},
+		answers: map[string]tangentplugin.ToolResult{},
 		err:     map[string]error{},
 	}
 }
@@ -51,19 +51,19 @@ func newFakeTools() *fakeTools {
 func (f *fakeTools) answer(name string, body string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.answers[name] = pluginhost.ToolResult{Content: json.RawMessage(body)}
+	f.answers[name] = tangentplugin.ToolResult{Content: json.RawMessage(body)}
 }
 
 func (f *fakeTools) CallTool(
 	_ context.Context, name string, arguments any,
-) (pluginhost.ToolResult, error) {
+) (tangentplugin.ToolResult, error) {
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, toolCall{Name: name, Arguments: decoded})
@@ -71,10 +71,10 @@ func (f *fakeTools) CallTool(
 	failure := f.err[name]
 	f.mu.Unlock()
 	if failure != nil {
-		return pluginhost.ToolResult{}, failure
+		return tangentplugin.ToolResult{}, failure
 	}
 	if !ok {
-		answer = pluginhost.ToolResult{Content: json.RawMessage(`{}`)}
+		answer = tangentplugin.ToolResult{Content: json.RawMessage(`{}`)}
 	}
 	return answer, nil
 }
@@ -106,23 +106,23 @@ func (f *fakeTools) names() []string {
 type fakeHost struct {
 	baseHostOnly
 	tools  *fakeTools
-	mcp    []pluginhost.MCPTool
-	routes []pluginhost.HTTPRoute
+	mcp    []tangentplugin.MCPTool
+	routes []tangentplugin.HTTPRoute
 }
 
-func (h *fakeHost) RegisterMCPTool(tool pluginhost.MCPTool) error {
+func (h *fakeHost) RegisterMCPTool(tool tangentplugin.MCPTool) error {
 	h.mcp = append(h.mcp, tool)
 	return nil
 }
 
-func (h *fakeHost) RegisterHTTPRoute(route pluginhost.HTTPRoute) error {
+func (h *fakeHost) RegisterHTTPRoute(route tangentplugin.HTTPRoute) error {
 	h.routes = append(h.routes, route)
 	return nil
 }
 
-func (h *fakeHost) Tools() (pluginhost.ToolCaller, error) {
+func (h *fakeHost) Tools() (tangentplugin.ToolCaller, error) {
 	if h.tools == nil {
-		return nil, pluginhost.ErrToolCallerUnavailable
+		return nil, tangentplugin.ErrToolCallerUnavailable
 	}
 	return h.tools, nil
 }
@@ -237,7 +237,7 @@ func TestLoadRegistersBothToolsAndTheSyncRoute(t *testing.T) {
 		if len(tool.InputSchema) == 0 {
 			t.Errorf("%s registered no input schema", tool.Name)
 		}
-		if !strings.HasPrefix(tool.Name, pluginhost.ToolNamespace) {
+		if !strings.HasPrefix(tool.Name, tangentplugin.ToolNamespace) {
 			t.Errorf("%s is outside the tool namespace", tool.Name)
 		}
 	}

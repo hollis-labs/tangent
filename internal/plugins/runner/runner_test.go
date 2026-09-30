@@ -16,7 +16,7 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 type fakeTools struct {
@@ -31,21 +31,21 @@ type toolCall struct {
 
 func (f *fakeTools) CallTool(
 	_ context.Context, name string, arguments any,
-) (pluginhost.ToolResult, error) {
+) (tangentplugin.ToolResult, error) {
 	encoded, err := json.Marshal(arguments)
 	if err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
-		return pluginhost.ToolResult{}, err
+		return tangentplugin.ToolResult{}, err
 	}
 
 	f.mu.Lock()
 	f.calls = append(f.calls, toolCall{Name: name, Arguments: decoded})
 	f.mu.Unlock()
 
-	return pluginhost.ToolResult{Content: json.RawMessage(`{"status":"ok"}`)}, nil
+	return tangentplugin.ToolResult{Content: json.RawMessage(`{"status":"ok"}`)}, nil
 }
 
 func (f *fakeTools) getCalls(name string) []toolCall {
@@ -88,31 +88,31 @@ var _ plugin.Host = baseHostOnly{}
 
 type fakeHost struct {
 	baseHostOnly
-	tools  map[string]pluginhost.MCPTool
-	routes map[string]pluginhost.HTTPRoute
-	caller pluginhost.ToolCaller
+	tools  map[string]tangentplugin.MCPTool
+	routes map[string]tangentplugin.HTTPRoute
+	caller tangentplugin.ToolCaller
 }
 
-func newFakeHost(caller pluginhost.ToolCaller) *fakeHost {
+func newFakeHost(caller tangentplugin.ToolCaller) *fakeHost {
 	return &fakeHost{
-		tools:  make(map[string]pluginhost.MCPTool),
-		routes: make(map[string]pluginhost.HTTPRoute),
+		tools:  make(map[string]tangentplugin.MCPTool),
+		routes: make(map[string]tangentplugin.HTTPRoute),
 		caller: caller,
 	}
 }
 
-func (h *fakeHost) RegisterMCPTool(tool pluginhost.MCPTool) error {
+func (h *fakeHost) RegisterMCPTool(tool tangentplugin.MCPTool) error {
 	h.tools[tool.Name] = tool
 	return nil
 }
 
-func (h *fakeHost) RegisterHTTPRoute(route pluginhost.HTTPRoute) error {
+func (h *fakeHost) RegisterHTTPRoute(route tangentplugin.HTTPRoute) error {
 	key := fmt.Sprintf("%s %s", route.Method, route.Path)
 	h.routes[key] = route
 	return nil
 }
 
-func (h *fakeHost) Tools() (pluginhost.ToolCaller, error) {
+func (h *fakeHost) Tools() (tangentplugin.ToolCaller, error) {
 	return h.caller, nil
 }
 
@@ -216,8 +216,8 @@ func TestEngine_EmbeddedSubprocessLifecycle(t *testing.T) {
 // transport error, IsError set. It is the case the engine used to drop.
 type refusingTools struct{ body string }
 
-func (r refusingTools) CallTool(context.Context, string, any) (pluginhost.ToolResult, error) {
-	return pluginhost.ToolResult{Content: json.RawMessage(r.body), IsError: true}, nil
+func (r refusingTools) CallTool(context.Context, string, any) (tangentplugin.ToolResult, error) {
+	return tangentplugin.ToolResult{Content: json.RawMessage(r.body), IsError: true}, nil
 }
 
 func TestEngine_LogsARefusedEnqueueInsteadOfDroppingIt(t *testing.T) {

@@ -23,10 +23,9 @@ import (
 
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginpkg"
-	"github.com/hollis-labs/tangent/internal/pluginpkg/hostclient"
 	"github.com/hollis-labs/tangent/internal/plugins/runner"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
+	"github.com/hollis-labs/tangent/pkg/plugin/hostclient"
 )
 
 // served adapts the plugin to the SDK's subprocess lifecycle.
@@ -81,14 +80,14 @@ var (
 )
 
 func emitManifest(out io.Writer) error {
-	manifest := pluginpkg.Manifest{
+	manifest := tangentplugin.Manifest{
 		ID:          runner.ID,
 		Name:        runner.New().Name(),
 		Description: runner.New().Description(),
 		Version:     runner.New().Version(),
 		Protocol:    subprocess.ProtocolVersion,
 		Entrypoint:  "tangent-plugin-runner",
-		Tools: []pluginpkg.ToolDecl{
+		Tools: []tangentplugin.ToolDecl{
 			{
 				Name:        runner.LaunchTool,
 				Description: runner.LaunchToolDescription,
@@ -110,16 +109,16 @@ func emitManifest(out io.Writer) error {
 				InputSchema: string(runner.StopToolSchema),
 			},
 		},
-		Routes: []pluginpkg.RouteDecl{
+		Routes: []tangentplugin.RouteDecl{
 			{
 				Method:     http.MethodPost,
 				Path:       runner.LaunchPath,
-				Capability: string(authz.Draft),
+				Capability: string(tangentplugin.CapabilityDraft),
 			},
 			{
 				Method:     http.MethodGet,
 				Path:       runner.SessionsPath,
-				Capability: string(authz.View),
+				Capability: string(tangentplugin.CapabilityView),
 			},
 		},
 	}

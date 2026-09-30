@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // TurnsPackageID is the package tangent.agent-turn ships in.
@@ -13,8 +14,9 @@ const TurnsPackageID = "tangent.turns"
 // second durable operator-owned FIFO inbox (CW-20260913-0019).
 const AgentTurnEnvelopeType = "tangent.agent-turn"
 
-// AgentTurnContractVersion is the payload contract version.
-const AgentTurnContractVersion = "1.0"
+// AgentTurnContractVersion is the payload contract version. It is defined in
+// pkg/plugin, because the runner plugin enqueues turns against it.
+const AgentTurnContractVersion = plugin.AgentTurnContractVersion
 
 // AgentTurnDefinitionVersion is the version of the shipped manifest.
 const AgentTurnDefinitionVersion = "1.0"

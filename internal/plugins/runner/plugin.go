@@ -12,15 +12,14 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // Host is the narrow slice of the Tangent plugin host this plugin uses.
 type Host interface {
-	RegisterMCPTool(pluginhost.MCPTool) error
-	RegisterHTTPRoute(pluginhost.HTTPRoute) error
-	Tools() (pluginhost.ToolCaller, error)
+	RegisterMCPTool(tangentplugin.MCPTool) error
+	RegisterHTTPRoute(tangentplugin.HTTPRoute) error
+	Tools() (tangentplugin.ToolCaller, error)
 }
 
 // Plugin implements the plugin-sdk Plugin interface for the runner.
@@ -28,7 +27,7 @@ type Plugin struct {
 	mu     sync.Mutex
 	engine *Engine
 	host   Host
-	caller pluginhost.ToolCaller
+	caller tangentplugin.ToolCaller
 	status plugin.PluginStatus
 }
 
@@ -40,7 +39,7 @@ func New() *Plugin {
 }
 
 // WithToolCaller attaches an in-process MCP tool caller for Tangent turns integration.
-func (p *Plugin) WithToolCaller(caller pluginhost.ToolCaller) *Plugin {
+func (p *Plugin) WithToolCaller(caller tangentplugin.ToolCaller) *Plugin {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.caller = caller
@@ -91,7 +90,7 @@ func (p *Plugin) Load(host plugin.Host) error {
 	}
 
 	// Register MCP tools
-	tools := []pluginhost.MCPTool{
+	tools := []tangentplugin.MCPTool{
 		{
 			Name:        LaunchTool,
 			Description: LaunchToolDescription,
@@ -125,17 +124,17 @@ func (p *Plugin) Load(host plugin.Host) error {
 	}
 
 	// Register HTTP routes
-	routes := []pluginhost.HTTPRoute{
+	routes := []tangentplugin.HTTPRoute{
 		{
 			Method:     http.MethodPost,
 			Path:       LaunchPath,
-			Capability: authz.Draft,
+			Capability: tangentplugin.CapabilityDraft,
 			Handler:    p,
 		},
 		{
 			Method:     http.MethodGet,
 			Path:       SessionsPath,
-			Capability: authz.View,
+			Capability: tangentplugin.CapabilityView,
 			Handler:    p,
 		},
 	}

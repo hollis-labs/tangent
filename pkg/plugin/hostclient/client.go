@@ -13,7 +13,8 @@
 //
 // # Why this is the front door rather than a workaround
 //
-// `internal/pluginhost/tools.go` defines its in-process `ToolCaller` as
+// `pkg/plugin`'s `ToolCaller` (the in-process form lives in
+// `internal/pluginhost`) is defined as
 // granting "no authority a local MCP caller does not already have… the same
 // host-assigned caller identity every direct MCP caller resolves to". A child
 // connecting to `/mcp` does not approximate that equivalence — it IS a local
@@ -41,7 +42,7 @@ import (
 	gmcpclient "github.com/hollis-labs/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // URLEnv names the environment variable carrying Tangent's MCP endpoint.
@@ -68,7 +69,7 @@ const poolServerName = "tangent"
 
 // Client is a plugin's connection to Tangent's tool surface.
 //
-// It satisfies the same one-method shape `pluginhost.ToolCaller` does, so plugin
+// It satisfies the same one-method shape `plugin.ToolCaller` does, so plugin
 // code written against the in-process caller works unchanged out of process.
 type Client struct {
 	pool *gmcpclient.Pool
@@ -84,8 +85,7 @@ type Client struct {
 // port nothing is listening on yet, and the failure would look like a
 // misconfigured URL rather than an ordering problem. Registering a pool entry
 // does not dial; go-mcp/client dials on first use, which is after boot by
-// construction. The compiled-in plugins already resolve their caller at
-// dispatch for exactly this reason.
+// construction.
 func New() (*Client, error) {
 	url := os.Getenv(URLEnv)
 	if url == "" {
@@ -102,22 +102,22 @@ func New() (*Client, error) {
 }
 
 // Compile-time proof this is interchangeable with the in-process caller. Plugin
-// code written against pluginhost.ToolCaller runs unchanged out of process,
+// code written against plugin.ToolCaller runs unchanged out of process,
 // which is what makes the migration a change of wiring rather than a rewrite.
-var _ pluginhost.ToolCaller = (*Client)(nil)
+var _ plugin.ToolCaller = (*Client)(nil)
 
 // CallTool calls one Tangent tool.
-func (c *Client) CallTool(ctx context.Context, name string, arguments any) (pluginhost.ToolResult, error) {
+func (c *Client) CallTool(ctx context.Context, name string, arguments any) (plugin.ToolResult, error) {
 	encoded, err := toArgumentMap(arguments)
 	if err != nil {
-		return pluginhost.ToolResult{}, err
+		return plugin.ToolResult{}, err
 	}
 	response, _, err := c.pool.CallTool(ctx, poolServerName, name, encoded)
 	if err != nil {
-		return pluginhost.ToolResult{}, fmt.Errorf("hostclient: call %s: %w", name, err)
+		return plugin.ToolResult{}, fmt.Errorf("hostclient: call %s: %w", name, err)
 	}
 
-	result := pluginhost.ToolResult{IsError: response.IsError}
+	result := plugin.ToolResult{IsError: response.IsError}
 	if len(response.Content) > 0 {
 		if text, ok := response.Content[0].(*mcpsdk.TextContent); ok {
 			result.Content = json.RawMessage(text.Text)

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // scriptedInbox plays Tangent's side of the three turns tools for the reply
@@ -31,7 +31,7 @@ type scriptedInbox struct {
 	acked    bool
 }
 
-func (f *scriptedInbox) CallTool(_ context.Context, name string, arguments any) (pluginhost.ToolResult, error) {
+func (f *scriptedInbox) CallTool(_ context.Context, name string, arguments any) (tangentplugin.ToolResult, error) {
 	encoded, _ := json.Marshal(arguments)
 	var args map[string]any
 	_ = json.Unmarshal(encoded, &args)
@@ -41,13 +41,13 @@ func (f *scriptedInbox) CallTool(_ context.Context, name string, arguments any) 
 	switch name {
 	case EnqueueTurnTool:
 		f.enqueued = append(f.enqueued, args)
-		return pluginhost.ToolResult{Content: json.RawMessage(`{}`)}, nil
+		return tangentplugin.ToolResult{Content: json.RawMessage(`{}`)}, nil
 
 	case AwaitTurnTool:
 		f.awaits++
 		if f.failAwaits > 0 {
 			f.failAwaits--
-			return pluginhost.ToolResult{}, context.DeadlineExceeded
+			return tangentplugin.ToolResult{}, context.DeadlineExceeded
 		}
 		replies := []any{}
 		if f.reply != nil && len(f.enqueued) > 0 && !f.acked {
@@ -58,18 +58,18 @@ func (f *scriptedInbox) CallTool(_ context.Context, name string, arguments any) 
 			status = "replies"
 		}
 		body, _ := json.Marshal(map[string]any{"wait_status": status, "replies": replies})
-		return pluginhost.ToolResult{Content: body}, nil
+		return tangentplugin.ToolResult{Content: body}, nil
 
 	case AckTurnTool:
 		f.acks = append(f.acks, args)
 		if f.failAcks > 0 {
 			f.failAcks--
-			return pluginhost.ToolResult{Content: json.RawMessage(`{"code":"turns_error"}`), IsError: true}, nil
+			return tangentplugin.ToolResult{Content: json.RawMessage(`{"code":"turns_error"}`), IsError: true}, nil
 		}
 		f.acked = true
-		return pluginhost.ToolResult{Content: json.RawMessage(`{"status":"acknowledged"}`)}, nil
+		return tangentplugin.ToolResult{Content: json.RawMessage(`{"status":"acknowledged"}`)}, nil
 	}
-	return pluginhost.ToolResult{}, nil
+	return tangentplugin.ToolResult{}, nil
 }
 
 func (f *scriptedInbox) snapshot() (enqueued, acks []map[string]any, awaits int) {
