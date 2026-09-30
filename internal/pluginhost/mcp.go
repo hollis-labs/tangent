@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // This file is the second registration surface this host honors: an MCP tool
@@ -53,10 +53,9 @@ import (
 // nowhere fails `make smoke`. That is the intended outcome — "who ships it" was
 // never the question the gate asks, "can an operator find it" is.
 
-// ToolNamespace is the prefix every tool this build serves carries. It is not
-// decoration: the documentation gate matches tool mentions by this spelling,
-// so a name outside it is a tool no document can be checked against.
-const ToolNamespace = "tangent."
+// ToolNamespace is plugin.ToolNamespace: the prefix every tool this build
+// serves carries, which the documentation gate matches tool mentions by.
+const ToolNamespace = plugin.ToolNamespace
 
 // toolName is the shape a tool name must have after the namespace prefix. It
 // is deliberately the same alphabet internal/smoke/docs_test.go's toolMention
@@ -74,26 +73,8 @@ var (
 	ErrToolNameClaimed = errors.New("pluginhost: MCP tool name already claimed by another plugin")
 )
 
-// MCPTool is one agent-callable tool a plugin contributes.
-//
-// InputSchema is raw JSON rather than a parsed schema type on purpose: it is
-// what a subprocess plugin would put on the wire, so the declaration a
-// compiled-in plugin writes today is the declaration it keeps when
-// CW-20260910-0034 makes subprocess mode real.
-type MCPTool struct {
-	// Name is the wire name agents call. It must be `tangent.<name>`.
-	Name string
-	// Description is what an agent reads when choosing a tool.
-	Description string
-	// InputSchema is the tool's JSON Schema. It must parse and it must be of
-	// type "object" — MCP requires that of every tool, and the host checks it
-	// here so a malformed schema fails the boot rather than the first call.
-	InputSchema json.RawMessage
-	// Handler services invocations. It is the SDK's own dispatch interface,
-	// unchanged, so a plugin written against it needs no Tangent-specific
-	// handler type.
-	Handler subprocess.MCPHandler
-}
+// MCPTool is one agent-callable tool a plugin contributes. See plugin.MCPTool.
+type MCPTool = plugin.MCPTool
 
 // RegisterMCPTool records one plugin-contributed MCP tool.
 //

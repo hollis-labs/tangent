@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sort"
 	"strings"
+
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // Capability is one object-access power from ADR 0004 §2. Capabilities are
@@ -13,7 +15,10 @@ import (
 // These are deliberately a different namespace from the host-mediated *effect*
 // capabilities a renderer declares (ADR 0003 §2.5). The two never substitute
 // for one another and must not be merged.
-type Capability string
+//
+// The type is defined in pkg/plugin, because a plugin-served route names one,
+// and aliased here; this package owns the full set, the matrix and the rules.
+type Capability = plugin.Capability
 
 const (
 	// View reads a surface or interaction projection, its definition binding,

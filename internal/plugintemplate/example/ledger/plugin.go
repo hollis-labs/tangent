@@ -63,8 +63,7 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginhost"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // ID is the plugin identifier, and the name that appears in host logs.
@@ -86,9 +85,9 @@ const (
 )
 
 // SyncPath is the plugin-served route the board's Sync button POSTs to. It is
-// under pluginhost.RoutePrefix, which is what keeps it from colliding with the
+// under tangentplugin.RoutePrefix, which is what keeps it from colliding with the
 // host's own routes or the SPA.
-const SyncPath = pluginhost.RoutePrefix + "ledger-board/sync"
+const SyncPath = tangentplugin.RoutePrefix + "ledger-board/sync"
 
 // EnvelopeType is the domain-free kind this plugin supplies content to.
 //
@@ -114,9 +113,9 @@ type Plugin struct {
 // declared here, at the consumer, so the plugin depends on what it uses rather
 // than on the concrete host type.
 type Host interface {
-	RegisterMCPTool(pluginhost.MCPTool) error
-	RegisterHTTPRoute(pluginhost.HTTPRoute) error
-	Tools() (pluginhost.ToolCaller, error)
+	RegisterMCPTool(tangentplugin.MCPTool) error
+	RegisterHTTPRoute(tangentplugin.HTTPRoute) error
+	Tools() (tangentplugin.ToolCaller, error)
 }
 
 // New returns an unloaded plugin pointed at the local Ledger.
@@ -169,7 +168,7 @@ func (p *Plugin) Load(host plugin.Host) error {
 				"(RegisterMCPTool, RegisterHTTPRoute); got %T", host)
 	}
 
-	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
+	if err := tangentHost.RegisterMCPTool(tangentplugin.MCPTool{
 		Name:        OpenTool,
 		Description: openToolDescription,
 		InputSchema: openToolSchema,
@@ -177,7 +176,7 @@ func (p *Plugin) Load(host plugin.Host) error {
 	}); err != nil {
 		return p.failLoad(err)
 	}
-	if err := tangentHost.RegisterMCPTool(pluginhost.MCPTool{
+	if err := tangentHost.RegisterMCPTool(tangentplugin.MCPTool{
 		Name:        SyncTool,
 		Description: syncToolDescription,
 		InputSchema: syncToolSchema,
@@ -190,10 +189,10 @@ func (p *Plugin) Load(host plugin.Host) error {
 	// what they staged — authoring, not settling. The board interaction is
 	// still pending afterwards, which is the test for whether `resolve` would
 	// have been the right word.
-	if err := tangentHost.RegisterHTTPRoute(pluginhost.HTTPRoute{
+	if err := tangentHost.RegisterHTTPRoute(tangentplugin.HTTPRoute{
 		Method:     http.MethodPost,
 		Path:       SyncPath,
-		Capability: authz.Draft,
+		Capability: tangentplugin.CapabilityDraft,
 		Handler:    p,
 	}); err != nil {
 		return p.failLoad(err)
@@ -236,7 +235,7 @@ func (p *Plugin) Status() plugin.PluginStatus {
 // Not at Load: plugins load before the MCP server exists, because a
 // plugin-contributed envelope kind has to be in the registry the MCP server
 // reads. Holding a handle from Load would mean holding nil.
-func (p *Plugin) tools() (pluginhost.ToolCaller, error) {
+func (p *Plugin) tools() (tangentplugin.ToolCaller, error) {
 	p.mu.Lock()
 	host := p.host
 	p.mu.Unlock()

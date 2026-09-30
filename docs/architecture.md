@@ -730,7 +730,7 @@ is contained and reported (`PLUGIN_FAILED` / `PLUGIN_PANICKED` on a tool, a
 `plugin_error` refusal body on a route); one plugin's defect is not every
 caller's outage.
 
-**How a plugin drives Tangent** is one method, `pluginhost.ToolCaller`, and
+**How a plugin drives Tangent** is one method, `plugin.ToolCaller` (`pkg/plugin`), and
 that narrowness is the decision. A plugin opening a room and keeping it fresh
 is doing what an agent does, so it is the same kind of caller: `mcp.LoopbackCaller`
 connects an in-process MCP client session over the SDK's in-memory transport,

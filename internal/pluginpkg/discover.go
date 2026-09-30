@@ -113,7 +113,7 @@ func evaluate(dir, manifestPath string) (Installed, error) {
 	if err != nil {
 		return Installed{}, err
 	}
-	if err := manifest.CheckCompatible(); err != nil {
+	if err := CheckCompatible(manifest); err != nil {
 		return Installed{}, err
 	}
 

@@ -37,10 +37,9 @@ import (
 
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
-	"github.com/hollis-labs/tangent/internal/authz"
-	"github.com/hollis-labs/tangent/internal/pluginpkg"
-	"github.com/hollis-labs/tangent/internal/pluginpkg/hostclient"
 	"github.com/hollis-labs/tangent/internal/plugins/tesseract"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
+	"github.com/hollis-labs/tangent/pkg/plugin/hostclient"
 )
 
 // served adapts the plugin to the SDK's subprocess lifecycle.
@@ -122,14 +121,14 @@ var (
 // before installation, read by the host at install and at boot, and fixed from
 // then on. A RUNNING child is still never asked what it serves.
 func emitManifest(out io.Writer) error {
-	manifest := pluginpkg.Manifest{
+	manifest := tangentplugin.Manifest{
 		ID:          tesseract.ID,
 		Name:        tesseract.New().Name(),
 		Description: tesseract.New().Description(),
 		Version:     tesseract.New().Version(),
 		Protocol:    subprocess.ProtocolVersion,
 		Entrypoint:  "tangent-plugin-tesseract",
-		Tools: []pluginpkg.ToolDecl{
+		Tools: []tangentplugin.ToolDecl{
 			{
 				Name:        tesseract.OpenTool,
 				Description: tesseract.OpenToolDescription,
@@ -141,10 +140,10 @@ func emitManifest(out io.Writer) error {
 				InputSchema: string(tesseract.SyncToolSchema),
 			},
 		},
-		Routes: []pluginpkg.RouteDecl{{
+		Routes: []tangentplugin.RouteDecl{{
 			Method:     http.MethodPost,
 			Path:       tesseract.SyncPath,
-			Capability: string(authz.Draft),
+			Capability: string(tangentplugin.CapabilityDraft),
 		}},
 	}
 	if err := manifest.Validate(); err != nil {
