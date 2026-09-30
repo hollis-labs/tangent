@@ -2,14 +2,15 @@ package smoke_test
 
 import (
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// These tests hold the import boundary between Tangent's host and the plugins
-// written against it (CW-20260930-0102). They assert structure — which packages
-// a closure reaches — not a count and not a file's content.
+// This test holds the import boundary between Tangent's host and the plugins
+// written against it (CW-20260930-0102). It asserts structure — which packages
+// a closure reaches — not a count and not a file's content. The plugins
+// themselves live in github.com/hollis-labs/tangent-plugins, where Go's
+// internal rule already keeps them out of tangent/internal.
 
 const internalPrefix = "github.com/hollis-labs/tangent/internal/"
 
@@ -40,36 +41,6 @@ func TestPublicPluginSurfaceIsALeaf(t *testing.T) {
 	for _, dep := range deps {
 		if strings.HasPrefix(dep, internalPrefix) {
 			t.Errorf("pkg/plugin reaches %s; the public plugin surface must not depend on host internals", dep)
-		}
-	}
-}
-
-// TestInTreePluginsImportOnlyThePublicSurface checks each first-party plugin
-// program: the only tangent/internal package its closure may reach is its own
-// internal/plugins/<name>, which is the plugin itself.
-//
-// PR B of CW-20260930-0102 deletes this test along with the plugins: once they
-// live in their own modules, Go's internal rule enforces it for them.
-func TestInTreePluginsImportOnlyThePublicSurface(t *testing.T) {
-	programs, err := filepath.Glob(filepath.Join(repoRoot(), "cmd", "tangent-plugin-*"))
-	if err != nil {
-		t.Fatalf("glob plugin programs: %v", err)
-	}
-	if len(programs) == 0 {
-		t.Fatal("found no cmd/tangent-plugin-* program; the check would pass vacuously")
-	}
-	for _, program := range programs {
-		name := strings.TrimPrefix(filepath.Base(program), "tangent-plugin-")
-		own := internalPrefix + "plugins/" + name
-		for _, dep := range goListDeps(t, "./cmd/"+filepath.Base(program)) {
-			if !strings.HasPrefix(dep, internalPrefix) {
-				continue
-			}
-			if dep == own || strings.HasPrefix(dep, own+"/") {
-				continue
-			}
-			t.Errorf("cmd/%s reaches %s; a plugin may use pkg/plugin, not host internals",
-				filepath.Base(program), dep)
 		}
 	}
 }

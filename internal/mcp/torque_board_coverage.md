@@ -7,7 +7,8 @@ separate process, and a subprocess plugin calls back into Tangent over HTTP
 made to pass by fixing it.
 
 Its coverage did not go anywhere. Every behaviour it asserted is held, on a real
-`pluginhost` with a fake Torque at the wire, by `internal/plugins/torque`:
+`pluginhost` with a fake Torque at the wire, by the Torque plugin's own tests
+(now `torque/internal/torque` in hollis-labs/tangent-plugins):
 
 | It asserted | Now held by |
 |---|---|

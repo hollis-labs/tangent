@@ -45,5 +45,5 @@ coverage.html
 # Cerberus source-tree build lock
 .cerberus-build.lock
 
-# Built first-party plugins (`make build-plugins`)
+# Built plugin directories
 /dist/

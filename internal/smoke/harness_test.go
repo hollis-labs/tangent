@@ -178,73 +178,127 @@ func reservePort(t *testing.T) int {
 	return port
 }
 
-// installFirstPartyPlugins builds the first-party plugins and installs them
-// into a directory this test owns, then returns it.
+// firstPartyPlugins are the plugins Tangent documents as its own. Their code
+// lives in github.com/hollis-labs/tangent-plugins (CW-20260930-0102), one
+// module each; the Makefile's PLUGINS names the same three.
+var firstPartyPlugins = []string{"runner", "tesseract", "torque"}
+
+// pluginsVersionFile pins the tangent-plugins release this Tangent documents
+// and tests against. The Makefile's install-plugins reads the same file.
+const pluginsVersionFile = "tangent-plugins.version"
+
+var (
+	pluginBuildOnce sync.Once
+	pluginStaging   map[string]string
+	pluginBuildErr  error
+)
+
+// stagedFirstPartyPlugins builds each first-party plugin once per test
+// process and returns, per plugin, an installable directory: the binary beside
+// the plugin.yaml it emits.
+//
+// It builds the PINNED RELEASE by default — `go install
+// github.com/hollis-labs/tangent-plugins/<p>/cmd/tangent-plugin-<p>@<version>`,
+// exactly what `make install-plugins` does — so the gate measures what a user
+// installs, not a checkout that happens to be nearby. TANGENT_PLUGINS_SRC names
+// a tangent-plugins checkout to build from instead, for changing a plugin and
+// the document that names its tools in the same sitting.
+//
+// The pinned path needs the module proxy on a cold cache; that is the accepted
+// cost of the plugins living in their own repository.
+func stagedFirstPartyPlugins(t *testing.T) map[string]string {
+	t.Helper()
+	pluginBuildOnce.Do(func() {
+		pluginStaging, pluginBuildErr = buildFirstPartyPlugins()
+	})
+	if pluginBuildErr != nil {
+		t.Fatalf("build first-party plugins: %v", pluginBuildErr)
+	}
+	return pluginStaging
+}
+
+func buildFirstPartyPlugins() (map[string]string, error) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsVersionFile))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", pluginsVersionFile, err)
+	}
+	version := strings.TrimSpace(string(raw))
+	if !strings.HasPrefix(version, "v") {
+		return nil, fmt.Errorf("%s holds %q, not a module version", pluginsVersionFile, version)
+	}
+	source := os.Getenv("TANGENT_PLUGINS_SRC")
+
+	root, err := os.MkdirTemp("", "tangent-smoke-plugins-")
+	if err != nil {
+		return nil, err
+	}
+	staged := map[string]string{}
+	for _, name := range firstPartyPlugins {
+		dir := filepath.Join(root, "tangent.plugin."+name)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return nil, err
+		}
+		binaryName := "tangent-plugin-" + name
+		built := filepath.Join(dir, binaryName)
+
+		var build *exec.Cmd
+		if source != "" {
+			// #nosec G204 -- the checkout is the developer's own override.
+			build = exec.Command("go", "build", "-o", built, "./cmd/"+binaryName)
+			build.Dir = filepath.Join(source, name)
+		} else {
+			module := "github.com/hollis-labs/tangent-plugins/" + name + "/cmd/" + binaryName
+			// #nosec G204 -- a fixed module path at the pinned version.
+			build = exec.Command("go", "install", module+"@"+version)
+			build.Env = append(os.Environ(), "GOBIN="+dir)
+		}
+		if output, err := build.CombinedOutput(); err != nil {
+			return nil, fmt.Errorf("build %s: %w\n%s", binaryName, err, output)
+		}
+
+		// The plugin emits its own plugin.yaml, so the tool names and schemas
+		// have one source — the plugin's code — rather than a hand-written copy.
+		manifest, err := exec.Command(built, "--manifest").Output() // #nosec G204 -- just built above.
+		if err != nil {
+			return nil, fmt.Errorf("%s --manifest: %w", binaryName, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "plugin.yaml"), manifest, 0o600); err != nil {
+			return nil, err
+		}
+		staged[name] = dir
+	}
+	return staged, nil
+}
+
+// installFirstPartyPlugins installs the first-party plugins into a plugin
+// directory this test owns, and returns it.
 //
 // # Why smoke boots a COMPLETE install rather than a bare binary
 //
-// Since CW-20260911-0070 plugins are installed, not compiled in. A bare
-// `./tangent` therefore serves a smaller MCP surface than a user has — four
-// tools smaller, measured — and every document that names a plugin's tools
-// would fail the documentation gate against it.
+// Plugins are installed, not compiled in. A bare `./tangent` therefore serves a
+// smaller MCP surface than a user has, and every document that names a
+// plugin's tools would fail the documentation gate against it. Dropping those
+// tools from the documented set would measure an artifact nobody runs: the
+// product is Tangent AND its first-party plugins, and `make install-plugins` is
+// how a user gets both. So these tests install them the way a user does and
+// measure that — build (or fetch) the plugin, emit its manifest, install it,
+// discover it, spawn it, and advertise its tools.
 //
-// Two ways to resolve that, and the choice matters more than it looks.
-//
-// The first is to stop expecting those tools: drop them from the documented
-// set, and let the gate measure the binary alone. That would be measuring an
-// artifact nobody runs. The product is Tangent AND its first-party plugins;
-// `make install-plugins` is how a user gets both, and a gate that asserted
-// against something narrower would go green while the thing being shipped was
-// broken.
-//
-// The second, taken here, is to install them the way a user does and measure
-// that. It costs a build per smoke run and it buys the stronger property: these
-// tests now prove the whole path — build the plugin, emit its manifest, install
-// it, discover it, spawn it, and advertise its tools — rather than proving that
-// a binary links what it was compiled with. The migration is not something this
-// suite asserts; it is the thing it runs on.
-//
-// A plugin's tools are still documented in Tangent's own documents, and that
-// stays right while the plugins are first-party and versioned here. A
-// third-party plugin would document its own tools and the gate would have to
-// learn the difference — which is out of scope (ADR 0008 §4) and would want its
-// own decision rather than a widened glob.
+// The plugins' tools are still documented in Tangent's own documents while they
+// are first-party. A tool rename in a plugin therefore lands as a tangent-plugins
+// release plus a Tangent change that bumps tangent-plugins.version and the
+// documents together; the gate is what forces that pairing.
 func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 	t.Helper()
 	pluginDir := filepath.Join(root, "plugins")
 	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 		t.Fatalf("create plugin directory: %v", err)
 	}
-
-	for _, name := range []string{"torque", "tesseract", "runner"} {
-		staging := filepath.Join(root, "staging", name)
-		if err := os.MkdirAll(staging, 0o750); err != nil {
-			t.Fatalf("create staging directory: %v", err)
-		}
-		binaryName := "tangent-plugin-" + name
-		built := filepath.Join(staging, binaryName)
-
-		// #nosec G204 -- every argument is a literal but the temp paths this
-		// test just created.
-		build := exec.Command("go", "build", "-o", built, "../../cmd/"+binaryName)
-		build.Stderr = os.Stderr
-		if err := build.Run(); err != nil {
-			t.Fatalf("build %s: %v", binaryName, err)
-		}
-
-		// The plugin emits its own plugin.yaml, so the tool names and schemas
-		// have one source — the Go package — rather than a hand-written copy.
-		manifest, err := exec.Command(built, "--manifest").Output() // #nosec G204 -- just built above.
-		if err != nil {
-			t.Fatalf("%s --manifest: %v", binaryName, err)
-		}
-		if err := os.WriteFile(filepath.Join(staging, "plugin.yaml"), manifest, 0o600); err != nil {
-			t.Fatalf("write manifest: %v", err)
-		}
-
+	for _, name := range firstPartyPlugins {
+		staged := stagedFirstPartyPlugins(t)[name]
 		// Installed through the real command, not by copying files here. If
 		// `tangent plugin install` is broken, these tests should fail.
-		install := exec.Command(tangentBinary, "plugin", "install", staging) // #nosec G204 -- both are this test's own paths.
+		install := exec.Command(tangentBinary, "plugin", "install", staged) // #nosec G204 -- both are this test's own paths.
 		install.Env = append(os.Environ(), "TANGENT_PLUGIN_DIR="+pluginDir)
 		if output, err := install.CombinedOutput(); err != nil {
 			t.Fatalf("tangent plugin install %s: %v\n%s", name, err, output)

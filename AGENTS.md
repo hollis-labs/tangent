@@ -43,10 +43,10 @@ something new.
 - `internal/pluginhost/` + `internal/plugins/installed.go` — the ADR 0007 §4
   plugin host and the loader for the plugins this Tangent has **installed**.
   There is no compiled-in roster (`CW-20260911-0070`): each plugin is its own
-  program (`cmd/tangent-plugin-*`), installed into `~/.tangent/plugins/` with
-  `tangent plugin install` (`make install-plugins` does the first-party ones),
-  spawned as a subprocess over the plugin-sdk wire, restarted with backoff if it
-  crashes, and gated on its health. `go list -deps ./cmd/tangent` names no
+  program (`cmd/tangent-plugin-*` in tangent-plugins), installed into
+  `~/.tangent/plugins/` with `tangent plugin install` (`make install-plugins`
+  does the first-party ones), spawned as a subprocess over the plugin-sdk wire,
+  restarted with backoff if it crashes, and gated on its health. `go list -deps ./cmd/tangent` names no
   plugin: the binary is domain-free by its dependency graph. The host resolves
   an ADR 0003 manifest for the kind a plugin names and refuses the registration
   without one; a plugin authors nothing about what its kind may do. ADR 0008 is
@@ -59,16 +59,19 @@ something new.
 - `pkg/plugin/` — the public surface a plugin is written against, and the only
   Tangent package a plugin imports. The host aliases its types; it must never
   import `internal/` (`TestPublicPluginSurfaceIsALeaf`).
-- `internal/plugins/torque/` + `cmd/tangent-plugin-torque/` — the first
-  application plugin, and the only code here that knows Torque exists; it is
-  not linked into `tangent`. It is the ADR 0007 §6 pattern working: a
+- [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins)
+  — the first-party plugins (torque, tesseract, runner), one module each,
+  pinned by `tangent-plugins.version`; `make install-plugins` installs that
+  release and `make smoke` measures it. Nothing in this repository knows Torque
+  or Tesseract exists. The Torque plugin is the ADR 0007 §6 pattern working: a
   domain-free kind, a mechanical mapping in userland, one agent call in, and a
   sync button that costs no agent turn. It writes to Torque through its own
   client, with Torque's own authority — that is a plugin doing what a plugin is
   for, per [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md),
   not an exception to anything. Tesseract's plugin does the same for
-  Tesseract, and `internal/plugins/runner/` supervises agent processes for the
-  agent-turns inbox.
+  Tesseract, and the runner supervises agent processes for the agent-turns
+  inbox. `plugin.TurnsEnqueueInputSchema` is the contract the runner is tested
+  against, and `make smoke` boots the installed runner against the real tools.
 - `internal/interaction/` + `internal/roomflow/` — the durable substrate and
   the compatibility adapter every room workflow routes through. The
   interaction is the canonical record; `rooms`/`envelopes` are a projection.

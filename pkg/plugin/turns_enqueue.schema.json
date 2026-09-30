@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentTurnRequestV1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "turn_id",
+    "session_id",
+    "idempotency_key",
+    "kind",
+    "source",
+    "title",
+    "content"
+  ],
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "enum": ["1.0"]
+    },
+    "turn_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["question", "approval", "checkpoint", "failure", "terminal"]
+    },
+    "source": {
+      "type": "object",
+      "required": ["agent_id"],
+      "properties": {
+        "agent_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "application_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "agent_label": { "type": "string", "maxLength": 256 }
+      },
+      "additionalProperties": false
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "content": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 65536
+    },
+    "options": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "value"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+          "value": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "description": { "type": "string", "maxLength": 1000 },
+          "recommended": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      },
+      "maxItems": 20
+    },
+    "correlations": {
+      "type": "object",
+      "properties": {
+        "task_id": { "type": "string", "maxLength": 256 },
+        "project_id": { "type": "string", "maxLength": 256 },
+        "runtime_ref": { "type": "string", "maxLength": 256 }
+      },
+      "additionalProperties": true
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

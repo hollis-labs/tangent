@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The first-party plugins live in
+  [hollis-labs/tangent-plugins](https://github.com/hollis-labs/tangent-plugins)**
+  (`CW-20260930-0102`). `runner`, `tesseract` and `torque` are one Go module
+  each there, released as `runner/v0.1.0`, `tesseract/v0.1.0` and
+  `torque/v0.1.0` — extracted from this repository at v0.15.0 with behavior
+  unchanged, so an installed plugin upgrades in place. This repository keeps the
+  host, `pkg/plugin`, and the scaffold.
+- **`tangent-plugins.version` pins the plugin release** this Tangent documents
+  and tests against. `make install-plugins` installs exactly that release
+  (`go install …@<version>`, then `--manifest` and `tangent plugin install`),
+  and `make smoke` installs it the same way, so the documentation gate still
+  measures Tangent plus its first-party plugins. `TANGENT_PLUGINS_SRC=<checkout>`
+  builds from a local tangent-plugins checkout instead. `make build-plugins` is
+  removed; there is no plugin source here to build.
+
+### Added
+
+- **`plugin.TurnsEnqueueInputSchema`**, the schema `tangent.turns_enqueue`
+  accepts, published so a plugin that enqueues turns can test against it.
+  `TestTurnsEnqueueAdvertisesThePublishedSchema` holds it equal to the packaged
+  agent-turn request schema and to what the tool advertises.
+- **`TestInstalledRunnerCarriesATurnThroughTheInbox`** (`make smoke`): the
+  installed runner, with `cat` as the agent, carries one turn through the real
+  tools and the browser API and back. It replaces the in-process runner tests
+  that left with the runner.
+
+### Removed
+
+- `cmd/tangent-plugin-*`, `internal/plugins/{runner,tesseract,torque}`, and
+  `TestInTreePluginsImportOnlyThePublicSurface`, which only applied while the
+  plugins were in-tree; Go's internal rule now enforces it.
+
 ## [v0.15.0] - 2026-09-30
 
 The public plugin surface. Application plugins can now live outside this

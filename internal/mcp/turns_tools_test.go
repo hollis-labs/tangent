@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
@@ -15,9 +15,9 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
-	"github.com/hollis-labs/tangent/internal/plugins/runner"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/turns"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // newTurnsRig builds an MCP server over a real durable substrate with the turns
@@ -306,143 +306,48 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 	}
 }
 
-// runnerRig is a runner engine wired to the real turns tools over a loopback
-// MCP session, with the operator's side of the inbox and an agent client beside
-// it. The agent is cat: it echoes whatever the runner writes to its stdin, so an
-// answer the runner delivers comes straight back out as the agent's next turn,
-// which is what lets a test see that delivery happened.
-type runnerRig struct {
-	ctx      context.Context
-	engine   *runner.Engine
-	operator *turns.Service
-	client   *mcpsdk.ClientSession
-}
-
-func newRunnerRig(t *testing.T, sessionID, prompt string) *runnerRig {
-	t.Helper()
-	server, operator := newTurnsRig(t)
+// TestTurnsEnqueueAdvertisesThePublishedSchema is the contract a plugin that
+// enqueues turns is written against (CW-20260930-0102). The runner lives in
+// another repository, so it cannot be tested against this tool in process; it
+// validates its payloads against plugin.TurnsEnqueueInputSchema instead, and
+// this test holds that published schema equal to what the host packages and
+// what tangent.turns_enqueue actually advertises.
+func TestTurnsEnqueueAdvertisesThePublishedSchema(t *testing.T) {
+	server, _ := newTurnsRig(t)
 	client, closeClient := connectInteractionClient(t, server)
-	t.Cleanup(closeClient)
-	ctx := context.Background()
+	defer closeClient()
 
-	caller, err := server.NewLoopbackCaller(ctx)
-	if err != nil {
-		t.Fatalf("NewLoopbackCaller: %v", err)
+	decode := func(what string, raw []byte) any {
+		t.Helper()
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			t.Fatalf("decode %s: %v", what, err)
+		}
+		return value
 	}
-	t.Cleanup(func() { _ = caller.Close() })
+	published := decode("plugin.TurnsEnqueueInputSchema", plugin.TurnsEnqueueInputSchema())
 
-	engine := runner.NewEngine(nil)
-	engine.SetToolCaller(caller)
-	engine.SetReplyPollInterval(10 * time.Millisecond)
-	launched, err := engine.Launch(ctx, runner.LaunchParams{
-		SessionID: sessionID, AgentID: "agent-claude", AgentLabel: "Claude",
-		Prompt: prompt, Command: "cat", Lifecycle: runner.LifecycleStreamingStdio,
-	})
-	if err != nil {
-		t.Fatalf("Launch: %v", err)
+	if packaged := decode("the packaged agent-turn request schema", extensions.AgentTurnContractSchema()); !reflect.DeepEqual(packaged, published) {
+		t.Errorf("pkg/plugin/turns_enqueue.schema.json differs from the packaged agent-turn request schema; " +
+			"copy internal/envelope/extensions/packages/tangent.turns/agent-turn/request.schema.json over it")
 	}
-	t.Cleanup(func() {
-		_ = engine.Stop(launched.SessionID)
-		waitFor(t, 5*time.Second, "the runner's session to stop", func() bool {
-			health, healthErr := engine.Health(ctx, launched.SessionID)
-			return healthErr == nil && !health.Alive
-		})
-	})
-	return &runnerRig{ctx: ctx, engine: engine, operator: operator, client: client}
-}
 
-// nextPresented waits for a turn from sessionID other than any in seen to reach
-// the inbox and be presented, and returns it. An item is listed as pending while
-// it is still being staged; the operator acts on it once it is presented.
-func (r *runnerRig) nextPresented(t *testing.T, sessionID string, seen ...string) turns.TurnItemView {
-	t.Helper()
-	var found turns.TurnItemView
-	waitFor(t, 10*time.Second, "a turn from "+sessionID+" to reach the inbox", func() bool {
-		inbox, err := r.operator.Inbox(r.ctx)
+	listed, err := client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range listed.Tools {
+		if tool.Name != "tangent.turns_enqueue" {
+			continue
+		}
+		raw, err := json.Marshal(tool.InputSchema)
 		if err != nil {
-			return false
+			t.Fatalf("encode advertised schema: %v", err)
 		}
-	candidates:
-		for _, item := range inbox.Pending {
-			if item.SessionID != sessionID || item.State != interaction.InteractionStatePresented {
-				continue
-			}
-			for _, id := range seen {
-				if item.ItemID == id {
-					continue candidates
-				}
-			}
-			found = item
-			return true
+		if advertised := decode("the advertised schema", raw); !reflect.DeepEqual(advertised, published) {
+			t.Errorf("tangent.turns_enqueue advertises a schema other than plugin.TurnsEnqueueInputSchema:\n%s", raw)
 		}
-		return false
-	})
-	return found
-}
-
-// TestRunnerTurnsReachTheInboxThroughTheRealTool exists because the runner's own
-// tests use a caller that accepts any tool name: they passed for as long as the
-// tool they call did not exist. This one puts the runner in front of the real
-// surface, so a renamed tool, a changed argument shape or a payload the schema
-// refuses fails here.
-func TestRunnerTurnsReachTheInboxThroughTheRealTool(t *testing.T) {
-	rig := newRunnerRig(t, "sess-runner", "Please confirm you want to proceed with the deployment?")
-	item := rig.nextPresented(t, "sess-runner")
-
-	if item.SessionID != "sess-runner" || item.AgentID != "agent-claude" || item.ApplicationID != "runner" {
-		t.Errorf("runner turn identity = session %q agent %q application %q", item.SessionID, item.AgentID, item.ApplicationID)
+		return
 	}
-	if item.Kind != "approval" || !strings.Contains(item.Content, "confirm you want to proceed") {
-		t.Errorf("runner turn = kind %q content %q", item.Kind, item.Content)
-	}
-}
-
-// TestRunnerCarriesTheOperatorsAnswerBackToTheAgent is the whole loop over the
-// real tools: a turn goes out, the operator answers it in the inbox, the runner
-// finds the answer through tangent.turn_await, writes it to the agent, and
-// acknowledges it through tangent.turn_ack.
-func TestRunnerCarriesTheOperatorsAnswerBackToTheAgent(t *testing.T) {
-	const session = "sess-loop-runner"
-	rig := newRunnerRig(t, session, "Please confirm you want to proceed with the deployment?")
-	first := rig.nextPresented(t, session)
-
-	if _, err := rig.operator.Reply(rig.ctx, turns.ReplyInput{
-		ItemID: first.ItemID, ExpectedRevision: first.Revision, Action: "approve", ResponseText: "proceed",
-	}); err != nil {
-		t.Fatalf("operator Reply: %v", err)
-	}
-
-	// The answer reached the agent if the agent's next turn is the answer: cat
-	// echoes it, the sieve reads it as prose, and the runner enqueues it.
-	echoed := rig.nextPresented(t, session, first.ItemID)
-	if echoed.Content != "proceed" {
-		t.Errorf("the agent received %q, want the operator's answer %q", echoed.Content, "proceed")
-	}
-	if echoed.TurnID == first.TurnID {
-		t.Errorf("the agent's reply reused turn_id %q: the answer did not advance the turn", first.TurnID)
-	}
-
-	// And the runner acknowledged it, so the operator's own view of the turn
-	// shows the answer delivered rather than sitting queued.
-	waitFor(t, 10*time.Second, "the runner to acknowledge the delivered answer", func() bool {
-		view, err := rig.operator.InspectTurn(rig.ctx, first.ItemID)
-		return err == nil && view.DeliveryState == interaction.DeliveryStateAcknowledged
-	})
-	again := callInteractionTool[turns.AwaitResult](t, rig.client, "tangent.turn_await",
-		map[string]any{"session_id": session, "wait_ms": 0})
-	if len(again.Replies) != 0 {
-		t.Errorf("an acknowledged answer is still being offered: %#v", again)
-	}
-}
-
-func waitFor(t *testing.T, limit time.Duration, what string, done func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(limit)
-	for time.Now().Before(deadline) {
-		if done() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out after %v waiting for %s", limit, what)
+	t.Fatal("tangent.turns_enqueue is not on the surface")
 }
