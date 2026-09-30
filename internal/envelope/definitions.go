@@ -16,7 +16,7 @@ import (
 // that owns the definition registry, so there is exactly one such string:
 // internal/mcp aliases it rather than declaring its own, and
 // TestHostVersionHasOneSource asserts they have not drifted apart.
-const HostVersion = "v0.14.0"
+const HostVersion = "v0.15.0"
 
 // ProtocolVersion is the go-envelopes wire-model version definitions declare
 // compatibility against via `compatible_protocol_versions`. Upstream exposes

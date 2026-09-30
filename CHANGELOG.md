@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.15.0] - 2026-09-30
+
+The public plugin surface. Application plugins can now live outside this
+repository: everything a plugin needs from Tangent is in `pkg/plugin`, the
+first step of moving the first-party plugins to
+[hollis-labs/tangent-plugins](https://github.com/hollis-labs/tangent-plugins).
+
+### Added
+
+- **`pkg/plugin` and `pkg/plugin/hostclient`.** The plugin-facing API, as a leaf
+  package (standard library plus `plugin-sdk/subprocess` only): `ToolCaller`,
+  `ToolResult`, `ErrToolCallerUnavailable`, `MCPTool`, `HTTPRoute`,
+  `RoutePrefix`, `ToolNamespace`, `Capability` with `CapabilityView` and
+  `CapabilityDraft`, `Manifest` with `Validate`, `ToolDecl`, `RouteDecl`,
+  `ManifestName`, and `AgentTurnContractVersion`. `hostclient` is the MCP client
+  a subprocess plugin uses to reach Tangent. The definitions moved here, and
+  `internal/` aliases them, so host code is unchanged. It follows the Cerberus
+  pattern: the wire protocol comes from `plugin-sdk`, and host-specific types
+  come from the host's own `pkg/`. `plugin-sdk` stays host-neutral.
+- **`TestPublicPluginSurfaceIsALeaf`** fails if `pkg/plugin` ever reaches a
+  `tangent/internal` package. Go does not enforce that: a `pkg/` file may import
+  `internal/`, and an external plugin would then silently compile host
+  internals.
+
+### Changed
+
+- The in-tree plugins (runner, tesseract, torque) and the plugin scaffold
+  import `pkg/plugin` instead of `internal/*`. `pluginpkg`'s compatibility check
+  is now the function `pluginpkg.CheckCompatible(m)`.
+
 ## [v0.14.0] - 2026-09-30
 
 The plugin cycle, and the public repository. Tangent gains a plugin host whose
@@ -1263,6 +1293,7 @@ _None — first release._
   across restarts.
 
 [Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.14.0...HEAD
+[v0.15.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.15.0
 [v0.14.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.14.0
 [v0.13.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.13.0
 [v0.11.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.11.0
