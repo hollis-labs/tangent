@@ -161,8 +161,8 @@ the repo — Tangent is a plain binary and this is the
 whole story:
 
 ```bash
-make build && ./tangent          # serves http://localhost:7842/
-claude mcp add --transport http tangent http://localhost:7842/mcp
+make build && ./tangent          # serves http://127.0.0.1:7842/
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 Nothing else may start it. Override the port with `TANGENT_HTTP_PORT` if 7842
@@ -243,14 +243,14 @@ filtering.
 Verified against the `claude` CLI as of **2026-05-08**:
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 If your `claude` rejects `--transport http` (older versions), fall back
 to SSE — Tangent serves both:
 
 ```bash
-claude mcp add --transport sse tangent http://localhost:7842/sse
+claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 ```
 
 Confirm it registered:
@@ -613,7 +613,7 @@ Add an entry pointing at Tangent:
 {
   "mcpServers": {
     "tangent": {
-      "url": "http://localhost:7842/mcp"
+      "url": "http://127.0.0.1:7842/mcp"
     }
   }
 }
@@ -635,7 +635,7 @@ dials the already-running process, it does not launch one:
 
 ```toml
 [mcp_servers.Tangent]
-url = "http://localhost:7842/mcp"
+url = "http://127.0.0.1:7842/mcp"
 ```
 
 Per-tool approval is optional; without it Codex prompts on each call:
@@ -653,7 +653,7 @@ legacy fallback if your Codex build rejects Streamable HTTP.
 Confirm the MCP surface is up and advertises the current tool set:
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools[].name'
@@ -685,7 +685,7 @@ deploy, boot it on a scratch database and port:
 
 ```bash
 TANGENT_DB_PATH=$(mktemp -d)/t.db TANGENT_HTTP_PORT=17842 ./tangent &
-curl -fsS -X POST http://localhost:17842/mcp \
+curl -fsS -X POST http://127.0.0.1:17842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq -r '.result.tools[].name' | sort
@@ -702,19 +702,19 @@ binary still agree.
 One-shot probes for the new surfaces:
 
 ```bash
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"doc-smoke"}}}'
 
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
 
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.session_advance_phase","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
 
-curl -fsS -X POST http://localhost:7842/mcp \
+curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent.session_set_phase_output","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
 ```

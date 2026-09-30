@@ -50,8 +50,8 @@ carries the room URL back to the caller; from the log alone, construct
 
 ## 2. Wire Tangent into Claude Code
 
-Tangent serves MCP over HTTP at `http://localhost:7842/mcp` (Streamable
-HTTP) or `http://localhost:7842/sse` (legacy SSE for older clients).
+Tangent serves MCP over HTTP at `http://127.0.0.1:7842/mcp` (Streamable
+HTTP) or `http://127.0.0.1:7842/sse` (legacy SSE for older clients).
 
 Add it to Claude Code's MCP catalog. The exact `claude mcp add` syntax
 depends on your `claude` version; both shapes below worked at the time
@@ -59,10 +59,10 @@ of writing:
 
 ```bash
 # Modern (Streamable HTTP)
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 
 # Legacy (SSE — fall back to this if the modern call rejects)
-claude mcp add --transport sse tangent http://localhost:7842/sse
+claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 ```
 
 Confirm the registration with `claude mcp list` — `tangent` should
@@ -88,7 +88,7 @@ Tangent log prints the room URL (see step 1).
 
 ## 4. Open the browser and triage
 
-Paste the `http://localhost:7842/r/<roomID>` URL from the Tangent log
+Paste the `http://127.0.0.1:7842/r/<roomID>` URL from the Tangent log
 into a browser tab.
 
 > **The browser step is load-bearing, not a convenience.** Since
@@ -138,7 +138,7 @@ no errors in either log.
 ## Troubleshooting
 
 - **"Tangent didn't print a room URL"** — confirm the MCP call actually
-  reached Tangent. Hit `curl -fsS -X POST http://localhost:7842/mcp -H
+  reached Tangent. Hit `curl -fsS -X POST http://127.0.0.1:7842/mcp -H
   'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'`
   to ensure the MCP surface is up.
 - **"`claude mcp add` is rejecting `--transport http`"** — fall back to

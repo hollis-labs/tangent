@@ -31,13 +31,13 @@ response, which carries the room URL back to the caller.
 ## 2. Register Tangent in Claude Code
 
 ```bash
-claude mcp add --transport http tangent http://localhost:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
 ```
 
 Fallback for older clients:
 
 ```bash
-claude mcp add --transport sse tangent http://localhost:7842/sse
+claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 ```
 
 ## 3. Trigger a feedback call

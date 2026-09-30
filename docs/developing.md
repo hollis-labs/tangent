@@ -7,7 +7,7 @@ the scaffold — [`writing-a-plugin.md`](./writing-a-plugin.md).
 
 ## Prerequisites
 
-- **Go 1.26.1** (matches `go-envelopes`; see `go.mod`).
+- **Go** at the version `go.mod`'s `go` line names, or newer.
 - **Node 22.12.0**. The repo pins this via [`mise.toml`](../mise.toml);
   run `mise install` after cloning.
 - **`lefthook`** for the pre-commit / pre-push hooks:
@@ -22,8 +22,12 @@ git clone https://github.com/hollis-labs/tangent.git
 cd tangent
 mise install
 make install-hooks      # lefthook install — sets up pre-commit/pre-push
-cd ui && npm install && cd ..
+(cd ui && npm ci)
 ```
+
+A `go install …/cmd/tangent@<version>` builds a binary with no web UI —
+`internal/server/ui_dist/` holds only a placeholder in git, and the SPA is
+embedded by `make build` — so it is not an install path.
 
 ## Dev loop
 
