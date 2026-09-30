@@ -3,8 +3,8 @@
 // the facility CW-20260905-0031 delivers; the real install on a machine is
 // performed by the install script of CW-20260907-0020, which calls this.
 //
-//	tangent-launchagent render   --binary /path/to/tangent [--port N] [--db PATH] [--log-dir DIR]
-//	tangent-launchagent install  --binary /path/to/tangent [--port N] [--db PATH] [--log-dir DIR]
+//	tangent-launchagent render   --binary /path/to/tangent [--port N] [--db PATH] [--plugin-dir DIR] [--log-dir DIR] [--env KEY=VALUE ...]
+//	tangent-launchagent install  --binary /path/to/tangent [--port N] [--db PATH] [--plugin-dir DIR] [--log-dir DIR] [--env KEY=VALUE ...] [--replace-env]
 //	tangent-launchagent uninstall
 //	tangent-launchagent status
 //
@@ -16,6 +16,11 @@
 // not at the path the plist would hardcode. `status` re-validates that path
 // so a binary that has moved is reported rather than silently not started at
 // the next login.
+//
+// `--env` (repeatable) adds any further variable to the daemon's environment —
+// how a plugin, which reads its own environment, gets configured under launchd.
+// `install` keeps every extra variable the installed plist already carries
+// unless `--replace-env` is given, so a reinstall does not drop them.
 package main
 
 import (
@@ -63,13 +68,15 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
-  tangent-launchagent render    --binary PATH [--port N] [--db PATH] [--log-dir DIR]
-  tangent-launchagent install   --binary PATH [--port N] [--db PATH] [--log-dir DIR]
+  tangent-launchagent render    --binary PATH [--port N] [--db PATH] [--plugin-dir DIR] [--log-dir DIR] [--env KEY=VALUE ...]
+  tangent-launchagent install   --binary PATH [--port N] [--db PATH] [--plugin-dir DIR] [--log-dir DIR] [--env KEY=VALUE ...] [--replace-env]
   tangent-launchagent uninstall
   tangent-launchagent status
 
 The agent runs the headless tangent daemon at login (RunAtLoad true,
 KeepAlive false) from ~/Library/LaunchAgents/`+launchagent.Label+`.plist.
+install keeps the extra --env variables the installed plist already has
+unless --replace-env is given.
 `)
 }
 
@@ -83,8 +90,33 @@ func newConfigFlags(verb string) *configFlags {
 	f.set.StringVar(&f.cfg.Binary, "binary", "", "absolute path to the headless tangent daemon (required)")
 	f.set.IntVar(&f.cfg.Port, "port", 0, "TANGENT_HTTP_PORT for the daemon; 0 keeps the daemon default")
 	f.set.StringVar(&f.cfg.DBPath, "db", "", "TANGENT_DB_PATH for the daemon; empty keeps the daemon default")
+	f.set.StringVar(&f.cfg.PluginDir, "plugin-dir", "", "TANGENT_PLUGIN_DIR for the daemon; empty keeps the daemon default")
 	f.set.StringVar(&f.cfg.LogDir, "log-dir", "", "directory for tangent.log; empty means ~/Library/Logs/Tangent")
+	f.set.Var(envFlag{&f.cfg.Env}, "env", "KEY=VALUE for the daemon's environment; repeatable")
+	f.set.BoolVar(&f.cfg.ReplaceEnv, "replace-env", false, "install: write exactly --env instead of keeping the installed plist's extra variables")
 	return f
+}
+
+// envFlag collects repeated --env KEY=VALUE arguments into a map.
+type envFlag struct{ env *map[string]string }
+
+func (e envFlag) String() string {
+	if e.env == nil {
+		return ""
+	}
+	return fmt.Sprint(*e.env)
+}
+
+func (e envFlag) Set(assignment string) error {
+	key, value, err := launchagent.ParseEnvAssignment(assignment)
+	if err != nil {
+		return err
+	}
+	if *e.env == nil {
+		*e.env = map[string]string{}
+	}
+	(*e.env)[key] = value
+	return nil
 }
 
 func (f *configFlags) parse(args []string) error {

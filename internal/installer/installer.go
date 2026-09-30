@@ -66,6 +66,10 @@ type Layout struct {
 	DBPath string
 	// LogDir receives tangent.log; default ~/.tangent/logs.
 	LogDir string
+	// Env is further daemon environment for the LaunchAgent (plugin settings,
+	// for example). The agent keeps whatever extra variables the installed
+	// plist already carries, and Env adds to or overrides them.
+	Env map[string]string
 	// UID selects the launchd domain gui/<UID>.
 	UID int
 }
@@ -246,7 +250,7 @@ func (i *Installer) Install(ctx context.Context, artifacts Artifacts) (Report, e
 	// 6. The LaunchAgent: boot out then bootstrap, so upgrade and install are
 	//    one path and launchd always runs what is on disk.
 	agent := launchagent.Installer{Home: i.Home, UID: i.UID, Launchctl: i.Launchctl}
-	config := launchagent.Config{Binary: i.InstalledBinary(), Port: i.Port, DBPath: i.DBPath, LogDir: i.LogDir}
+	config := launchagent.Config{Binary: i.InstalledBinary(), Port: i.Port, DBPath: i.DBPath, LogDir: i.LogDir, Env: i.Env}
 	if i.DryRun {
 		i.step(&report, "launch agent: would write %s and bootout/bootstrap gui/%d/%s", launchagent.PlistPath(i.Home), i.UID, launchagent.Label)
 		i.step(&report, "after: would wait for %s/readyz and confirm the serving version is %s", i.baseURL(), artifactVersion)

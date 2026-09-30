@@ -44,7 +44,7 @@ go run ./cmd/tangent-launchagent render --binary /usr/local/bin/tangent --port 7
 # Install or update and (re)load. macOS only. Idempotent: re-running with the
 # same settings boots the agent out and bootstraps it again so launchd always
 # matches the file.
-go run ./cmd/tangent-launchagent install --binary /usr/local/bin/tangent --port 7842 [--db PATH] [--log-dir DIR]
+go run ./cmd/tangent-launchagent install --binary /usr/local/bin/tangent --port 7842 [--db PATH] [--plugin-dir DIR] [--log-dir DIR] [--env KEY=VALUE ...] [--replace-env]
 
 # Report the plist, whether launchd has it loaded, and whether the binary it
 # names is still there. Non-zero exit when the agent would not start the daemon.
@@ -59,6 +59,26 @@ The `make` targets `launch-agent-render`, `launch-agent-install`,
 `LAUNCH_AGENT_BINARY` (default: the workspace build, which is the right default
 only for `render`), `LAUNCH_AGENT_PORT` (default 7842), and optionally
 `LAUNCH_AGENT_DB`.
+
+### Plugin settings live in the daemon's environment
+
+The host holds no plugin configuration: a plugin reads its own environment,
+which it inherits from the daemon. Under launchd that means the plist's
+`EnvironmentVariables`. `--env KEY=VALUE` (repeatable, on both
+`tangent-launchagent install` and `tangent-install install`) writes a variable
+there, for example:
+
+```bash
+go run ./cmd/tangent-launchagent install --binary ~/.local/bin/tangent \
+  --env TANGENT_TESSERACT_NAMESPACES=user/<name>/memory
+```
+
+**An install keeps every extra variable the installed plist already carries**,
+whether an earlier `--env` put it there or a person added it by hand, and
+`--env` adds to or overrides them. An upgrade therefore cannot silently drop a
+plugin's configuration. `--replace-env` writes exactly the `--env` given.
+`TANGENT_HTTP_PORT`, `TANGENT_DB_PATH` and `TANGENT_PLUGIN_DIR` are not extra
+variables: they come only from `--port`, `--db` and `--plugin-dir`.
 
 ## What the plist contains
 
