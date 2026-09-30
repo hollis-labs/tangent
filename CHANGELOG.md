@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.16.0] - 2026-09-30
+
+The first-party plugins leave the repository. Tangent is now the host,
+`pkg/plugin` and the scaffold; the plugins ship from
+[hollis-labs/tangent-plugins](https://github.com/hollis-labs/tangent-plugins),
+and this release publishes the `tangent.turns_enqueue` schema the runner tests
+against.
+
 ### Changed
 
 - **The first-party plugins live in
@@ -1327,6 +1335,7 @@ _None — first release._
   across restarts.
 
 [Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.14.0...HEAD
+[v0.16.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.16.0
 [v0.15.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.15.0
 [v0.14.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.14.0
 [v0.13.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.13.0
