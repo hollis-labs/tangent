@@ -13,6 +13,18 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Loaded in the document head before the app paints, so scrollbars never
+ * reserve space or flash while React starts. Scrolling remains native. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 html,
 body,
 #root {
