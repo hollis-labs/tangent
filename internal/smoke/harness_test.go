@@ -217,6 +217,19 @@ func stagedFirstPartyPlugins(t *testing.T) map[string]string {
 	return pluginStaging
 }
 
+// Extra independently shipped plugins can be tested before their first release
+// by building a local checkout with TANGENT_PLUGINS_SRC.
+func smokePlugins() []string {
+	names := append([]string{}, firstPartyPlugins...)
+	for _, name := range strings.Fields(os.Getenv("TANGENT_SMOKE_EXTRA_PLUGINS")) {
+		if name == "" || strings.ContainsAny(name, "/\\.") {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
 func buildFirstPartyPlugins() (map[string]string, error) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsVersionFile))
 	if err != nil {
@@ -233,7 +246,7 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 		return nil, err
 	}
 	staged := map[string]string{}
-	for _, name := range firstPartyPlugins {
+	for _, name := range smokePlugins() {
 		dir := filepath.Join(root, "tangent.plugin."+name)
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, err
@@ -294,7 +307,7 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 	if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 		t.Fatalf("create plugin directory: %v", err)
 	}
-	for _, name := range firstPartyPlugins {
+	for _, name := range smokePlugins() {
 		staged := stagedFirstPartyPlugins(t)[name]
 		// Installed through the real command, not by copying files here. If
 		// `tangent plugin install` is broken, these tests should fail.

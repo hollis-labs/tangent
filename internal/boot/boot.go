@@ -610,6 +610,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		{"whiteboard", mcp.RegisterWhiteboardOnDispatcher},
 		{"dashboard", mcp.RegisterDashboardOnDispatcher},
 		{"app-board", mcp.RegisterAppBoardOnDispatcher},
+		{"external-review", mcp.RegisterExternalReviewOnDispatcher},
 		{"file-picker", mcp.RegisterFilePickerOnDispatcher},
 		{"progress-panel", mcp.RegisterProgressPanelOnDispatcher},
 		{"wizard", mcp.RegisterWizardOnDispatcher},

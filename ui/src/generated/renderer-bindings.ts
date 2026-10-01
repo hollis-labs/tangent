@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:90deb73a95303719b73624787b9ddb28b8cca28167914d904c326b05e2ab8364
+// @definition-source sha256:fa55b5c0ad2a6d97618d8551d874b2b84812c2d674a49ff85b2c7264c5e0526e
 // Run `make generate-envelopes` to regenerate.
 //
-// The renderer binding declared by each of the 21 manifests under
+// The renderer binding declared by each of the 22 manifests under
 // internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the
 // single answer to "what draws this kind"; ui/src/main.tsx is checked against
 // this table rather than being a second source of truth.
@@ -222,6 +222,22 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.docs",
     state: "available",
     contractDigest: "sha256:d5f723e61d24c275a5296cf6d4dd6fa56c372ded33822b73143d893945d9728f",
+  },
+  {
+    kind: "tangent.external-review",
+    version: "0.1",
+    rendererId: "tangent.renderer.external-review",
+    rendererClass: "react-component",
+    entry: "components/envelopes/ExternalReview#ExternalReview",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
+    component: "ExternalReviewView",
+    packageId: "tangent.review",
+    state: "available",
+    contractDigest: "sha256:3ff91000a3126d71e4a9b559faf0f5bf850f6ad6443d54c0f78f65f260b06722",
   },
   {
     kind: "tangent.feedback",

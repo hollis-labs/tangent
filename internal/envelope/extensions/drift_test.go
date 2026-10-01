@@ -138,6 +138,7 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 		"tangent.design-iteration":   definition.IsolationSandboxedFrame,
 		"tangent.diff-review":        definition.IsolationMainOrigin,
 		"tangent.doc-item":           definition.IsolationMainOrigin,
+		"tangent.external-review":    definition.IsolationMainOrigin,
 		"tangent.feedback":           definition.IsolationMainOrigin,
 		"tangent.file-picker":        definition.IsolationMainOrigin,
 		"tangent.form-collect":       definition.IsolationMainOrigin,
@@ -290,6 +291,7 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		ProgressPanelEnvelopeType:     {"tangent.generic-candidate", definition.OwnershipGenericCatalog},
 
 		ApprovalQueueEnvelopeType:     {"tangent.review", definition.OwnershipHostPackage},
+		ExternalReviewEnvelopeType:    {"tangent.review", definition.OwnershipHostPackage},
 		DiffReviewEnvelopeType:        {"tangent.review", definition.OwnershipHostPackage},
 		SpreadsheetReviewEnvelopeType: {"tangent.review", definition.OwnershipHostPackage},
 		FilePickerEnvelopeType:        {"tangent.workspace", definition.OwnershipHostPackage},

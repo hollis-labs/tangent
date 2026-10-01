@@ -80,6 +80,7 @@ var registrations = []registration{
 	{DiffReviewEnvelopeType, "tangent.review", RegisterDiffReview, false},
 	{SpreadsheetReviewEnvelopeType, "tangent.review", RegisterSpreadsheetReview, false},
 	{ApprovalQueueEnvelopeType, "tangent.review", RegisterApprovalQueue, false},
+	{ExternalReviewEnvelopeType, "tangent.review", RegisterExternalReview, false},
 	{SynthesisNotesEnvelopeType, "tangent.writing", RegisterSynthesisNotes, false},
 	{HITLItemEnvelopeType, HITLPackageID, RegisterHITLItem, false},
 	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, false},

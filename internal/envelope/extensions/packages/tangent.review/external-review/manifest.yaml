@@ -1,0 +1,43 @@
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.external-review
+version: "0.1"
+revision: 1
+title: "External review"
+description: "Review an external resource with a retained snapshot, caller notes, and explicit plugin-served actions. The plugin owns the application and reports each action outcome."
+package_id: tangent.review
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+compatibility_response_schema: absent
+
+renderer:
+  id: tangent.renderer.external-review
+  class: react-component
+  entry: "components/envelopes/ExternalReview#ExternalReview"
+  isolation: main-origin
+  component: ExternalReviewView
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.12.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: disabled
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true
