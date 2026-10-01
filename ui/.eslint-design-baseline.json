@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "recorded": "2026-10-01T20:05:08.079Z",
+  "recorded": "2026-10-01T23:30:56.668Z",
   "counts": {
     "design/no-color-literal": 1,
     "design/no-raw-palette-utility": 1228,
@@ -9,5 +9,5 @@
     "design/no-idiom-shadowing-contract": 0,
     "design/require-disable-reason": 0
   },
-  "note": "CW-20260913-0033: 123 -> 1 color literal; isolated sandbox focus ring retained"
+  "note": "CW-20261001-0534: activate CI with isolated Node 22.12-compatible parser; counts unchanged from PR73"
 }

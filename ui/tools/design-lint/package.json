@@ -1,0 +1,16 @@
+{
+  "name": "tangent-design-lint",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "devDependencies": {
+    "@hollis-labs/design-tokens": "0.2.0",
+    "@hollis-labs/eslint-config-design": "0.2.0",
+    "eslint": "9.39.5",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.4"
+  }
+}

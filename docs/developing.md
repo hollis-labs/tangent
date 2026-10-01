@@ -76,6 +76,15 @@ make build              # frontend build → embedded into Go binary → ./tange
 ./tangent
 ```
 
+## Frontend design rules
+
+Biome remains the primary frontend linter. Install the separate, locked design
+rule tooling with `npm ci --prefix ui/tools/design-lint`, then run
+`npm --prefix ui run check:design` under the pinned Node runtime. The frontend CI
+job runs this ratchet in addition to Biome. See
+[`ui/tools/design-lint/README.md`](../ui/tools/design-lint/README.md) for the
+parser isolation, exit codes, and deliberate baseline update procedure.
+
 ## Tests
 
 ```bash
