@@ -325,6 +325,7 @@ func New(cfg Config) (*Server, error) {
 		register("POST /api/docs/items/{itemID}/read", authz.Draft, docsHandler.markRead)
 		register("POST /api/docs/items/{itemID}/acknowledge", authz.Resolve, docsHandler.acknowledge)
 		register("POST /api/docs/items/{itemID}/archive", authz.Resolve, docsHandler.archive)
+		register("DELETE /api/docs/items/{itemID}", authz.Resolve, docsHandler.delete)
 	}
 
 	if cfg.Rooms != nil {

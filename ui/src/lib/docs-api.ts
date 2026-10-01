@@ -140,3 +140,11 @@ export async function archiveDoc(itemID: string, input: DocArchiveInput): Promis
     body: JSON.stringify(input),
   });
 }
+
+export async function deleteDoc(itemID: string, input: DocArchiveInput): Promise<DocItemView> {
+  return requestJSON<DocItemView>(`/api/docs/items/${encodeURIComponent(itemID)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
