@@ -7,16 +7,18 @@ import (
 	"testing"
 	"time"
 
+	gomcpclient "github.com/hollis-labs/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestStreamableHTTPNegotiatesBelow20260728AndPings is the CW-20261001-0003
-// regression: a go-sdk v1.8.0 client negotiated 2026-07-28 against the
-// stateless /mcp handler, then sent ping without the per-request _meta the
-// server requires, got 400, and Tether's proxy marked Tangent down. With
-// 2026-07-28 not advertised, the client settles on 2025-11-25, where ping
-// needs no _meta.
-func TestStreamableHTTPNegotiatesBelow20260728AndPings(t *testing.T) {
+// TestStreamableHTTPNegotiates20260728AndGoMCPClientPings covers the
+// CW-20261001-0078 follow-up to CW-20261001-0003. Tangent advertises
+// protocol 2026-07-28 again, and a go-mcp v0.14.1 client -- the version
+// Tether's proxy uses -- connects, pings and lists tools against the
+// stateless /mcp handler. go-sdk v1.8.0's bare ping still lacks the SEP-2575
+// request _meta and the server still answers it with -32602; go-mcp v0.14.1
+// counts that reply as reachable.
+func TestStreamableHTTPNegotiates20260728AndGoMCPClientPings(t *testing.T) {
 	rg := newSessionRig(t)
 	defer rg.cleanup()
 
@@ -25,24 +27,34 @@ func TestStreamableHTTPNegotiatesBelow20260728AndPings(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-protocol-test", Version: "v0.0.0"}, nil)
-	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{
-		Endpoint: srv.URL, HTTPClient: http.DefaultClient,
-	}, nil)
+
+	// The official SDK client negotiates the newest version the server offers.
+	sdk := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-protocol-test", Version: "v0.0.0"}, nil)
+	session, err := sdk.Connect(ctx, &mcpsdk.StreamableClientTransport{Endpoint: srv.URL, HTTPClient: http.DefaultClient}, nil)
 	if err != nil {
-		t.Fatalf("client.Connect: %v", err)
+		t.Fatalf("sdk client.Connect: %v", err)
 	}
 	defer func() { _ = session.Close() }()
+	if got := session.InitializeResult().ProtocolVersion; got != "2026-07-28" {
+		t.Fatalf("negotiated protocol = %q, want 2026-07-28", got)
+	}
 
-	if got := session.InitializeResult().ProtocolVersion; got != "2025-11-25" {
-		t.Fatalf("negotiated protocol = %q, want 2025-11-25", got)
+	// A go-mcp v0.14.1 client, as Tether's mux proxy dials it.
+	pool := gomcpclient.NewPool(gomcpclient.WithIdentity("tangent-protocol-test", "v0.0.0"))
+	defer func() { _ = pool.Close() }()
+	if err := pool.Register("tangent", gomcpclient.ServerConfig{Transport: "http", URL: srv.URL}); err != nil {
+		t.Fatalf("register: %v", err)
 	}
-	if pingErr := session.Ping(ctx, &mcpsdk.PingParams{}); pingErr != nil {
-		t.Fatalf("ping: %v", pingErr)
-	}
-	listed, err := session.ListTools(ctx, nil)
+	c, err := pool.Get("tangent")
 	if err != nil {
-		t.Fatalf("ListTools: %v", err)
+		t.Fatalf("get: %v", err)
+	}
+	if pingErr := c.Ping(ctx); pingErr != nil {
+		t.Fatalf("go-mcp client ping: %v", pingErr)
+	}
+	listed, err := c.ListTools(ctx)
+	if err != nil {
+		t.Fatalf("go-mcp client ListTools: %v", err)
 	}
 	if len(listed.Tools) == 0 {
 		t.Fatal("ListTools returned no tools")
