@@ -144,6 +144,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	if regErr := extensions.RegisterSpreadsheetReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterSpreadsheetReview: %v", regErr)
 	}
+	if regErr := extensions.RegisterExternalReview(envSvc); regErr != nil {
+		t.Fatalf("RegisterExternalReview: %v", regErr)
+	}
 	if regErr := extensions.RegisterApprovalQueue(envSvc); regErr != nil {
 		t.Fatalf("RegisterApprovalQueue: %v", regErr)
 	}
