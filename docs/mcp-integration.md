@@ -28,6 +28,16 @@ for the wizard flow see
 [`manual-tests/wizard-e2e.md`](./manual-tests/wizard-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
+## Operator Inbox
+
+The default browser view is a unified FIFO Inbox. Approvals, documents, agent
+turns and room workflows appear together; filters and sorting change the view,
+not arrival order. Open an item to interact with its full body. Confirmed
+responses remain available in History after refresh or reopening. Room links
+open the latest interaction in that presentation container. The browser uses
+`/api/inbox` to discover work and each kind's existing application API or
+WebSocket bridge to respond. See [the operator guide](inbox.md).
+
 ## Install
 
 The latest **git tag** is `v0.11.0`. Everything the foundation phase added —
@@ -308,7 +318,7 @@ tools:
 
 - `tangent.hitl_enqueue` stores one approval or persistent-attention item and
   immediately returns its durable `item_id`, global FIFO `queue_sequence`,
-  current `queue_position`, `/hitl`, and an item deep link.
+  current `queue_position`, `/inbox`, and an item deep link.
 - `tangent.hitl_get` retrieves the current item projection or its immutable
   terminal outcome.
 - `tangent.hitl_await` waits 0–50,000 ms (30,000 ms by default). A timeout is a
@@ -335,7 +345,7 @@ defaults to asynchronous enqueue and keeps its complete request template plus
 direct Tangent and Tether native-flat copy/paste examples in one
 [`request-shapes` reference](../.agents/skills/tangent-hitl-inbox/references/request-shapes.md).
 
-The operator opens `http://127.0.0.1:7842/hitl` (or the returned item deep
+The operator opens `http://127.0.0.1:7842/inbox` (or the returned item deep
 link). Pending approvals and attention items remain in one durable FIFO order
 while the operator inspects them; kind filters are projections of that ledger.
 Each approval is committed immediately with Approve, Deny, or the corresponding
@@ -372,12 +382,12 @@ metadata becomes previewable only through an explicitly registered
 authority/capability adapter; a path, `file:` URI, or agent's ambient access is
 never retrieval authority.
 
-## Agent turns inbox
+## Agent turns in the Inbox
 
 The turns inbox is where a running agent puts a turn it needs the operator for —
 a question, an approval, a checkpoint, a failure, or its final result — and gets
-the operator's answer back. It is a second durable FIFO on the same substrate as
-HITL, at `http://127.0.0.1:7842/turns`. The agent's side is three MCP tools; the
+the operator's answer back. It appears in the unified operator Inbox alongside approvals, documents and
+structured interactions, at `http://127.0.0.1:7842/inbox`. The agent's side is three MCP tools; the
 operator's side (reading the inbox, replying, dismissing) is the browser API and
 is deliberately not a tool.
 
@@ -582,7 +592,7 @@ The lightweight agent execution runner plugin (`CW-20260914-0005`), packaged
 outside Tangent core using `plugin-sdk`. It supervises agent subprocesses
 (Claude streaming stdio, Codex jsonrpc stdio, PTY, ACP) and extracts clean human
 conversational turns at `LiveStateIdle` (suppressing internal thinking and tool
-calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/turns`) through
+calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/inbox`) through
 `tangent.turns_enqueue`. It also supports direct delegation through Tether
 (`go-tether-client`).
 

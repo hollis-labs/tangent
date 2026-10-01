@@ -27,7 +27,7 @@ const (
 	ContractVersion   = extensions.DocItemContractVersion
 	DefinitionVersion = extensions.DocItemDefinitionVersion
 	DefaultSurfaceID  = "surface_docs_default"
-	InboxURL          = "/docs"
+	InboxURL          = "/inbox"
 )
 
 var (

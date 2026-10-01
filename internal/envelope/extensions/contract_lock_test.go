@@ -145,8 +145,8 @@ var contractLock = map[string]lockedPublication{
 		response:  definition.ResponseSchemaPresent,
 	},
 	HITLItemEnvelopeType: {
-		version: "1.1", revision: 1,
-		contract:  "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8",
+		version: "1.2", revision: 1,
+		contract:  "sha256:c2066ad73c1cfdd32e3bc2eaae2eea8cc5988105bee8e91aacecc11af489c3fd",
 		class:     definition.RendererReactComponent,
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaPresent,

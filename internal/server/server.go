@@ -84,6 +84,9 @@ type Config struct {
 	// same reason MCP and HITL are; production main always passes it.
 	Rooms RoomService
 
+	// Inbox is the unified operator projection of canonical interactions.
+	Inbox InboxService
+
 	// Channels is the channel pane's application service (CW-20260907-0017).
 	// When set, the server mounts /api/channels — the operator's send/read
 	// path over channel.Store and relay.Store. Optional in Config for the
@@ -267,6 +270,10 @@ func New(cfg Config) (*Server, error) {
 		logger.Info("WebSocket bridge ready",
 			"ws_url", fmt.Sprintf("ws://127.0.0.1:%d/ws", cfg.Port),
 		)
+	}
+
+	if cfg.Inbox != nil {
+		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
 	}
 
 	if cfg.HITL != nil {

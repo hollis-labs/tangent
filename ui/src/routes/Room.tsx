@@ -50,14 +50,21 @@ type Pending = {
   roomID: string;
 };
 
-export default function Room() {
-  const { roomID } = useParams<{ roomID: string }>();
+export default function Room({
+  roomID: suppliedRoomID,
+  embedded = false,
+}: {
+  roomID?: string;
+  embedded?: boolean;
+} = {}) {
+  const { roomID: routeRoomID } = useParams<{ roomID: string }>();
+  const roomID = suppliedRoomID ?? routeRoomID;
   const [pending, setPending] = useState<Pending | null>(null);
   // True from the moment a response or cancel goes out until the server either
   // presents something new or refuses it. The renderer stays mounted for the
   // whole of it; this only decides whether the operator can see and touch it.
   const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState<string>("waiting for envelope...");
+  const [status, setStatus] = useState<string>("Connecting to the interaction…");
   const [transport, setTransport] = useState<string>("connecting...");
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [sync, setSync] = useState<SurfaceSync | null>(null);
@@ -160,7 +167,7 @@ export default function Room() {
     setSync(null);
     setServerError(null);
     setTransport("switching rooms...");
-    setStatus("waiting for envelope...");
+    setStatus("Connecting to the interaction…");
   }, [roomID]);
 
   const handleSubmit = (response: unknown) => {
@@ -185,9 +192,9 @@ export default function Room() {
   };
 
   return (
-    <PageShell as="main" className="overflow-y-auto p-6">
+    <PageShell as={embedded ? "div" : "main"} className="overflow-y-auto p-4 sm:p-6">
       <header className="mb-4 space-y-2">
-        <h1 className="text-lg font-medium">Room {roomID}</h1>
+        {!embedded ? <h1 className="text-lg font-medium">Room {roomID}</h1> : null}
         <ConnectionStatus
           transport={transport}
           connection={connection}
@@ -197,7 +204,7 @@ export default function Room() {
           onRelease={() => lifecycleRef.current?.releaseResolver()}
           onResync={() => lifecycleRef.current?.resync()}
         />
-        <p className="text-xs text-fg-muted">status: {status}</p>
+        {!embedded && pending ? <p className="text-xs text-fg-muted">{status}</p> : null}
         {error ? <p className="text-xs text-danger">error: {error}</p> : null}
       </header>
 
@@ -210,7 +217,9 @@ export default function Room() {
         // `envelope.data`. `inert` makes "not on screen" also mean "not
         // reachable", by keyboard or by an assistive technology.
         <section className="space-y-3" hidden={submitting} inert={submitting}>
-          <div className="text-xs text-zinc-500">envelope: {pending.envelopeId}</div>
+          {!embedded ? (
+            <div className="text-xs text-zinc-500">envelope: {pending.envelopeId}</div>
+          ) : null}
           <EnvelopeRouter
             // Presentation identity, and now the only thing that resets a
             // workflow's local state. Most renderers seed `useState` from
@@ -231,7 +240,9 @@ export default function Room() {
         </section>
       ) : null}
       {!pending || submitting ? (
-        <p className="text-sm text-fg-faint">waiting for envelope...</p>
+        <p role="status" className="text-sm text-fg-faint">
+          {submitting ? "Sending your response…" : "Connecting to the interaction…"}
+        </p>
       ) : null}
     </PageShell>
   );

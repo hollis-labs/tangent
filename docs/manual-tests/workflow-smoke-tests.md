@@ -43,7 +43,7 @@ TANGENT_SMOKE_ENV=1 make smoke   # …plus the live deployment, Cerberus, and Te
 6. Keep a browser ready. Tangent logs the room **id**; the tool response
    carries the room URL, or construct `http://127.0.0.1:7842/r/<roomID>`.
 
-The durable HITL inbox is the exception: open `/hitl` directly and retain the
+The durable HITL inbox is the exception: open `/inbox` directly and retain the
 handle returned by `tangent.hitl_enqueue`; it does not create a room.
 
 ## Operator rules
@@ -194,12 +194,12 @@ Two recipes are not workflow smoke and are easy to skip. Do not skip them.
 Use the repo-local
 [`tangent-hitl-inbox` skill](../../.agents/skills/tangent-hitl-inbox/SKILL.md)
 and [`hitl-inbox-e2e.md`](./hitl-inbox-e2e.md). Enqueue returns immediately;
-retain its handle, then resolve in `/hitl` and retrieve the immutable outcome
+retain its handle, then resolve in `/inbox` and retrieve the immutable outcome
 through a later Get or Await call.
 
 | Surface | Minimal interaction | Pass if |
 | --- | --- | --- |
-| `tangent.hitl_*` + `/hitl` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
+| `tangent.hitl_*` + `/inbox` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
 
 ## Writing flow
 

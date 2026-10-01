@@ -23,8 +23,8 @@ summon a room, hand it a decision, and get a structured response back.
 - **Rooms, not sessions.** A room (`/r/<roomID>`) projects a durable
   *interaction* into a browser. Multiple tabs and callers can hold a room at
   once; exactly one holds the resolver lease.
-- **A durable `/hitl` inbox** for asynchronous approvals and persistent-
-  attention items that outlive a single agent turn — a wait can return an
+- **One default Inbox** for approvals, documents, agent turns, and structured
+  interactions, with FIFO arrival order, filters, and durable response history — a wait can return an
   inline answer or a pending receipt with a durable handle, and survives
   transport loss, timeouts, and process restart.
 - **A desktop shell.** `Tangent.app` (Wails v3) wraps the same loopback
@@ -141,6 +141,8 @@ make verify-supported  # test + lint + check-envelopes under the pinned Node
 Database operations (`--db-check`, `--db-backup`, `--db-restore`,
 `--db-repair`, `--retention-plan`, `--erase-interaction`) are documented in
 [`docs/database-operations.md`](docs/database-operations.md).
+
+Start with [`docs/inbox.md`](docs/inbox.md) for the operator guide.
 
 More: [`docs/architecture.md`](docs/architecture.md) (system shape and the
 canonical limitations list), [`docs/adr/`](docs/adr/) (accepted decision

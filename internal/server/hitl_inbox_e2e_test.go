@@ -476,7 +476,7 @@ func startJoinedHITLApp(t *testing.T, databasePath string) *joinedHITLApp {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	httpServer, serverErr := server.New(server.Config{
 		Port: 0, Logger: logger, Envelope: envelopeService, MCP: mcpServer,
-		RoomManager: manager, HITL: hitlService,
+		RoomManager: manager, HITL: hitlService, Inbox: interactions,
 	})
 	if serverErr != nil {
 		_ = database.Close()

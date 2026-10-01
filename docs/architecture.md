@@ -265,8 +265,8 @@ connection holds no capability and grants none.
 
 ### Durable HITL operator surface
 
-`internal/hitl/` owns the persistent operator inbox at `/hitl`, independently
-of room and browser lifecycles. The SPA reads a dedicated localhost API under
+`internal/hitl/` owns the approval and attention interaction semantics, independently
+of room and browser lifecycles. These items appear in the unified Inbox. The SPA reads a dedicated localhost API under
 `/api/hitl`: one snapshot supplies the global pending FIFO and a separate
 terminal history, item deep links inspect without recording caller retrievals,
 and revision-pinned present/resolve commands commit exactly one item. The
@@ -291,7 +291,7 @@ separate from both per-room `/ws` and the four caller-facing
 
 ### Durable Docs operator surface
 
-`internal/docs/` owns Tangent's third durable operator inbox, at `/docs`
+`internal/docs/` owns document review semantics within the unified Inbox
 (CW-20260917-0009). It sits on the same interaction substrate as HITL and
 Turns — its own surface (`surface_docs_default`) and kind
 (`tangent.doc-item`), not a new table — but answers a different need: a
@@ -936,7 +936,7 @@ stamp plus a drift test asserting it still matches the bundle.
 The strict HITL request/result bundle is
 `internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json`,
 and its response and error schemas are drift-tested projections of the same
-`$defs`. The dedicated `/hitl` client types live with `ui/src/lib/hitl-api.ts`
+`$defs`. The dedicated `/inbox` client types live with `ui/src/lib/hitl-api.ts`
 and the evidence component.
 
 ## Wails note (future, not shipped)
@@ -955,7 +955,7 @@ no implementation, no committed release.
 
 Implements [ADR 0004](adr/0004-caller-participant-and-room-access-authority.md).
 
-**A room URL is a locator, not a credential.** `/r/{roomID}`, the `/hitl`
+**A room URL is a locator, not a credential.** `/r/{roomID}`, the `/inbox`
 inbox, and item deep links may appear in tool responses, agent transcripts, the
 address bar, and browser history without transferring any authority. Opening
 one without a session mints a session — which is what a single-user local tool
@@ -1395,26 +1395,26 @@ events to the agent. The lack of `allow-same-origin` is intentional;
 the parent never reaches into the iframe DOM directly, and the iframe
 does not get ambient access to the app origin.
 
-## Multi-room concurrency + tab strip
+## Unified Inbox and room presentations
 
-v0.2 turns rooms into a persistent multi-room substrate rather than a
-single ephemeral handoff. The key pieces are:
+The default browser view is Inbox. Approvals, documents, agent turns and
+structured room workflows share one global arrival sequence, assigned in the
+same transaction that creates each canonical interaction. The `inbox_order`
+index stores identity and order only; requests and resolutions remain in the
+canonical substrate. Existing records are backfilled by creation time and
+insertion order. `/api/inbox` is a pure, participant-guarded authority-wide local
+projection; it claims no resolver lease and records no caller retrieval or ack.
 
-- per-room state in `internal/room`, keyed by room ID
-- room history persisted in SQLite and surfaced through
-  `tangent.session_get`
-- room phase state persisted in the same room row and updated through
-  `tangent.session_advance_phase` and
-  `tangent.session_set_phase_output`
-- room listing surfaced through `tangent.session_list`
-- a browser tab strip that polls the room list and lets the user switch
-  between `/r/<roomID>` routes without losing the shared SPA shell
+Filters, search and newest-first sorting change the view only. The default is
+pending work in FIFO order. Selecting an item opens its kind's interactive body
+in the expanding main pane. Completed items retain original request context
+and confirmed responses in History. Retention still governs the underlying
+content; browsing history is never resubmission.
 
-A room accepts several simultaneous attachments, in the roles described under
-"Connection lifecycle" above. Switching rooms in the SPA closes only that tab's
-own socket and reattaches to the next room; any other tab attached to the room
-being left keeps its connection and its ability to answer. Switching routes,
-refreshing, closing the browser, or losing transport changes connection state
-only; it does not cancel or close pending work. Reopening a room replays its
-active envelope at a fresh presentation revision. Explicit workflow
-cancellation and explicit surface/room close remain terminal operations.
+Navigation offers Inbox, Channels and Settings rather than a tab per room.
+`/inbox/items/<interactionID>` identifies an exact request. `/r/<roomID>` opens
+the latest interaction in that room, including its response if completed.
+Rooms remain presentation containers: a live structured body attaches through
+the existing WebSocket bridge, with revision checks and the resolver lease.
+Switching requests, refreshing or closing the browser does not cancel work.
+Channels' relay semantics are unchanged. See [`inbox.md`](inbox.md).

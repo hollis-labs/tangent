@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad
+// @definition-source sha256:90deb73a95303719b73624787b9ddb28b8cca28167914d904c326b05e2ab8364
 // Generated from go-envelopes v0.4.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -1153,7 +1153,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad";
+export const DEFINITION_SOURCE_DIGEST = "sha256:90deb73a95303719b73624787b9ddb28b8cca28167914d904c326b05e2ab8364";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.16.0";
@@ -1180,7 +1180,7 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
   { kind: "tangent.feedback", version: "0.3", revision: 1, manifestDigest: "sha256:c7501f59e1e40a5b1a938f668403837628fb333991b2db965df49823bfac7594", contractDigest: "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f" },
   { kind: "tangent.file-picker", version: "0.10", revision: 1, manifestDigest: "sha256:4ef3363ccedea1c8b9afa8797d64233c4ed549c9e0a408ab08bde5dba1788939", contractDigest: "sha256:8498aef3e7f1c2c4c24f2174f5be1f16a5a1403865f76effb330f35b9f4d416a" },
   { kind: "tangent.form-collect", version: "0.7", revision: 1, manifestDigest: "sha256:a64ffd6d1de303b5d37176c36799ca81c0c4d8817d21020cb2890cb918c942d7", contractDigest: "sha256:9d100eaf194cc9de56d3b8fbb1af3c16fb273760c60b81d8a023ca46645f6ebe" },
-  { kind: "tangent.hitl-item", version: "1.1", revision: 1, manifestDigest: "sha256:04dbfee39751656b5b949935e6691013e424a55500b45a4843e80b2a04436d91", contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8" },
+  { kind: "tangent.hitl-item", version: "1.2", revision: 1, manifestDigest: "sha256:f81325d298d3770dac768ced6833cd8d7fa5fc0f3f6e236918ad3356a648f24a", contractDigest: "sha256:c2066ad73c1cfdd32e3bc2eaae2eea8cc5988105bee8e91aacecc11af489c3fd" },
   { kind: "tangent.interview-question", version: "0.4", revision: 1, manifestDigest: "sha256:051e73e63187b752716bc3a5cca51d44b2561c416cedc9fcf4c47dc8d5972730", contractDigest: "sha256:1cf9d36fb09b5f7c0be436c62bfb39a2405c09491bbdb5fe4726f14d116622bb" },
   { kind: "tangent.output-render", version: "0.4", revision: 1, manifestDigest: "sha256:f6107e6ab05224e4a24e31a40baa7fe2846c383a4b440b6c8420beed1b35f5c5", contractDigest: "sha256:b074ad702ae0de8a970a690d71f5b65cd9ae56944315fb70e2c318392e553840" },
   { kind: "tangent.progress-panel", version: "0.11", revision: 1, manifestDigest: "sha256:c9ce109e5a91be742395c83ab98f98ecadf33707cbdaf04a74bda29c0cac9ace", contractDigest: "sha256:6ac28915e72d3eaf60d849e50888c2d3b3f74f3a78f27698d874e2d766296b59" },
@@ -1199,7 +1199,7 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
  * when full generation of that adapter is out of scope.
  */
 export const DEFINITION_DEFS_DIGESTS: Readonly<Record<string, string>> = {
-  "tangent.hitl-item": "sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8",
+  "tangent.hitl-item": "sha256:971b6cfba540aa3f18951b3385c229011802655244d7be417136235f3a793c17",
 };
 
 /** Stable `$defs` entry points a kind declares, and what each is for. */
