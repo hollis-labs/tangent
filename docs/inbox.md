@@ -24,6 +24,11 @@ item after refreshing shows its original request and saved response. Responses
 are read-only; viewing a previous decision does not make it again. Stored
 content remains subject to Tangent's retention policy.
 
+The document toolbar offers Mark read, Archive, Delete, Download and Copy.
+Download saves the original Markdown; Copy puts it on your clipboard. Archive
+retains the document in History. Delete removes it from Inbox and History while
+retaining its durable record and any response for the sending agent.
+
 Documents can be marked read without resolving them. A document requesting an
 acknowledgement offers that action; Archive removes an unanswered document from
 the pending queue. Dismissing an agent turn does not send the agent an answer.

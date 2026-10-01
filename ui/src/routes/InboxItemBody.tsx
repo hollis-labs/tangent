@@ -1,3 +1,4 @@
+import { Archive, Check, Copy, Download, MailCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EvidenceDrawer } from "@/components/hitl-evidence";
@@ -7,6 +8,7 @@ import {
   acknowledgeDoc,
   archiveDoc,
   type DocItemView,
+  deleteDoc,
   fetchDocItem,
   markDocRead,
 } from "@/lib/docs-api";
@@ -77,9 +79,11 @@ function useItem<T>(props: Props, fetchItem: (id: string) => Promise<T>) {
       await action();
       await refresh();
       await props.onChange();
+      return true;
     } catch (reason) {
       setError((reason as Error).message);
       await props.onChange();
+      return false;
     } finally {
       setBusy(false);
     }
@@ -196,6 +200,16 @@ function ApprovalBody(props: Props) {
 function DocumentBody(props: Props) {
   const { item, error, busy, act } = useItem<DocItemView>(props, fetchDocItem);
   const [note, setNote] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const navigate = useNavigate();
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
   if (!item)
     return (
       <p role={error ? "alert" : "status"} className="p-6">
@@ -203,8 +217,106 @@ function DocumentBody(props: Props) {
       </p>
     );
   const terminal = isTerminal(props.entry);
+  const iconClass =
+    "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-40";
+  const copy = async () => {
+    setActionError("");
+    try {
+      await navigator.clipboard.writeText(item.content_markdown);
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setActionError("Could not copy the document. Check your browser's clipboard permission.");
+    }
+  };
+  const download = () => {
+    const url = URL.createObjectURL(
+      new Blob([item.content_markdown], { type: "text/markdown;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${
+      item.title
+        .replace(/[^a-zA-Z0-9 ._-]/g, "_")
+        .trim()
+        .slice(0, 120) || "document"
+    }.md`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return (
     <article className="flex min-h-full flex-col p-4 sm:p-6 lg:p-8">
+      <div
+        className="mb-4 flex flex-wrap items-center gap-1 border-b border-border pb-3"
+        role="toolbar"
+        aria-label="Document actions"
+      >
+        <button
+          type="button"
+          aria-label={item.read_at ? "Marked read" : "Mark read"}
+          title={item.read_at ? "Marked read" : "Mark read"}
+          disabled={busy || !!item.read_at}
+          className={iconClass}
+          onClick={() => void act(() => markDocRead(item.item_id))}
+        >
+          <MailCheck size={18} />
+        </button>
+        <button
+          type="button"
+          aria-label="Archive"
+          title={terminal ? "Already in history" : "Archive"}
+          disabled={busy || terminal}
+          className={iconClass}
+          onClick={() =>
+            void act(() =>
+              archiveDoc(item.item_id, {
+                expected_revision: item.revision,
+                reason: note || undefined,
+              }),
+            )
+          }
+        >
+          <Archive size={18} />
+        </button>
+        <button
+          type="button"
+          aria-label="Delete"
+          title="Delete"
+          disabled={busy}
+          className={`${iconClass} hover:text-danger`}
+          onClick={() =>
+            void (async () => {
+              if (await act(() => deleteDoc(item.item_id, { expected_revision: item.revision })))
+                navigate("/");
+            })()
+          }
+        >
+          <Trash2 size={18} />
+        </button>
+        <span className="mx-2 h-5 border-l border-border" aria-hidden="true" />
+        <button
+          type="button"
+          aria-label="Download document"
+          title="Download Markdown"
+          className={iconClass}
+          onClick={download}
+        >
+          <Download size={18} />
+        </button>
+        <button
+          type="button"
+          aria-label="Copy document"
+          title={copied ? "Copied" : "Copy document"}
+          className={iconClass}
+          onClick={() => void copy()}
+        >
+          {copied ? <Check size={18} /> : <Copy size={18} />}
+        </button>
+        <span role="status" className="ml-2 text-xs text-fg-muted">
+          {copied ? "Copied" : ""}
+        </span>
+      </div>
       <h2 className="text-xl font-semibold">{item.title}</h2>
       <p className="mt-2 text-xs text-fg-muted">
         {item.agent_label || item.agent_id} · {item.read_at ? "Read" : "Unread"}
@@ -217,14 +329,14 @@ function DocumentBody(props: Props) {
       <div className="my-6 flex-1">
         <Markdown content={item.content_markdown} />
       </div>
-      {error ? (
+      {error || actionError ? (
         <p role="alert" className="mb-3 text-danger">
-          {error}
+          {error || actionError}
         </p>
       ) : null}
       {terminal ? (
         <SavedReply entry={props.entry} />
-      ) : (
+      ) : item.requires_ack ? (
         <div className="space-y-3 border-t border-border pt-4">
           <label className="block text-sm">
             Note (optional)
@@ -234,49 +346,20 @@ function DocumentBody(props: Props) {
               onChange={(event) => setNote(event.target.value)}
             />
           </label>
-          <div className="flex flex-wrap gap-2">
-            {!item.read_at ? (
-              <button
-                type="button"
-                disabled={busy}
-                className={buttonClass}
-                onClick={() => void act(() => markDocRead(item.item_id))}
-              >
-                Mark read
-              </button>
-            ) : null}
-            {item.requires_ack ? (
-              <button
-                type="button"
-                disabled={busy}
-                className={buttonClass}
-                onClick={() =>
-                  void act(() =>
-                    acknowledgeDoc(item.item_id, { expected_revision: item.revision, note }),
-                  )
-                }
-              >
-                Acknowledge
-              </button>
-            ) : null}
-            <button
-              type="button"
-              disabled={busy}
-              className={buttonClass}
-              onClick={() =>
-                void act(() =>
-                  archiveDoc(item.item_id, {
-                    expected_revision: item.revision,
-                    reason: note || undefined,
-                  }),
-                )
-              }
-            >
-              Archive
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={busy}
+            className={buttonClass}
+            onClick={() =>
+              void act(() =>
+                acknowledgeDoc(item.item_id, { expected_revision: item.revision, note }),
+              )
+            }
+          >
+            Acknowledge
+          </button>
         </div>
-      )}
+      ) : null}
     </article>
   );
 }

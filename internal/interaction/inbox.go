@@ -45,6 +45,7 @@ func (s *Store) listInbox(ctx context.Context) ([]InboxEntry, error) {
 	defer rollback(tx)
 	rows, err := tx.QueryContext(ctx, interactionSelect+`
 JOIN inbox_order o ON o.interaction_id = i.id
+WHERE NOT EXISTS (SELECT 1 FROM inbox_hidden_items h WHERE h.interaction_id = i.id)
 ORDER BY o.sequence`)
 	if err != nil {
 		return nil, fmt.Errorf("list inbox interactions: %w", err)
@@ -115,4 +116,41 @@ ORDER BY o.sequence`)
 		return nil, err
 	}
 	return entries, nil
+}
+
+// HideBrowserInboxItem hides a terminal request from the operator's Inbox;
+// canonical evidence and caller delivery remain available.
+func (s *Service) HideBrowserInboxItem(ctx context.Context, id string) error {
+	record, err := s.store.GetInteraction(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err = authz.Authorize(authz.Request{Kind: authz.KindCallerApplication, Scope: authz.CallerScope(""), OwnerScope: record.CallerScope, Capability: authz.View, Isolation: authz.AuthorityWide}); err != nil {
+		return err
+	}
+	switch record.State {
+	case InteractionStateResolved, InteractionStateCanceled, InteractionStateExpired, InteractionStateFailed, InteractionStateSuperseded:
+	default:
+		return fmt.Errorf("inbox: active interaction must be closed before deletion")
+	}
+	_, err = s.store.db.ExecContext(ctx, `INSERT INTO inbox_hidden_items (interaction_id) VALUES (?) ON CONFLICT(interaction_id) DO NOTHING`, id)
+	return err
+}
+
+// HiddenInboxItems returns operator visibility metadata, not interaction state.
+func (s *Service) HiddenInboxItems(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.store.db.QueryContext(ctx, `SELECT interaction_id FROM inbox_hidden_items`)
+	if err != nil {
+		return nil, err
+	}
+	defer closeRows(rows)
+	hidden := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			return nil, scanErr
+		}
+		hidden[id] = true
+	}
+	return hidden, rows.Err()
 }

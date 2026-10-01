@@ -291,11 +291,15 @@ func (s *Service) Inbox(ctx context.Context) (DocsInbox, error) {
 		return DocsInbox{}, err
 	}
 
+	hidden, err := s.interactions.HiddenInboxItems(ctx)
+	if err != nil {
+		return DocsInbox{}, err
+	}
 	digest := sha256.New()
 	_, _ = fmt.Fprintf(digest, "%s:%d", snapshot.Surface.ID, snapshot.Surface.Revision)
 
 	for _, record := range snapshot.Interactions {
-		if record.Definition.Kind != extensions.DocItemEnvelopeType {
+		if record.Definition.Kind != extensions.DocItemEnvelopeType || hidden[record.ID] {
 			continue
 		}
 		_, isRead := readAt[record.ID]
@@ -413,13 +417,7 @@ func (s *Service) Acknowledge(ctx context.Context, input AcknowledgeInput) (DocI
 	return s.InspectDoc(ctx, input.ItemID)
 }
 
-// Archive is "delete" from the operator's perspective: it hides the doc from
-// the active (Pending) queue. It cannot be called on a doc that already
-// reached a terminal state (e.g. one already acknowledged) — the durable
-// substrate makes every terminal state permanent by design, the same
-// constraint HITL's Withdraw and Turns' Dismiss already live with. An
-// acknowledged doc is already out of Pending, so there is nothing further
-// for Archive to hide.
+// Archive closes a pending document and retains it in operator history.
 func (s *Service) Archive(ctx context.Context, input ArchiveInput) (DocItemView, error) {
 	if input.ItemID == "" {
 		return DocItemView{}, fmt.Errorf("%w: item_id is required", ErrInvalidRequest)
@@ -543,4 +541,27 @@ func isTerminal(state interaction.InteractionState) bool {
 	default:
 		return false
 	}
+}
+
+// Delete removes a document from operator lists while preserving the immutable
+// interaction and its outcome for caller retrieval and delivery.
+func (s *Service) Delete(ctx context.Context, input ArchiveInput) (DocItemView, error) {
+	current, err := s.InspectDoc(ctx, input.ItemID)
+	if err != nil {
+		return DocItemView{}, err
+	}
+	if input.ExpectedRevision != current.Revision {
+		return DocItemView{}, ErrStaleRevision
+	}
+	if !isTerminal(current.State) {
+		input.Reason = "deleted by operator"
+		current, err = s.Archive(ctx, input)
+		if err != nil {
+			return DocItemView{}, err
+		}
+	}
+	if err = s.interactions.HideBrowserInboxItem(ctx, input.ItemID); err != nil {
+		return DocItemView{}, err
+	}
+	return current, nil
 }
