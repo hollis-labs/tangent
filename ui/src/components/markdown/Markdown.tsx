@@ -69,7 +69,7 @@ export function Markdown({
       data-testid={testID}
       className={cn(
         "space-y-4 text-sm leading-7 [overflow-wrap:anywhere]",
-        tone === "evidence" ? "text-[#c5cad1]" : "text-zinc-300",
+        tone === "evidence" ? "text-fg-secondary" : "text-zinc-300",
         className,
       )}
     >
@@ -80,7 +80,7 @@ export function Markdown({
         {bounded.text}
       </ReactMarkdown>
       {bounded.truncated ? (
-        <p role="status" className="border-l-2 border-[#b17c3c] pl-3 text-xs text-[#d5b486]">
+        <p role="status" className="border-l-2 border-warning pl-3 text-xs text-warning">
           {truncationNotice}
         </p>
       ) : null}
@@ -105,14 +105,14 @@ const HEADING_CLASSES = [
 
 function markdownComponents(tone: MarkdownTone, linkPolicy: MarkdownLinkPolicy): Components {
   const evidence = tone === "evidence";
-  const strongText = evidence ? "text-[#eef0f2]" : "text-zinc-100";
-  const mutedText = evidence ? "text-[#8e959f]" : "text-zinc-500";
-  const rule = evidence ? "border-[#30343b]" : "border-zinc-800";
-  const accent = evidence ? "border-[#f2b84b]" : "border-zinc-600";
-  const marker = evidence ? "marker:text-[#f2b84b]" : "marker:text-zinc-500";
-  const codeSurface = evidence ? "bg-[#1b1e23] text-[#e2e6ea]" : "bg-zinc-800 text-zinc-100";
+  const strongText = evidence ? "text-fg" : "text-zinc-100";
+  const mutedText = evidence ? "text-fg-muted" : "text-zinc-500";
+  const rule = evidence ? "border-border-subtle" : "border-zinc-800";
+  const accent = evidence ? "border-primary" : "border-zinc-600";
+  const marker = evidence ? "marker:text-primary" : "marker:text-zinc-500";
+  const codeSurface = evidence ? "bg-surface text-fg" : "bg-zinc-800 text-zinc-100";
   const blockSurface = evidence
-    ? "border-[#57606b] bg-[#0b0d10] text-[#cbd1d8]"
+    ? "border-border bg-bg text-fg-secondary"
     : "border-zinc-700 bg-zinc-950 text-zinc-100";
 
   const heading = (level: number) =>
@@ -147,7 +147,9 @@ function markdownComponents(tone: MarkdownTone, linkPolicy: MarkdownLinkPolicy):
     // not reach it; the margin here is what keeps nesting legible.
     li: ({ children }) => <li className="[&>ul]:mt-1 [&>ol]:mt-1 [&>p]:m-0">{children}</li>,
     blockquote: ({ children }) => (
-      <blockquote className={cn("border-l-2 pl-4 [&>p]:m-0", accent, evidence && "text-[#aeb4bc]")}>
+      <blockquote
+        className={cn("border-l-2 pl-4 [&>p]:m-0", accent, evidence && "text-fg-secondary")}
+      >
         {children}
       </blockquote>
     ),

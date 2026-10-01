@@ -1,0 +1,198 @@
+{
+  "components-before": {
+    "errors": [],
+    "styles": {
+      "h4": {
+        "color": "rgb(238, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(48, 52, 59)",
+        "fontSize": "16px"
+      },
+      "blockquote": {
+        "color": "rgb(174, 180, 188)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(242, 184, 75)",
+        "fontSize": "14px"
+      },
+      "pre": {
+        "color": "rgb(203, 209, 216)",
+        "background": "rgb(11, 13, 16)",
+        "border": "rgb(87, 96, 107)",
+        "fontSize": "12px"
+      },
+      "code": {
+        "color": "rgb(226, 230, 234)",
+        "background": "rgb(27, 30, 35)",
+        "border": "rgb(226, 230, 234)",
+        "fontSize": "12px"
+      },
+      "textarea": {
+        "color": "rgb(238, 240, 242)",
+        "background": "rgb(17, 19, 23)",
+        "border": "rgb(121, 167, 211)",
+        "fontSize": "14px"
+      },
+      "[aria-label=\"Submit Acknowledge and reply\"]": null,
+      "[role=\"dialog\"]": null,
+      "tbody tr:nth-child(4) td:last-child": {
+        "color": "rgb(240, 170, 166)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(240, 170, 166)",
+        "fontSize": "11px"
+      },
+      "tbody tr:nth-child(5) td:last-child": {
+        "color": "rgb(156, 216, 184)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(156, 216, 184)",
+        "fontSize": "11px"
+      }
+    }
+  },
+  "drawer-before": {
+    "errors": [],
+    "styles": {
+      "h4": {
+        "color": "rgb(238, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(48, 52, 59)",
+        "fontSize": "16px"
+      },
+      "blockquote": {
+        "color": "rgb(174, 180, 188)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(242, 184, 75)",
+        "fontSize": "14px"
+      },
+      "pre": {
+        "color": "rgb(203, 209, 216)",
+        "background": "rgb(11, 13, 16)",
+        "border": "rgb(87, 96, 107)",
+        "fontSize": "12px"
+      },
+      "code": {
+        "color": "rgb(226, 230, 234)",
+        "background": "rgb(27, 30, 35)",
+        "border": "rgb(226, 230, 234)",
+        "fontSize": "12px"
+      },
+      "textarea": null,
+      "[aria-label=\"Submit Acknowledge and reply\"]": null,
+      "[role=\"dialog\"]": {
+        "color": "rgb(215, 220, 226)",
+        "background": "rgb(13, 15, 18)",
+        "border": "rgb(52, 56, 64)",
+        "fontSize": "16px"
+      },
+      "tbody tr:nth-child(4) td:last-child": {
+        "color": "rgb(240, 170, 166)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(240, 170, 166)",
+        "fontSize": "11px"
+      },
+      "tbody tr:nth-child(5) td:last-child": {
+        "color": "rgb(156, 216, 184)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(156, 216, 184)",
+        "fontSize": "11px"
+      }
+    }
+  },
+  "components-after": {
+    "errors": [],
+    "styles": {
+      "h4": {
+        "color": "rgb(242, 244, 246)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(41, 44, 50)",
+        "fontSize": "16px"
+      },
+      "blockquote": {
+        "color": "rgb(197, 202, 209)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(242, 184, 75)",
+        "fontSize": "14px"
+      },
+      "pre": {
+        "color": "rgb(197, 202, 209)",
+        "background": "rgb(9, 10, 12)",
+        "border": "rgb(58, 62, 70)",
+        "fontSize": "12px"
+      },
+      "code": {
+        "color": "rgb(242, 244, 246)",
+        "background": "rgb(23, 25, 29)",
+        "border": "rgb(242, 244, 246)",
+        "fontSize": "12px"
+      },
+      "textarea": {
+        "color": "rgb(242, 244, 246)",
+        "background": "rgb(13, 15, 18)",
+        "border": "rgb(121, 167, 211)",
+        "fontSize": "14px"
+      },
+      "[aria-label=\"Submit Acknowledge and reply\"]": null,
+      "[role=\"dialog\"]": null,
+      "tbody tr:nth-child(4) td:last-child": {
+        "color": "rgb(217, 107, 103)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(217, 107, 103)",
+        "fontSize": "11px"
+      },
+      "tbody tr:nth-child(5) td:last-child": {
+        "color": "rgb(79, 175, 131)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(79, 175, 131)",
+        "fontSize": "11px"
+      }
+    }
+  },
+  "drawer-after": {
+    "errors": [],
+    "styles": {
+      "h4": {
+        "color": "rgb(242, 244, 246)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(41, 44, 50)",
+        "fontSize": "16px"
+      },
+      "blockquote": {
+        "color": "rgb(197, 202, 209)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(242, 184, 75)",
+        "fontSize": "14px"
+      },
+      "pre": {
+        "color": "rgb(197, 202, 209)",
+        "background": "rgb(9, 10, 12)",
+        "border": "rgb(58, 62, 70)",
+        "fontSize": "12px"
+      },
+      "code": {
+        "color": "rgb(242, 244, 246)",
+        "background": "rgb(23, 25, 29)",
+        "border": "rgb(242, 244, 246)",
+        "fontSize": "12px"
+      },
+      "textarea": null,
+      "[aria-label=\"Submit Acknowledge and reply\"]": null,
+      "[role=\"dialog\"]": {
+        "color": "rgb(197, 202, 209)",
+        "background": "rgb(13, 15, 18)",
+        "border": "rgb(58, 62, 70)",
+        "fontSize": "16px"
+      },
+      "tbody tr:nth-child(4) td:last-child": {
+        "color": "rgb(217, 107, 103)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(217, 107, 103)",
+        "fontSize": "11px"
+      },
+      "tbody tr:nth-child(5) td:last-child": {
+        "color": "rgb(79, 175, 131)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(79, 175, 131)",
+        "fontSize": "11px"
+      }
+    }
+  }
+}
