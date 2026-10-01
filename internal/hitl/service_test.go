@@ -55,7 +55,7 @@ func TestEnqueueAllocatesOneGlobalFIFOAndScopesIdempotency(t *testing.T) {
 	ids := make(map[string]bool, total)
 	for handle := range handles {
 		if handle.SurfaceID != DefaultSurfaceID || handle.ItemID == "" || handle.State != interaction.InteractionStateStaged ||
-			handle.Revision != 3 || handle.QueuePosition == nil || handle.InboxURL != "/hitl" || handle.ItemURL == "" {
+			handle.Revision != 3 || handle.QueuePosition == nil || handle.InboxURL != "/inbox" || handle.ItemURL == "" {
 			t.Errorf("invalid enqueue handle: %#v", handle)
 		}
 		if ids[handle.ItemID] {

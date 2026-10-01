@@ -705,8 +705,8 @@
             { "type": "null" }
           ]
         },
-        "inbox_url": { "type": "string", "pattern": "^/hitl(?:$|[?#])" },
-        "item_url": { "type": "string", "pattern": "^/hitl/items/[^/?#]+$" }
+        "inbox_url": { "type": "string", "pattern": "^/inbox(?:$|[?#])" },
+        "item_url": { "type": "string", "pattern": "^/inbox/items/[^/?#]+$" }
       },
       "allOf": [
         {
@@ -730,8 +730,8 @@
           "revision": 3,
           "queue_sequence": 42,
           "queue_position": 2,
-          "inbox_url": "/hitl",
-          "item_url": "/hitl/items/interaction_01K4APPROVAL"
+          "inbox_url": "/inbox",
+          "item_url": "/inbox/items/interaction_01K4APPROVAL"
         },
         {
           "contract_version": "1.0",
@@ -741,8 +741,8 @@
           "revision": 5,
           "queue_sequence": 42,
           "queue_position": null,
-          "inbox_url": "/hitl",
-          "item_url": "/hitl/items/interaction_01K4APPROVAL"
+          "inbox_url": "/inbox",
+          "item_url": "/inbox/items/interaction_01K4APPROVAL"
         }
       ]
     },

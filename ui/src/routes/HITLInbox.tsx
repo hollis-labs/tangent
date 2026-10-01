@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 type InboxView = "pending" | "history";
 type KindFilter = "all" | "approval" | "attention";
-type ComposerIntent = "approved" | "denied" | "attention-note" | "attention-reply" | null;
+export type ComposerIntent = "approved" | "denied" | "attention-note" | "attention-reply" | null;
 type PostDispositionHandoff = {
   resolvedItemID: string;
   resolvedQueueSequence: number;
@@ -694,7 +694,7 @@ interface ItemDetailProps {
   evidenceTrigger: React.RefObject<HTMLButtonElement | null>;
 }
 
-function ItemDetail(props: ItemDetailProps) {
+export function ItemDetail(props: ItemDetailProps) {
   const { item } = props;
   const request = item.request_snapshot;
   const terminal = terminalStates.has(item.state);

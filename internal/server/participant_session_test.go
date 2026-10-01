@@ -68,6 +68,7 @@ func TestKnowingARoomUUIDGrantsNothing(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/api/rooms"},
+		{http.MethodGet, "/api/inbox"},
 		{http.MethodGet, "/api/rooms/" + roomID},
 		{http.MethodPost, "/api/rooms/" + roomID + "/close"},
 		{http.MethodGet, "/api/hitl"},
@@ -222,6 +223,7 @@ func TestCrossSiteRequestsAreRefusedOnEveryPrivilegedRoute(t *testing.T) {
 		{http.MethodPost, "/mcp"},
 		{http.MethodGet, "/sse"},
 		{http.MethodGet, "/api/rooms"},
+		{http.MethodGet, "/api/inbox"},
 		{http.MethodGet, "/api/hitl"},
 	} {
 		response := app.doWithHeaders(t, probe.method, probe.path, cookie, crossSite)
@@ -335,7 +337,7 @@ func startGuardedAppWith(t *testing.T, adjust func(*server.Config)) *guardedApp 
 		Port: 0, Logger: slog.New(slog.NewTextHandler(logs, nil)),
 		Envelope: envelopeService, MCP: mcpServer, WSHandler: wsHandler,
 		RoomManager: manager, HITL: hitlService, Rooms: mcpServer, Channels: channelPane,
-		Participants: gate,
+		Participants: gate, Inbox: interactions,
 	}
 	if adjust != nil {
 		adjust(&serverConfig)

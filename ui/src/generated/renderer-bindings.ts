@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:4049e686b64e9b1376c72ab729b3b1fb16b7b35871b3b95be26c25152336e0ad
+// @definition-source sha256:90deb73a95303719b73624787b9ddb28b8cca28167914d904c326b05e2ab8364
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 21 manifests under
@@ -273,7 +273,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   },
   {
     kind: "tangent.hitl-item",
-    version: "1.1",
+    version: "1.2",
     rendererId: "tangent.renderer.hitl-inbox",
     rendererClass: "react-component",
     entry: "routes/HITLInbox#HITLInbox",
@@ -285,7 +285,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     component: "",
     packageId: "tangent.hitl",
     state: "available",
-    contractDigest: "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8",
+    contractDigest: "sha256:c2066ad73c1cfdd32e3bc2eaae2eea8cc5988105bee8e91aacecc11af489c3fd",
   },
   {
     kind: "tangent.interview-question",

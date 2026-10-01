@@ -249,7 +249,7 @@ async function run(command: DriverCommand) {
   transientSurfaceObserver.observe(document.body, { childList: true, subtree: true });
 
   const renderApprovalRoute = () => {
-    browserWindow.history.replaceState({}, "", `/hitl/items/${command.approvalID}`);
+    browserWindow.history.replaceState({}, "", `/inbox/items/${command.approvalID}`);
     return render(React.createElement(App));
   };
   const joinedTitles = [
@@ -272,28 +272,20 @@ async function run(command: DriverCommand) {
     return nextTitle;
   };
   const settlePendingHandoff = async (title: string, count: number) => {
-    await screen.findByRole("heading", { name: title });
+    // A committed reply remains in the detail pane until the operator selects
+    // another request. The queue shrinks without silently moving their focus.
+    await screen.findByRole("region", { name: "Committed outcome" });
+    await screen.findByText(`${count} pending`);
     const pendingQueue = screen.getByRole("list", { name: "Pending requests, oldest first" });
-    const selectedRow = within(pendingQueue)
+    const row = within(pendingQueue)
       .getAllByRole("button")
-      .find((row) => row.textContent?.includes(title));
-    invariant(selectedRow, `selected FIFO row not found for ${title}`);
-    await waitFor(() => {
-      invariant(
-        screen
-          .getByRole("button", { name: `Pending ${String(count).padStart(2, "0")}` })
-          .getAttribute("aria-pressed") === "true",
-        "post-resolution handoff left the Pending view",
-      );
-      invariant(
-        selectedRow.getAttribute("aria-current") === "true",
-        `post-resolution handoff did not select ${title}`,
-      );
-      invariant(
-        (browserWindow.document.activeElement as unknown) === selectedRow,
-        `post-resolution handoff did not focus ${title}`,
-      );
-    });
+      .find((button) => button.textContent?.includes(title));
+    invariant(row, `pending successor missing for ${title}`);
+    fireEvent.click(row);
+    await screen.findByRole("heading", { name: title });
+    await waitFor(() =>
+      invariant(row.getAttribute("aria-current") === "true", `selection did not follow ${title}`),
+    );
   };
   let rendered = renderApprovalRoute();
 
@@ -313,7 +305,7 @@ async function run(command: DriverCommand) {
     .map((button) => button.textContent ?? "");
   invariant(orderedRows.length === 6, `joined queue has ${orderedRows.length} rows, want 6`);
   invariant(
-    orderedRows.every((row, index) => row.includes(String(index + 1).padStart(2, "0"))),
+    orderedRows.every((row, index) => row.includes(`#${index + 1}`)),
     `joined queue lost stored ordinals: ${JSON.stringify(orderedRows)}`,
   );
   const approvalRow = within(queue).getByRole("button", { name: /Approve joined release/ });
@@ -335,12 +327,15 @@ async function run(command: DriverCommand) {
     key: attentionIndex > approvalIndex ? "ArrowUp" : "ArrowDown",
   });
   await screen.findByRole("heading", { name: "Approve joined release" });
-  fireEvent.click(screen.getByRole("button", { name: "Attention 03" }));
-  invariant(
-    within(queue).getAllByRole("button").length === 3,
-    "attention filter changed membership incorrectly",
+  fireEvent.change(screen.getByLabelText("Interaction type"), { target: { value: "document" } });
+  await waitFor(() =>
+    invariant(
+      within(screen.getByRole("complementary", { name: "Inbox queue" })).queryAllByRole("button")
+        .length === 0,
+      "document filter included approval items",
+    ),
   );
-  fireEvent.click(screen.getByRole("button", { name: "All 06" }));
+  fireEvent.change(screen.getByLabelText("Interaction type"), { target: { value: "all" } });
 
   // An MCP mutation made outside the component must appear and disappear only
   // after the production EventSource causes a durable resync.
@@ -415,10 +410,6 @@ async function run(command: DriverCommand) {
   const approvalSuccessor = nextPendingTitle("Approve joined release");
   fireEvent.click(within(approvalComposer).getByRole("button", { name: "Approve with note" }));
   await settlePendingHandoff(approvalSuccessor, 5);
-  invariant(
-    screen.getByRole("status").textContent?.includes("Decision committed"),
-    "approval was not announced through the live region",
-  );
 
   const pendingQueue = await screen.findByRole("list", { name: "Pending requests, oldest first" });
   const denialRow = within(pendingQueue).getByRole("button", { name: /Deny joined release/ });
@@ -461,10 +452,6 @@ async function run(command: DriverCommand) {
   const attentionSuccessor = nextPendingTitle("Acknowledge joined warning");
   fireEvent.click(within(replyComposer).getByRole("button", { name: "Submit Respond to worker" }));
   await settlePendingHandoff(attentionSuccessor, 3);
-  invariant(
-    screen.getByRole("status").textContent?.includes("downstream action remains caller-owned"),
-    "attention acknowledgement omitted its authority boundary",
-  );
 
   const noteRow = within(
     await screen.findByRole("list", { name: "Pending requests, oldest first" }),

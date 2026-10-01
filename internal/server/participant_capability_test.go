@@ -11,6 +11,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
 )
@@ -82,6 +83,7 @@ func buildServerForRouteCapabilityCheck(t *testing.T) *server.Server {
 	srv, err := server.New(server.Config{
 		Envelope:      envelopeService,
 		HITL:          noopHITLService{},
+		Inbox:         noopInboxService{},
 		Rooms:         noopRoomService{},
 		Channels:      noopChannelService{},
 		Effects:       broker,
@@ -153,4 +155,10 @@ type noopEffectContextResolver struct{}
 
 func (noopEffectContextResolver) ResolveEffectContext(context.Context, string) (effect.Binding, string, error) {
 	return effect.Binding{}, "", nil
+}
+
+type noopInboxService struct{}
+
+func (noopInboxService) BrowserInbox(context.Context) ([]interaction.InboxEntry, error) {
+	return []interaction.InboxEntry{}, nil
 }

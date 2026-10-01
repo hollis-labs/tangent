@@ -32,7 +32,7 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.hitl-item
-version: "1.1"
+version: "1.2"
 revision: 1
 title: "HITL inbox item"
 description: "Durable HITL inbox item: one operator-owned approval or persistent-attention interaction with typed evidence and an immutable per-item terminal outcome."

@@ -1,6 +1,6 @@
 ---
 name: tangent-hitl-inbox
-description: Use when an agent needs to enqueue one durable operator approval or persistent-attention request in Tangent's `/hitl` inbox, retain an asynchronous handle, later get/await/withdraw it, or choose between the HITL inbox and the separate approval-queue batch workflow.
+description: Use when an agent needs to enqueue one durable operator approval or persistent-attention request in Tangent's `/inbox` inbox, retain an asynchronous handle, later get/await/withdraw it, or choose between the HITL inbox and the separate approval-queue batch workflow.
 ---
 
 # Tangent HITL Inbox
@@ -40,10 +40,10 @@ outlive the originating request, connection, or Tangent process.
 - Request `source`, labels, and project/task/session correlations are immutable
   caller assertions, not authenticated identity or authorization. A trusted
   gateway binding is separate and must not rewrite them.
-- `/hitl` is one persistent FIFO ledger across agents. Selecting, filtering,
+- `/inbox` is one persistent FIFO ledger across agents. Selecting, filtering,
   reconnecting, or inspecting evidence never reorders or resolves it.
 - Tangent deliberately emits no toast or OS notification. Tell the operator to
-  open the returned `item_url` or `/hitl`; never promise ambient notification.
+  open the returned `item_url` or `/inbox`; never promise ambient notification.
 - Evidence supports bounded `markdown`, `text`, unified `diff`, read-only
   `tangent_reference`, and authority-owned `artifact_ref` metadata. Preview
   requires an explicitly supported authority/capability adapter. Never turn a
@@ -54,7 +54,7 @@ outlive the originating request, connection, or Tangent process.
 
 ## Operator smoke
 
-Open `/hitl` empty; concurrently enqueue approval and attention items from two
+Open `/inbox` empty; concurrently enqueue approval and attention items from two
 application IDs and confirm both remain pending; inspect all five evidence
 families; resolve one item; reconnect the browser; restart Tangent on the same
 database; retrieve the resolved outcome from a new MCP request; then withdraw

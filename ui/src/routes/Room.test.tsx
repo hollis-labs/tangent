@@ -71,7 +71,7 @@ describe("<Room>", () => {
   it("switches rooms on route change without remounting the client", async () => {
     mockFetchForRoom();
     renderAt("/r/room-a", true);
-    await screen.findByText("waiting for envelope...");
+    await screen.findByText("Connecting to the interaction…");
 
     fireEvent.click(screen.getByTestId("go-room-b"));
     await waitFor(() => {
@@ -641,7 +641,7 @@ describe("<Room> submissions the server refuses", () => {
     // While the answer is outstanding the pane reads as cleared — the operator
     // sees the same thing they always did — but the component is still there.
     expect(screen.getByTestId("form-collect-root")).not.toBeVisible();
-    expect(screen.getByText("waiting for envelope...")).toBeInTheDocument();
+    expect(screen.getByText("Sending your response…")).toBeInTheDocument();
 
     await act(async () => {
       handlers.onServerError?.({
@@ -713,7 +713,7 @@ describe("<Room> submissions the server refuses", () => {
     });
     fireEvent.click(screen.getByTestId("form-collect-submit"));
 
-    expect(screen.getByText("waiting for envelope...")).toBeInTheDocument();
+    expect(screen.getByText("Sending your response…")).toBeInTheDocument();
     expect(screen.getByTestId("form-collect-root")).not.toBeVisible();
     expect(screen.queryByRole("textbox", { name: /headline/i })).not.toBeInTheDocument();
   });

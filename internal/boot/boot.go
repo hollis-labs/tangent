@@ -650,6 +650,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		Turns:          turnsService,
 		Docs:           docsService,
 		Rooms:          mcpSrv,
+		Inbox:          interactionService,
 		Channels:       channelPaneService,
 		Participants:   participantGate,
 		Effects:        effectBroker,

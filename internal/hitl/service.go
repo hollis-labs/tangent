@@ -32,7 +32,7 @@ const (
 	ContractVersion   = extensions.HITLItemContractVersion
 	DefinitionVersion = extensions.HITLItemDefinitionVersion
 	DefaultSurfaceID  = "surface_hitl_default"
-	InboxURL          = "/hitl"
+	InboxURL          = "/inbox"
 	defaultWait       = 30 * time.Second
 	maximumWait       = 50 * time.Second
 	maximumRequest    = 512 * 1024

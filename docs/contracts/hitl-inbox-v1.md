@@ -11,7 +11,7 @@
 **Machine-readable contract:**
 [`packages/tangent.hitl/hitl-item/request.schema.json`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/request.schema.json)
 
-This contract defines one item in Tangent's persistent operator-owned `/hitl`
+This contract defines one item in Tangent's persistent operator-owned `/inbox`
 inbox. It covers approval and persistent-attention requests, participant
 resolutions, non-resolution terminal outcomes, stable handles, and retrieval
 projections. The four MCP operations that expose it are implemented separately;
@@ -242,7 +242,7 @@ materialization are not part of the digest.
 
 The `HITLItemHandleV1` definition specifies the immediate response. It returns
 `surface_id`, `item_id`, canonical `state`/`revision`, durable
-`queue_sequence`, projected `queue_position`, `/hitl`, and the item deep link.
+`queue_sequence`, projected `queue_position`, `/inbox`, and the item deep link.
 A first enqueue returns `staged` with an integer queue position. A duplicate
 enqueue returns the original item's current state; if it is already terminal,
 the handle carries that terminal state and `queue_position: null`. Handles do
