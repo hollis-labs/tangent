@@ -159,13 +159,22 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: |
+            ui/package-lock.json
+            ui/tools/design-lint/package-lock.json
 
       - name: Install
         run: npm ci || npm install
 
+      - name: Install design rule tooling
+        working-directory: ui/tools/design-lint
+        run: npm ci
+
       - name: Lint
         run: npm run lint
+
+      - name: Design rule ratchet
+        run: npm run check:design
 
       - name: Build
         run: npm run build
