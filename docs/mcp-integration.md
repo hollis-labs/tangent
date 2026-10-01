@@ -949,3 +949,10 @@ lifetime; every browser mints a fresh one on its next page load.
   is kept apart from stable (see "Two instances" above).
 
 For more, see the manual e2e recipe's troubleshooting section.
+
+### PR reviews through an installed plugin
+
+An installed GitHub adapter fetches a PR and maps it to the domain-free external
+review kind, submitted through `tangent.session_advance`. The room appears in the
+same Inbox as other requests. See [GitHub PR reviews](github-pr-review.md) for
+installation, the plugin tool, authentication and operator actions.

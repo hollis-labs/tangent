@@ -1418,3 +1418,12 @@ Rooms remain presentation containers: a live structured body attaches through
 the existing WebSocket bridge, with revision checks and the resolver lease.
 Switching requests, refreshing or closing the browser does not cancel work.
 Channels' relay semantics are unchanged. See [`inbox.md`](inbox.md).
+
+## External resource reviews
+
+The domain-free `tangent.external-review` kind displays a retained resource
+snapshot, agent notes, source link and plugin-served actions. Clients submit it
+through `tangent.session_advance`. The renderer accepts only same-origin plugin
+routes; the plugin owns application reads, writes, authority and revision checks.
+Opening a review never executes an action. Historical renderers run read-only
+and do not refresh or execute plugin commands. See [PR reviews](github-pr-review.md).

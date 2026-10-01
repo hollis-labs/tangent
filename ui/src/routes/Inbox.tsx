@@ -372,6 +372,7 @@ function WorkflowHistory({ entry }: { entry: InboxEntry }) {
             onSubmit={() => {}}
             onCancel={() => {}}
             roomID={record.legacy_room_id}
+            readOnly
           />
         </fieldset>
       </section>

@@ -362,6 +362,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
 	}
+	if regErr := tangentmcp.RegisterExternalReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatal(regErr)
+	}
 	if regErr := tangentmcp.RegisterAppBoardOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)

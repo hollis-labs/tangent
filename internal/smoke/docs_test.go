@@ -77,6 +77,7 @@ var wildcardFamilies = []string{
 // not MCP tools: envelope kinds, definition ids, and package ids. Documents
 // name them for good reasons, so they are excluded rather than reported.
 var nonToolMentions = map[string]bool{
+	"tangent.external-review": true,
 	// Envelope kinds are hyphenated wire names, several of which collide
 	// with a tool name spelled the same way; the ones that do are real
 	// tools and stay out of this set.
@@ -115,6 +116,41 @@ func readDoc(t *testing.T, rel string) string {
 	return body
 }
 
+// Optional plugin tools ship on their own schedule. Their manuals participate
+// in the same strict gate when the plugin is installed, rather than promising
+// an uninstalled tool in a host-only build.
+func documentsForSurface(t *testing.T, shipped map[string]bool) []string {
+	t.Helper()
+	files := append([]string{}, documentedToolFiles...)
+	matches, err := filepath.Glob(repoPath("docs", "plugins", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range matches {
+		rel, err := filepath.Rel(repoRoot(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := readDoc(t, rel)
+		header := regexp.MustCompile(`(?m)^<!-- requires-tool: (tangent\.[a-z][a-z0-9_-]*) -->$`).FindStringSubmatch(body)
+		if len(header) != 2 {
+			t.Fatalf("%s needs an installed-tool declaration", rel)
+		}
+		if shipped[header[1]] {
+			files = append(files, rel)
+		}
+	}
+	return files
+}
+
+func shippedNames(names []string) map[string]bool {
+	result := make(map[string]bool, len(names))
+	for _, name := range names {
+		result[name] = true
+	}
+	return result
+}
+
 // TestDocumentationNamesOnlyToolsTheBuildServes catches the direction that
 // costs an operator the most: a document promising a tool that is not there.
 func TestDocumentationNamesOnlyToolsTheBuildServes(t *testing.T) {
@@ -130,7 +166,7 @@ func TestDocumentationNamesOnlyToolsTheBuildServes(t *testing.T) {
 		shipped[name] = true
 	}
 
-	for _, rel := range documentedToolFiles {
+	for _, rel := range documentsForSurface(t, shipped) {
 		body := readDoc(t, rel)
 		for _, groups := range toolMention.FindAllStringSubmatch(body, -1) {
 			mention := strings.TrimRight(groups[2], "-_")
@@ -156,7 +192,7 @@ func TestEveryShippedToolIsDocumented(t *testing.T) {
 	}
 
 	var corpus strings.Builder
-	for _, rel := range documentedToolFiles {
+	for _, rel := range documentsForSurface(t, shippedNames(surface.Names)) {
 		corpus.WriteString(readDoc(t, rel))
 	}
 	// The wildcard families stand in for their members.
@@ -260,7 +296,19 @@ func TestNoDocumentPinsTheToolCount(t *testing.T) {
 		regexp.MustCompile(`(?i)` + count + `\s+MCP tools`),
 		regexp.MustCompile(`(?i)tools/list\D{0,20}` + count),
 	}
-	for _, rel := range append(documentedToolFiles, "CHANGELOG.md") {
+	files := append(append([]string{}, documentedToolFiles...), "CHANGELOG.md")
+	pluginDocs, err := filepath.Glob(repoPath("docs", "plugins", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range pluginDocs {
+		rel, err := filepath.Rel(repoRoot(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, rel)
+	}
+	for _, rel := range files {
 		body := readDoc(t, rel)
 		for _, pattern := range patterns {
 			if match := pattern.FindString(body); match != "" {

@@ -197,3 +197,10 @@ unchanged.
 `ui/src/components/envelopes/registry-smoke.test.tsx` parses both production
 registries (`internal/envelope/extensions/*.go` and `ui/src/main.tsx`) from
 source and fails if they disagree, so a workflow cannot ship on one side only.
+
+### External reviews
+
+`tangent.external-review` has no required local input or terminal input gate.
+The plugin reports remote action eligibility and errors beside its buttons.
+Finish review records a completed remote outcome; it introduces no editable
+required controls. Historical reviews render without calling plugin routes.

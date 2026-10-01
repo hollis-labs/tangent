@@ -322,3 +322,8 @@ func metaRoomID(meta map[string]any) (string, bool) {
 	s, ok := v.(string)
 	return s, ok
 }
+
+// RegisterExternalReviewOnDispatcher attaches the ordinary room bridge.
+func RegisterExternalReviewOnDispatcher(dispatcher *envelope.Dispatcher, handler *TriageHandler) error {
+	return dispatcher.Register("tangent.external-review", envelope.HandlerFunc(handler.Handle))
+}
