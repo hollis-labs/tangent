@@ -366,7 +366,13 @@ function WorkflowHistory({ entry }: { entry: InboxEntry }) {
       </section>
       <section>
         <h3 className="mb-3 font-medium">Original request</h3>
-        <fieldset disabled inert className="min-w-0">
+        {/* ExternalReview honors readOnly itself; inert would also block its source link
+            and text selection. Other renderers still need the interaction guard. */}
+        <fieldset
+          disabled
+          inert={record.definition_binding.kind !== "tangent.external-review"}
+          className="min-w-0"
+        >
           <EnvelopeRouter
             envelope={envelope}
             onSubmit={() => {}}

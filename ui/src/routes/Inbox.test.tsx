@@ -132,3 +132,16 @@ describe("unified Inbox", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Server unavailable"));
   });
 });
+
+it("keeps external review history selectable while its renderer is read-only", async () => {
+  const review = entry("review-history", 1, "tangent.external-review");
+  review.interaction.state = "resolved";
+  review.interaction.legacy_room_id = "review-room";
+  review.interaction.legacy_envelope_id = "review-envelope";
+  fetchInbox.mockResolvedValue([review]);
+  renderInbox("/inbox/items/review-history");
+  const original = await screen.findByText("Original workflow request");
+  const wrapper = original.closest("fieldset");
+  expect(wrapper).not.toHaveAttribute("inert");
+  expect(wrapper).toHaveAttribute("disabled");
+});
