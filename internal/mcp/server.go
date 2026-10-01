@@ -310,7 +310,16 @@ func New(
 		return nil, fmt.Errorf("mcp: room manager is required")
 	}
 
-	mcpServer := gmcpserver.NewServer(implementationName, implementationVersion)
+	// Advertise protocol versions up to 2025-11-25 only, not 2026-07-28.
+	// The go-sdk v1.8.0 client negotiates 2026-07-28 against this stateless
+	// /mcp handler and then sends ping without the SEP-2575
+	// `_meta["io.modelcontextprotocol/protocolVersion"]` that the same SDK's
+	// server requires on every call, so the ping is rejected with 400 and a
+	// go-mcp client (Tether's proxy) marks Tangent down (CW-20261001-0003).
+	// Remove this once the client attaches the _meta to ping
+	// (CW-20261001-0078).
+	mcpServer := gmcpserver.NewServer(implementationName, implementationVersion,
+		gmcpserver.WithSupportedProtocolVersions(supportedProtocolVersions))
 	s := &Server{
 		envSvc:      envSvc,
 		dispatcher:  dispatcher,
@@ -388,6 +397,10 @@ func (s *Server) MCP() *mcpsdk.Server { return s.mcp.SDKServer() }
 // forcing it is the whole point of the trade-off documented above — go-mcp
 // deliberately leaves prompts, resources, and every transport not common to
 // every consumer for a caller to drive directly against SDKServer().
+// supportedProtocolVersions is the MCP protocol versions Tangent negotiates;
+// see the NewServer call for why 2026-07-28 is left out.
+var supportedProtocolVersions = []string{"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
+
 func (s *Server) HTTPHandler() http.Handler {
 	return mcpsdk.NewStreamableHTTPHandler(
 		func(*http.Request) *mcpsdk.Server { return s.mcp.SDKServer() },
