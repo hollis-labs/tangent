@@ -77,4 +77,19 @@ func TestBrowserInboxOrdersAcrossSurfacesAndPreservesReplies(t *testing.T) {
 	if again[0].Resolution == nil || again[0].Sequence != entries[0].Sequence || string(again[0].Resolution.ResponsePayload) != string(entries[0].Resolution.ResponsePayload) {
 		t.Fatal("restart lost response or FIFO identity")
 	}
+	if err = restarted.HideBrowserInboxItem(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.HideBrowserInboxItem(ctx, ids[1]); err == nil {
+		t.Fatal("hid an active request")
+	}
+	entries, err = service.BrowserInbox(ctx)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("durable hidden inbox: %v, %v", entries, err)
+	}
+	hidden, err := service.HiddenInboxItems(ctx)
+	if err != nil || !hidden[ids[0]] {
+		t.Fatal("lost persistent visibility metadata")
+	}
+
 }

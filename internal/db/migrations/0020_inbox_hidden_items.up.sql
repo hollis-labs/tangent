@@ -1,0 +1,4 @@
+CREATE TABLE inbox_hidden_items (
+  interaction_id TEXT PRIMARY KEY REFERENCES interactions(id) ON DELETE CASCADE,
+  hidden_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

@@ -29,6 +29,7 @@ type DocsService interface {
 	MarkRead(context.Context, string) (docs.DocItemView, error)
 	Acknowledge(context.Context, docs.AcknowledgeInput) (docs.DocItemView, error)
 	Archive(context.Context, docs.ArchiveInput) (docs.DocItemView, error)
+	Delete(context.Context, docs.ArchiveInput) (docs.DocItemView, error)
 }
 
 type docsHTTPHandler struct {
@@ -107,6 +108,24 @@ func (h *docsHTTPHandler) archive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	item, err := h.service.Archive(r.Context(), docs.ArchiveInput{
+		ItemID:           r.PathValue("itemID"),
+		ExpectedRevision: cmd.ExpectedRevision,
+		Reason:           cmd.Reason,
+	})
+	if err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	writeDocsJSON(w, http.StatusOK, item)
+}
+
+func (h *docsHTTPHandler) delete(w http.ResponseWriter, r *http.Request) {
+	var cmd docsArchiveCommand
+	if err := decodeDocsCommand(w, r, &cmd); err != nil {
+		writeDocsError(w, err)
+		return
+	}
+	item, err := h.service.Delete(r.Context(), docs.ArchiveInput{
 		ItemID:           r.PathValue("itemID"),
 		ExpectedRevision: cmd.ExpectedRevision,
 		Reason:           cmd.Reason,
