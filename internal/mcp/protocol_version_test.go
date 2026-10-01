@@ -42,8 +42,8 @@ func TestStreamableHTTPNegotiates20260728AndGoMCPClientPings(t *testing.T) {
 	// A go-mcp v0.14.1 client, as Tether's mux proxy dials it.
 	pool := gomcpclient.NewPool(gomcpclient.WithIdentity("tangent-protocol-test", "v0.0.0"))
 	defer func() { _ = pool.Close() }()
-	if err := pool.Register("tangent", gomcpclient.ServerConfig{Transport: "http", URL: srv.URL}); err != nil {
-		t.Fatalf("register: %v", err)
+	if regErr := pool.Register("tangent", gomcpclient.ServerConfig{Transport: "http", URL: srv.URL}); regErr != nil {
+		t.Fatalf("register: %v", regErr)
 	}
 	c, err := pool.Get("tangent")
 	if err != nil {
