@@ -20,8 +20,8 @@ export function DiffEvidence({ content, label, baseLabel, headLabel }: DiffEvide
   const visible = parsed.slice(0, HITL_EVIDENCE_LIMITS.renderedDiffLines);
   const truncated = bounded.truncated || visible.length < parsed.length;
   return (
-    <div className="overflow-hidden border border-[#30343b] bg-[#0b0d10]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#30343b] px-3 py-2 font-mono text-[10px] text-[#8e959f]">
+    <div className="overflow-hidden border border-border-subtle bg-bg">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle px-3 py-2 font-mono text-[10px] text-fg-muted">
         <span>{baseLabel || "base"}</span>
         <span aria-hidden="true">→</span>
         <span>{headLabel || "head"}</span>
@@ -33,13 +33,13 @@ export function DiffEvidence({ content, label, baseLabel, headLabel }: DiffEvide
             {visible.map((line, index) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: parsed diff lines are immutable and never reordered
               <tr key={index} className={diffRowClass(line.kind)}>
-                <td className="w-10 select-none border-r border-[#292c32] px-2 text-right align-top text-[#69717b]">
+                <td className="w-10 select-none border-r border-border-subtle px-2 text-right align-top text-fg-faint">
                   {line.oldLine ?? ""}
                 </td>
-                <td className="w-10 select-none border-r border-[#292c32] px-2 text-right align-top text-[#69717b]">
+                <td className="w-10 select-none border-r border-border-subtle px-2 text-right align-top text-fg-faint">
                   {line.newLine ?? ""}
                 </td>
-                <td className="min-w-full whitespace-pre px-3 align-top text-[#c5cad1]">
+                <td className="min-w-full whitespace-pre px-3 align-top text-fg-secondary">
                   {line.content}
                 </td>
               </tr>
@@ -50,7 +50,7 @@ export function DiffEvidence({ content, label, baseLabel, headLabel }: DiffEvide
       {truncated ? (
         <p
           role="status"
-          className="border-t border-[#5b4729] bg-[#17130d] px-3 py-2 text-xs text-[#d5b486]"
+          className="border-t border-warning bg-warning-muted px-3 py-2 text-xs text-warning"
         >
           Diff display stopped at Tangent’s safe size boundary.
         </p>
@@ -104,15 +104,15 @@ function parseUnifiedDiff(content: string): DiffLine[] {
 function diffRowClass(kind: DiffLine["kind"]): string {
   switch (kind) {
     case "addition":
-      return "bg-[#102019] [&>td:last-child]:text-[#9cd8b8]";
+      return "bg-success-muted [&>td:last-child]:text-success";
     case "deletion":
-      return "bg-[#241415] [&>td:last-child]:text-[#f0aaa6]";
+      return "bg-danger-muted [&>td:last-child]:text-danger";
     case "hunk":
-      return "bg-[#141b24] [&>td:last-child]:text-[#91b7dc]";
+      return "bg-info-muted [&>td:last-child]:text-info";
     case "header":
-      return "bg-[#15181d] font-semibold [&>td:last-child]:text-[#d7dce2]";
+      return "bg-surface font-semibold [&>td:last-child]:text-fg-secondary";
     case "notice":
-      return "italic [&>td:last-child]:text-[#a8afb8]";
+      return "italic [&>td:last-child]:text-fg-muted";
     default:
       return "";
   }

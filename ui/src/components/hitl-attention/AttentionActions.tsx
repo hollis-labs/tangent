@@ -49,16 +49,16 @@ export function AttentionActions({
 
   return (
     <div>
-      <p id="hitl-attention-effect" className="mb-3 max-w-lg text-xs leading-5 text-[#8e959f]">
+      <p id="hitl-attention-effect" className="mb-3 max-w-lg text-xs leading-5 text-fg-muted">
         {preparing
           ? "Preparing an exact acknowledgement revision…"
           : "Acknowledgement records receipt only. It does not accept work or perform an external action."}
       </p>
       {intent ? (
-        <div className="border-l-2 border-[#79a7d3] pl-4">
+        <div className="border-l-2 border-info pl-4">
           <label
             htmlFor="hitl-attention-composer"
-            className="block text-xs font-medium text-[#d7dce2]"
+            className="block text-xs font-medium text-fg-secondary"
           >
             {intent === "reply" ? "Reply to caller" : "Acknowledgement note"}
           </label>
@@ -71,7 +71,7 @@ export function AttentionActions({
             onChange={(event) => onValueChange(event.target.value)}
             aria-invalid={Boolean(error)}
             aria-describedby={describedBy}
-            className="mt-2 w-full resize-y border border-[#3a3e46] bg-[#111317] px-3 py-2 text-sm leading-6 text-[#eef0f2] outline-none placeholder:text-[#8e959f] focus:border-[#79a7d3] focus:ring-1 focus:ring-[#79a7d3]"
+            className="mt-2 w-full resize-y border border-border bg-bg-elevated px-3 py-2 text-sm leading-6 text-fg outline-none placeholder:text-fg-muted focus:border-info focus:ring-1 focus:ring-info"
             placeholder={
               intent === "reply"
                 ? "Write the reply the caller should receive…"
@@ -79,7 +79,7 @@ export function AttentionActions({
             }
           />
           {error ? (
-            <p id="hitl-attention-composer-error" className="mt-1 text-xs text-[#ef9a95]">
+            <p id="hitl-attention-composer-error" className="mt-1 text-xs text-danger">
               {error}
             </p>
           ) : null}
@@ -169,11 +169,11 @@ function AttentionButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "min-h-10 border px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#79a7d3] disabled:cursor-not-allowed disabled:opacity-45",
+        "min-h-10 border px-3 py-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-info disabled:cursor-not-allowed disabled:opacity-45",
         variant === "signal" &&
-          "border-[#79a7d3] bg-[#79a7d3] text-[#071018] hover:border-[#92b9dd] hover:bg-[#92b9dd]",
+          "border-info bg-info text-info-fg hover:border-info/90 hover:bg-info/90",
         variant === "quiet" &&
-          "border-[#3a3e46] bg-[#17191d] text-[#c5cad1] hover:border-[#79a7d3] hover:text-white",
+          "border-border bg-surface text-fg-secondary hover:border-info hover:text-fg",
       )}
     >
       {label}
