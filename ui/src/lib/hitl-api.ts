@@ -1,6 +1,6 @@
 // Hand-written adapter over the `tangent.hitl-item` v1 `$defs` bundle.
 //
-// @definition-source sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8
+// @definition-source sha256:971b6cfba540aa3f18951b3385c229011802655244d7be417136235f3a793c17
 //
 // This file is NOT generated, and the stamp above is the whole reason it is
 // safe for it not to be. ADR 0003 §4.7 names it as the highest-risk
@@ -34,7 +34,7 @@ import type { HITLEvidence } from "@/components/hitl-evidence";
  * comment is what a reader sees and this is what CI sees.
  */
 export const HITL_API_DEFINITION_SOURCE =
-  "sha256:defc3bb48c44847d2aa49e8d4df1a0b4a5a0ccfae53b057ab33ac8668ecaded8";
+  "sha256:971b6cfba540aa3f18951b3385c229011802655244d7be417136235f3a793c17";
 
 export type HITLState =
   | "submitted"

@@ -140,8 +140,8 @@ func TestDefinitionRegistryListIsPagedAndCarriesTheSourceDigest(t *testing.T) {
 	}
 	callDefinitionTool(t, client, "tangent.definition_registry_list",
 		map[string]any{"package_id": "tangent.review"}, &review)
-	if review.Total != 3 {
-		t.Fatalf("tangent.review holds %d definitions, want 3", review.Total)
+	if review.Total != 4 {
+		t.Fatalf("tangent.review holds %d definitions, want 4", review.Total)
 	}
 	for _, entry := range review.Definitions {
 		if entry.PackageID != "tangent.review" {

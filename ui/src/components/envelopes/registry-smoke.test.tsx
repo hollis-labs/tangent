@@ -39,6 +39,8 @@ const MAIN_TSX = join(REPO_ROOT, "ui", "src", "main.tsx");
  * affordance. Anything NOT listed here must render a SubmitGateNotice.
  */
 const NO_TERMINAL_GATE: Record<string, string> = {
+  "tangent.external-review":
+    "plugin actions have no required local input; remote eligibility is reported by the plugin",
   "tangent.synthesis-notes": "read-only acknowledgement; no editable controls",
   "tangent.output-render": "read-only acknowledgement; no editable controls",
   "tangent.dashboard": "submitting an unchanged dashboard is a legitimate outcome",

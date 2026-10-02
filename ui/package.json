@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "test": "vitest --passWithNoTests",
     "theme:gen": "node scripts/gen-tangent-theme.mjs > src/styles/tangent-theme.css && biome format --write src/styles/tangent-theme.css",
-    "theme:verify": "node scripts/verify-derivation.mjs"
+    "theme:verify": "node scripts/verify-derivation.mjs",
+    "check:design": "node tools/design-lint/node_modules/@hollis-labs/eslint-config-design/scripts/biome-check.mjs src",
+    "check:design:update": "node tools/design-lint/node_modules/@hollis-labs/eslint-config-design/scripts/biome-check.mjs --update src"
   },
   "dependencies": {
     "@hollis-labs/design-app-runtime": "^0.1.0",
@@ -35,7 +37,8 @@
     "tailwind-merge": "^3.6.0",
     "tldraw": "^5.4.1",
     "zod": "^4.6.1",
-    "zustand": "^5.0.15"
+    "zustand": "^5.0.15",
+    "@base-ui/react": "^1.8.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",

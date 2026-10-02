@@ -31,6 +31,7 @@ import {
   type DiffReviewEnvelope,
   type DiffReviewResponse,
 } from "./components/envelopes/DiffReview";
+import { ExternalReview } from "./components/envelopes/ExternalReview";
 import {
   Feedback,
   type FeedbackEnvelope,
@@ -311,6 +312,7 @@ function SynthesisNotesAdapter({ envelope, onSubmit, onCancel }: EnvelopeCompone
   );
 }
 
+register("tangent.external-review", ExternalReview);
 register("tangent.triage", TriageAdapter);
 register("tangent.approval-queue", ApprovalQueueAdapter);
 register("tangent.feedback", FeedbackAdapter);

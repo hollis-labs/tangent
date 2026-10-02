@@ -15,7 +15,7 @@ Copy this prompt and replace the bracketed values:
 
 ```text
 Use `tangent.hitl_enqueue` to place one durable [approval|attention] item in
-Tangent's `/hitl` inbox. Use a stable idempotency key for this logical request.
+Tangent's `/inbox` inbox. Use a stable idempotency key for this logical request.
 Title: [short operator label]
 Summary: [what happened and why it matters]
 Request: [the exact decision or acknowledgement needed]

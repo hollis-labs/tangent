@@ -43,7 +43,7 @@ TANGENT_SMOKE_ENV=1 make smoke   # …plus the live deployment, Cerberus, and Te
 6. Keep a browser ready. Tangent logs the room **id**; the tool response
    carries the room URL, or construct `http://127.0.0.1:7842/r/<roomID>`.
 
-The durable HITL inbox is the exception: open `/hitl` directly and retain the
+The durable HITL inbox is the exception: open `/inbox` directly and retain the
 handle returned by `tangent.hitl_enqueue`; it does not create a room.
 
 ## Operator rules
@@ -165,6 +165,7 @@ workflow with the full seeded example from the linked doc.
 | `tangent.spreadsheet-review` | [`spreadsheet-review-e2e.md`](./spreadsheet-review-e2e.md) | Filter or select one row, add one note or action, then submit. | Agent receives the selected row state and reopening shows the accepted review state. |
 | `tangent.form-collect` | [`form-collect-e2e.md`](./form-collect-e2e.md) | Fill the required fields and submit once. | Agent receives the structured form payload and the room can reopen with accepted values. |
 | `tangent.approval-queue` | [`approval-queue-e2e.md`](./approval-queue-e2e.md) | Make one decision on one queued item and submit. | Agent receives the decision payload and reopening shows the accepted queue state. |
+| `tangent.external-review` | [`../github-pr-review.md`](../github-pr-review.md) | Open a PR review, approve, then merge or finish review. | The approval keeps the request open; merge or finish records the remote outcome and preserves the body in history. |
 | `tangent.diff-review` | [`diff-review-e2e.md`](./diff-review-e2e.md) | Review one file or hunk, record one decision, and submit. | Agent receives the diff-review payload and reopening shows the accepted decision set. |
 | `tangent.file-picker` | [`file-picker-e2e.md`](./file-picker-e2e.md) | Browse or filter once, select one file, and submit. | Agent receives the selected artifact refs and reopening preserves the accepted picker state. |
 | `tangent.progress-panel` | [`progress-panel-e2e.md`](./progress-panel-e2e.md) | Add one update, checkpoint, or log entry, then submit. | Agent receives the appended progress state and reopening shows the accepted timeline. |
@@ -194,12 +195,12 @@ Two recipes are not workflow smoke and are easy to skip. Do not skip them.
 Use the repo-local
 [`tangent-hitl-inbox` skill](../../.agents/skills/tangent-hitl-inbox/SKILL.md)
 and [`hitl-inbox-e2e.md`](./hitl-inbox-e2e.md). Enqueue returns immediately;
-retain its handle, then resolve in `/hitl` and retrieve the immutable outcome
+retain its handle, then resolve in `/inbox` and retrieve the immutable outcome
 through a later Get or Await call.
 
 | Surface | Minimal interaction | Pass if |
 | --- | --- | --- |
-| `tangent.hitl_*` + `/hitl` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
+| `tangent.hitl_*` + `/inbox` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
 
 ## Writing flow
 

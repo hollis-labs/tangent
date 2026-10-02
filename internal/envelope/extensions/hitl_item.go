@@ -37,7 +37,7 @@ const HITLItemContractVersion = "1.0"
 // pins an interaction to a definition. It must equal the `version` field in
 // packages/tangent.hitl/hitl-item/manifest.yaml; TestHITLItemContract_RegistersPinnedDefinition
 // is what holds the two together.
-const HITLItemDefinitionVersion = "1.1"
+const HITLItemDefinitionVersion = "1.2"
 
 // Stable $defs entry points used to generate MCP schemas and TypeScript types.
 const (

@@ -25,7 +25,7 @@ const (
 	ContractVersion   = extensions.AgentTurnContractVersion
 	DefinitionVersion = extensions.AgentTurnDefinitionVersion
 	DefaultSurfaceID  = "surface_turns_default"
-	InboxURL          = "/turns"
+	InboxURL          = "/inbox"
 )
 
 const (

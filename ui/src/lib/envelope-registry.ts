@@ -26,6 +26,8 @@ export type EnvelopeComponentProps = {
   onSubmit: (response: unknown) => void;
   onCancel: () => void;
   roomID?: string;
+  /** Historical presentation; effects and commands must not run. */
+  readOnly?: boolean;
   /**
    * Records non-terminal view state — what the participant is looking at, not
    * what they decided (ADR 0007 §5). Optional: most kinds settle in one act and

@@ -1,6 +1,6 @@
 # Durable HITL inbox e2e
 
-Use this recipe to verify the persistent operator-owned `/hitl` surface. It is
+Use this recipe to verify the persistent operator-owned `/inbox` surface. It is
 separate from the room-backed `tangent.approval-queue` workflow and does not
 require an active room.
 
@@ -10,7 +10,7 @@ require an active room.
 cross-layer gate. It starts the real Tangent HTTP mux on a loopback ephemeral
 port, enters through stateless Streamable HTTP MCP, checks durable SQLite and
 the REST/SSE operator projection, mounts the production React `App` and its
-real `/hitl` route
+real `/inbox` route
 against that live server through `ui/src/test-drivers/hitl-inbox-e2e.tsx`, then
 restarts the server and retrieves the terminal results through fresh MCP Get
 and Await calls. Run it with the supported Node baseline:
@@ -97,7 +97,7 @@ authority and must never produce a preview.
 
 ## Resolve and recover
 
-1. Open the first item's `/hitl/items/<itemID>` deep link in two tabs.
+1. Open the first item's `/inbox/items/<itemID>` deep link in two tabs.
 2. Refresh one tab. It must retain the selected item and show enabled decision
    controls after resynchronizing its durable presentation revision.
 3. In tab A choose **Approve with note**, enter a non-empty note, and submit.
@@ -130,7 +130,7 @@ outcome.
 Also verify the note variants cannot submit whitespace, plain Approve/Deny are
 one-click actions, Up/Down/Home/End navigate the focused queue, all controls
 have visible focus, and the committed outcome is announced by a screen reader.
-At a mobile viewport, `/hitl` shows the ledger and a selected deep link shows a
+At a mobile viewport, `/inbox` shows the ledger and a selected deep link shows a
 single-column detail view with **Back to queue**.
 
 Tangent records only the participant outcome. This recipe must not cause any

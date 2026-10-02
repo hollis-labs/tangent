@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -248,5 +249,59 @@ func TestArchive_HidesFromPendingWithoutRequiringAck(t *testing.T) {
 	}
 	if inbox.TotalTerminal != 1 {
 		t.Errorf("TotalTerminal = %d, want 1", inbox.TotalTerminal)
+	}
+}
+
+func TestDeleteHidesPendingAndAcknowledgedDocsWithoutLosingEvidence(t *testing.T) {
+	for _, acknowledged := range []bool{false, true} {
+		t.Run(fmt.Sprint(acknowledged), func(t *testing.T) {
+			svc, _ := newTestService(t)
+			ctx := context.Background()
+			handle, err := svc.Enqueue(ctx, EnqueueInput{Request: docRequestJSON("delete-test", "Delete test", "Original document", true), Caller: testCaller("test")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			current, err := svc.InspectDoc(ctx, handle.ItemID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if acknowledged {
+				current, err = svc.Acknowledge(ctx, AcknowledgeInput{ItemID: handle.ItemID, ExpectedRevision: current.Revision, Note: "Keep this response"})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err = svc.Delete(ctx, ArchiveInput{ItemID: handle.ItemID, ExpectedRevision: current.Revision + 1}); !errors.Is(err, ErrStaleRevision) {
+				t.Fatalf("stale delete = %v", err)
+			}
+			deleted, err := svc.Delete(ctx, ArchiveInput{ItemID: handle.ItemID, ExpectedRevision: current.Revision})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inbox, err := svc.Inbox(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if inbox.TotalPending != 0 || inbox.TotalTerminal != 0 {
+				t.Fatal("deleted document still listed")
+			}
+			entries, err := svc.interactions.BrowserInbox(ctx)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("unified inbox = %v, %v", entries, err)
+			}
+			evidence, err := svc.InspectDoc(ctx, handle.ItemID)
+			if err != nil || evidence.ContentMarkdown != "Original document" {
+				t.Fatalf("lost evidence: %v", err)
+			}
+			if acknowledged && (evidence.Resolution == nil || evidence.Resolution.Note != "Keep this response") {
+				t.Fatal("lost confirmed response")
+			}
+			if !acknowledged && evidence.State != interaction.InteractionStateCanceled {
+				t.Fatal("deleted active doc was not closed")
+			}
+			if _, err = svc.Delete(ctx, ArchiveInput{ItemID: handle.ItemID, ExpectedRevision: deleted.Revision}); err != nil {
+				t.Fatalf("retry deletion: %v", err)
+			}
+		})
 	}
 }

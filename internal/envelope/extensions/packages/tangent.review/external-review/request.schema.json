@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 16000
+    },
+    "content_markdown": {
+      "type": "string",
+      "maxLength": 180000
+    },
+    "resource": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "maxLength": 2048
+        },
+        "revision": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "url",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "fields": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "action_url": {
+      "type": "string",
+      "pattern": "^/api/plugins/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*$",
+      "maxLength": 256
+    },
+    "state_url": {
+      "type": "string",
+      "pattern": "^/api/plugins/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*$",
+      "maxLength": 256
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "minLength": 1
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "review_id",
+    "title",
+    "content_markdown",
+    "resource",
+    "action_url",
+    "state_url",
+    "actions"
+  ],
+  "additionalProperties": false
+}

@@ -49,32 +49,32 @@ export function EvidenceDrawer({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-[#050608]/80" />
-        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-[#343840] bg-[#0d0f12] text-[#d7dce2] shadow-[-24px_0_70px_rgba(0,0,0,0.55)] outline-none sm:max-w-[46rem]">
-          <header className="shrink-0 border-b border-[#30343b] px-5 py-5 sm:px-7">
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-bg/80" />
+        <Dialog.Content className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border bg-bg-elevated text-fg-secondary shadow-[-24px_0_70px_rgba(0,0,0,0.55)] outline-none sm:max-w-[46rem]">
+          <header className="shrink-0 border-b border-border-subtle px-5 py-5 sm:px-7">
             <div className="flex items-start justify-between gap-5">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#f2b84b]">
+                <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-primary">
                   <LockKeyhole className="size-3" aria-hidden="true" /> Read-only case file
                 </p>
-                <Dialog.Title className="mt-2 text-xl font-semibold tracking-[-0.025em] text-[#f2f4f6]">
+                <Dialog.Title className="mt-2 text-xl font-semibold tracking-[-0.025em] text-fg">
                   Evidence
                 </Dialog.Title>
-                <Dialog.Description className="mt-1 truncate text-sm text-[#8e959f]">
+                <Dialog.Description className="mt-1 truncate text-sm text-fg-muted">
                   {itemTitle} · {entries.length} {entries.length === 1 ? "record" : "records"}
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="-mr-2 shrink-0 p-2 text-[#a5abb4] outline-none hover:bg-[#1b1e23] hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+                  className="-mr-2 shrink-0 p-2 text-fg-muted outline-none hover:bg-surface hover:text-fg focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label="Close evidence"
                 >
                   <X className="size-5" aria-hidden="true" />
                 </button>
               </Dialog.Close>
             </div>
-            <p className="mt-4 border-l-2 border-[#57606b] pl-3 text-xs leading-5 text-[#9ca3ad]">
+            <p className="mt-4 border-l-2 border-border pl-3 text-xs leading-5 text-fg-muted">
               Inspecting these durable records cannot resolve, cancel, disconnect, or change FIFO
               order. Links and identifiers carry no ambient action authority.
             </p>
@@ -83,14 +83,14 @@ export function EvidenceDrawer({
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-2 sm:px-7">
             {entries.length === 0 ? (
               <div className="py-16 text-center">
-                <Archive className="mx-auto size-7 text-[#69717b]" aria-hidden="true" />
-                <p className="mt-4 text-sm font-medium text-[#c5cad1]">No evidence attached</p>
-                <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-[#8e959f]">
+                <Archive className="mx-auto size-7 text-fg-faint" aria-hidden="true" />
+                <p className="mt-4 text-sm font-medium text-fg-secondary">No evidence attached</p>
+                <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-fg-muted">
                   The request remains fully actionable; there are no supporting records to inspect.
                 </p>
               </div>
             ) : (
-              <ol className="m-0 list-none divide-y divide-[#30343b] p-0">
+              <ol className="m-0 list-none divide-y divide-border-subtle p-0">
                 {entries.map((entry) => (
                   <li key={entry.index} className="py-7">
                     {entry.evidence ? (
@@ -131,12 +131,12 @@ function EvidenceRecord({
     <section aria-labelledby={`hitl-evidence-${itemID}-${index}`}>
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.15em] text-[#8e959f]">
+          <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[0.15em] text-fg-muted">
             {icon} {evidenceTypeLabel(evidence.type)} · {String(index + 1).padStart(2, "0")}
           </p>
           <h3
             id={`hitl-evidence-${itemID}-${index}`}
-            className="mt-1 break-words text-base font-semibold text-[#eef0f2] [overflow-wrap:anywhere]"
+            className="mt-1 break-words text-base font-semibold text-fg [overflow-wrap:anywhere]"
           >
             {evidence.label}
           </h3>
@@ -167,7 +167,7 @@ function PlainTextEvidence({ evidence }: { evidence: Extract<HITLEvidence, { typ
   return (
     <div>
       {evidence.language ? (
-        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.13em] text-[#8e959f]">
+        <p className="mb-1 font-mono text-[10px] uppercase tracking-[0.13em] text-fg-muted">
           {evidence.language}
         </p>
       ) : null}
@@ -180,14 +180,14 @@ function PlainTextEvidence({ evidence }: { evidence: Extract<HITLEvidence, { typ
         className={cn(
           "max-h-[28rem] overflow-auto whitespace-pre-wrap break-words border-l-2 px-4 py-3 text-sm leading-6 [overflow-wrap:anywhere]",
           evidence.language
-            ? "border-[#57606b] bg-[#0b0d10] font-mono text-xs text-[#cbd1d8]"
-            : "border-[#30343b] bg-[#111317] font-sans text-[#c5cad1]",
+            ? "border-border bg-bg font-mono text-xs text-fg-secondary"
+            : "border-border-subtle bg-bg-elevated font-sans text-fg-secondary",
         )}
       >
         {bounded.text}
       </pre>
       {bounded.truncated ? (
-        <p role="status" className="mt-2 text-xs text-[#d5b486]">
+        <p role="status" className="mt-2 text-xs text-warning">
           Content stopped at Tangent’s 64 KiB inline evidence limit.
         </p>
       ) : null}
@@ -250,24 +250,24 @@ function TangentReferenceProjection({
 }) {
   const readOnlyURL = safeReadOnlyHITLURL(view.read_only_url);
   return (
-    <div className="border-l-2 border-[#6e8fb3] bg-[#10151b] px-4 py-4">
+    <div className="border-l-2 border-info bg-info-muted px-4 py-4">
       {evidence.description ? (
         <Markdown
           data-testid="hitl-evidence-reference-description"
           content={evidence.description}
           tone="evidence"
           linkPolicy="withhold"
-          className="mb-4 leading-6 text-[#b8bec6]"
+          className="mb-4 leading-6 text-fg-secondary"
         />
       ) : null}
       {view.status === "revision_mismatch" ? (
-        <p role="status" className="mb-4 text-xs leading-5 text-[#d5b486]">
+        <p role="status" className="mb-4 text-xs leading-5 text-warning">
           The reference requested revision {view.requested_revision}; the durable record is now
           revision {view.interaction?.revision}. The current read-only record is shown below.
         </p>
       ) : null}
       {view.status === "expired" ? (
-        <p role="status" className="mb-4 text-xs leading-5 text-[#d5b486]">
+        <p role="status" className="mb-4 text-xs leading-5 text-warning">
           This surface is expired, but its retained durable record remains readable.
         </p>
       ) : null}
@@ -294,29 +294,29 @@ function TangentReferenceProjection({
         ) : null}
       </dl>
       {view.interaction?.request_snapshot !== undefined ? (
-        <details className="mt-4 border-t border-[#2c3540] pt-3">
-          <summary className="cursor-pointer text-xs font-semibold text-[#b8cbe0] outline-none focus-visible:ring-2 focus-visible:ring-[#f2b84b]">
+        <details className="mt-4 border-t border-border-subtle pt-3">
+          <summary className="cursor-pointer text-xs font-semibold text-info outline-none focus-visible:ring-2 focus-visible:ring-primary">
             Durable request snapshot
           </summary>
-          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-[#0b0d10] p-3 font-mono text-[11px] leading-5 text-[#aeb8c4] [overflow-wrap:anywhere]">
+          <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words bg-bg p-3 font-mono text-[11px] leading-5 text-fg-secondary [overflow-wrap:anywhere]">
             {formatJSON(view.interaction.request_snapshot)}
           </pre>
         </details>
       ) : null}
       {view.interaction?.request_omitted ? (
-        <p className="mt-4 text-xs text-[#d5b486]">
+        <p className="mt-4 text-xs text-warning">
           The referenced request exceeds the safe inline display boundary.
         </p>
       ) : null}
       {readOnlyURL ? (
         <a
           href={readOnlyURL}
-          className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-[#a9c7e5] underline decoration-[#526a81] underline-offset-4 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+          className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-info underline decoration-info underline-offset-4 outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-primary"
         >
           Open durable inbox record <ExternalLink className="size-3" aria-hidden="true" />
         </a>
       ) : (
-        <p className="mt-4 text-[11px] leading-5 text-[#8e959f]">
+        <p className="mt-4 text-[11px] leading-5 text-fg-muted">
           No separate room connection is opened for this reference.
         </p>
       )}
@@ -356,7 +356,7 @@ function ArtifactReferenceRecord({
   const externalURL =
     preview?.kind === "external_link" ? safeHTTPSURL(preview.external_url) : undefined;
   return (
-    <div className="border-l-2 border-[#57606b] pl-4">
+    <div className="border-l-2 border-border pl-4">
       <dl className="grid gap-x-5 gap-y-3 text-xs sm:grid-cols-2">
         <EvidenceMetadata term="Authority" value={evidence.authority} mono />
         <EvidenceMetadata term="Artifact" value={evidence.artifact_id} mono />
@@ -383,13 +383,13 @@ function ArtifactReferenceRecord({
           <EvidenceMetadata term="Preview expires" value={formatDate(evidence.expires_at)} />
         ) : null}
       </dl>
-      <div className="mt-4 border-t border-[#292c32] pt-4">
+      <div className="mt-4 border-t border-border-subtle pt-4">
         {evidence.retrieval_capability_id ? (
           <button
             type="button"
             onClick={loadPreview}
             disabled={loading}
-            className="inline-flex min-h-9 items-center gap-2 border border-[#52606d] bg-[#15191e] px-3 py-2 text-xs font-semibold text-[#cbd3dc] outline-none hover:border-[#788898] hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b] disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex min-h-9 items-center gap-2 border border-border bg-surface px-3 py-2 text-xs font-semibold text-fg-secondary outline-none hover:border-info hover:text-fg focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-wait disabled:opacity-50"
           >
             {loading ? (
               <RefreshCw
@@ -402,7 +402,7 @@ function ArtifactReferenceRecord({
             {loading ? "Checking host capability…" : "Request safe preview"}
           </button>
         ) : (
-          <p className="text-xs leading-5 text-[#8e959f]">
+          <p className="text-xs leading-5 text-fg-muted">
             Metadata only. The request declared no preview capability.
           </p>
         )}
@@ -416,13 +416,13 @@ function ArtifactReferenceRecord({
           </div>
         ) : null}
         {preview?.kind === "text" ? (
-          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words bg-[#0b0d10] p-3 font-mono text-[11px] leading-5 text-[#c5cad1] [overflow-wrap:anywhere]">
+          <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words bg-bg p-3 font-mono text-[11px] leading-5 text-fg-secondary [overflow-wrap:anywhere]">
             {boundedText(preview.content || "", HITL_EVIDENCE_LIMITS.inlineText).text}
           </pre>
         ) : null}
         {externalURL ? (
-          <div className="mt-3 border-l-2 border-[#f2b84b] pl-3">
-            <p className="text-xs leading-5 text-[#aeb4bc]">
+          <div className="mt-3 border-l-2 border-primary pl-3">
+            <p className="text-xs leading-5 text-fg-secondary">
               The host adapter offers no inline preview. Opening the owning system is an explicit
               external action.
             </p>
@@ -430,7 +430,7 @@ function ArtifactReferenceRecord({
               href={externalURL}
               target="_blank"
               rel="noreferrer noopener"
-              className="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-[#e6c47f] underline underline-offset-4 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+              className="mt-2 inline-flex items-center gap-2 text-xs font-semibold text-primary underline underline-offset-4 outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-primary"
             >
               Open in owning system <ExternalLink className="size-3" aria-hidden="true" />
             </a>
@@ -464,18 +464,18 @@ function InlineEvidenceState({
       role="status"
       className={cn(
         "border-l-2 px-4 py-3",
-        tone === "danger" ? "border-[#d96b67] bg-[#1a1213]" : "border-[#b17c3c] bg-[#17130d]",
+        tone === "danger" ? "border-danger bg-danger-muted" : "border-warning bg-warning-muted",
       )}
     >
-      <p className="flex items-center gap-2 text-xs font-semibold text-[#e3e6e9]">
+      <p className="flex items-center gap-2 text-xs font-semibold text-fg">
         <AlertTriangle className="size-3.5" aria-hidden="true" /> {title}
       </p>
-      <p className="mt-1 text-xs leading-5 text-[#aeb4bc]">{message}</p>
+      <p className="mt-1 text-xs leading-5 text-fg-secondary">{message}</p>
       {onRetry ? (
         <button
           type="button"
           onClick={onRetry}
-          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#d5b486] outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-[#f2b84b]"
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-warning outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-primary"
         >
           <RefreshCw className="size-3" aria-hidden="true" /> Retry durable read
         </button>
@@ -486,7 +486,7 @@ function InlineEvidenceState({
 
 function EvidenceLoading({ label }: { label: string }) {
   return (
-    <div role="status" className="flex items-center gap-2 text-xs text-[#8e959f]">
+    <div role="status" className="flex items-center gap-2 text-xs text-fg-muted">
       <RefreshCw className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />{" "}
       {label}
     </div>
@@ -504,10 +504,10 @@ function EvidenceMetadata({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[#8e959f]">{term}</dt>
+      <dt className="text-fg-muted">{term}</dt>
       <dd
         className={cn(
-          "mt-0.5 break-words text-[#c5cad1] [overflow-wrap:anywhere]",
+          "mt-0.5 break-words text-fg-secondary [overflow-wrap:anywhere]",
           mono && "font-mono text-[11px]",
         )}
       >

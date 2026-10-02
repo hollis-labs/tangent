@@ -144,6 +144,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	if regErr := extensions.RegisterSpreadsheetReview(envSvc); regErr != nil {
 		t.Fatalf("RegisterSpreadsheetReview: %v", regErr)
 	}
+	if regErr := extensions.RegisterExternalReview(envSvc); regErr != nil {
+		t.Fatalf("RegisterExternalReview: %v", regErr)
+	}
 	if regErr := extensions.RegisterApprovalQueue(envSvc); regErr != nil {
 		t.Fatalf("RegisterApprovalQueue: %v", regErr)
 	}
@@ -361,6 +364,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 		wsSrv.Close()
 		_ = tangentdb.Close(db)
 		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
+	}
+	if regErr := tangentmcp.RegisterExternalReviewOnDispatcher(dispatcher, triageHandler); regErr != nil {
+		t.Fatal(regErr)
 	}
 	if regErr := tangentmcp.RegisterAppBoardOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		wsSrv.Close()

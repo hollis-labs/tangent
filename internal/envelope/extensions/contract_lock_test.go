@@ -56,6 +56,13 @@ type lockedPublication struct {
 // contractLock is the committed record. Every shipped kind has an entry, and a
 // kind added or removed without touching this table fails the build.
 var contractLock = map[string]lockedPublication{
+	ExternalReviewEnvelopeType: {
+		version: "0.1", revision: 1,
+		contract:  "sha256:3ff91000a3126d71e4a9b559faf0f5bf850f6ad6443d54c0f78f65f260b06722",
+		class:     definition.RendererReactComponent,
+		isolation: definition.IsolationMainOrigin,
+		response:  definition.ResponseSchemaAbsent,
+	},
 	AgentTurnEnvelopeType: {
 		version: "1.0", revision: 1,
 		contract:  "sha256:8b840ca69c1d800d4926f984ceb2f593be62f0595d39db698404534eb5256b76",
@@ -145,8 +152,8 @@ var contractLock = map[string]lockedPublication{
 		response:  definition.ResponseSchemaPresent,
 	},
 	HITLItemEnvelopeType: {
-		version: "1.1", revision: 1,
-		contract:  "sha256:e00d61fc2429bc66459f4e55e32a2acc03d735b94268b281ae2550340ab717e8",
+		version: "1.2", revision: 1,
+		contract:  "sha256:c2066ad73c1cfdd32e3bc2eaae2eea8cc5988105bee8e91aacecc11af489c3fd",
 		class:     definition.RendererReactComponent,
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaPresent,
@@ -353,6 +360,7 @@ var kindConstants = []struct{ kind, constant string }{
 	{DesignIterationEnvelopeType, "DesignIterationEnvelopeType"},
 	{DiffReviewEnvelopeType, "DiffReviewEnvelopeType"},
 	{DocItemEnvelopeType, "DocItemEnvelopeType"},
+	{ExternalReviewEnvelopeType, "ExternalReviewEnvelopeType"},
 	{FeedbackEnvelopeType, "FeedbackEnvelopeType"},
 	{FilePickerEnvelopeType, "FilePickerEnvelopeType"},
 	{FormCollectEnvelopeType, "FormCollectEnvelopeType"},
