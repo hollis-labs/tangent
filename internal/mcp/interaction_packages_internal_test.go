@@ -35,7 +35,7 @@ import (
 // If this digest ever needs changing, the change is a tools/list contract
 // change and needs the separate accepted ADR that ADR 0001 §11.7 requires —
 // not a regenerated constant.
-const prePackageSessionGetOutputSchemaDigest = "sha256:2ebbc9b5efb3272d93070c0bd0ec1fb737966b3225b2816d48a6b2d79604f664"
+const prePackageSessionGetOutputSchemaDigest = "sha256:3e08c98facfe770c638b4ca089a0ec07ff0ba05f541e95f51d8ff3d390755f54"
 
 // canonicalizeSchema renders a schema with every object's members in sorted
 // order, so the comparison is over what the schema says rather than over the
