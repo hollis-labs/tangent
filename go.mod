@@ -7,7 +7,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
-	github.com/hollis-labs/go-envelopes v0.4.0
+	github.com/hollis-labs/go-envelopes v0.4.1-0.20261002213710-fb886c3e1b4d
 	github.com/hollis-labs/go-mcp v0.14.1
 	github.com/hollis-labs/go-tether-client v0.8.0
 	github.com/hollis-labs/plugin-sdk v0.5.0

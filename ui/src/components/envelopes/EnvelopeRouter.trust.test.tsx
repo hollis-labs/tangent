@@ -89,4 +89,28 @@ describe("EnvelopeRouter enforces renderer classification", () => {
 
     expect(screen.getByTestId("envelope-router-fallback")).toBeInTheDocument();
   });
+
+  it("renders a wire-only core kind through the host fallback and releases the caller", () => {
+    const onCancel = vi.fn();
+    const onSubmit = vi.fn();
+    render(
+      <EnvelopeRouter
+        envelope={{
+          v: 1,
+          id: "core-info",
+          type: "info-card",
+          data: { title: "Core catalog", body: "Payload remains visible" },
+        }}
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+      />,
+    );
+
+    const fallback = screen.getByTestId("envelope-router-fallback");
+    expect(fallback).toHaveTextContent('No component registered for "info-card"');
+    expect(fallback).toHaveTextContent("Payload remains visible");
+    screen.getByRole("button", { name: "Cancel" }).click();
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

@@ -319,10 +319,10 @@ function generate(catalog) {
   lines.push('}');
   lines.push('');
 
-  // EnvelopeKindMap: type → component slug. Source = ui.component when set.
-  // Used by the renderer registry in PR 5 to look up React components.
-  lines.push('/** Maps envelope type -> component slug declared in the kind\'s manifest. */');
-  lines.push('/** Empty string means the type has no frontend component yet. */');
+  // Informational legacy slugs from host-owned manifests. Runtime dispatch
+  // uses envelope-registry and renderer-bindings, not this table.
+  lines.push('/** Legacy component slugs from host-owned manifests; not runtime renderer bindings. */');
+  lines.push('/** Empty string means no legacy slug is declared, including wire-only core kinds. */');
   lines.push('export const EnvelopeKindMap = {');
   for (const t of types) {
     const component = (t.ui && typeof t.ui.component === 'string') ? t.ui.component : '';
