@@ -114,16 +114,16 @@ catalog:
 		t.Fatalf("write Tether Tangent entry: %v", err)
 	}
 
-	muxPath := filepath.Join(tempRoot, "mux")
-	build := exec.Command("go", "build", "-o", muxPath, "./cmd/mux")
+	tetherPath := filepath.Join(tempRoot, "tether")
+	build := exec.Command("go", "build", "-o", tetherPath, "./cmd/tether")
 	build.Dir = tetherRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build local Tether mux: %v\n%s", err, output)
+		t.Fatalf("build local Tether: %v\n%s", err, output)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, muxPath, "--catalog", catalogRoot, "mcp", "--proxy", "--only", "tangent")
+	command := exec.CommandContext(ctx, tetherPath, "--catalog", catalogRoot, "mcp", "--proxy", "--only", "tangent")
 	// The sibling currently wraps slog.Default with go-otel in a way that can
 	// recursively acquire the standard logger mutex on its first startup log.
 	// Telemetry is irrelevant to this routing contract and disabling it keeps

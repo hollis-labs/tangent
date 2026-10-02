@@ -284,16 +284,16 @@ catalog:
 		t.Fatalf("write Tether Tangent entry: %v", err)
 	}
 
-	muxPath := filepath.Join(tempRoot, "mux")
-	build := exec.Command("go", "build", "-o", muxPath, "./cmd/mux")
+	tetherPath := filepath.Join(tempRoot, "tether")
+	build := exec.Command("go", "build", "-o", tetherPath, "./cmd/tether")
 	build.Dir = tetherRoot
 	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build local Tether mux: %v\n%s", err, output)
+		t.Fatalf("build local Tether: %v\n%s", err, output)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
-	command := exec.CommandContext(ctx, muxPath, "--catalog", catalogRoot, "mcp", "--proxy", "--only", "tangent")
+	command := exec.CommandContext(ctx, tetherPath, "--catalog", catalogRoot, "mcp", "--proxy", "--only", "tangent")
 	command.Env = append(os.Environ(), "HOLLIS_OTEL_DISABLED=1")
 	stdin, err := command.StdinPipe()
 	if err != nil {
