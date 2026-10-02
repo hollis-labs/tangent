@@ -9,7 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hollis-labs/go-envelopes v0.4.0
 	github.com/hollis-labs/go-mcp v0.14.1
-	github.com/hollis-labs/go-tether-client v0.4.0
+	github.com/hollis-labs/go-tether-client v0.8.0
 	github.com/hollis-labs/plugin-sdk v0.5.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
