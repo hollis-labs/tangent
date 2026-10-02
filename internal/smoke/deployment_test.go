@@ -183,20 +183,20 @@ func TestDeployedTangentMatchesShippedBuild(t *testing.T) {
 
 // TestTetherGatewayStillPublishesTangent drives the real gateway binary.
 //
-// It is gated twice — TANGENT_SMOKE_ENV plus a `mux` on PATH — because it
+// It is gated twice — TANGENT_SMOKE_ENV plus a `tether` on PATH — because it
 // starts a process. That process is given a temporary catalog carrying a copy
 // of the operator's own Tangent entry, so the gateway dials the live
 // deployment over the transport the operator configured while writing its
 // session state somewhere disposable. Nothing under ~/.tether is modified.
 //
-// This is criterion 4's "disappears from mux" arm: a gateway that answers
+// This is criterion 4's "disappears from Tether" arm: a gateway that answers
 // tools/list with no Tangent tools is UPSTREAM_ABSENT, and one that answers
 // with a surface the shipped build does not have is CATALOG_STALE.
 func TestTetherGatewayStillPublishesTangent(t *testing.T) {
 	requireEnvGate(t)
 	gateway := os.Getenv(envGateway)
 	if gateway == "" {
-		gateway = "mux"
+		gateway = "tether"
 	}
 	resolved, err := exec.LookPath(gateway)
 	if err != nil {
@@ -234,7 +234,7 @@ func TestTetherGatewayStillPublishesTangent(t *testing.T) {
 	}
 
 	// #nosec G204,G702 -- the gateway binary is resolved from PATH (operator-chosen,
-	// defaulting to `mux`), every other argument is a literal or this test's own
+	// defaulting to `tether`), every other argument is a literal or this test's own
 	// temp directory, and the subcommand is the read-only stdio proxy.
 	command := exec.CommandContext(ctx, resolved, "--catalog", root, "mcp", "--proxy", "--only", catalogEntryID())
 	command.Env = append(os.Environ(), "HOLLIS_OTEL_DISABLED=1")

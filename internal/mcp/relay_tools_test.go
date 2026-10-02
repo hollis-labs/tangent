@@ -105,7 +105,7 @@ func TestRelayToolsRegisterWithFlatSchemasAndNoConditionals(t *testing.T) {
 		}
 		// The single most load-bearing constraint in the task
 		// (CW-20260907-0016): no allOf/if/then/oneOf anywhere in the tree,
-		// because mux's discovery schema drops conditional branches and
+		// because Tether's discovery schema drops conditional branches and
 		// leaves a gated field reaching the model untyped.
 		for _, forbidden := range []string{"allOf", "if", "then", "oneOf"} {
 			if bytesContainsKey(raw, forbidden) {

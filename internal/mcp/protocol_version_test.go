@@ -39,7 +39,7 @@ func TestStreamableHTTPNegotiates20260728AndGoMCPClientPings(t *testing.T) {
 		t.Fatalf("negotiated protocol = %q, want 2026-07-28", got)
 	}
 
-	// A go-mcp v0.14.1 client, as Tether's mux proxy dials it.
+	// A go-mcp v0.14.1 client, as Tether's proxy dials it.
 	pool := gomcpclient.NewPool(gomcpclient.WithIdentity("tangent-protocol-test", "v0.0.0"))
 	defer func() { _ = pool.Close() }()
 	if regErr := pool.Register("tangent", gomcpclient.ServerConfig{Transport: "http", URL: srv.URL}); regErr != nil {

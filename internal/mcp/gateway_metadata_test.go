@@ -21,7 +21,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
-// These tests reproduce CW-20260907-0022 at the MCP boundary: Tether's mux
+// These tests reproduce CW-20260907-0022 at the MCP boundary: Tether's
 // proxy forwards tool calls with the caller's W3C trace context written into
 // the arguments as `_traceparent` (and `_tracestate`), and the strict v1 HITL
 // schemas rejected the whole call. The argument shapes below are exactly what
