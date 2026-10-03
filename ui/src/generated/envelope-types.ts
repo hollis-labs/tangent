@@ -1,6 +1,6 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
 // @definition-source sha256:fa55b5c0ad2a6d97618d8551d874b2b84812c2d674a49ff85b2c7264c5e0526e
-// Generated from go-envelopes v0.4.1-0.20261002213710-fb886c3e1b4d — do not edit.
+// Generated from go-envelopes v0.5.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
 // Coverage: 40 registered kinds — 18 go-envelopes core,
@@ -584,7 +584,7 @@ export interface ReportCardData {
 export interface SessionTaskData {
   /** Optional description shown below the task title. */
   description?: string;
-  /** Current task status. Use "canceled" for new payloads. The legacy "cancelled" spelling remains readable through go-envelopes v0.4.x and is scheduled for removal in v0.5.0. */
+  /** Current task status. Use "canceled" for new payloads. The legacy "cancelled" spelling is retained in go-envelopes v0.5.x. Removal is not scheduled and will be announced first. */
   status: "pending" | "in_progress" | "completed" | "failed" | "canceled" | "cancelled";
   /** Unique identifier for the task. */
   task_id: string;
