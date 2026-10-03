@@ -1,7 +1,14 @@
 # ADR 0011: Additive Envelope Response History Schema
 
-**Status:** PROPOSED. Awaiting Chrispian's acceptance; this record is not an
-accepted exception to the frozen contract.
+**Status:** ACCEPTED.
+
+**Approved:** 2026-10-03 by Chrispian, directly, recorded on Torque
+`CW-20261002-0101` (comments 9524/9527) and `CW-20261002-0028`:
+
+> ACCEPT the Tangent ADR for the two additive optional output fields
+> (answers, decisions) on Envelope.Response.
+
+Drafted PROPOSED on 2026-10-02; promoted on acceptance.
 
 **Date:** 2026-10-02
 
@@ -11,10 +18,10 @@ accepted exception to the frozen contract.
 go-envelopes `v0.4.0` versus
 `fb886c3e1b4db413926b29c275c664ba64453112`.
 
-**Amends, if accepted:** [ADR 0003](0003-definition-and-package-ownership.md)
+**Amends:** [ADR 0003](0003-definition-and-package-ownership.md)
 §8 C6 and A4, solely for the output properties enumerated below. Its general
 property-for-property freeze continues to apply. The accepted records remain
-the historical record; this proposal does not edit them.
+the historical record; this decision does not edit them.
 
 ## Context
 
@@ -29,12 +36,12 @@ Upstream commit `8827ce41ec220719cb59732f35c35e12308dc327` adds
 `91d9ea34e2b214cc99fc7d3fb4ebd5a3305b7ad5` adds the support API and is not
 the cause of this reflection change. `Envelope` itself is unchanged.
 
-## Proposed decision
+## Decision
 
 Accept the additive output schema expansion below. Refresh the canonical
 frozen output digest in its own commit, retaining the assertions and
-reflection/composition behavior. The prepared digest commit is contingent on
-acceptance; a passing test on the draft branch does not confer approval.
+reflection/composition behavior. Chrispian accepted this exact expansion on 2026-10-03. The digest refresh
+remains its own commit; a passing test alone does not confer approval.
 
 ADR 0003's property-for-property comparison yields this complete difference.
 Paths are relative to the `tangent.session_get` output schema.
@@ -59,7 +66,7 @@ contract-digest change. It does not adopt new response behavior in Tangent.
 The canonical digest changes from
 `sha256:2ebbc9b5efb3272d93070c0bd0ec1fb737966b3225b2816d48a6b2d79604f664`
 to `sha256:3e08c98facfe770c638b4ca089a0ec07ff0ba05f541e95f51d8ff3d390755f54`.
-This proposal permits exactly this reviewed expansion, not automatic digest
+This decision permits exactly this reviewed expansion, not automatic digest
 regeneration on future dependency updates. There is no removal requiring the
 deprecation and migration provisions of ADR 0001 §11.7.
 
@@ -98,13 +105,12 @@ The scoped app inventory found no corresponding reflection exposure in
 Nanite (which uses its own `ResponseV1`) or Flux (no Go import of its pinned
 go-envelopes dependency). This is not a portfolio-wide compatibility claim.
 
-## Open, for Chrispian's review
+## Review resolution
 
-Accept or reject this exact additive exception to ADR 0003's frozen output
-schema. Until acceptance is recorded and a go-envelopes release tag exists,
-the adoption PR remains draft and must not merge. After acceptance, record
-the approval here and repin to the release tag before merge. No deployment
-or service restart is authorized by this record.
+Chrispian accepted this exact additive exception on 2026-10-03. The adoption
+PR remains held until a go-envelopes release tag exists, then must be repinned
+and checked before merge. Deployment and service restart remain subject to
+separate authorization; acceptance of this schema decision alone grants neither.
 
 ## References
 
