@@ -1,6 +1,6 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
 // @definition-source sha256:fa55b5c0ad2a6d97618d8551d874b2b84812c2d674a49ff85b2c7264c5e0526e
-// Generated from go-envelopes v0.4.0 — do not edit.
+// Generated from go-envelopes v0.5.0 — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
 // Coverage: 40 registered kinds — 18 go-envelopes core,
@@ -584,7 +584,7 @@ export interface ReportCardData {
 export interface SessionTaskData {
   /** Optional description shown below the task title. */
   description?: string;
-  /** Current task status. Use "canceled" for new payloads. The legacy "cancelled" spelling remains readable through go-envelopes v0.4.x and is scheduled for removal in v0.5.0. */
+  /** Current task status. Use "canceled" for new payloads. The legacy "cancelled" spelling is retained in go-envelopes v0.5.x. Removal is not scheduled and will be announced first. */
   status: "pending" | "in_progress" | "completed" | "failed" | "canceled" | "cancelled";
   /** Unique identifier for the task. */
   task_id: string;
@@ -1083,26 +1083,26 @@ export interface EnvelopeDataMap {
   "timeline-card": TimelineCardData;
 }
 
-/** Maps envelope type -> component slug declared in the kind's manifest. */
-/** Empty string means the type has no frontend component yet. */
+/** Legacy component slugs from host-owned manifests; not runtime renderer bindings. */
+/** Empty string means no legacy slug is declared, including wire-only core kinds. */
 export const EnvelopeKindMap = {
-  "approval-card": "components/chat/envelopes/ApprovalCard",
-  "artifact-mini": "components/chat/envelopes/ArtifactMiniCard",
-  "chat-loop-terminated": "components/chat/envelopes/ChatLoopTerminatedCard",
-  "confirmation-card": "components/chat/envelopes/primitives/ConfirmationCard",
-  "diff-card": "components/chat/envelopes/primitives/DiffCard",
-  "document-viewer": "components/chat/envelopes/DocumentViewerCard",
-  "elicitation-prompt": "components/chat/envelopes/ElicitationPromptCard",
-  "error-report": "components/chat/envelopes/ErrorCard",
-  "info-card": "components/chat/envelopes/primitives/InfoCard",
-  "list-card": "components/chat/envelopes/primitives/ListCard",
-  "metric-card": "components/chat/envelopes/primitives/MetricCard",
-  "progress-card": "components/chat/envelopes/primitives/ProgressCard",
-  "proposal-card": "components/chat/envelopes/ProposalCard",
-  "report-card": "components/chat/envelopes/ReportCard",
+  "approval-card": "",
+  "artifact-mini": "",
+  "chat-loop-terminated": "",
+  "confirmation-card": "",
+  "diff-card": "",
+  "document-viewer": "",
+  "elicitation-prompt": "",
+  "error-report": "",
+  "info-card": "",
+  "list-card": "",
+  "metric-card": "",
+  "progress-card": "",
+  "proposal-card": "",
+  "report-card": "",
   "session-task": "",
-  "subagent-spawn-approval": "components/chat/envelopes/ApprovalCard",
-  "table-card": "components/chat/envelopes/primitives/TableCard",
+  "subagent-spawn-approval": "",
+  "table-card": "",
   "tangent.agent-turn": "",
   "tangent.app-board": "AppBoardView",
   "tangent.approval-queue": "ApprovalQueueView",
@@ -1125,7 +1125,7 @@ export const EnvelopeKindMap = {
   "tangent.triage": "TriageView",
   "tangent.whiteboard": "WhiteboardView",
   "tangent.wizard": "WizardView",
-  "timeline-card": "components/chat/envelopes/primitives/TimelineCard",
+  "timeline-card": "",
 } as const satisfies Record<EnvelopeType, string>;
 
 /** All registered envelope type strings, sorted by name. */
