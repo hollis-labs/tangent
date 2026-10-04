@@ -25,7 +25,6 @@ package plugins
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -35,8 +34,10 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/pluginpkg"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 // LoadInstalled discovers the plugins installed under root and loads them onto
@@ -97,11 +98,23 @@ func LoadInstalled(
 			"dir", reject.Dir, "reason", reject.Reason)
 	}
 
-	for _, entry := range installed {
+	for _, source := range installed {
+		if kindErr := resolveKinds(envSvc, source.Manifest.Bindings.Kinds); kindErr != nil {
+			host.RecordUnusable(source.Dir, kindErr)
+			logger.Warn("plugins: required kind is unavailable", "plugin", source.Manifest.ID, "error", kindErr)
+			continue
+		}
+		entry, cleanup, snapshotErr := pluginpkg.Snapshot(source, root)
+		if snapshotErr != nil {
+			host.RecordUnusable(source.Dir, snapshotErr)
+			continue
+		}
+
 		child := pluginhost.NewChildPlugin(
-			specFor(entry), toolsFor(entry), routesFor(entry),
+			specFor(entry, root, cleanup), toolsFor(entry), routesFor(entry),
 			pluginhost.WithHealthGate(!disableHealthGate))
 		if loadErr := host.Load(child); loadErr != nil {
+			_ = child.Unload()
 			logger.Warn("plugins: installed plugin failed to load",
 				"plugin", entry.Manifest.ID, "error", loadErr)
 			continue
@@ -167,16 +180,17 @@ const (
 // child reads its own environment. Neither of these is configuration the host
 // holds. See internal/pluginhost/childplugin.go, where the empty config map is
 // explained at the call site.
-func specFor(entry pluginpkg.Installed) pluginhost.ChildSpec {
+func specFor(entry pluginpkg.Installed, root string, cleanup func() error) pluginhost.ChildSpec {
 	return pluginhost.ChildSpec{
 		ID:       entry.Manifest.ID,
 		Version:  entry.Manifest.Version,
 		Command:  entry.Entrypoint,
-		Args:     entry.Manifest.Args,
 		WorkDir:  entry.Dir,
-		DataDir:  filepath.Join(entry.Dir, "data"),
-		CacheDir: filepath.Join(entry.Dir, "cache"),
+		DataDir:  filepath.Join(root, ".state", entry.Manifest.ID, "data"),
+		CacheDir: filepath.Join(root, ".state", entry.Manifest.ID, "cache"),
 		Env:      pluginEnvironment(),
+		Verify:   func() error { return entry.Manifest.VerifyBundle(entry.Dir) },
+		Cleanup:  cleanup,
 	}
 }
 
@@ -193,7 +207,9 @@ func toolsFor(entry pluginpkg.Installed) []pluginhost.MCPTool {
 		tools = append(tools, pluginhost.MCPTool{
 			Name:        declared.Name,
 			Description: declared.Description,
-			InputSchema: json.RawMessage(declared.InputSchema),
+			InputSchema: declared.InputSchema,
+			Effect:      declared.Effect,
+			Annotations: declared.Annotations,
 		})
 	}
 	return tools
@@ -206,8 +222,8 @@ func toolsFor(entry pluginpkg.Installed) []pluginhost.MCPTool {
 // hold, exactly as it does for a compiled-in plugin — declaring it here grants
 // nothing.
 func routesFor(entry pluginpkg.Installed) []pluginhost.HTTPRoute {
-	routes := make([]pluginhost.HTTPRoute, 0, len(entry.Manifest.Routes))
-	for _, declared := range entry.Manifest.Routes {
+	routes := make([]pluginhost.HTTPRoute, 0, len(entry.Manifest.Bindings.Routes))
+	for _, declared := range entry.Manifest.Bindings.Routes {
 		routes = append(routes, pluginhost.HTTPRoute{
 			Method:     declared.Method,
 			Path:       declared.Path,
@@ -215,4 +231,34 @@ func routesFor(entry pluginpkg.Installed) []pluginhost.HTTPRoute {
 		})
 	}
 	return routes
+}
+
+// Only the host-approved definition tree can supply a kind. A process bundle
+// cannot author trust or renderer bytes by naming it in the extension.
+func resolveKinds(svc *envelope.Service, refs []tangentplugin.KindRef) error {
+	for _, ref := range refs {
+		found := false
+		for _, item := range svc.MaterializedDefinitions() {
+			if item.Manifest.Kind == ref.Kind {
+				found = true
+				break
+			}
+		}
+		if !found {
+			if err := extensions.RegisterContributedKind(svc, ref.Kind); err != nil {
+				return fmt.Errorf("plugins: kind %s is not available: %w", ref.Kind, err)
+			}
+		}
+		available := false
+		for _, item := range svc.MaterializedDefinitions() {
+			if item.Manifest.Kind == ref.Kind && item.Manifest.PackageID == ref.Package && item.Manifest.Version == ref.Version && item.State.Servable() {
+				available = true
+				break
+			}
+		}
+		if !available {
+			return fmt.Errorf("plugins: kind %s@%s from %s is not available", ref.Kind, ref.Version, ref.Package)
+		}
+	}
+	return nil
 }

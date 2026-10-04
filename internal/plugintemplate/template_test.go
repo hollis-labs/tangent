@@ -2,6 +2,9 @@ package plugintemplate
 
 import (
 	"bytes"
+	"github.com/hollis-labs/tangent/internal/pluginpkg"
+	"github.com/hollis-labs/tangent/internal/plugintemplate/example/almanac"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -206,5 +209,50 @@ func TestNoScaffoldedFilePinsACount(t *testing.T) {
 				t.Errorf("%s/%s pins a count: %q", name, rel, match)
 			}
 		}
+	}
+}
+
+// Exercise the authored declaration through the real install door, using only
+// a test-owned native payload. No child or operator installation is launched.
+func TestGeneratedManifestInstallsWithExactNativeInventory(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(executable) // #nosec G304 -- current test executable.
+	if err != nil {
+		t.Fatal(err)
+	}
+	author := almanac.New()
+	var out bytes.Buffer
+	if writeErr := author.WriteManifest(&out, payload); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	decoded, err := tangentplugin.DecodeManifest(bytes.NewReader(out.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Version != author.Version() || decoded.Tools[0].Effect != "write" || decoded.Bindings.Kinds[0].Package != "tangent.appboard" {
+		t.Fatalf("unusable scaffold declaration: %+v", decoded)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "tangent-plugin-almanac"), payload, 0700); err != nil { // #nosec G306 G703 -- executable payload in t.TempDir.
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.yaml"), out.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pluginpkg.Install(dir, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	// An extra payload invalidates the reviewed inventory on a later install.
+	if err := os.WriteFile(filepath.Join(dir, "unlisted"), []byte("extra"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pluginpkg.Install(dir, t.TempDir()); err == nil {
+		t.Fatal("unlisted scaffold payload installed")
 	}
 }

@@ -15,10 +15,10 @@ import (
 	plugin "github.com/hollis-labs/plugin-sdk"
 	"github.com/hollis-labs/plugin-sdk/capability"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
-	"github.com/hollis-labs/tangent/internal/envelope"
+	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
-const hostVersionForChildren = envelope.HostVersion
+const hostVersionForChildren = tangentplugin.ContractVersion
 const (
 	maxChildRestarts      = 3
 	restartInitialBackoff = time.Second
@@ -38,6 +38,8 @@ type ChildSpec struct {
 	Env      []string
 	DataDir  string
 	CacheDir string
+	Verify   func() error
+	Cleanup  func() error
 }
 
 var ErrChildGone = driver.ErrGone
@@ -192,6 +194,11 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 		case <-timer.C:
 		}
 	}
+	if p.spec.Verify != nil {
+		if err := p.spec.Verify(); err != nil {
+			return driver.Plan{}, fmt.Errorf("pluginhost: verify reviewed bundle: %w", err)
+		}
+	}
 	dir := p.spec.WorkDir
 	if dir == "" {
 		dir = filepath.Dir(p.spec.Command)
@@ -244,12 +251,18 @@ func (p *ChildPlugin) Unload() error {
 	l := p.lifecycle
 	p.mu.Unlock()
 	if l == nil {
+		if p.spec.Cleanup != nil {
+			return p.spec.Cleanup()
+		}
 		return nil
 	}
 	err := l.Disable(context.Background())
 	p.mu.Lock()
 	p.status = plugin.PluginStatus{}
 	p.mu.Unlock()
+	if err == nil && p.spec.Cleanup != nil {
+		return p.spec.Cleanup()
+	}
 	return err
 }
 func (p *ChildPlugin) Status() plugin.PluginStatus {

@@ -1,4 +1,4 @@
-// Package ledger is the compiled-in plugin that puts Ledger's records on a
+// Package ledger is the plugin adapter that puts Ledger's records on a
 // Tangent board (CW-20260910-0035).
 //
 // # Who calls what
@@ -21,19 +21,16 @@
 // shape this payload would be doing a `for` loop expensively and occasionally
 // wrong.
 //
-// # The compiled-in tradeoff, stated plainly
+// # The process boundary
 //
-// ADR 0007 §6 says the test this pattern must keep passing is that no write to
-// the owning application originates in Tangent's process. Compiled in, this
-// plugin's Ledger writes DO originate there. That is the exception §6 records
-// as a property of the compiled-in host rather than per plugin, and this
-// package doc is how "who is inside the exception" stays a grep rather than a
-// memory. `CW-20260910-0034` (plugin-sdk subprocess mode) is the real fix and
-// closes it for every plugin at once.
+// Production builds this adapter into a native protocol-2 subprocess wrapper.
+// Its owning application's writes originate in that child, outside Tangent's
+// process. The host reviews the emitted manifest before loading it and never
+// asks the running child to widen its tool or route registrations.
 //
-// Note what the exception does NOT establish. Tangent holds no Ledger
-// credential and issues no identity, so a write this plugin makes is authorized
-// by Ledger's own policy and by nothing this host vouched for.
+// Tangent holds no Ledger credential and grants no new identity. Application
+// writes remain authorized by Ledger's own policy. The local MCP callback path
+// is not a scoped host-service or broker grant.
 //
 // # What a sync is
 //
@@ -133,7 +130,7 @@ func NewWithClient(client *Client) *Plugin { return &Plugin{client: client} }
 
 func (p *Plugin) ID() string      { return ID }
 func (p *Plugin) Name() string    { return "Ledger board" }
-func (p *Plugin) Version() string { return "0.1.0" }
+func (p *Plugin) Version() string { return "0.2.0-dev" }
 
 func (p *Plugin) Description() string {
 	return "Puts Ledger's records on a tangent.app-board: one agent call opens it, and a sync " +

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -359,4 +360,41 @@ func TestInventoryReportsRestartsAndHealth(t *testing.T) {
 	if got := after.Plugins[0].Restarts; got != 1 {
 		t.Errorf("Restarts after one crash = %d, want 1", got)
 	}
+}
+
+func TestCrashRecoveryReverifiesReviewedPayload(t *testing.T) {
+	host, _ := newHost(t)
+	spec := echoSpec(t, buildEchoPlugin(t))
+	var refuse atomic.Bool
+	var checked atomic.Int32
+	spec.Verify = func() error {
+		checked.Add(1)
+		if refuse.Load() {
+			return errors.New("reviewed payload changed")
+		}
+		return nil
+	}
+	child := NewChildPlugin(spec, nil, nil)
+	if err := host.Load(child); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = child.Unload() })
+	if checked.Load() == 0 {
+		t.Fatal("initial spawn skipped verification")
+	}
+	refuse.Store(true)
+	if err := killCurrent(child); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if checked.Load() > 1 && strings.Contains(child.Status().LastError, "reviewed payload changed") {
+			if child.pid() != 0 {
+				t.Fatal("changed payload spawned a child")
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("recovery did not refuse changed payload: %+v", child.Status())
 }

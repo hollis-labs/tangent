@@ -60,13 +60,8 @@ const (
 // registerPluginTools installs every plugin-contributed tool. It runs last in
 // registerTools so the host surface has already claimed its names.
 //
-// Every plugin-contributed tool carries the same conservative annotation —
-// mutating, destructive, non-idempotent, open-world — the "unaudited name
-// defaults to the dangerous assumption" posture: the host has no way to know
-// a plugin tool's actual read/write shape, and inferring "safe" from a name
-// is the exact bug the go-mcp annotation contract exists to make impossible.
-// A plugin that wants a more permissive hint has no way to declare one today;
-// that is a narrower, deliberate gap, not an oversight.
+// Explicit manifest annotations are advertised as hints, never grants. Omitted
+// hints keep the host's conservative defaults; effect is not inferred from hints.
 func (s *Server) registerPluginTools() error {
 	for _, tool := range s.pluginTools {
 		if s.isToolNameClaimed(tool.Name) {
@@ -84,14 +79,30 @@ func (s *Server) registerPluginTools() error {
 		if err != nil {
 			return err
 		}
-		s.mcp.RegisterTool(gmcpserver.Tool{
+		registered := gmcpserver.Tool{
 			Name:            tool.Name,
 			Description:     tool.Description,
 			InputSchema:     schema,
 			Handler:         pluginToolHandler(tool),
 			DestructiveHint: true,
 			OpenWorldHint:   true,
-		})
+		}
+		if a := tool.Annotations; a != nil {
+			registered.Title = a.Title
+			if a.ReadOnlyHint != nil {
+				registered.ReadOnlyHint = *a.ReadOnlyHint
+			}
+			if a.DestructiveHint != nil {
+				registered.DestructiveHint = *a.DestructiveHint
+			}
+			if a.IdempotentHint != nil {
+				registered.IdempotentHint = *a.IdempotentHint
+			}
+			if a.OpenWorldHint != nil {
+				registered.OpenWorldHint = *a.OpenWorldHint
+			}
+		}
+		s.mcp.RegisterTool(registered)
 	}
 	return nil
 }

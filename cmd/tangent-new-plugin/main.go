@@ -51,6 +51,8 @@ func run() error {
 		"where the application listens on this machine by default")
 	flag.StringVar(&options.Kind, "kind", "",
 		"the envelope kind to fill (application) or contribute (kind)")
+	flag.StringVar(&options.KindPackage, "kind-package", "", "approved definition package id")
+	flag.StringVar(&options.KindVersion, "kind-version", "", "exact approved definition version")
 	flag.StringVar(&options.Task, "task", "", "the Torque task id this is built under")
 	flag.BoolVar(&options.HandsBackWork, "hands-back-work", false,
 		"at least one disposition is an AUTHORED act in the application's own terms, "+
@@ -113,7 +115,7 @@ func nextSteps(options plugintemplate.Options) string {
 			"  2. Move it to a module in hollis-labs/tangent-plugins: <name>/ with\n" +
 				"     cmd/tangent-plugin-<name>/main.go modeled on\n" +
 				"     tesseract/cmd/tangent-plugin-tesseract, added to that repo's PLUGINS;\n" +
-				"     then make dist, tangent plugin install, and restart tangent.\n")
+				"     then build a fresh dist with WriteManifest over the final bin payload.\n")
 		out.WriteString(
 			"  3. Register the renderer component in the UI and run\n" +
 				"     `make generate-envelopes`; `make check-envelopes` is the staleness gate.\n")
@@ -126,7 +128,7 @@ func nextSteps(options plugintemplate.Options) string {
 			"  1. Move it to a module in hollis-labs/tangent-plugins: <name>/ with\n" +
 				"     cmd/tangent-plugin-<name>/main.go modeled on\n" +
 				"     tesseract/cmd/tangent-plugin-tesseract, added to that repo's PLUGINS;\n" +
-				"     then make dist, tangent plugin install, and restart tangent.\n")
+				"     then build a fresh dist with WriteManifest over the final bin payload.\n")
 		fmt.Fprintf(&out,
 			"  2. Document both tools in a file internal/smoke/docs_test.go names in\n"+
 				"     documentedToolFiles. A plugin tool is a shipped tool: an undocumented\n"+

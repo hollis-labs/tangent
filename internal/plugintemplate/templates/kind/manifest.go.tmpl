@@ -1,0 +1,22 @@
+package {{.Package}}
+
+import (
+ "io"
+
+ sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
+ tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
+)
+
+// WriteManifest emits the process declaration for a fresh native bundle. The
+// definition package and renderer must already be approved by the host; this
+// kind reference cannot install them or grant trust.
+func (p *Plugin) WriteManifest(w io.Writer, payload []byte) error {
+ common := sdkmanifest.Manifest{ID: p.ID(), Name: p.Name(), Description: p.Description(), Version: p.Version()}
+ bindings := tangentplugin.TangentExtension{
+ SchemaVersion: tangentplugin.TangentSchemaVersion,
+ Kinds: []tangentplugin.KindRef{
+ {Kind: EnvelopeType, Package: "{{.KindPackage}}", Version: "{{.KindVersion}}"},
+ },
+ }
+ return tangentplugin.EncodeNativeManifest(w, payload, "bin/tangent-plugin-{{.Package}}", common, bindings)
+}

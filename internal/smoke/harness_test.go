@@ -118,6 +118,7 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 
 	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
 	command.Env = append(os.Environ(),
+		"HOME="+root,
 		"TANGENT_DB_PATH="+dbPath,
 		"TANGENT_PLUGIN_DIR="+pluginDir,
 		"TANGENT_HTTP_PORT="+strconv.Itoa(port),
@@ -250,11 +251,11 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 	staged := map[string]string{}
 	for _, name := range smokePlugins() {
 		dir := filepath.Join(root, "tangent.plugin."+name)
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o750); err != nil {
 			return nil, err
 		}
 		binaryName := "tangent-plugin-" + name
-		built := filepath.Join(dir, binaryName)
+		built := filepath.Join(dir, "bin", binaryName)
 
 		var build *exec.Cmd
 		if source != "" {
@@ -265,7 +266,7 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 			module := "github.com/hollis-labs/tangent-plugins/" + name + "/cmd/" + binaryName
 			// #nosec G204 -- a fixed module path at the pinned version.
 			build = exec.Command("go", "install", module+"@"+version)
-			build.Env = append(os.Environ(), "GOBIN="+dir)
+			build.Env = append(os.Environ(), "GOBIN="+filepath.Join(dir, "bin"))
 		}
 		if output, err := build.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("build %s: %w\n%s", binaryName, err, output)
@@ -314,7 +315,7 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 		// Installed through the real command, not by copying files here. If
 		// `tangent plugin install` is broken, these tests should fail.
 		install := exec.Command(tangentBinary, "plugin", "install", staged) // #nosec G204 -- both are this test's own paths.
-		install.Env = append(os.Environ(), "TANGENT_PLUGIN_DIR="+pluginDir)
+		install.Env = append(os.Environ(), "HOME="+root, "TANGENT_PLUGIN_DIR="+pluginDir)
 		if output, err := install.CombinedOutput(); err != nil {
 			t.Fatalf("tangent plugin install %s: %v\n%s", name, err, output)
 		}

@@ -113,6 +113,8 @@ type Options struct {
 	Kind string
 	// KindPackage is the ADR 0003 package id a contributed kind ships under.
 	KindPackage string
+	// KindVersion names the exact approved definition version.
+	KindVersion string
 	// Task is the Torque id this plugin is being built under, for the comments
 	// that cite it. Empty leaves the citation out rather than inventing one.
 	Task string
@@ -171,7 +173,18 @@ func (o Options) Derive() (Options, error) {
 		}
 	}
 	if o.KindPackage == "" {
-		o.KindPackage = "tangent." + o.Package
+		if o.Preset == PresetApplication && o.Kind == "tangent.app-board" {
+			o.KindPackage = "tangent.appboard"
+		} else {
+			o.KindPackage = "tangent." + o.Package
+		}
+	}
+	if o.KindVersion == "" {
+		if o.Preset == PresetApplication && o.Kind == "tangent.app-board" {
+			o.KindVersion = "0.3"
+		} else {
+			o.KindVersion = "0.1"
+		}
 	}
 	if o.Preset == PresetKind && (o.HandsBackWork || o.Auth) {
 		return o, fmt.Errorf(
@@ -289,7 +302,7 @@ func outputPath(name string, options Options) string {
 	switch trimmed {
 	case "client.go":
 		return options.Package + ".go"
-	case "plugin.go":
+	case "plugin.go", "manifest.go":
 		if options.Preset == PresetKind {
 			return filepath.Join("internal", "plugins", options.Package, trimmed)
 		}

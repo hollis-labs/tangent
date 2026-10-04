@@ -3,6 +3,7 @@ package plugins
 import (
 	"bytes"
 	"context"
+	gobuild "go/build"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,18 +18,17 @@ import (
 func TestInstalledTruncatedCredentialIsAbsentFromTangentLog(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "tangent.plugin.echo")
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	t.Setenv("GOPATH", gobuild.Default.GOPATH)
+	t.Setenv("HOME", t.TempDir())
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(dir, "runme")
+	binary := filepath.Join(dir, "bin", "runme")
 	build := exec.Command("go", "build", "-p", "2", "-o", binary, "../pluginhost/testdata/echoplugin") //nolint:gosec // test-owned output and fixed source
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
-	manifest := "id: tangent.plugin.echo\nname: Echo\nversion: 0.1.0\nprotocol: 2\nentrypoint: runme\n"
-	if err := os.WriteFile(filepath.Join(dir, "plugin.yaml"), []byte(manifest), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeEchoManifest(t, dir, binary)
 	raw := strings.Repeat("p", 501) + "PASSWORD=S4CRCUT\nFINAL CAUSE: failure\n"
 	raw += strings.Repeat("p", 4600-len(raw))
 	t.Setenv("ECHO_PLUGIN_STDERR", raw)

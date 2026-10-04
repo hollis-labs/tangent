@@ -678,7 +678,14 @@ those keys are refused by name rather than ignored, so a plugin that thinks it
 raised its own trust class fails to load instead of being silently downgraded.
 
 `internal/plugins/installed.go` scans the installed plugin directory and resolves
-manifest declarations into Tangent registrations. `ChildPlugin` uses
+strict SDK manifest-v2 declarations and Tangent extension schema 1 into
+Tangent registrations. Install and discovery both verify exact native bundle
+inventories, strict SemVer identities, explicit host/engine contract ranges and
+approved definition references. Loading pins a private read-only verified
+snapshot, with writable data/cache outside its inventory; no legacy data moves.
+The public declaration and native runner contracts are each 1.0.0, independent
+of the application release. See [the plugin guide](writing-a-plugin.md#process-manifest-v2-and-the-tangent-extension)
+for the format and refusal boundaries. `ChildPlugin` uses
 [`plugin-host`](https://github.com/hollis-labs/plugin-host) Lifecycle for spawn,
 protocol-2 handshake, process groups, bounded teardown and crash recovery; the
 private child and wire implementations are removed. A host process shares one

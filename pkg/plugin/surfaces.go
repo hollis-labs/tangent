@@ -3,6 +3,7 @@ package plugin
 import (
 	"encoding/json"
 
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 )
 
@@ -25,6 +26,9 @@ type MCPTool struct {
 	// type "object" — MCP requires that of every tool, and the host checks it
 	// here so a malformed schema fails the boot rather than the first call.
 	InputSchema json.RawMessage
+	// Effect is the reviewed host effect, never an authorization grant.
+	Effect      string
+	Annotations *sdkmanifest.ToolAnnotations
 	// Handler services invocations. It is the SDK's own dispatch interface,
 	// unchanged, so a plugin written against it needs no Tangent-specific
 	// handler type.

@@ -49,17 +49,13 @@ func Install(src, root string) (InstallResult, error) {
 	if _, err := os.Stat(manifestPath); err != nil {
 		return InstallResult{}, fmt.Errorf("%w: %s has no %s", ErrNotAPlugin, src, ManifestName)
 	}
-	manifest, err := ParseManifest(manifestPath)
+	// Pin the parsed declaration before staging; copying must preserve that
+	// same reviewed identity and inventory, even if the source changes.
+	reviewed, err := evaluate(src, manifestPath)
 	if err != nil {
 		return InstallResult{}, err
 	}
-	// Compatibility is checked at install as well as at boot. Discovering at
-	// install that a plugin cannot run on this host costs one command; finding
-	// out at the next boot costs a debugging session, and the operator has by
-	// then forgotten they installed anything.
-	if err := CheckCompatible(manifest); err != nil {
-		return InstallResult{}, err
-	}
+	manifest := reviewed.Manifest
 
 	// The id is a directory name, so it has to be one that cannot escape the
 	// root. A plugin id is not operator input, but an install root is not a
@@ -88,6 +84,10 @@ func Install(src, root string) (InstallResult, error) {
 	// Verify the staged copy the way discovery will read it, before anything
 	// existing is disturbed. This is what turns Nanite's class of defect — an
 	// install that completes and does not work — into a refusal.
+	if verifyErr := manifest.VerifyBundle(staging); verifyErr != nil {
+		_ = os.RemoveAll(staging)
+		return InstallResult{}, fmt.Errorf("pluginpkg: staged bundle differs from reviewed source: %w", verifyErr)
+	}
 	if _, evalErr := evaluate(staging, filepath.Join(staging, ManifestName)); evalErr != nil {
 		_ = os.RemoveAll(staging)
 		return InstallResult{}, fmt.Errorf(
@@ -144,6 +144,9 @@ func copyTree(src, dst string) error {
 		// somewhere else, and what is installed should be what is there.
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("pluginpkg: %s is a symlink; a plugin directory must be self-contained", path)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("pluginpkg: bundle file %s is not regular", path)
 		}
 		return copyFile(path, target, info.Mode().Perm())
 	})
