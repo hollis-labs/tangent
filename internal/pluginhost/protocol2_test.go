@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,6 +141,12 @@ func TestHandshakeFailuresAreTerminalAndRegisterNothing(t *testing.T) {
 			var failure *driver.Failure
 			if !errors.As(err, &failure) || failure.Stage != driver.StageLoad || failure.Retryable {
 				t.Fatalf("failure lost typed terminal stage: %v", err)
+			}
+			if test.name == "identity" || test.name == "version" {
+				var detail *driver.MismatchError
+				if !errors.As(err, &detail) || !strings.Contains(err.Error(), detail.Expected) || !strings.Contains(err.Error(), detail.Actual) {
+					t.Fatalf("refusal lost expected/actual detail: %v", err)
+				}
 			}
 			if child.Restarts() != 0 || child.pid() != 0 || len(host.MCPTools()) != 0 {
 				t.Fatal("failed handshake activated, retried or registered")

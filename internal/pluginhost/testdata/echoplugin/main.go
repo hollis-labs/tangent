@@ -32,6 +32,9 @@ type echoPlugin struct {
 
 func (p *echoPlugin) Init(_ context.Context, params subprocess.InitParams) (subprocess.InitResult, error) {
 	p.initParams = params
+	if text := os.Getenv("ECHO_PLUGIN_STDERR"); text != "" {
+		fmt.Fprintln(os.Stderr, text)
+	}
 	if os.Getenv("ECHO_PLUGIN_INIT_ERROR") != "" {
 		return subprocess.InitResult{}, fmt.Errorf("fixture Init refused")
 	}
@@ -105,6 +108,8 @@ func (p *echoPlugin) MCPCallTool(
 			// Proves the child reads its OWN environment rather than being
 			// handed config by the host.
 			"secret_from_env": os.Getenv("ECHO_PLUGIN_SECRET"),
+			"inherited":       os.Getenv("ECHO_PLUGIN_PARENT_ONLY"),
+			"pwd":             os.Getenv("PWD"),
 		})
 		if err != nil {
 			return subprocess.MCPCallResult{}, err

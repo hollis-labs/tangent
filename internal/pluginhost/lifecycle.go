@@ -265,7 +265,8 @@ type PluginRecord struct {
 	// crashed and for a compiled-in plugin, which has no process to restart —
 	// the two are indistinguishable here on purpose: "never needed a restart"
 	// is the only fact this field states.
-	Restarts int `json:"restarts,omitempty"`
+	Restarts  int  `json:"restarts,omitempty"`
+	Exhausted bool `json:"exhausted,omitempty"`
 
 	// Healthy is the last plugin/health verdict this host has cached for this
 	// plugin (CW-20260911-0069), or nil if it has never been probed — which is
@@ -383,6 +384,10 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 		if record.Loaded && attempt.p != nil {
 			record.Enabled = safeStatus(attempt.p).Enabled
 			record.Restarts = safeRestarts(attempt.p)
+			record.Exhausted = safeExhausted(attempt.p)
+			if record.Exhausted {
+				record.Error = "restart attempts exhausted"
+			}
 		}
 		if probed, wasProbed := health[attempt.id]; wasProbed {
 			healthy := probed.ok
@@ -470,4 +475,16 @@ func safeStatus(p plugin.Plugin) (status plugin.PluginStatus) {
 		}
 	}()
 	return p.Status()
+}
+
+func safeExhausted(p plugin.Plugin) (exhausted bool) {
+	defer func() {
+		if recover() != nil {
+			exhausted = false
+		}
+	}()
+	if reporter, ok := p.(interface{ Exhausted() bool }); ok {
+		return reporter.Exhausted()
+	}
+	return false
 }

@@ -50,7 +50,8 @@ type PluginRecord struct {
 	// (CW-20260911-0068). Zero for a plugin that never needed one, which reads
 	// the same as "not a subprocess plugin" here — that distinction lives in
 	// Loaded/Error, not in this count.
-	Restarts int `json:"restarts,omitempty"`
+	Restarts  int  `json:"restarts,omitempty"`
+	Exhausted bool `json:"exhausted,omitempty"`
 	// Healthy is the last plugin/health verdict this host has cached, or nil
 	// if it has never been probed (the normal state until a health report is
 	// requested). A pointer because the case that matters is Healthy pointing

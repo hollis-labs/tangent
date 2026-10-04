@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   lifecycle host epoch. The current browser registry-v1 loader refuses this
   empty snapshot; loader/catalog adoption is deferred and app boot is unaffected.
 
+- Preserve the earlier v0.1.1 first-party update: the runner validates turns
+  against `plugin.TurnsEnqueueInputSchema`; tesseract and torque changed only
+  their version. The protocol-2 source pin above supersedes that install pin.
+- **Activation order:** replace the source pins with approved releases, rebuild
+  protocol-2 plugins from the first tag, then install those plugins before or
+  together with the new daemon. Until then protocol-1 binaries are refused,
+  `/readyz` reports `plugins: fail`, and the installer exits non-zero after its
+  30-second readiness wait. Runner tools remain unavailable until reinstalled.
+- Requests and replies are limited to 8 MiB, including the frame newline. An
+  over-cap reply is currently dropped; the caller waits for its 30-second budget.
+
 ### Fixed
 
 - **A LaunchAgent reinstall no longer drops the daemon's extra environment**

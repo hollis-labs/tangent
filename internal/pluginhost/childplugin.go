@@ -70,6 +70,7 @@ type ChildPlugin struct {
 	cancel     context.CancelFunc
 	status     plugin.PluginStatus
 	identity   subprocess.InitResult
+	process    *driver.Process
 }
 
 func NewChildPlugin(spec ChildSpec, tools []MCPTool, routes []HTTPRoute, opts ...ChildPluginOption) *ChildPlugin {
@@ -117,6 +118,17 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 		// Lifecycle calls this only for an unexpected exit of an activated child;
 		// protocol/identity/version/init failures and intentional stops never reach it.
 		ClassifyExit: func(info driver.ExitInfo) error {
+			p.mu.Lock()
+			proc, controller := p.process, p.lifecycle
+			p.mu.Unlock()
+			tail := ""
+			if proc != nil {
+				tail = proc.Diagnostics()
+			}
+			h.logger.Warn("pluginhost: child crashed", "plugin", p.ID(), "exit_code", info.Code, "signal", info.Signal, "stderr", tail)
+			if controller.Status().RetryAttempts >= maxChildRestarts {
+				h.logger.Warn("pluginhost: restart attempts exhausted", "plugin", p.ID(), "exit_code", info.Code, "signal", info.Signal, "stderr", tail)
+			}
 			return &driver.TransientError{Code: "unexpected_exit", Cause: info.Err}
 		},
 		CallbackTimeout: 15 * time.Second,
@@ -175,9 +187,13 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 	return driver.Plan{Spec: driver.Spec{
 		ID: p.ID(), ExpectedID: p.ID(), ExpectedVersion: p.spec.Version,
 		Command: p.spec.Command, Args: p.spec.Args, Dir: p.spec.WorkDir,
-		Env: driver.InheritEnv(p.spec.Env...),
+		Env:    driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
+		Redact: redactPluginDiagnostic,
 		Init: subprocess.InitParams{
 			PluginDir: dir, DataDir: p.spec.DataDir, CacheDir: p.spec.CacheDir,
+			// Do not plumb host-held configuration through Init: plugins read
+			// their own environment. This keeps configuration and its secrets
+			// outside Tangent's stores, inventory and reports.
 			Config: map[string]string{}, Grants: capability.GrantSet{},
 			CapabilityContract: capability.ContractVersion,
 			HostInfo:           subprocess.HostInfo{Version: hostVersionForChildren, Protocol: subprocess.ProtocolVersion},
@@ -192,6 +208,7 @@ func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *dr
 		return err
 	}
 	p.owner = owner
+	p.process = proc
 	p.active, p.cancel = context.WithCancel(context.Background())
 	p.gate = driver.NewHealthGate(proc.Client().Health, healthProbeCacheTTL)
 	p.identity = proc.Info()
@@ -250,6 +267,14 @@ func (p *ChildPlugin) Restarts() int {
 	return l.Status().RetryAttempts
 }
 
+// Exhausted reports the controller's actual bounded-recovery outcome.
+func (p *ChildPlugin) Exhausted() bool {
+	p.mu.Lock()
+	l := p.lifecycle
+	p.mu.Unlock()
+	return l != nil && l.Status().Exhausted
+}
+
 // dispatch captures one incarnation and cancels admitted work when it is
 // revoked. A replacement never receives an old generation's queued call.
 func (p *ChildPlugin) dispatch(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -304,7 +329,11 @@ func (p *ChildPlugin) probeHealth(ctx context.Context) pluginHealth {
 	l, owner, gate, active := p.lifecycle, p.owner, p.gate, p.active
 	p.mu.Unlock()
 	if l == nil || gate == nil || active == nil || !l.IsCurrent(owner) {
-		return pluginHealth{message: ErrChildGone.Error(), checked: time.Now().UTC()}
+		message := ErrChildGone.Error()
+		if l != nil && l.Status().Exhausted {
+			message += "; restart attempts exhausted"
+		}
+		return pluginHealth{message: message, checked: time.Now().UTC()}
 	}
 	probeCtx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(active, cancel)
@@ -312,7 +341,11 @@ func (p *ChildPlugin) probeHealth(ctx context.Context) pluginHealth {
 	defer cancel()
 	v := gate.Probe(probeCtx)
 	if !l.IsCurrent(owner) {
-		return pluginHealth{message: ErrChildGone.Error(), checked: time.Now().UTC()}
+		message := ErrChildGone.Error()
+		if l.Status().Exhausted {
+			message += "; restart attempts exhausted"
+		}
+		return pluginHealth{message: message, checked: time.Now().UTC()}
 	}
 	return pluginHealth{ok: v.OK, message: v.Message, checked: v.Checked, reachable: v.Reachable}
 }

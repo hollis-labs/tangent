@@ -123,6 +123,7 @@ func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 
 	lastPID := child.pid()
 	for attempt := 0; attempt < maxChildRestarts; attempt++ {
+		started := time.Now()
 		if err := killCurrent(child); err != nil {
 			t.Fatalf("kill %d: %v", attempt, err)
 		}
@@ -132,6 +133,11 @@ func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 				t.Fatalf("restart attempt %d never landed", attempt+1)
 			}
 			if pid := child.pid(); pid != 0 && pid != lastPID {
+				elapsed := time.Since(started)
+				want := time.Second << attempt
+				if elapsed < want-100*time.Millisecond || elapsed > want+3*time.Second {
+					t.Fatalf("restart %d delay = %s, want %s plus handshake", attempt+1, elapsed, want)
+				}
 				lastPID = pid
 				break
 			}
@@ -155,6 +161,9 @@ func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 	}
 	if got := child.Restarts(); got != maxChildRestarts {
 		t.Fatalf("Restarts() after the final crash = %d, want it to stay at the cap %d", got, maxChildRestarts)
+	}
+	if !child.Exhausted() || !host.Inventory(context.Background()).Plugins[0].Exhausted {
+		t.Fatal("exhaustion missing from child or inventory")
 	}
 	if !strings.Contains(child.Status().LastError, "exhausted") {
 		t.Errorf("LastError = %q, want it to say the restart budget is exhausted", child.Status().LastError)

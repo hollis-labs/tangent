@@ -337,3 +337,26 @@ plugin that loads" a checked claim rather than an assertion.
 
 They have no `cmd/` program and are not a tangent-plugins module, so nothing
 installs them and no build serves their tools.
+
+### Subprocess compatibility and limits
+
+The host requires protocol 2 and capability contract 1. Init sends an empty
+configuration and grant set, a fresh host-owned incarnation, and no optional
+profiles. Identity must exactly match the installed manifest. Both the manifest
+version and the reported version must be strict SemVer (`major.minor.patch`,
+with valid optional prerelease/build metadata); `v` prefixes, missing components,
+and leading zeros are refused. Reported version must exactly match the manifest,
+including prerelease and build metadata. Refusals show bounded printable expected
+and actual metadata, and the plugin is stopped before load or registration.
+
+Both request and reply frames are limited to 8 MiB including the newline. An
+oversized request fails locally; this pinned host currently drops an oversized
+reply, so its caller waits up to the 30-second call budget. Keep replies below
+the cap and paginate large results.
+
+Activation requires approved release pins and protocol-2 binaries rebuilt from
+the first tag. Install those binaries before or together with the new daemon.
+With older protocol-1 binaries still installed, `/readyz` fails its plugin check,
+and the installer exits non-zero after its 30-second readiness wait. Runner
+capabilities return only once its compatible binary is installed. The browser
+registry loader must also adopt registry v2 before this host change ships.
