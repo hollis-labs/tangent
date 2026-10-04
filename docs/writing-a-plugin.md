@@ -362,15 +362,23 @@ capabilities return only once its compatible binary is installed. The browser
 registry loader must also adopt registry v2 before this host change ships.
 
 Plugin stderr is untrusted diagnostic text. Tangent retains a bounded tail,
-conservatively drops the first line when that tail window is full, normalizes
-common escaped and Unicode credential spellings, scrubs credential assignments,
+drops a possibly partial leading line after the tail was truncated when text
+remains after a newline, normalizes common escaped and Unicode credential spellings, scrubs credential assignments,
 headers, URL userinfo and known token prefixes, and replaces control characters.
 This is **best effort**, not a guarantee against arbitrary secret disclosure;
 plugins must keep secrets out of their own logs. Bare-colon failure prose is
-preserved. Plugin directories and executable paths resolve to absolute paths.
+preserved. Look-alike letters, combining marks, mathematical alphabets and
+arbitrary bare-colon credentials are outside this best-effort scrubber. A single
+over-long line with no newline, or only a trailing newline, stays bounded but
+cannot recover a truncated key name; plugins must never log secrets. Matching recognizes common escaped keys
+without rewriting unrelated percent-encoded diagnostic text. Physical line
+boundaries survive redaction; display text replaces control characters afterwards.
+Plugin directories and executable paths resolve to absolute paths.
 
 Inventory keeps initial load refusals in `error`, and failures after a successful
 load in `failed_after_load` and `runtime_error`. Registration history remains
 recorded even when a plugin stops serving. Readiness names refusals and runtime
-failures separately. A failed restart emits a deduplicated warning when status
-or inventory is sampled; the shared library continues to own process supervision.
+failures separately, using names and bounded lists with overflow counts. A plugin
+that fails after loading makes `/readyz` return HTTP 503, including restart
+exhaustion; an authored unhealthy answer remains a warning. A failed restart
+emits a deduplicated warning when status or inventory is sampled; the shared library continues to own process supervision.

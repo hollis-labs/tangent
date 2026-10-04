@@ -134,7 +134,7 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 			p.mu.Unlock()
 			tail := ""
 			if proc != nil {
-				tail = proc.Diagnostics()
+				tail = sanitizePluginDiagnostic(proc.Diagnostics())
 			}
 			h.logger.Warn("pluginhost: child crashed", "plugin", p.ID(), "exit_code", info.Code, "signal", info.Signal, "stderr", tail)
 			if controller.Status().RetryAttempts >= maxChildRestarts {
@@ -157,6 +157,7 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 		return err
 	}
 	if err = l.Enable(h.Context()); err != nil {
+		err = &pluginDiagnosticError{cause: err, text: redactPluginDiagnostic(err.Error())}
 		p.fail(err)
 		return err
 	}
@@ -199,7 +200,7 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 		ID: p.ID(), ExpectedID: p.ID(), ExpectedVersion: p.spec.Version,
 		Command: p.spec.Command, Args: p.spec.Args, Dir: p.spec.WorkDir,
 		Env:         driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
-		Redact:      redactPluginDiagnostic,
+		Redact:      redactRawDiagnostic,
 		StderrBytes: pluginStderrBytes,
 		Init: subprocess.InitParams{
 			PluginDir: dir, DataDir: p.spec.DataDir, CacheDir: p.spec.CacheDir,
@@ -453,3 +454,12 @@ func absoluteChildSpec(spec ChildSpec) (ChildSpec, error) {
 	}
 	return spec, nil
 }
+
+// Retain the typed library cause while exposing only sanitized display text.
+type pluginDiagnosticError struct {
+	cause error
+	text  string
+}
+
+func (e *pluginDiagnosticError) Error() string { return e.text }
+func (e *pluginDiagnosticError) Unwrap() error { return e.cause }

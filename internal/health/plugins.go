@@ -3,10 +3,12 @@ package health
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Plugin health (CW-20260910-0036).
@@ -147,10 +149,7 @@ func (r *Reporter) checkPlugins(ctx context.Context) Check {
 			}
 		}
 		sort.Strings(refused)
-		detail := fmt.Sprintf("%d plugin(s) refused to load: %s", inventory.Refused, joinBounded(refused))
-		if len(failed) > 0 {
-			detail += fmt.Sprintf("; %d plugin(s) failed after load: %s", len(failed), joinBounded(failed))
-		}
+		detail := pluginFailureDetail(refused, inventory.Refused, failed)
 		return Check{
 			Name:   CheckPlugins,
 			Status: StatusFail,
@@ -164,7 +163,7 @@ func (r *Reporter) checkPlugins(ctx context.Context) Check {
 	}
 	if len(failed) > 0 {
 		return Check{Name: CheckPlugins, Status: StatusFail,
-			Detail: bound(fmt.Sprintf("%d plugin(s) failed after load: %s", len(failed), joinBounded(failed))),
+			Detail: pluginFailureDetail(nil, 0, failed),
 			Action: "Read the runtime_error in the plugin inventory; restore the plugin executable or its dependency before restarting it."}
 	}
 	if inventory.Loaded == 0 {
@@ -241,4 +240,47 @@ func joinBounded(ids []string) string {
 		return strings.Join(ids, ", ")
 	}
 	return strings.Join(ids[:maxNamed], ", ") + " (+" + strconv.Itoa(len(ids)-maxNamed) + " more)"
+}
+
+// Give each failure group its own share of the detail ceiling, so truncating a
+// long refused list cannot hide the independently failed-after-load group.
+func pluginFailureDetail(refused []string, refusedCount int, failed []string) string {
+	refusedLabel := fmt.Sprintf("%d plugin(s) refused to load: ", refusedCount)
+	failedLabel := fmt.Sprintf("%d plugin(s) failed after load: ", len(failed))
+	if refusedCount == 0 {
+		return failedLabel + pluginNamesForBudget(failed, maxDetailBytes-len(failedLabel))
+	}
+	if len(failed) == 0 {
+		return refusedLabel + pluginNamesForBudget(refused, maxDetailBytes-len(refusedLabel))
+	}
+	available := maxDetailBytes - len(refusedLabel) - len(failedLabel) - 2
+	return refusedLabel + pluginNamesForBudget(refused, available/2) + "; " + failedLabel + pluginNamesForBudget(failed, available-available/2)
+}
+func pluginNamesForBudget(ids []string, budget int) string {
+	names := make([]string, 0, min(4, len(ids)))
+	for _, id := range ids[:min(4, len(ids))] {
+		name := filepath.Base(id)
+		if len(name) > 24 {
+			cut := 24
+			for cut > 0 && !utf8.RuneStart(name[cut]) {
+				cut--
+			}
+			name = name[:cut] + "…"
+		}
+		candidate := append(names, name)
+		more := len(ids) - len(candidate)
+		text := strings.Join(candidate, ", ")
+		if more > 0 {
+			text += fmt.Sprintf(" (+%d more)", more)
+		}
+		if len(text) > budget {
+			break
+		}
+		names = candidate
+	}
+	text := strings.Join(names, ", ")
+	if more := len(ids) - len(names); more > 0 {
+		text += fmt.Sprintf(" (+%d more)", more)
+	}
+	return text
 }

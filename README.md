@@ -131,8 +131,8 @@ asynchronous approvals, see the `tangent.hitl_*` tools and
 The plugin-host integration requires protocol-2 plugins. Existing protocol-1
 plugins must be rebuilt; the GitHub plugin remains on protocol 1 pending its
 separate migration. Source-only pseudo-version pins must be replaced by
-approved releases before activation. This source change installs or deploys
-nothing.
+approved releases before activation. Follow the activation prerequisites and
+installation order in [the plugin guide](docs/writing-a-plugin.md).
 
 ```bash
 # after the Quickstart's clone and installs:

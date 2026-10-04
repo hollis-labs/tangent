@@ -43,15 +43,11 @@ func TestDiagnosticPreservesProseAndSanitizesControls(t *testing.T) {
 	}
 }
 
-func TestDiagnosticDropsFullWindowPartialLine(t *testing.T) {
-	end := "\nreadable failure\n"
-	raw := "WORD=SECRET-tail" + strings.Repeat("x", pluginStderrBytes-len("WORD=SECRET-tail")-len(end)) + end
-	got := redactPluginDiagnostic(raw)
-	if strings.Contains(got, "SECRET") || strings.Contains(got, "WORD") || !strings.Contains(got, "readable failure") {
-		t.Fatal(got)
-	}
-	if got := redactPluginDiagnostic(strings.Repeat("x", pluginStderrBytes)); got != "" {
-		t.Fatal("partial line without boundary was exposed")
+func TestDiagnosticLongErrorKeepsLabelAndCause(t *testing.T) {
+	text := "pluginhost: load/init (init_failed): plugin is gone\n" + strings.Repeat("filler line\n", 500) + "FINAL CAUSE: schema failed"
+	got := redactPluginDiagnostic(text)
+	if !strings.HasPrefix(got, "pluginhost: load/init (init_failed): plugin is gone") || !strings.Contains(got, "FINAL CAUSE: schema failed") {
+		t.Fatal("generic error trimmed", got)
 	}
 }
 
