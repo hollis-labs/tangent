@@ -1,124 +1,201 @@
 package plugin
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"path/filepath"
+	"io"
+	"net/http"
+	"path"
+	"regexp"
 	"strings"
+
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 )
 
-// A plugin.yaml is the host's record of what a plugin contributes, read once
-// at install and at boot — not the plugin's runtime self-declaration, which
-// ADR 0008 §3 rules out. A plugin emits it (conventionally from a --manifest
-// flag) and the host validates, installs and discovers it
-// (internal/pluginpkg). It is not ADR 0003's interaction definition manifest:
-// it says what a PROCESS is and how to start it, and grants nothing.
+const (
+	ManifestName = sdkmanifest.Filename
+	// ContractVersion versions the public Tangent plugin declaration contract,
+	// independently of the application release and interaction definitions.
+	ContractVersion = "1.0.0"
+	// BinaryContractVersion is the host's native subprocess runner contract.
+	BinaryContractVersion = "1.0.0"
+	TangentSchemaVersion  = 1
+)
 
-// ManifestName is the file an installed plugin is recognized by. A directory
-// without one is not a plugin, which is how a stray directory under the install
-// root is ignored rather than reported as broken.
-const ManifestName = "plugin.yaml"
-
-// Manifest is an installed plugin's declaration.
+// Manifest retains the reviewed SDK declaration and its validated host bindings.
+// It is not an interaction definition or an authorization grant.
 type Manifest struct {
-	// ID is the plugin identity the host keys on, and it must match the id the
-	// child returns from `plugin/init`. A mismatch is refused: a plugin
-	// installed as one thing and answering as another is the ambiguity the
-	// host's roster exists to prevent.
-	ID string `yaml:"id"`
-	// Name and Description are for operators and health reports.
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	// Version is the plugin's own version, independent of Tangent's. That
-	// independence is the point of installing rather than compiling in.
-	Version string `yaml:"version"`
-
-	// Protocol is the subprocess wire version this plugin was built against.
-	// The host refuses any version but its own; see
-	// internal/pluginpkg.CheckCompatible for why.
-	Protocol int `yaml:"protocol"`
-
-	// Entrypoint is the executable, relative to the plugin's own directory.
-	// It is deliberately not an absolute path and not a shell string: a
-	// manifest that could name any binary on the system would make installing
-	// a plugin equivalent to granting arbitrary execution, and an install
-	// directory is not a place a reviewer looks.
-	Entrypoint string `yaml:"entrypoint"`
-	// Args are passed to the entrypoint.
-	Args []string `yaml:"args,omitempty"`
-
-	// Tools are the MCP tools this plugin serves. The host registers them and
-	// dispatches to the child by name; the child is never asked what it has.
-	Tools []ToolDecl `yaml:"tools,omitempty"`
-	// Routes are the browser routes this plugin serves.
-	Routes []RouteDecl `yaml:"routes,omitempty"`
+	sdkmanifest.Manifest
+	Bindings TangentExtension
 }
 
-// ToolDecl is one MCP tool an installed plugin serves.
-type ToolDecl struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	// InputSchema is the tool's JSON Schema, inline. It is the host that
-	// advertises this to callers, so it is the host that has to hold it.
-	InputSchema string `yaml:"input_schema"`
+type ToolDecl = sdkmanifest.Tool
+
+type TangentExtension struct {
+	SchemaVersion int         `json:"schema_version"`
+	Kinds         []KindRef   `json:"kinds,omitempty"`
+	Routes        []RouteDecl `json:"routes,omitempty"`
+	MCPTools      []string    `json:"mcp_tools,omitempty"`
 }
 
-// RouteDecl is one browser route an installed plugin serves.
+type KindRef struct {
+	Kind    string `json:"kind"`
+	Version string `json:"version"`
+	Package string `json:"package"`
+}
+
 type RouteDecl struct {
-	Method string `yaml:"method"`
-	Path   string `yaml:"path"`
-	// Capability is the ADR 0004 §2 capability the route exercises. The host
-	// checks it against the participant's session before dispatching, and
-	// refuses a capability a participant can never hold — a plugin declaring
-	// one here is naming what it needs, not granting itself anything.
-	Capability string `yaml:"capability"`
+	Method     string `json:"method"`
+	Path       string `json:"path"`
+	Capability string `json:"capability"`
 }
 
-// Validate reports whether a manifest is usable, without reference to a
-// filesystem. It is what both install and discovery run.
+// DecodeManifest is the only process-manifest decoder. Broader YAML, legacy
+// entrypoints and unknown/duplicate/null/trailing fields have no fallback.
+func DecodeManifest(r io.Reader) (Manifest, error) {
+	common, err := sdkmanifest.Decode(r)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("plugin: %s: %w", ManifestName, err)
+	}
+	var bindings TangentExtension
+	if err := sdkmanifest.DecodeExtension(common.Tangent, &bindings); err != nil {
+		return Manifest{}, fmt.Errorf("plugin: %s tangent: %w", common.ID, err)
+	}
+	m := Manifest{Manifest: common, Bindings: bindings}
+	if err := m.Validate(); err != nil {
+		return Manifest{}, err
+	}
+	return m, nil
+}
+
+var declarationName = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
+var manifestToolName = regexp.MustCompile(`^tangent\.[a-z][a-z0-9_-]*$`)
+var manifestRoutePath = regexp.MustCompile(`^/api/plugins/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._/-]*$`)
+
 func (m Manifest) Validate() error {
-	if strings.TrimSpace(m.ID) == "" {
-		return fmt.Errorf("plugin: %s declares no id", ManifestName)
+	if checkErr := m.Manifest.Validate(); checkErr != nil {
+		return fmt.Errorf("plugin: %s: %w", m.ID, checkErr)
 	}
-	if strings.TrimSpace(m.Entrypoint) == "" {
-		return fmt.Errorf("plugin: %s declares no entrypoint", m.ID)
+	if checkErr := m.validateBindings(); checkErr != nil {
+		return checkErr
 	}
-	// An entrypoint is a name inside the plugin's own directory. Anything that
-	// escapes it — absolute, or containing a parent reference — would make
-	// installing a plugin a way to run something already on the system, which
-	// is a different and much larger permission than "run what I installed".
-	if filepath.IsAbs(m.Entrypoint) {
-		return fmt.Errorf(
-			"plugin: %s entrypoint %q is absolute; it must name a file inside the "+
-				"plugin's own directory", m.ID, m.Entrypoint)
+	// Bindings must match the reviewed raw declaration, including when host Go
+	// code constructs a Manifest rather than calling DecodeManifest.
+	var raw TangentExtension
+	if checkErr := sdkmanifest.DecodeExtension(m.Tangent, &raw); checkErr != nil {
+		return fmt.Errorf("plugin: %s tangent: %w", m.ID, checkErr)
 	}
-	clean := filepath.Clean(m.Entrypoint)
-	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return fmt.Errorf(
-			"plugin: %s entrypoint %q escapes the plugin directory", m.ID, m.Entrypoint)
+	if raw.SchemaVersion != TangentSchemaVersion {
+		return fmt.Errorf("plugin: %s unsupported tangent schema_version %d", m.ID, raw.SchemaVersion)
 	}
-	if m.Protocol <= 0 {
-		return fmt.Errorf(
-			"plugin: %s declares no protocol version; the host refuses a plugin whose "+
-				"wire version it cannot check", m.ID)
+	if m.Server.Runtime != "binary" {
+		return fmt.Errorf("plugin: %s unsupported server runtime %q; Tangent runs native binary bundles", m.ID, m.Server.Runtime)
 	}
-	for i, tool := range m.Tools {
-		if strings.TrimSpace(tool.Name) == "" {
-			return fmt.Errorf("plugin: %s tools[%d] has no name", m.ID, i)
+	if m.UI != nil || len(m.Hooks) != 0 {
+		return fmt.Errorf("plugin: %s browser assets and hooks require separate host adoption", m.ID)
+	}
+	seenKinds := map[string]bool{}
+	for _, ref := range raw.Kinds {
+		if !declarationName.MatchString(ref.Kind) || !declarationName.MatchString(ref.Package) || strings.TrimSpace(ref.Version) == "" || seenKinds[ref.Kind] {
+			return fmt.Errorf("plugin: %s invalid or duplicate kind reference %q", m.ID, ref.Kind)
 		}
-		if strings.TrimSpace(tool.InputSchema) == "" {
-			return fmt.Errorf(
-				"plugin: %s tool %q has no input_schema; the host advertises it, so the "+
-					"host has to hold it", m.ID, tool.Name)
-		}
+		seenKinds[ref.Kind] = true
 	}
-	for i, route := range m.Routes {
-		if strings.TrimSpace(route.Path) == "" {
-			return fmt.Errorf("plugin: %s routes[%d] has no path", m.ID, i)
+	tools := map[string]bool{}
+	for _, tool := range m.Tools {
+		if !manifestToolName.MatchString(tool.Name) {
+			return fmt.Errorf("plugin: %s invalid Tangent tool name %q", m.ID, tool.Name)
 		}
-		if strings.TrimSpace(route.Capability) == "" {
-			return fmt.Errorf(
-				"plugin: %s route %q names no capability", m.ID, route.Path)
+		switch tool.Effect {
+		case "read", "write", "destructive":
+		default:
+			return fmt.Errorf("plugin: %s tool %s has unsupported effect %q", m.ID, tool.Name, tool.Effect)
 		}
+		tools[tool.Name] = true
+	}
+	refs := map[string]bool{}
+	for _, name := range raw.MCPTools {
+		if !tools[name] || refs[name] {
+			return fmt.Errorf("plugin: %s unknown or duplicate MCP binding %q", m.ID, name)
+		}
+		refs[name] = true
+	}
+	// No common declaration may accidentally be advertised outside its host binding.
+	if len(refs) != len(tools) {
+		return fmt.Errorf("plugin: %s every common tool must have one tangent MCP binding", m.ID)
+	}
+	seenRoutes := map[string]bool{}
+	owner := m.ID[strings.LastIndex(m.ID, ".")+1:]
+	for _, route := range raw.Routes {
+		key := route.Method + " " + route.Path
+		segment := strings.Split(strings.TrimPrefix(route.Path, RoutePrefix), "/")[0]
+		if (route.Method != http.MethodGet && route.Method != http.MethodPost) || !manifestRoutePath.MatchString(route.Path) || path.Clean(route.Path) != route.Path || seenRoutes[key] || (segment != owner && !strings.HasPrefix(segment, owner+"-")) {
+			return fmt.Errorf("plugin: %s invalid, duplicate or foreign route %q", m.ID, key)
+		}
+		switch route.Capability {
+		case "view", "draft", "resolve", "cancel":
+		default:
+			return fmt.Errorf("plugin: %s route %s has unholdable participant capability %q", m.ID, key, route.Capability)
+		}
+		seenRoutes[key] = true
 	}
 	return nil
+}
+
+// EncodeManifest emits the SDK declaration after checking its Tangent bindings.
+// Artifact inventory must already cover the built payload; this grants nothing.
+func EncodeManifest(w io.Writer, common sdkmanifest.Manifest, bindings TangentExtension) error {
+	raw, err := json.Marshal(bindings)
+	if err != nil {
+		return err
+	}
+	common.Tangent = raw
+	m := Manifest{Manifest: common, Bindings: bindings}
+	if checkErr := m.Validate(); checkErr != nil {
+		return checkErr
+	}
+	return sdkmanifest.Encode(w, common)
+}
+
+// validateBindings prevents a mutated projection from bypassing the reviewed raw
+// declaration while retaining the SDK's strict extension decoder.
+func (m Manifest) validateBindings() error {
+	raw, err := json.Marshal(m.Bindings)
+	if err != nil {
+		return err
+	}
+	var reviewed TangentExtension
+	if checkErr := sdkmanifest.DecodeExtension(m.Tangent, &reviewed); checkErr != nil {
+		return checkErr
+	}
+	canonical, err := json.Marshal(reviewed)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(raw, canonical) {
+		return fmt.Errorf("plugin: %s tangent bindings differ from reviewed declaration", m.ID)
+	}
+	return nil
+}
+
+// EncodeNativeManifest inventories one built native executable. Call it with
+// the final executable bytes, before writing plugin.yaml into a fresh bundle.
+// Additional payload files need an explicit SDK artifact inventory instead.
+func EncodeNativeManifest(w io.Writer, payload []byte, entry string, common sdkmanifest.Manifest, bindings TangentExtension) error {
+	digest := sha256.Sum256(payload)
+	files := []sdkmanifest.ArtifactFile{{Path: entry, SHA256: hex.EncodeToString(digest[:]), Executable: true}}
+	common.SchemaVersion = sdkmanifest.SchemaVersion
+	common.Protocol = sdkmanifest.RequiredProtocol
+	common.Runtime = sdkmanifest.Runtime
+	common.Server = sdkmanifest.Server{Runtime: "binary", Entry: entry, Engines: map[string]sdkmanifest.HostRange{"binary": {Min: BinaryContractVersion, Max: "1.99.99"}}}
+	common.Hosts = map[string]sdkmanifest.HostRange{"tangent": {Min: ContractVersion, Max: "1.99.99"}}
+	tree, err := sdkmanifest.TreeDigest(files)
+	if err != nil {
+		return err
+	}
+	common.Artifact = sdkmanifest.Artifact{Files: files, TreeSHA256: tree}
+	return EncodeManifest(w, common, bindings)
 }

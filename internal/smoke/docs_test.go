@@ -78,6 +78,7 @@ var wildcardFamilies = []string{
 // name them for good reasons, so they are excluded rather than reported.
 var nonToolMentions = map[string]bool{
 	"tangent.external-review": true,
+	"tangent.appboard":        true, // approved definition package id, not a tool
 	// Envelope kinds are hyphenated wire names, several of which collide
 	// with a tool name spelled the same way; the ones that do are real
 	// tools and stay out of this set.

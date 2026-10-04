@@ -10,6 +10,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	plugin "github.com/hollis-labs/plugin-sdk"
+	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -347,4 +348,30 @@ func assertSurfaceStillWorks(t *testing.T, session *mcpsdk.ClientSession) {
 		t.Fatalf("tangent.list_workflows reported an error after a plugin failure: %s",
 			extractText(t, result))
 	}
+}
+
+func TestPluginToolExplicitAnnotationsSurviveListing(t *testing.T) {
+	yes, no := true, false
+	tool := echoTool(func(context.Context, subprocess.MCPCallRequest) (subprocess.MCPCallResult, error) {
+		return subprocess.MCPCallResult{}, nil
+	})
+	tool.Effect = "read"
+	tool.Annotations = &sdkmanifest.ToolAnnotations{Title: "Reviewed read", ReadOnlyHint: &yes, DestructiveHint: &no, IdempotentHint: &yes, OpenWorldHint: &no}
+	session, done := connectWithPluginTools(t, []pluginhost.MCPTool{tool})
+	defer done()
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, found := range listed.Tools {
+		if found.Name != tool.Name {
+			continue
+		}
+		a := found.Annotations
+		if a == nil || found.Title != "Reviewed read" || !a.ReadOnlyHint || !a.IdempotentHint || a.DestructiveHint == nil || *a.DestructiveHint || a.OpenWorldHint == nil || *a.OpenWorldHint {
+			t.Fatalf("lost manifest annotations: %+v", a)
+		}
+		return
+	}
+	t.Fatal("plugin tool not listed")
 }

@@ -55,13 +55,13 @@ TANGENT_PLUGINS_VERSION := $(shell cat tangent-plugins.version)
 install-plugins: build-go ## Install the pinned first-party plugins (tangent-plugins.version) for this user
 	@set -e; stage=$$(mktemp -d); trap 'rm -rf "$$stage"' EXIT; \
 	for p in $(PLUGINS); do \
-		dir="$$stage/tangent.plugin.$$p"; mkdir -p "$$dir"; \
+		dir="$$stage/tangent.plugin.$$p"; mkdir -p "$$dir/bin"; \
 		if [ -n "$$TANGENT_PLUGINS_SRC" ]; then \
-			(cd "$$TANGENT_PLUGINS_SRC/$$p" && go build -o "$$dir/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p); \
+			(cd "$$TANGENT_PLUGINS_SRC/$$p" && go build -o "$$dir/bin/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p); \
 		else \
-			GOBIN="$$dir" go install github.com/hollis-labs/tangent-plugins/$$p/cmd/tangent-plugin-$$p@$(TANGENT_PLUGINS_VERSION); \
+			GOBIN="$$dir/bin" go install github.com/hollis-labs/tangent-plugins/$$p/cmd/tangent-plugin-$$p@$(TANGENT_PLUGINS_VERSION); \
 		fi; \
-		"$$dir/tangent-plugin-$$p" --manifest > "$$dir/plugin.yaml"; \
+		"$$dir/bin/tangent-plugin-$$p" --manifest > "$$dir/plugin.yaml"; \
 		./tangent plugin install "$$dir"; \
 	done
 

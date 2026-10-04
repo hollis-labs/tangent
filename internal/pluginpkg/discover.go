@@ -2,8 +2,10 @@ package pluginpkg
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -117,7 +119,10 @@ func evaluate(dir, manifestPath string) (Installed, error) {
 		return Installed{}, err
 	}
 
-	entrypoint := filepath.Join(dir, filepath.Clean(manifest.Entrypoint))
+	if err := manifest.VerifyBundle(dir); err != nil {
+		return Installed{}, fmt.Errorf("pluginpkg: %s bundle: %w", manifest.ID, err)
+	}
+	entrypoint := filepath.Join(dir, filepath.Clean(manifest.Server.Entry))
 	// Belt and braces on top of Manifest.Validate: a cleaned join that still
 	// escapes the plugin's directory would make an install a way to run
 	// something else. Validate refuses the manifest forms that reach here, and
@@ -131,16 +136,45 @@ func evaluate(dir, manifestPath string) (Installed, error) {
 	if statErr != nil {
 		return Installed{}, fmt.Errorf(
 			"pluginpkg: %s declares entrypoint %q which is not there: %w",
-			manifest.ID, manifest.Entrypoint, statErr)
+			manifest.ID, manifest.Server.Entry, statErr)
 	}
 	if info.IsDir() {
 		return Installed{}, fmt.Errorf(
-			"pluginpkg: %s entrypoint %q is a directory", manifest.ID, manifest.Entrypoint)
+			"pluginpkg: %s entrypoint %q is a directory", manifest.ID, manifest.Server.Entry)
 	}
 	if info.Mode().Perm()&0o111 == 0 {
 		return Installed{}, fmt.Errorf(
 			"pluginpkg: %s entrypoint %q is not executable (mode %s)",
-			manifest.ID, manifest.Entrypoint, info.Mode().Perm())
+			manifest.ID, manifest.Server.Entry, info.Mode().Perm())
+	}
+	if err := nativeExecutable(entrypoint); err != nil {
+		return Installed{}, err
 	}
 	return Installed{Manifest: manifest, Dir: dir, Entrypoint: entrypoint}, nil
+}
+
+// Native magic excludes shell/runtime launchers masquerading as binary entries.
+func nativeExecutable(name string) error {
+	f, err := os.Open(name) // #nosec G304 -- path belongs to the verified native bundle.
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return fmt.Errorf("pluginpkg: native executable header: %w", err)
+	}
+	ok := false
+	switch runtime.GOOS {
+	case "linux":
+		ok = magic == [4]byte{0x7f, 'E', 'L', 'F'}
+	case "darwin":
+		ok = magic == [4]byte{0xcf, 0xfa, 0xed, 0xfe} || magic == [4]byte{0xfe, 0xed, 0xfa, 0xcf} || magic == [4]byte{0xca, 0xfe, 0xba, 0xbe}
+	case "windows":
+		ok = magic[0] == 'M' && magic[1] == 'Z'
+	}
+	if !ok {
+		return fmt.Errorf("pluginpkg: %s is not a native executable for %s", name, runtime.GOOS)
+	}
+	return nil
 }

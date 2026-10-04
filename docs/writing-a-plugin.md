@@ -4,7 +4,8 @@
 go run ./cmd/tangent-new-plugin -package almanac -app Almanac -hands-back-work
 ```
 
-That writes a plugin that loads. The rest of this document is why it is shaped
+That writes the adapter and a manifest emitter. A native subprocess wrapper and a
+fresh distribution bundle complete the installed plugin. The rest of this document is why it is shaped
 the way it is, and which parts of it you still have to do yourself.
 
 The scaffold is **extracted, not designed**. Two of the first-party plugins —
@@ -193,10 +194,9 @@ Each of these has cost someone a build or a bug already:
   application's. A cut set that reports only a count reads as the whole set.
 - **One file holds the application client** and nothing else in the repository
   knows that application exists.
-- **A plugin that writes to its application declares the ADR 0007 §6 exception
-  in its package doc**, in the terms the existing plugins use. The amendment
-  makes "who is inside the exception" a `grep` rather than a memory, and that
-  only holds if each plugin writes it down.
+- **Application writes run in the plugin subprocess.** The adapter package
+  stays outside Tangent core and has a native wrapper in its own module.
+  Application credentials remain the application's own authorization boundary.
 
 ## What the scaffold cannot do for you
 
@@ -212,9 +212,12 @@ plugin that builds and does not load.
    protocol-2 plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
    `internal/<name>/`, added to that repository's `PLUGINS`. The generator still
    writes into this repository and does not write the program
-   (`CW-20260930-0118`), so move what it renders. Then `make dist`,
-   `tangent plugin install`, and restart `tangent`; `tangent plugin list` shows
-   what is installed. A contributed kind
+   so move what it renders. Build the wrapper into `bin/tangent-plugin-<name>` in a fresh distribution
+   directory; its `--manifest` path reads that final executable and calls the
+   generated `WriteManifest` method. Write the output to `plugin.yaml` beside
+   `bin/`. Source, tests and previous binaries must stay outside that inventory.
+   Installation and restart require a separately approved rollout; `tangent
+   plugin list` reads the installed inventory. A contributed kind
    also needs a row in `internal/envelope/extensions/register_all.go` with
    `contributedByPlugin: true`; a manifest the tree carries that nothing
    registers fails `TestPackageTreeMatchesRegistrations`, and so does the
@@ -233,6 +236,93 @@ identity courier or its environment as an authorization grant. Protocol-1
 binaries are refused before load.
 
 Then `make verify-supported` and `make smoke`.
+
+## Process manifest v2 and the Tangent extension
+
+`plugin.yaml` is the SDK's manifest-v2 JSON format (JSON is a subset of YAML).
+Both install and discovery use `manifest.Decode` followed by strict decoding of
+`TangentExtension`; broader YAML and legacy top-level `entrypoint`, `args` or
+`routes` have no fallback. Unknown, duplicate, null and trailing fields are
+refused. Plugin `version` is strict SemVer at both doors, before copying an
+installation or starting a child. First-party protocol-2 development builds
+report `0.2.0-dev` until their first tag; Init must report the exact same version.
+
+The common declaration carries identity, schema version 2, protocol 2,
+`runtime: subprocess`, inline tool schemas and effects, configuration/secret
+names, requested capabilities and the complete artifact inventory. Tangent
+accepts native binary entries under `bin/`, with a SHA-256 and executable flag
+for every payload file and the SDK tree digest. Scripts, symlinks, extra files,
+changed bytes and changed executable flags are refused. `plugin.yaml` is the
+sole excluded inventory file. Browser assets and hooks await separate host
+adoption and are refused here rather than silently ignored.
+
+`hosts.tangent` ranges over the public plugin declaration contract **1.0.0**;
+`server.engines.binary` ranges over the native runner contract **1.0.0**.
+These are independent of the Tangent application release and interaction
+protocol. Missing Tangent ranges or incompatible host/engine ranges fail at
+install and discovery. Prerelease plugin versions remain valid identities;
+contract-range prereleases follow the SDK's compatibility rules.
+
+The host block is shaped as follows (this is the extension, not a complete
+process manifest):
+
+```json
+{
+  "schema_version": 1,
+  "kinds": [{"kind": "tangent.app-board", "package": "tangent.appboard", "version": "0.3"}],
+  "routes": [{"method": "POST", "path": "/api/plugins/torque-board/sync", "capability": "draft"}],
+  "mcp_tools": ["tangent.torque_open_board", "tangent.torque_sync_board"]
+}
+```
+
+Kinds name exact approved definition package versions; they cannot supply
+renderer or trust bytes. Install/discovery resolves the host's definition tree,
+and loading requires a materialized, available definition. A contributed kind
+uses the existing approved host-package registration door. A process reference
+does not replace its ADR 0003 definition manifest.
+
+Routes use literal canonical GET/POST paths owned by the plugin's final id
+segment (for example `almanac` or `almanac-board`) under `/api/plugins/` and name
+a participant capability: `view`, `draft`, `resolve` or `cancel`. Existing
+same-origin, participant-session and capability checks run before dispatch;
+cookies stay out of the child wire. MCP bindings name each common tool exactly
+once, with no duplicated schemas in the extension. Tool effects are `read`,
+`write` or `destructive`. Explicit MCP annotations are advertised as hints;
+omitted hints use the host's conservative defaults (mutating, destructive,
+non-idempotent, open-world). Effects and hints grant no authority.
+
+The loader copies an accepted bundle to a private, verified read-only snapshot,
+uses that as `PluginDir` and the working directory, and verifies it again before
+each spawn, including crash recovery. `DataDir` and `CacheDir` are separate
+private directories under the installation root's `.state/<id>/data` and
+`.state/<id>/cache`; snapshots live under `.runtime/`. Unload removes only the
+snapshot after the child stops. It preserves writable state and the source
+bundle. These modes prevent accidental mutation; they are not an OS sandbox
+against a process running as the same user. Existing data is never moved by
+discovery or loading. A legacy bundle with writable files inside it is refused;
+operator data migration is a separate decision.
+
+`EncodeNativeManifest` inventories one final native executable from its bytes;
+`EncodeManifest` accepts an explicit SDK inventory for a larger payload. The
+scaffold's `WriteManifest` uses the former and emits the Tangent block and
+strict development version. Its application adapter still needs the protocol-2
+subprocess wrapper described above. A kind scaffold additionally requires host
+approval of its definition package and renderer before it can load.
+
+Configuration and capability requests are declarations only. Tangent keeps the
+existing environment and local-MCP callback path, sends empty Init config and
+grants, and does not provide scoped host callbacks, broker-secret delivery or
+new configuration storage in this adoption. SDK and release pins remain fixed;
+this source change does not activate or migrate any installed plugin.
+
+CI builds first-party sources from the reviewed immutable commit
+`71588ff2deac0ac1b206914d9a5890ec17407bcc` via `TANGENT_PLUGINS_SRC`, verifies
+that checkout identity, and stages test-owned native bundles. The smoke children
+use a private HOME, database, port and install root. This compatibility fixture
+is separate from `tangent-plugins.version`: the held release pin still names
+legacy declarations, which strict v2 intentionally refuses. Fixture success
+is not rollout readiness; approved release pins and an operator rollout remain
+required.
 
 ## Configuration, secrets, lifecycle and enable/disable
 
