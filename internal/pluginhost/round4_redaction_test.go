@@ -31,8 +31,8 @@ func TestRound4AssignmentKeepsTrailingDiagnosticFields(t *testing.T) {
 		{`client_secret=hidden&grant_type=client_credentials`, `client_secret=[redacted]&grant_type=client_credentials`},
 		{`{"msg":"auth failed token=hidden","err":"connection refused"}`, `{"msg":"auth failed token=[redacted]","err":"connection refused"}`},
 		{"API_KEY=\nCAUSE: original failure", "API_KEY=?CAUSE: original failure"},
-		{"cache key=users:42 miss; cause: boom", "cache key=users:42 miss; cause: boom"},
-		{"auth=basic unsupported mode", "auth=basic unsupported mode"},
+		{"cache key=users:42 miss; cause: boom", "cache key=[redacted] miss; cause: boom"},
+		{"auth=basic unsupported mode", "auth=[redacted] unsupported mode"},
 		{"PWD=/home/u/plugins", "PWD=/home/u/plugins"},
 		{"pwd=/home/u/plugins", "pwd=/home/u/plugins"},
 		{"--auth-mode basic failed: unsupported", "--auth-mode basic failed: unsupported"},
@@ -87,9 +87,9 @@ func TestRound4ReviewerCorpusAndExplicitLimitations(t *testing.T) {
 		secrets[secret] = nil
 	}
 	secrets["UzNDUjA2"] = nil
-	// These observations are intentionally outside the approved round-4 rule.
+	// These observations are intentionally outside the approved name and value rules.
 	// Each is asserted as visible, so the report cannot imply universal secrecy.
-	outside := map[string]string{"S3CR01": "bare key", "S3CR04": "bare auth", "S4CR21": "-p flag", "S4CR30": "YAML/bare colon", "S5CR09": "PWD working directory", "S5CR12": "arbitrary wrapped key", "S5CR13": "arbitrary wrapped token"}
+	outside := map[string]string{"S4CR21": "-p flag", "S4CR30": "YAML/bare colon", "S5CR13": "arbitrary wrapped token"}
 	got := redactPluginDiagnostic(raw.String())
 	for secret := range secrets {
 		if why, ok := outside[secret]; ok {

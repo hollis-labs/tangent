@@ -43,8 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Plugin diagnostic scrubbing normalizes common credential encodings while
   preserving unrelated text, physical newlines and following URL/log fields.
-  Credential names use their last underscore/hyphen/camelCase segment; bare
-  `key` needs a credential prefix, and bare `auth`/`PWD` remain ordinary text.
+  Credential names use their last underscore/hyphen/camelCase segment; compound
+  `key` names need a credential prefix. Bare `key`/`auth`/`pwd`/`pass` values are
+  scrubbed without consuming following diagnostics; absolute `PWD` paths remain
+  readable. Quoted names must be identifier-shaped, preserving causes after URLs.
   The pinned tail drops a possibly partial leading line only when non-blank text
   follows the first LF, and repeats the rule after a redaction-growth trim.
   CR-only separators are not line boundaries; exact-boundary cuts may drop a

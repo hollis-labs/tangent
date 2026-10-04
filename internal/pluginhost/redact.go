@@ -9,10 +9,10 @@ import (
 
 const pluginStderrBytes = 4096
 
-// Names are matched as underscore, hyphen or camelCase segments. Bare key
-// requires a credential prefix; bare auth and pwd are ordinary diagnostics.
+// Names are matched as underscore, hyphen or camelCase segments. A prefixed
+// key requires a credential prefix; bare key/auth/pwd values are also scrubbed.
 var diagnosticAssignment = regexp.MustCompile(`(?im)(?:^|[^a-z0-9_-])(pass[\n ]+word|[a-z_][a-z0-9_-]*)[ ]*=[ ]*`)
-var diagnosticJSONName = regexp.MustCompile(`["']([^"'\n]+)["'][ ]*:[ ]*`)
+var diagnosticJSONName = regexp.MustCompile(`["']([A-Za-z0-9_.-]+)["'][ ]*:[ ]*`)
 var diagnosticFlag = regexp.MustCompile(`--([a-zA-Z][a-zA-Z0-9_-]*)[ ]+`)
 var diagnosticNextField = regexp.MustCompile(`^[ ]+[a-zA-Z_][a-zA-Z0-9_-]*[ ]*=`)
 
@@ -35,7 +35,7 @@ func credentialName(name string) bool {
 	}
 	// Historical compact spellings have no case/segment boundary.
 	switch strings.ToLower(name) {
-	case "mytoken", "pgpassword", "apikey", "token", "tokens", "secret", "secrets", "password", "passwd", "pass", "passphrase", "credential", "credentials", "jwt", "dsn":
+	case "key", "auth", "pwd", "mytoken", "pgpassword", "apikey", "token", "tokens", "secret", "secrets", "password", "passwd", "pass", "passphrase", "credential", "credentials", "jwt", "dsn":
 		return true
 	}
 	var segmented strings.Builder
@@ -230,7 +230,16 @@ func redactRawDiagnostic(text string) string {
 					}
 				}
 			}
-			inline := named.flag || queryAt >= 0 && lineStart+queryAt < match[2]
+			name := strings.ToLower(view[match[2]:match[3]])
+			valueStart := start
+			if valueStart < lineEnd && (view[valueStart] == '"' || view[valueStart] == '\'') {
+				valueStart++
+			}
+			if name == "pwd" && valueStart < lineEnd && view[valueStart] == '/' {
+				continue // absolute working directories are diagnostic context
+			}
+			bareValue := name == "key" || name == "auth" || name == "pwd" || name == "pass"
+			inline := named.flag || bareValue || queryAt >= 0 && lineStart+queryAt < match[2]
 			addRange(start, diagnosticValueEnd(view, start, lineEnd, inline))
 		}
 	}

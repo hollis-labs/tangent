@@ -371,17 +371,21 @@ can conservatively remove a complete leading line.
 
 Credential names use their last underscore, hyphen or camelCase segment:
 `token`, `secret`, `password`, `passwd`, `pass`, `passphrase`, `credential`, `jwt`
-and `dsn` (including token/secret/credential plurals). A final `key` needs a
-credential prefix such as `api`, `private`, `secret`, `access`, `db`, `client`,
+and `dsn` (including token/secret/credential plurals). A final `key` in a compound
+name needs a credential prefix such as `api`, `private`, `secret`, `access`, `db`, `client`,
 `session`, `refresh`, `signing` or `encryption`. Thus `OPENAI_API_KEY` and
 `AWS_SECRET_ACCESS_KEY` are scrubbed while `project_key` remains diagnostic
 metadata. Compact `apikey`, `MYTOKEN`, `PGPASSWORD` and `SECRET_KEY_BASE` are
-recognized conventional names. Bare `key`, `auth` and `PWD` are ordinary text.
+recognized conventional names. Bare `key`, `auth`, `pwd` and `pass` are also
+scrubbed, regardless of case; their unquoted values end at whitespace. A `PWD`
+value starting with `/` remains readable as an absolute working directory.
 
 Matching normalizes common escaped/Unicode spellings without rewriting
 unrelated percent-encoded text. Values never consume a physical newline;
-quoted, URL-query/form and logfmt values preserve following fields. Authorization
-headers of any scheme, cookies, URL userinfo, scheme-less tcp/unix DSNs, complete
+quoted, URL-query/form and logfmt values preserve following fields. Quoted keys
+must consist of letters, digits, underscores, dots or hyphens; a quoted URL is
+not a credential name. Authorization headers of any scheme, cookies, URL
+userinfo, scheme-less tcp/unix DSNs, complete
 private-key PEM blocks, bare JWTs and common provider token prefixes are scrubbed.
 Physical line boundaries survive redaction and wrapping; display text sanitizes
 control characters afterwards. Plugin directories and executables resolve to
