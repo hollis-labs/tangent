@@ -15,7 +15,7 @@ import (
 
 func TestDiagnosticRedactionExpandedFormats(t *testing.T) {
 	cases := []string{
-		"KEY=SECRET0001", "PRIVATE_KEY=SECRET0002", "passwd=SECRET0003", "auth=SECRET0004", "credentials=SECRET0005",
+		"API_KEY=SECRET0001", "PRIVATE_KEY=SECRET0002", "passwd=SECRET0003", "Authorization: SECRET0004", "credentials=SECRET0005",
 		"Authorization: Basic U0VDUkVUMDAwNg==", "Authorization: Token SECRET0007", "postgres://u:SECRET0008@db", "mysql://SECRET0009@db",
 		`msg="{\"token\":\"SECRET0010 with spaces,commas\"}"`, "token%3DSECRET0011", "--token SECRET0012", "MYTOKEN=SECRET0013",
 		"xoxb-SECRET0014-abc", "AKIASECRET0015ABCDEFG", "token\u200b=SECRET0016", "ｔｏｋｅｎ=SECRET0017", "TOKEN=SEC\x1bRET0018",
@@ -54,7 +54,7 @@ func TestDiagnosticLongErrorKeepsLabelAndCause(t *testing.T) {
 func TestLoadFailureStderrIsScrubbed(t *testing.T) {
 	host, _ := newHost(t)
 	spec := echoSpec(t, buildEchoPlugin(t))
-	spec.Env = append(spec.Env, "ECHO_PLUGIN_INIT_ERROR=1", "ECHO_PLUGIN_STDERR=KEY=SECRET-value")
+	spec.Env = append(spec.Env, "ECHO_PLUGIN_INIT_ERROR=1", "ECHO_PLUGIN_STDERR=API_KEY=SECRET-value")
 	child := NewChildPlugin(spec, nil, nil)
 	t.Cleanup(func() { _ = child.Unload() })
 	err := host.Load(child)

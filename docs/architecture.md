@@ -701,8 +701,9 @@ The first-party plugins live in
 written against `pkg/plugin` and selected by `tangent-plugins.version`.
 The source integration uses immutable pseudo-version pins for plugin-host,
 plugin-sdk and the protocol-2 first-party rebuild. These pins must be replaced
-by approved releases before activation; this source change installs or deploys
-nothing. Existing protocol-1 binaries must be rebuilt before they can load.
+by approved releases before activation; follow the activation prerequisites
+and installation order in [the plugin guide](writing-a-plugin.md). Existing
+protocol-1 binaries must be rebuilt before they can load.
 Local MCP callbacks remain the existing plugin-to-host path; empty grants do
 not claim enforcement over that local caller's authority. Duplex host RPC,
 durable enabled intent and attributable registration removal remain later work.

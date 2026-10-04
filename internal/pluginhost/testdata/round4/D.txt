@@ -1,0 +1,37 @@
+token = S5CR01
+token	=	S5CR02
+Authorization:Bearer	S5CR03
+Authorization: Bearer S5CR04
+token=S5CR05%0Aleaked-S5CR05b
+cookie: session=S5CR06; theme=dark
+Set-Cookie: sid=S5CR07; Path=/
+jwt=S5CR08
+pwd=S5CR09
+DSN=user:S5CR10@tcp(db:3306)/x
+PASS
+WORD=S5CR11
+api_
+key=S5CR12
+tok
+en=S5CR13
+secret_key=S5CR14
+access_token=S5CR15
+db_password=S5CR16
+api_key=S5CR17
+private_key=S5CR18
+token%3DS5CR19
+%74oken=S5CR20
+monkey=1 err=KEEP01
+author=bob status=500 KEEP02
+keyspace=main; error: KEEP03
+keyring=default failed: KEEP04
+tokenizer=bpe loaded; failed: KEEP05
+--auth-mode basic failed: KEEP06
+--keyfile /etc/x.pem: KEEP07
+"monkey": 5, "error": "KEEP08"
+{"authority": "ca", "error": "KEEP09"}
+oauth_provider=github status=500 KEEP10
+project_key=TQ err=KEEP11
+progress 100%25 KEEP12
+path=/tmp/a%2Fb KEEP13
+FINAL CAUSE: schema migration failed

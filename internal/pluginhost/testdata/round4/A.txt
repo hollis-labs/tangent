@@ -1,0 +1,23 @@
+KEY=S3CR01
+PRIVATE_KEY=S3CR02
+passwd=S3CR03
+auth=S3CR04
+credentials=S3CR05
+Authorization: Basic UzNDUjA2
+Authorization: Token S3CR07
+postgres://user:S3CR08@db.example
+mysql://u:S3CR09@h/db
+DATABASE_URL=mysql://u:S3CR10@h/db
+msg="{\"token\":\"S3CR11\"}"
+token%3DS3CR12
+--token S3CR13
+MYTOKEN=S3CR14
+xoxb-S3CR15-abc
+AKIAS3CR16ABCDEFGHI
+token​=S3CR17
+ｔｏｋｅｎ=S3CR18
+{"token": "S3CR19 tail S3CR19b, more"}
+password=S3CR20 tail S3CR20b,comma
+[31mansi[0m
+level=ERROR msg=forged
+FINAL CAUSE: schema migration failed

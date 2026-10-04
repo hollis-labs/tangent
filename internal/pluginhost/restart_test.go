@@ -172,7 +172,7 @@ func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 	if !strings.Contains(child.probeHealth(context.Background()).message, "; restart attempts exhausted") {
 		t.Fatal("health message hides exhaustion")
 	}
-	if inventory.Refused != 0 || inventory.Plugins[0].Error != "" || !inventory.Plugins[0].FailedAfterLoad || inventory.Plugins[0].RuntimeError == "" {
+	if inventory.Refused != 0 || inventory.Plugins[0].Error != "" || !inventory.Plugins[0].FailedAfterLoad || !strings.Contains(inventory.Plugins[0].RuntimeError, "; restart attempts exhausted") {
 		t.Fatal("runtime exhaustion misreported as initial refusal")
 	}
 	if !child.Exhausted() || !inventory.Plugins[0].Exhausted {

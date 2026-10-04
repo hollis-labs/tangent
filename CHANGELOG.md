@@ -41,10 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Plugin diagnostic scrubbing normalizes common credential encodings, drops a
-  possibly partial first line from a full stderr window and sanitizes controls.
+- Plugin diagnostic scrubbing normalizes common credential encodings while
+  preserving unrelated text, physical newlines and following URL/log fields.
+  Credential names use their last underscore/hyphen/camelCase segment; bare
+  `key` needs a credential prefix, and bare `auth`/`PWD` remain ordinary text.
+  The pinned tail drops a possibly partial leading line only when non-blank text
+  follows the first LF, and repeats the rule after a redaction-growth trim.
+  CR-only separators are not line boundaries; exact-boundary cuts may drop a
+  complete line. Windows without a qualifying LF can retain a partial key.
   Redaction remains best effort; plugins must not log secrets. Bare-colon failure
-  prose stays readable. Runtime failures and initial refusals are reported
+  prose stays readable; controls are sanitized only for display. Runtime failures and initial refusals are reported
   separately, and failed restarts warn once on status/inventory sampling.
 - Relative plugin roots and spawn paths resolve to absolute directories.
 

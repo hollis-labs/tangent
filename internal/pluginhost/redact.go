@@ -9,22 +9,95 @@ import (
 
 const pluginStderrBytes = 4096
 
-// Credential names are closed: ordinary words and metadata such as monkey,
-// author, project_key, auth-mode and keyfile retain their diagnostic meaning.
-const sensitiveName = `(?:(?:api|private|secret|access|db|client|session|refresh|signing|encryption)_)*(?:tokens?|secrets?|passw(?:or)?d|pwd|key|auth|credentials?|jwt|dsn)|MYTOKEN|PGPASSWORD|pass[\n ]+word`
+// Names are matched as underscore, hyphen or camelCase segments. Bare key
+// requires a credential prefix; bare auth and pwd are ordinary diagnostics.
+var diagnosticAssignment = regexp.MustCompile(`(?im)(?:^|[^a-z0-9_-])(pass[\n ]+word|[a-z_][a-z0-9_-]*)[ ]*=[ ]*`)
+var diagnosticJSONName = regexp.MustCompile(`["']([^"'\n]+)["'][ ]*:[ ]*`)
+var diagnosticFlag = regexp.MustCompile(`--([a-zA-Z][a-zA-Z0-9_-]*)[ ]+`)
+var diagnosticNextField = regexp.MustCompile(`^[ ]+[a-zA-Z_][a-zA-Z0-9_-]*[ ]*=`)
 
-// Each pattern captures only the secret value. Matching uses a normalized view;
-// replacements apply to original byte spans, preserving unrelated escaped text.
+// Fixed patterns capture only the credential bytes. Matches are mapped back to
+// original offsets so ordinary percent escapes and diagnostic text stay intact.
 var diagnosticSecrets = []*regexp.Regexp{
-	regexp.MustCompile(`(?im)\b(?:` + sensitiveName + `)\s*=\s*([^\s;\n][^\n]*)`),
-	regexp.MustCompile(`(?i)["'](?:` + sensitiveName + `)["']\s*:\s*("[^"\n]*"|'[^'\n]*'|[^\n,}]+)`),
-	regexp.MustCompile(`(?im)\bAuthorization\s*:\s*(?:Basic|Bearer|Token)\s*([^\n]+)`),
-	regexp.MustCompile(`(?im)\b(?:x-api-key|client_secret|cookie|set-cookie)\s*:\s*([^\n]+)`),
-	regexp.MustCompile(`(?i)\bBearer\s+([a-z0-9._~+/-]+=*)`),
-	regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s/@:]+:([^\s/@]+)@`),
-	regexp.MustCompile(`(?i)(?:mysql|postgres(?:ql)?|redis|mongodb)://([^\s/@]+)@`),
-	regexp.MustCompile(`(?i)--(?:` + sensitiveName + `)\s+([^\n]+)`),
-	regexp.MustCompile(`\b((?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]+|AKIA[A-Z0-9]{12,}))`),
+	regexp.MustCompile(`(?im)\bAuthorization[ ]*:[ ]*([^\n]+)`),
+	regexp.MustCompile(`(?im)\b(?:x-api-key|client_secret|cookie|set-cookie)[ ]*:[ ]*([^\n]+)`),
+	regexp.MustCompile(`(?i)\bBearer[ ]+([a-z0-9._~+/-]+=*)`),
+	regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://([^\s/@]+)@`),
+	regexp.MustCompile(`\b[a-zA-Z0-9._-]+:([^\s@]+)@(?:tcp|unix)\(`),
+	regexp.MustCompile(`\b((?:sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[baprs]-[A-Za-z0-9-]+|(?:AKIA|ASIA)[A-Z0-9]{12,}|glpat-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{8,}|npm_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}))`),
+	regexp.MustCompile(`\b(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`),
+	regexp.MustCompile(`(?s)(-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----.*?(?:-----END (?:[A-Z0-9]+ )?PRIVATE KEY-----|$))`),
+}
+
+func credentialName(name string) bool {
+	if strings.EqualFold(strings.Join(strings.Fields(name), ""), "password") {
+		return true
+	}
+	// Historical compact spellings have no case/segment boundary.
+	switch strings.ToLower(name) {
+	case "mytoken", "pgpassword", "apikey", "token", "tokens", "secret", "secrets", "password", "passwd", "pass", "passphrase", "credential", "credentials", "jwt", "dsn":
+		return true
+	}
+	var segmented strings.Builder
+	for i, r := range name {
+		if r >= 'A' && r <= 'Z' && i > 0 {
+			previous := name[i-1]
+			nextLower := i+1 < len(name) && name[i+1] >= 'a' && name[i+1] <= 'z'
+			if previous >= 'a' && previous <= 'z' || previous >= 'A' && previous <= 'Z' && nextLower {
+				segmented.WriteByte('_')
+			}
+		}
+		segmented.WriteRune(unicode.ToLower(r))
+	}
+	parts := strings.FieldsFunc(segmented.String(), func(r rune) bool { return r == '_' || r == '-' })
+	if len(parts) == 0 {
+		return false
+	}
+	last := parts[len(parts)-1]
+	if last == "base" && len(parts) >= 3 && parts[len(parts)-2] == "key" && parts[len(parts)-3] == "secret" {
+		return true // conventional SECRET_KEY_BASE
+	}
+	switch last {
+	case "token", "tokens", "secret", "secrets", "password", "passwd", "pass", "passphrase", "credential", "credentials", "jwt", "dsn":
+		return true
+	case "key":
+		for _, prefix := range parts[:len(parts)-1] {
+			switch prefix {
+			case "api", "private", "secret", "access", "db", "client", "session", "refresh", "signing", "encryption":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Values never consume a physical newline. Quoted values end at their quote;
+// query/form values end at &, and logfmt values end before the next field.
+// A standalone unquoted assignment still covers spaces/commas in a secret.
+func diagnosticValueEnd(view string, start, end int, inline bool) int {
+	if start >= len(view) || view[start] == '\n' || view[start] == ';' {
+		return start
+	}
+	if view[start] == '"' || view[start] == '\'' {
+		if offset := strings.IndexByte(view[start+1:end], view[start]); offset >= 0 {
+			return start + offset + 2
+		}
+	}
+	for i := start; i < end; i++ {
+		if view[i] == '&' || view[i] == '"' || view[i] == '\'' || inline && view[i] == ' ' {
+			return i
+		}
+		if view[i] == ' ' {
+			if diagnosticNextField.FindStringIndex(view[i:end]) != nil {
+				return i
+			}
+			// Do not re-scan a run of spaces once per byte.
+			for i+1 < end && view[i+1] == ' ' {
+				i++
+			}
+		}
+	}
+	return end
 }
 
 type diagnosticSpan struct{ start, end int }
@@ -86,7 +159,7 @@ func diagnosticView(text string) (string, []diagnosticSpan) {
 		}
 		// Percent-encoded newline must never terminate a raw line's match.
 		if value == '\n' && i-start > 1 {
-			value = ' '
+			value = '?'
 		}
 		decoded = append(decoded, value)
 		origins = append(origins, diagnosticSpan{start, i})
@@ -125,6 +198,42 @@ func redactRawDiagnostic(text string) string {
 	// A difference mask merges overlaps in one byte pass, without sorting or
 	// repeated rewriting. Fixed RE2 passes and normalization stay linear.
 	mask := make([]int, len(text)+1)
+	addRange := func(start, end int) {
+		if end > start {
+			mask[origins[start].start]++
+			mask[origins[end-1].end]--
+		}
+	}
+	for _, named := range []struct {
+		pattern *regexp.Regexp
+		flag    bool
+	}{
+		{diagnosticAssignment, false}, {diagnosticJSONName, false}, {diagnosticFlag, true},
+	} {
+		lineStart, lineEnd, queryAt := 0, -1, -1
+		for _, match := range named.pattern.FindAllStringSubmatchIndex(view, -1) {
+			if !credentialName(view[match[2]:match[3]]) {
+				continue
+			}
+			start := match[1]
+			if start > lineEnd {
+				lineStart = strings.LastIndexByte(view[:start], '\n') + 1
+				lineEnd = len(view)
+				if offset := strings.IndexByte(view[start:], '\n'); offset >= 0 {
+					lineEnd = start + offset
+				}
+				line := view[lineStart:lineEnd]
+				queryAt = -1
+				for _, marker := range []string{"://", "?", "&"} {
+					if offset := strings.Index(line, marker); offset >= 0 && (queryAt < 0 || offset < queryAt) {
+						queryAt = offset
+					}
+				}
+			}
+			inline := named.flag || queryAt >= 0 && lineStart+queryAt < match[2]
+			addRange(start, diagnosticValueEnd(view, start, lineEnd, inline))
+		}
+	}
 	for _, pattern := range diagnosticSecrets {
 		for _, match := range pattern.FindAllStringSubmatchIndex(view, -1) {
 			if match[2] < 0 || match[3] <= match[2] {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestRuntimeFailureAndInitialRefusalAreNamedSeparately(t *testing.T) {
@@ -39,5 +40,21 @@ func TestPluginFailureDetailKeepsBothLongNameGroups(t *testing.T) {
 	}
 	if strings.Contains(check.Detail, "/very/long") || strings.Contains(check.Detail, "/another/long") {
 		t.Fatal("paths consumed group budget", check.Detail)
+	}
+}
+
+func TestLongPluginNamesKeepDistinctSuffixesAndNoStraySpace(t *testing.T) {
+	first := strings.Repeat("same-prefix-", 4) + "refused-alpha"
+	second := strings.Repeat("same-prefix-", 4) + "refused-bravo"
+	text := pluginNamesForBudget([]string{first, second}, 100)
+	if !strings.Contains(text, "refused-alpha") || !strings.Contains(text, "refused-bravo") || len(text) > 100 {
+		t.Fatal(text)
+	}
+	if text := pluginNamesForBudget([]string{first}, 1); text != "(+1 more)" {
+		t.Fatalf("empty name list has stray space: %q", text)
+	}
+	unicodeName := strings.Repeat("é", 20) + "failure"
+	if text := pluginNamesForBudget([]string{unicodeName}, 40); !utf8.ValidString(text) || !strings.HasSuffix(text, "failure") {
+		t.Fatal(text)
 	}
 }

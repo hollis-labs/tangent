@@ -261,17 +261,23 @@ func pluginNamesForBudget(ids []string, budget int) string {
 	for _, id := range ids[:min(4, len(ids))] {
 		name := filepath.Base(id)
 		if len(name) > 24 {
-			cut := 24
+			cut, suffix := 8, len(name)-16
 			for cut > 0 && !utf8.RuneStart(name[cut]) {
 				cut--
 			}
-			name = name[:cut] + "…"
+			for suffix < len(name) && !utf8.RuneStart(name[suffix]) {
+				suffix++
+			}
+			name = name[:cut] + "…" + name[suffix:]
 		}
 		candidate := append(names, name)
 		more := len(ids) - len(candidate)
 		text := strings.Join(candidate, ", ")
 		if more > 0 {
-			text += fmt.Sprintf(" (+%d more)", more)
+			if text != "" {
+				text += " "
+			}
+			text += fmt.Sprintf("(+%d more)", more)
 		}
 		if len(text) > budget {
 			break
@@ -280,7 +286,10 @@ func pluginNamesForBudget(ids []string, budget int) string {
 	}
 	text := strings.Join(names, ", ")
 	if more := len(ids) - len(names); more > 0 {
-		text += fmt.Sprintf(" (+%d more)", more)
+		if text != "" {
+			text += " "
+		}
+		text += fmt.Sprintf("(+%d more)", more)
 	}
 	return text
 }

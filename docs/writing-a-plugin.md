@@ -361,19 +361,37 @@ and the installer exits non-zero after its 30-second readiness wait. Runner
 capabilities return only once its compatible binary is installed. The browser
 registry loader must also adopt registry v2 before this host change ships.
 
-Plugin stderr is untrusted diagnostic text. Tangent retains a bounded tail,
-drops a possibly partial leading line after the tail was truncated when text
-remains after a newline, normalizes common escaped and Unicode credential spellings, scrubs credential assignments,
-headers, URL userinfo and known token prefixes, and replaces control characters.
+Plugin stderr is untrusted diagnostic text. Tangent retains a bounded tail and
+removes the possibly partial leading line after truncation only when non-blank
+text follows the first LF. The library repeats that rule if configured-secret
+redaction expands the output and a final byte trim is needed. Windows without
+such an LF remain whole within the byte cap, and can retain a partial key.
+CR-only separators are not line boundaries; a cut exactly at a line boundary
+can conservatively remove a complete leading line.
+
+Credential names use their last underscore, hyphen or camelCase segment:
+`token`, `secret`, `password`, `passwd`, `pass`, `passphrase`, `credential`, `jwt`
+and `dsn` (including token/secret/credential plurals). A final `key` needs a
+credential prefix such as `api`, `private`, `secret`, `access`, `db`, `client`,
+`session`, `refresh`, `signing` or `encryption`. Thus `OPENAI_API_KEY` and
+`AWS_SECRET_ACCESS_KEY` are scrubbed while `project_key` remains diagnostic
+metadata. Compact `apikey`, `MYTOKEN`, `PGPASSWORD` and `SECRET_KEY_BASE` are
+recognized conventional names. Bare `key`, `auth` and `PWD` are ordinary text.
+
+Matching normalizes common escaped/Unicode spellings without rewriting
+unrelated percent-encoded text. Values never consume a physical newline;
+quoted, URL-query/form and logfmt values preserve following fields. Authorization
+headers of any scheme, cookies, URL userinfo, scheme-less tcp/unix DSNs, complete
+private-key PEM blocks, bare JWTs and common provider token prefixes are scrubbed.
+Physical line boundaries survive redaction and wrapping; display text sanitizes
+control characters afterwards. Plugin directories and executables resolve to
+absolute paths.
+
 This is **best effort**, not a guarantee against arbitrary secret disclosure;
-plugins must keep secrets out of their own logs. Bare-colon failure prose is
-preserved. Look-alike letters, combining marks, mathematical alphabets and
-arbitrary bare-colon credentials are outside this best-effort scrubber. A single
-over-long line with no newline, or only a trailing newline, stays bounded but
-cannot recover a truncated key name; plugins must never log secrets. Matching recognizes common escaped keys
-without rewriting unrelated percent-encoded diagnostic text. Physical line
-boundaries survive redaction; display text replaces control characters afterwards.
-Plugin directories and executable paths resolve to absolute paths.
+plugins must keep secrets out of their logs. Look-alike letters, combining marks,
+mathematical alphabets, arbitrary mid-word wrapping, `-p` flags, passwords with
+an unescaped `@` in a URL, and YAML/bare-colon credentials stay outside the rule.
+Bare-colon failure prose remains readable.
 
 Inventory keeps initial load refusals in `error`, and failures after a successful
 load in `failed_after_load` and `runtime_error`. Registration history remains

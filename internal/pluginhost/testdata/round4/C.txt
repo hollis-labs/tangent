@@ -1,0 +1,24 @@
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJTNENSMTYifQ.S4CR16sig
+{"level":"error","msg":"auth failed token=S4CR17","err":"connection refused"}
+Get "https://api.example.com/v1?api_key=S4CR18": dial tcp: lookup api.example.com: no such host
+client_secret=S4CR19&grant_type=client_credentials
+curl -H "Authorization: Bearer S4CR20" https://x
+docker login -u u -p S4CR21
+--api-key S4CR22
+SECRET_KEY_BASE=S4CR23
++ export DB_PASSWORD=S4CR24
+slack xoxp-S4CR25-abc
+Cookie: sid=S4CR26; theme=dark
+postgres://app:S4CR27@db:5432/x?sslmode=disable
+token=S4CR28%2Fabc%3D
+tOkEn=S4CR29
+password: S4CR30
+panic: auth failed for token=S4CR31
+goroutine 1 [running]:
+main.connect(0xc000012345, {0x7ffd, 0x5}, {0xc0000b2000, 0x8})
+	/app/main.go:42 +0x1d
+-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAS4CR32bodyline0123456789abcdefABCDEF
+Zm9vYmFyS4CR33bodyline9876543210ZYXWVUTSRQPONMLKJI
+-----END RSA PRIVATE KEY-----
+FINAL CAUSE: schema migration failed
