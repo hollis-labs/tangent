@@ -18,9 +18,10 @@ import (
 func registerPluginRegistryRoute(
 	mux *http.ServeMux,
 	logger *slog.Logger,
+	hostInstance string,
 ) {
 	mux.HandleFunc("GET /api/plugins/registry", func(w http.ResponseWriter, r *http.Request) {
-		resp := buildRegistryResponse()
+		resp := buildRegistryResponse(hostInstance)
 
 		payload, err := json.Marshal(resp)
 		if err != nil {
@@ -36,11 +37,12 @@ func registerPluginRegistryRoute(
 
 // buildRegistryResponse constructs a registry.Response from the plugin host state.
 //
-// Minimal proof implementation: returns an empty registry with protocol=1.
+// Minimal proof implementation: registry v2 with an immutable empty snapshot.
+// Revision is independent of owner generations and stays 1 until catalog wiring.
 // Future work will populate from host.Plugins() and collect contributions from
 // registered MCP tools, HTTP routes, and envelope kinds.
-func buildRegistryResponse() registry.Response {
-	resp := registry.NewResponse()
+func buildRegistryResponse(hostInstance string) registry.Response {
+	resp := registry.NewResponse(hostInstance, 1)
 
 	// Minimal proof: empty registry demonstrates the wire contract works.
 	// Full implementation would iterate host.Plugins() and collect:

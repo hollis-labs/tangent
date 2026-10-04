@@ -46,6 +46,7 @@ func echoSpec(t *testing.T, binary string) ChildSpec {
 	root := t.TempDir()
 	return ChildSpec{
 		ID:       "tangent.plugin.echo",
+		Version:  "0.1.0",
 		Command:  binary,
 		DataDir:  filepath.Join(root, "data"),
 		CacheDir: filepath.Join(root, "cache"),
@@ -154,7 +155,7 @@ func TestASubprocessPluginLoadsDispatchesAndStops(t *testing.T) {
 
 	// And it stops. This is what a compiled-in plugin cannot do: there is a
 	// process to end, so ending it actually releases the dependency.
-	pid := child.proc.cmd.Process.Pid
+	pid := child.pid()
 	if err := host.Unload(child.ID()); err != nil {
 		t.Fatalf("Unload: %v", err)
 	}
@@ -245,7 +246,7 @@ func TestAChildThatDiesFailsItsCallersRatherThanHangingThem(t *testing.T) {
 
 	// Let the call get out on the wire before the process goes.
 	time.Sleep(200 * time.Millisecond)
-	if err := child.proc.kill(); err != nil {
+	if err := killCurrent(child); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
 
@@ -264,7 +265,7 @@ func TestAChildThatDiesFailsItsCallersRatherThanHangingThem(t *testing.T) {
 func TestAPluginThatCannotSpawnContributesNothing(t *testing.T) {
 	host, _ := newHost(t)
 	child := NewChildPlugin(
-		ChildSpec{ID: "tangent.plugin.absent", Command: filepath.Join(t.TempDir(), "no-such-binary")},
+		ChildSpec{ID: "tangent.plugin.absent", Version: "0.1.0", Command: filepath.Join(t.TempDir(), "no-such-binary")},
 		[]MCPTool{{Name: "tangent.absent", Description: "x", InputSchema: json.RawMessage(`{"type":"object"}`)}},
 		nil)
 
@@ -292,11 +293,12 @@ func TestUnloadAllStopsEveryChild(t *testing.T) {
 	for _, id := range []string{"tangent.plugin.echo-a", "tangent.plugin.echo-b"} {
 		spec := echoSpec(t, binary)
 		spec.ID = id
+		spec.Env = append(spec.Env, "ECHO_PLUGIN_ID="+id)
 		child := NewChildPlugin(spec, nil, nil)
 		if err := host.Load(child); err != nil {
 			t.Fatalf("Load %s: %v", id, err)
 		}
-		pids = append(pids, child.proc.cmd.Process.Pid)
+		pids = append(pids, child.pid())
 	}
 
 	started := time.Now()

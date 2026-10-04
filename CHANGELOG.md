@@ -9,11 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **`tangent-plugins.version` pins v0.1.1** (`runner/v0.1.1`, `tesseract/v0.1.1`,
-  `torque/v0.1.1`, built against tangent v0.16.0). The runner now validates
-  every turn it sends against `plugin.TurnsEnqueueInputSchema`, which closes
-  `CW-20260930-0102`. Tesseract and torque are unchanged apart from their
-  version.
+- Subprocess plugins use plugin-host Lifecycle for protocol-2 handshake,
+  process groups, bounded teardown, crash recovery and health gating. Tangent
+  keeps manifest registration, authorization and dispatch policy. Unexpected
+  runtime exits retain bounded recovery; handshake mismatches are terminal.
+- **Breaking:** protocol-1 plugin binaries are refused. Plugins must rebuild
+  against the pinned protocol-2 SDK and acknowledge capability contract 1.
+  Init sends a fresh incarnation, empty grants and empty config, with no offers.
+  Source-only pseudo-version pins must be replaced by approved releases before
+  activation; nothing is installed or deployed by this change.
+
+- **`tangent-plugins.version` pins the protocol-2 rebuild** at
+  `v0.1.2-0.20261004010850-eac2e08457ba` for runner, tesseract and torque.
+  Their SDK pin matches the host's protocol-2 SDK. The GitHub plugin remains
+  protocol 1 and is refused by this host pending its separate migration.
+
+- The empty plugin registry proof endpoint uses SDK registry v2 and shares the
+  lifecycle host epoch. The current browser registry-v1 loader refuses this
+  empty snapshot; loader/catalog adoption is deferred and app boot is unaffected.
 
 ### Fixed
 

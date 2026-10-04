@@ -155,11 +155,12 @@ const (
 // The URL travels in the environment rather than in InitParams for the reason
 // the config map is empty: the host tells a child WHERE things are, and the
 // child reads its own environment. Neither of these is configuration the host
-// holds. See internal/pluginhost/child.go, where the empty config map is
+// holds. See internal/pluginhost/childplugin.go, where the empty config map is
 // explained at the call site.
 func specFor(entry pluginpkg.Installed) pluginhost.ChildSpec {
 	return pluginhost.ChildSpec{
 		ID:       entry.Manifest.ID,
+		Version:  entry.Manifest.Version,
 		Command:  entry.Entrypoint,
 		Args:     entry.Manifest.Args,
 		WorkDir:  entry.Dir,

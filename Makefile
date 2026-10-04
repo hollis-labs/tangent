@@ -42,7 +42,7 @@ build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 	go build -o tangent ./cmd/tangent
 
 # The first-party plugins live in github.com/hollis-labs/tangent-plugins, one
-# module each (CW-20260930-0102). tangent-plugins.version pins the release this
+# module each. tangent-plugins.version pins the module version this
 # Tangent documents and smoke-tests against; install-plugins installs exactly
 # that, the way a user does: go install the pinned module, let the binary emit
 # its plugin.yaml, and `tangent plugin install` the result.

@@ -677,20 +677,35 @@ a trust class, capability set, assurance or digest through `UIComponent.Props`:
 those keys are refused by name rather than ignored, so a plugin that thinks it
 raised its own trust class fails to load instead of being silently downgraded.
 
-`internal/plugins/` lists what this build ships and loads it. There is no
-discovery, no directory scan and no subprocess spawn — compiled-in only — so
-"which plugins does this binary have" is answered by reading one file. That is
-the **dogfood concession** rather than the target shape: it was authorized so
-the Torque integration could be used sooner, and ADR 0008 §5 records subprocess
-plus runtime UI loading as where this is going, tracked by `CW-20260910-0034`.
-The Torque and Tesseract plugins each fill the host's board kind with one
-application's records. They, and the runner, live in their own repository,
-[`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins) (`CW-20260930-0102`), written
-against `pkg/plugin` and installed at the release `tangent-plugins.version`
-pins. Every plugin
-this build ships holds a real application dependency, and that is the
-inventory correction `CW-20260911-0036` made: `appboard` held none, because
-the kind it named is the host's own (see below).
+`internal/plugins/installed.go` scans the installed plugin directory and resolves
+manifest declarations into Tangent registrations. `ChildPlugin` uses
+[`plugin-host`](https://github.com/hollis-labs/plugin-host) Lifecycle for spawn,
+protocol-2 handshake, process groups, bounded teardown and crash recovery; the
+private child and wire implementations are removed. A host process shares one
+random epoch and an in-memory generation store across its controllers. Each
+attempt gets a fresh incarnation, explicit empty grants and empty config, with
+no host-service or hooks-profile offers. Identity and version must match the
+resolved manifest before load or registration, and frames are bounded to 8 MiB
+in both directions.
+
+Tangent explicitly classifies an unexpected exit of an activated child as
+transient, preserving automatic recovery with a cumulative budget of three
+restarts and cancellable 1/2/4-second backoff. Intentional stop never retries;
+protocol, identity, version, Init and capability failures are terminal. A fresh
+process gets a fresh on-demand health gate; an unhealthy cached verdict refuses
+dispatch until a later probe succeeds. Manifest resolution, registration,
+authorization and the 30-second dispatch policy remain Tangent-owned.
+
+The first-party plugins live in
+[`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins),
+written against `pkg/plugin` and selected by `tangent-plugins.version`.
+The source integration uses immutable pseudo-version pins for plugin-host,
+plugin-sdk and the protocol-2 first-party rebuild. These pins must be replaced
+by approved releases before activation; this source change installs or deploys
+nothing. Existing protocol-1 binaries must be rebuilt before they can load.
+Local MCP callbacks remain the existing plugin-to-host path; empty grants do
+not claim enforcement over that local caller's authority. Duplex host RPC,
+durable enabled intent and attributable registration removal remain later work.
 
 **Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
 `internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
@@ -1280,6 +1295,16 @@ bounded cost that has a task.
   it, and nothing reports that. Plugins run as separate processes, so a crash is
   contained and restarted (backoff, at most three attempts), but a plugin that
   ignores its context still holds that work until it finishes.
+
+### Browser plugin registry integration
+
+The SDK pin requires registry v2 on the empty `/api/plugins/registry` proof
+endpoint. It shares the lifecycle host epoch and serves immutable revision 1;
+this is not yet a populated contribution catalog. The current browser loader
+still speaks registry v1 and refuses that snapshot. Its fire-and-forget sync
+does not block application boot, and no plugin UI contributions are currently
+served. Browser registry adoption and catalog population remain follow-up work;
+this driver change makes no frontend changes.
 
 ### An additive version bump takes pending interactions out of service
 

@@ -15,7 +15,7 @@ import (
 // Nanite runs subprocess plugins in production, so its `DiscoverPlugins` is the
 // shape to read. It has two behaviors worth inverting rather than copying, and
 // both were found by reading it for defects instead of for patterns — the same
-// posture that kept its CW-20260902-0062 out of `internal/pluginhost/wire.go`.
+// posture retained by Tangent's shared plugin-host transport.
 //
 //  1. **ONE BAD MANIFEST MUST NOT ABORT THE SCAN.** Nanite's returns
 //     `nil, err` on the first manifest that fails to parse, so a single

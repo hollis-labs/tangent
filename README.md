@@ -101,7 +101,7 @@ git clone https://github.com/hollis-labs/tangent.git && cd tangent
 mise install            # pins Node; see mise.toml
 (cd ui && npm ci)
 make build              # → ./tangent, with the UI embedded
-make install-plugins    # optional: the first-party plugins, at the release tangent-plugins.version pins
+make install-plugins    # optional: first-party plugins at tangent-plugins.version
 # `make build-app` additionally assembles Tangent.app on macOS.
 ```
 
@@ -127,6 +127,12 @@ asynchronous approvals, see the `tangent.hitl_*` tools and
 [`.agents/skills/tangent-hitl-inbox/SKILL.md`](.agents/skills/tangent-hitl-inbox/SKILL.md).
 
 ## Development
+
+The unreleased plugin-host integration is protocol-2 only. Existing protocol-1
+plugins must be rebuilt; the GitHub plugin remains on protocol 1 pending its
+separate migration. Source-only pseudo-version pins must be replaced by
+approved releases before activation. This source change installs or deploys
+nothing.
 
 ```bash
 # after the Quickstart's clone and installs:

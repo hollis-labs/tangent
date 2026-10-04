@@ -209,7 +209,7 @@ plugin that builds and does not load.
    [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins): a `<name>/` module with
    `cmd/tangent-plugin-<name>/main.go` (modeled on
    `tesseract/cmd/tangent-plugin-tesseract`; it serves the plugin over the
-   plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
+   protocol-2 plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
    `internal/<name>/`, added to that repository's `PLUGINS`. The generator still
    writes into this repository and does not write the program
    (`CW-20260930-0118`), so move what it renders. Then `make dist`,
@@ -224,6 +224,13 @@ plugin that builds and does not load.
 4. **Measure the card bounds.**
 5. **Replace `mechanical()`** with the application's answer, if you scaffolded
    with `-hands-back-work`.
+
+The entrypoint's Init result must advertise `subprocess.ProtocolVersion` (2)
+and `capability.ContractVersion` (1). The SDK validates the host's incarnation
+and explicit grant array before invoking Init. Tangent currently supplies empty
+grants and offers no optional profiles; a plugin cannot treat either its opaque
+identity courier or its environment as an authorization grant. Protocol-1
+binaries are refused before load.
 
 Then `make verify-supported` and `make smoke`.
 

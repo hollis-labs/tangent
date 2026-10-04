@@ -108,11 +108,13 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 	if !strings.HasPrefix(dbPath, root) {
 		t.Fatalf("refusing to boot: database path %q escapes the test temp root", dbPath)
 	}
+	pluginDir := installFirstPartyPlugins(t, binary, root)
+	// Resolve/build/install can take long enough for the kernel to reuse a
+	// released ephemeral port. Choose it only after staging, just before spawn.
 	port := reservePort(t)
 	if port == 7842 {
 		t.Fatalf("refusing to boot: reserved the default port 7842, which a local instance may own")
 	}
-	pluginDir := installFirstPartyPlugins(t, binary, root)
 
 	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
 	command.Env = append(os.Environ(),
@@ -197,7 +199,7 @@ var (
 // process and returns, per plugin, an installable directory: the binary beside
 // the plugin.yaml it emits.
 //
-// It builds the PINNED RELEASE by default — `go install
+// It builds the PINNED MODULE VERSION by default — `go install
 // github.com/hollis-labs/tangent-plugins/<p>/cmd/tangent-plugin-<p>@<version>`,
 // exactly what `make install-plugins` does — so the gate measures what a user
 // installs, not a checkout that happens to be nearby. TANGENT_PLUGINS_SRC names

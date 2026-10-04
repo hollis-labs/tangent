@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/hollis-labs/plugin-sdk/subprocess"
 )
@@ -31,12 +32,38 @@ type echoPlugin struct {
 
 func (p *echoPlugin) Init(_ context.Context, params subprocess.InitParams) (subprocess.InitResult, error) {
 	p.initParams = params
+	if os.Getenv("ECHO_PLUGIN_INIT_ERROR") != "" {
+		return subprocess.InitResult{}, fmt.Errorf("fixture Init refused")
+	}
+	id := os.Getenv("ECHO_PLUGIN_ID")
+	if id == "" {
+		id = "tangent.plugin.echo"
+	}
+	protocol := subprocess.ProtocolVersion
+	contract := params.CapabilityContract
+	version := "0.1.0"
+	if value := os.Getenv("ECHO_PLUGIN_PROTOCOL"); value != "" {
+		protocol, _ = strconv.Atoi(value)
+	}
+	if value := os.Getenv("ECHO_PLUGIN_CONTRACT"); value != "" {
+		contract, _ = strconv.Atoi(value)
+	}
+	if value := os.Getenv("ECHO_PLUGIN_VERSION"); value != "" {
+		version = value
+	}
+	var profile *int
+	if os.Getenv("ECHO_PLUGIN_PROFILE") != "" {
+		version := 1
+		profile = &version
+	}
 	return subprocess.InitResult{
-		ID:          "tangent.plugin.echo",
-		Name:        "Echo",
-		Version:     "0.1.0",
-		Description: "Echoes its input back, for testing the subprocess wire.",
-		Protocol:    subprocess.ProtocolVersion,
+		HooksProfileVersion: profile,
+		ID:                  id,
+		CapabilityContract:  contract,
+		Name:                "Echo",
+		Version:             version,
+		Description:         "Echoes its input back, for testing the subprocess wire.",
+		Protocol:            protocol,
 	}, nil
 }
 
@@ -65,11 +92,16 @@ func (p *echoPlugin) MCPCallTool(
 	switch request.ToolName {
 	case "tangent.echo":
 		body, err := json.Marshal(map[string]any{
-			"tool":        request.ToolName,
-			"arguments":   request.Arguments,
-			"config_size": len(p.initParams.Config),
-			"data_dir":    p.initParams.DataDir,
-			"host":        p.initParams.HostInfo.Version,
+			"tool":                request.ToolName,
+			"arguments":           request.Arguments,
+			"config_size":         len(p.initParams.Config),
+			"data_dir":            p.initParams.DataDir,
+			"host":                p.initParams.HostInfo.Version,
+			"incarnation":         p.initParams.Incarnation,
+			"grants":              p.initParams.Grants,
+			"capability_contract": p.initParams.CapabilityContract,
+			"host_services":       p.initParams.HostServices,
+			"hooks_profile":       p.initParams.HooksProfile,
 			// Proves the child reads its OWN environment rather than being
 			// handed config by the host.
 			"secret_from_env": os.Getenv("ECHO_PLUGIN_SECRET"),
@@ -79,6 +111,11 @@ func (p *echoPlugin) MCPCallTool(
 		}
 		return subprocess.MCPCallResult{Content: body}, nil
 	case "tangent.echo_slow":
+		if marker := os.Getenv("ECHO_PLUGIN_CALL_MARKER"); marker != "" {
+			if err := os.WriteFile(marker, []byte("entered"), 0o600); err != nil {
+				return subprocess.MCPCallResult{}, err
+			}
+		}
 		// Blocks until the host gives up on it. The host's call must time out
 		// without killing the connection, which is the defect this wire exists
 		// not to reproduce.

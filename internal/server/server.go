@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	driver "github.com/hollis-labs/plugin-host"
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -128,6 +129,10 @@ type Config struct {
 	// route uses. Empty is the normal state; see plugin_routes.go.
 	PluginRoutes []pluginhost.HTTPRoute
 
+	// PluginHostInstance is the shared plugin lifecycle epoch. Production boot
+	// supplies it; standalone servers create a fresh epoch when it is absent.
+	PluginHostInstance string
+
 	// Telemetry records correlation-bearing observations for the browser
 	// transports this package owns: an object-access refusal at the
 	// participant gate, and a host-mediated effect the broker declined.
@@ -229,6 +234,13 @@ func New(cfg Config) (*Server, error) {
 		return nil, fmt.Errorf("server: envelope service is required")
 	}
 
+	if cfg.PluginHostInstance == "" {
+		epoch, err := driver.NewHostInstance()
+		if err != nil {
+			return nil, fmt.Errorf("server: plugin epoch: %w", err)
+		}
+		cfg.PluginHostInstance = epoch
+	}
 	mux := http.NewServeMux()
 	registerHealthRoutes(mux, cfg.Health)
 	var participantRoutes []ParticipantRoute
@@ -402,7 +414,7 @@ func New(cfg Config) (*Server, error) {
 	// Plugin registry endpoint (CW-20260911-0035). Serves registry.Response
 	// so the browser loader can resolve plugins. Registered before plugin-served
 	// routes so it cannot be claimed by a plugin.
-	registerPluginRegistryRoute(mux, logger)
+	registerPluginRegistryRoute(mux, logger, cfg.PluginHostInstance)
 
 	// Plugin-served routes (ADR 0007 §4, CW-20260910-0030). Mounted last, so
 	// every route this package writes by hand has already claimed its pattern

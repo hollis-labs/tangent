@@ -17,30 +17,32 @@ import (
 // subprocess-mode prototype and became how this host runs every plugin it
 // ships (CW-20260911-0070 removed the compiled-in roster entirely).
 
-// pid reads the current child's OS process id through the same lock the
-// restart supervisor writes under, so a test that races a real restart does
-// not itself race the supervisor — a direct child.proc.cmd.Process.Pid read
-// (fine in the pre-restart tests in child_test.go, which never trigger a
-// concurrent write to proc) is not safe once a restart can actually happen.
+// pid reads the callable process through the shared lifecycle.
 func (p *ChildPlugin) pid() int {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.proc == nil || p.proc.cmd.Process == nil {
+	l := p.lifecycle
+	p.mu.Unlock()
+	if l == nil {
 		return 0
 	}
-	return p.proc.cmd.Process.Pid
+	proc := l.Current()
+	if proc == nil {
+		return 0
+	}
+	return proc.Pid()
 }
-
-// killCurrent kills whatever process is currently installed, through the same
-// lock, for the same reason pid() exists.
 func killCurrent(p *ChildPlugin) error {
 	p.mu.Lock()
-	proc := p.proc
+	l := p.lifecycle
 	p.mu.Unlock()
+	if l == nil {
+		return errors.New("no lifecycle")
+	}
+	proc := l.Current()
 	if proc == nil {
 		return errors.New("no process installed")
 	}
-	return proc.kill()
+	return proc.Kill()
 }
 
 // runningCount counts live processes whose command line contains needle.
