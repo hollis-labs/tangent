@@ -156,7 +156,7 @@ func TestPluginStderrIsRedactedBeforeCrashLog(t *testing.T) {
 }
 
 func TestDiagnosticCredentialPatterns(t *testing.T) {
-	for _, text := range []string{"TOKEN=credential-value", "api_key: credential-value", "Bearer credential-value", "https://user:credential-value@example.test", "sk-credential-value", "github_pat_credentialvalue"} {
+	for _, text := range []string{"TOKEN=credential-value", `{"api_key":"credential-value"}`, "Bearer credential-value", "https://user:credential-value@example.test", "sk-credential-value", "github_pat_credentialvalue"} {
 		got := redactPluginDiagnostic(text)
 		if strings.Contains(got, "credential") || !strings.Contains(got, "[redacted]") {
 			t.Errorf("redaction %q => %q", text, got)

@@ -360,3 +360,17 @@ With older protocol-1 binaries still installed, `/readyz` fails its plugin check
 and the installer exits non-zero after its 30-second readiness wait. Runner
 capabilities return only once its compatible binary is installed. The browser
 registry loader must also adopt registry v2 before this host change ships.
+
+Plugin stderr is untrusted diagnostic text. Tangent retains a bounded tail,
+conservatively drops the first line when that tail window is full, normalizes
+common escaped and Unicode credential spellings, scrubs credential assignments,
+headers, URL userinfo and known token prefixes, and replaces control characters.
+This is **best effort**, not a guarantee against arbitrary secret disclosure;
+plugins must keep secrets out of their own logs. Bare-colon failure prose is
+preserved. Plugin directories and executable paths resolve to absolute paths.
+
+Inventory keeps initial load refusals in `error`, and failures after a successful
+load in `failed_after_load` and `runtime_error`. Registration history remains
+recorded even when a plugin stops serving. Readiness names refusals and runtime
+failures separately. A failed restart emits a deduplicated warning when status
+or inventory is sampled; the shared library continues to own process supervision.

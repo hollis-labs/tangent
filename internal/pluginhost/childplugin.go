@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,19 +60,21 @@ func WithHealthGate(enabled bool) ChildPluginOption {
 // The host manifest remains authoritative: no runtime list-tools call is made.
 // Transport, process groups, shutdown and recovery belong to plugin-host.
 type ChildPlugin struct {
-	spec       ChildSpec
-	tools      []MCPTool
-	route      []HTTPRoute
-	healthGate bool
-	mu         sync.Mutex
-	lifecycle  *driver.Lifecycle
-	gate       *driver.HealthGate
-	owner      driver.Owner
-	active     context.Context
-	cancel     context.CancelFunc
-	status     plugin.PluginStatus
-	identity   subprocess.InitResult
-	process    *driver.Process
+	spec            ChildSpec
+	tools           []MCPTool
+	route           []HTTPRoute
+	healthGate      bool
+	mu              sync.Mutex
+	lifecycle       *driver.Lifecycle
+	gate            *driver.HealthGate
+	owner           driver.Owner
+	active          context.Context
+	cancel          context.CancelFunc
+	status          plugin.PluginStatus
+	identity        subprocess.InitResult
+	process         *driver.Process
+	logger          *slog.Logger
+	reportedFailure string
 }
 
 func NewChildPlugin(spec ChildSpec, tools []MCPTool, routes []HTTPRoute, opts ...ChildPluginOption) *ChildPlugin {
@@ -107,10 +111,17 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 		return fmt.Errorf("pluginhost: %s: Tangent host required; got %T", p.ID(), host)
 	}
 	p.mu.Lock()
+	p.logger = h.logger
 	if p.lifecycle != nil {
 		p.mu.Unlock()
 		return fmt.Errorf("pluginhost: %s already loaded", p.ID())
 	}
+	resolved, err := absoluteChildSpec(p.spec)
+	if err != nil {
+		p.mu.Unlock()
+		return err
+	}
+	p.spec = resolved
 	l, err := driver.NewLifecycle(p.ID(), driver.LifecycleOptions{
 		HostInstance: h.hostInstance, Generations: &h.generations,
 		Retry: driver.RetryPolicy{MaxAttempts: maxChildRestarts + 1, Backoff: restartInitialBackoff},
@@ -187,8 +198,9 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 	return driver.Plan{Spec: driver.Spec{
 		ID: p.ID(), ExpectedID: p.ID(), ExpectedVersion: p.spec.Version,
 		Command: p.spec.Command, Args: p.spec.Args, Dir: p.spec.WorkDir,
-		Env:    driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
-		Redact: redactPluginDiagnostic,
+		Env:         driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
+		Redact:      redactPluginDiagnostic,
+		StderrBytes: pluginStderrBytes,
 		Init: subprocess.InitParams{
 			PluginDir: dir, DataDir: p.spec.DataDir, CacheDir: p.spec.CacheDir,
 			// Do not plumb host-held configuration through Init: plugins read
@@ -247,12 +259,15 @@ func (p *ChildPlugin) Status() plugin.PluginStatus {
 		return s
 	}
 	state := l.Status()
+	runtimeError := p.RuntimeFailure()
 	s.Loaded = state.State == driver.StateRunning
 	s.Enabled = state.DesiredEnabled
-	if state.LastFailure != nil {
+	if runtimeError != "" {
+		s.LastError = runtimeError
+	} else if state.LastFailure != nil {
 		s.LastError = state.LastFailure.Error()
 	}
-	if state.Exhausted {
+	if state.Exhausted && !strings.Contains(s.LastError, "restart attempts exhausted") {
 		s.LastError += "; restart attempts exhausted"
 	}
 	return s
@@ -380,3 +395,61 @@ var (
 	_ subprocess.MCPHandler  = (*ChildPlugin)(nil)
 	_ subprocess.HTTPHandler = (*ChildPlugin)(nil)
 )
+
+// RuntimeFailure describes unavailability after a successful activation. The
+// library owns recovery; status sampling emits each terminal diagnostic once.
+func (p *ChildPlugin) RuntimeFailure() string {
+	p.mu.Lock()
+	l, loadedAt := p.lifecycle, p.status.LoadedAt
+	p.mu.Unlock()
+	if l == nil || loadedAt.IsZero() {
+		return ""
+	}
+	state := l.Status()
+	if (state.State != driver.StateFailed && state.State != driver.StateQuarantined) || state.LastFailure == nil {
+		return ""
+	}
+	if state.State == driver.StateFailed && state.LastFailure.Retryable && !state.Exhausted {
+		return ""
+	}
+	text := state.LastFailure.Error()
+	if state.LastFailure.Cause != nil {
+		text += ": " + state.LastFailure.Cause.Error()
+	}
+	if state.Exhausted {
+		text += "; restart attempts exhausted"
+	}
+	text = redactPluginDiagnostic(text)
+	if len(text) > 2048 {
+		text = strings.ToValidUTF8(text[:2048], "")
+	}
+	if text == "" {
+		text = "pluginhost: failed after load"
+	}
+	p.mu.Lock()
+	fresh := p.reportedFailure != text
+	p.reportedFailure = text
+	logger := p.logger
+	p.mu.Unlock()
+	if fresh && logger != nil {
+		logger.Warn("pluginhost: plugin failed after load", "plugin", p.ID(), "reason", text)
+	}
+	return text
+}
+
+func absoluteChildSpec(spec ChildSpec) (ChildSpec, error) {
+	command, err := filepath.Abs(spec.Command)
+	if err != nil || strings.TrimSpace(spec.Command) == "" {
+		return spec, fmt.Errorf("pluginhost: invalid plugin executable directory")
+	}
+	spec.Command = command
+	dir := spec.WorkDir
+	if dir == "" {
+		dir = filepath.Dir(command)
+	}
+	spec.WorkDir, err = filepath.Abs(dir)
+	if err != nil {
+		return spec, fmt.Errorf("pluginhost: resolve plugin directory: %w", err)
+	}
+	return spec, nil
+}

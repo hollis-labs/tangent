@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Plugin diagnostic scrubbing normalizes common credential encodings, drops a
+  possibly partial first line from a full stderr window and sanitizes controls.
+  Redaction remains best effort; plugins must not log secrets. Bare-colon failure
+  prose stays readable. Runtime failures and initial refusals are reported
+  separately, and failed restarts warn once on status/inventory sampling.
+- Relative plugin roots and spawn paths resolve to absolute directories.
+
 - **A LaunchAgent reinstall no longer drops the daemon's extra environment**
   (`CW-20260930-0104`). `tangent-launchagent install` and `tangent-install
   install` keep every variable the installed plist already carries beyond

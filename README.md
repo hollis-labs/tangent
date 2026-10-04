@@ -128,7 +128,7 @@ asynchronous approvals, see the `tangent.hitl_*` tools and
 
 ## Development
 
-The protocol-2 plugin-host integration in this source branch is not activated. Existing protocol-1
+The plugin-host integration requires protocol-2 plugins. Existing protocol-1
 plugins must be rebuilt; the GitHub plugin remains on protocol 1 pending its
 separate migration. Source-only pseudo-version pins must be replaced by
 approved releases before activation. This source change installs or deploys

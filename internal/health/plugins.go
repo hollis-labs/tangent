@@ -44,7 +44,9 @@ type PluginRecord struct {
 	At time.Time `json:"at,omitempty"`
 	// Error is why a refused load was refused, bounded like every other
 	// explanation in this package. It is the host's error text, not a stack.
-	Error string `json:"error,omitempty"`
+	Error           string `json:"error,omitempty"`
+	FailedAfterLoad bool   `json:"failed_after_load,omitempty"`
+	RuntimeError    string `json:"runtime_error,omitempty"`
 
 	// Restarts is how many automatic restart attempts this plugin has made
 	// (CW-20260911-0068). Zero for a plugin that never needed one, which reads
@@ -130,25 +132,40 @@ func (r *Reporter) checkPlugins(ctx context.Context) Check {
 		}
 	}
 	inventory := r.plugins(ctx)
+	var failed []string
+	for _, record := range inventory.Plugins {
+		if record.FailedAfterLoad || record.Exhausted {
+			failed = append(failed, record.ID)
+		}
+	}
+	sort.Strings(failed)
 	if inventory.Refused > 0 {
 		var refused []string
 		for _, record := range inventory.Plugins {
-			if record.Error != "" {
+			if record.Error != "" && !record.Loaded && !record.FailedAfterLoad {
 				refused = append(refused, record.ID)
 			}
 		}
 		sort.Strings(refused)
+		detail := fmt.Sprintf("%d plugin(s) refused to load: %s", inventory.Refused, joinBounded(refused))
+		if len(failed) > 0 {
+			detail += fmt.Sprintf("; %d plugin(s) failed after load: %s", len(failed), joinBounded(failed))
+		}
 		return Check{
 			Name:   CheckPlugins,
 			Status: StatusFail,
-			Detail: bound(fmt.Sprintf("%d plugin(s) refused to load: %s",
-				inventory.Refused, joinBounded(refused))),
+			Detail: bound(detail),
 			Action: "A refused plugin contributes no kind, tool or route, so every surface " +
 				"it was built to serve is missing. Read the per-plugin error in this " +
 				"report's plugin inventory; a plugin that cannot load normally fails the " +
 				"boot, so a process serving with one refused is a build that should not " +
 				"have started." + r.redeployHint(),
 		}
+	}
+	if len(failed) > 0 {
+		return Check{Name: CheckPlugins, Status: StatusFail,
+			Detail: bound(fmt.Sprintf("%d plugin(s) failed after load: %s", len(failed), joinBounded(failed))),
+			Action: "Read the runtime_error in the plugin inventory; restore the plugin executable or its dependency before restarting it."}
 	}
 	if inventory.Loaded == 0 {
 		return Check{
@@ -209,6 +226,7 @@ func (r *Reporter) Plugins(ctx context.Context) PluginInventory {
 	}
 	for i := range inventory.Plugins {
 		inventory.Plugins[i].Error = bound(inventory.Plugins[i].Error)
+		inventory.Plugins[i].RuntimeError = bound(inventory.Plugins[i].RuntimeError)
 		inventory.Plugins[i].HealthMessage = bound(inventory.Plugins[i].HealthMessage)
 	}
 	return inventory

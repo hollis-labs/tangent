@@ -73,6 +73,16 @@ func LoadInstalled(
 		return nil, err
 	}
 
+	if root == "" {
+		root, err = pluginpkg.DefaultRoot()
+		if err != nil {
+			return nil, fmt.Errorf("plugins: resolve install root: %w", err)
+		}
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("plugins: resolve install root: %w", err)
+	}
 	installed, rejected, err := pluginpkg.Scan(root)
 	if err != nil {
 		return nil, fmt.Errorf("plugins: %w", err)

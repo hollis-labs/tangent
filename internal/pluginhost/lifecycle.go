@@ -257,8 +257,11 @@ type PluginRecord struct {
 	Enabled bool `json:"enabled"`
 	// At is when the host recorded the load attempt, successful or not.
 	At time.Time `json:"at"`
-	// Error is why a refused load was refused. Empty for a loaded plugin.
-	Error string `json:"error,omitempty"`
+	// Error describes an initial refused load only. RuntimeError describes
+	// unavailability after successful load; registrations remain recorded.
+	Error           string `json:"error,omitempty"`
+	FailedAfterLoad bool   `json:"failed_after_load,omitempty"`
+	RuntimeError    string `json:"runtime_error,omitempty"`
 
 	// Restarts is how many automatic restart attempts this plugin has made
 	// (CW-20260911-0068), successful or not. Zero for a plugin that has never
@@ -385,8 +388,9 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 			record.Enabled = safeStatus(attempt.p).Enabled
 			record.Restarts = safeRestarts(attempt.p)
 			record.Exhausted = safeExhausted(attempt.p)
-			if record.Exhausted {
-				record.Error = "restart attempts exhausted"
+			if reporter, ok := attempt.p.(interface{ RuntimeFailure() string }); ok {
+				record.RuntimeError = reporter.RuntimeFailure()
+				record.FailedAfterLoad = record.RuntimeError != ""
 			}
 		}
 		if probed, wasProbed := health[attempt.id]; wasProbed {

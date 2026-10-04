@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/plugin-sdk/registry"
+	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
 
 func TestRegistryUsesLifecycleHostEpoch(t *testing.T) {
@@ -48,5 +49,13 @@ func TestRegistryUsesLifecycleHostEpoch(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || got.HostInstance != epoch || got.Revision != 1 || got.Validate() != nil {
 			t.Fatalf("registry epoch differs from lifecycle: %+v", got)
 		}
+	}
+}
+
+func TestPluginInventoryPreservesRuntimeFailureAndExhaustion(t *testing.T) {
+	source := pluginhost.PluginInventory{Loaded: 1, Plugins: []pluginhost.PluginRecord{{ID: "crashed", Loaded: true, FailedAfterLoad: true, RuntimeError: "spawn failed", Exhausted: true, HealthMessage: "plugin is gone; restart attempts exhausted"}}}
+	got := pluginInventory(source).Plugins[0]
+	if !got.Exhausted || !got.FailedAfterLoad || got.RuntimeError != "spawn failed" || got.HealthMessage != source.Plugins[0].HealthMessage {
+		t.Fatalf("runtime diagnostics dropped: %+v", got)
 	}
 }

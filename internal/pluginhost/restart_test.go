@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"testing"
@@ -113,6 +114,8 @@ func TestACrashedChildIsAutomaticallyRestarted(t *testing.T) {
 // decision: a plugin that keeps crashing is not restarted forever.
 func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 	host, _ := newHost(t)
+	var logs lockedLogBuffer
+	host.logger = slog.New(slog.NewTextHandler(&logs, nil))
 	binary := buildEchoPlugin(t)
 
 	child := NewChildPlugin(echoSpec(t, binary), nil, nil)
@@ -162,7 +165,17 @@ func TestARestartLoopGivesUpAfterMaxAttempts(t *testing.T) {
 	if got := child.Restarts(); got != maxChildRestarts {
 		t.Fatalf("Restarts() after the final crash = %d, want it to stay at the cap %d", got, maxChildRestarts)
 	}
-	if !child.Exhausted() || !host.Inventory(context.Background()).Plugins[0].Exhausted {
+	inventory := host.Inventory(context.Background())
+	if !strings.Contains(logs.String(), `level=WARN msg="pluginhost: restart attempts exhausted"`) {
+		t.Fatal("exhaustion WARN missing")
+	}
+	if !strings.Contains(child.probeHealth(context.Background()).message, "; restart attempts exhausted") {
+		t.Fatal("health message hides exhaustion")
+	}
+	if inventory.Refused != 0 || inventory.Plugins[0].Error != "" || !inventory.Plugins[0].FailedAfterLoad || inventory.Plugins[0].RuntimeError == "" {
+		t.Fatal("runtime exhaustion misreported as initial refusal")
+	}
+	if !child.Exhausted() || !inventory.Plugins[0].Exhausted {
 		t.Fatal("exhaustion missing from child or inventory")
 	}
 	if !strings.Contains(child.Status().LastError, "exhausted") {

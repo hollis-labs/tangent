@@ -714,6 +714,8 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 			Enabled:         record.Enabled,
 			At:              record.At,
 			Error:           record.Error,
+			FailedAfterLoad: record.FailedAfterLoad,
+			RuntimeError:    record.RuntimeError,
 			Restarts:        record.Restarts,
 			Exhausted:       record.Exhausted,
 			Healthy:         record.Healthy,
