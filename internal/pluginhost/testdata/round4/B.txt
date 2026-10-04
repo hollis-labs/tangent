@@ -1,0 +1,17 @@
+TOKEN=S4CR01first
+IMPORTANT CAUSE: database migration 42 failed
+export OPENAI_API_KEY=S4CR02abcdef
+AWS_SECRET_ACCESS_KEY=S4CR03wJalrXUtnFEMIK7MDENG
+DATABASE_PASSWORD=S4CR04
+GITHUB_TOKEN=S4CR05plain
+{"apiKey":"S4CR06"}
+{"password":"S4CR07","user":"a"}
+Authorization: Digest username="u", response="S4CR08"
+Authorization: ApiKey S4CR09
+Authorization: Bearer S4CR10.abc.def
+https://S4CR11user:S4CR11pass@git.example/x.git
+failed to open app:S4CR12@tcp(db:3306)/mydb: connection refused
+token=UzRDUjEz
+AKIAIOSFODNN7S4CR14
+ASIAIOSFODNN7S4CR15
+FINAL CAUSE: schema migration failed

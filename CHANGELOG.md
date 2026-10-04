@@ -9,13 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **`tangent-plugins.version` pins v0.1.1** (`runner/v0.1.1`, `tesseract/v0.1.1`,
-  `torque/v0.1.1`, built against tangent v0.16.0). The runner now validates
-  every turn it sends against `plugin.TurnsEnqueueInputSchema`, which closes
-  `CW-20260930-0102`. Tesseract and torque are unchanged apart from their
-  version.
+- Subprocess plugins use plugin-host Lifecycle for protocol-2 handshake,
+  process groups, bounded teardown, crash recovery and health gating. Tangent
+  keeps manifest registration, authorization and dispatch policy. Unexpected
+  runtime exits retain bounded recovery; handshake mismatches are terminal.
+- **Breaking:** protocol-1 plugin binaries are refused. Plugins must rebuild
+  against the pinned protocol-2 SDK and acknowledge capability contract 1.
+  Init sends a fresh incarnation, empty grants and empty config, with no offers.
+  Source-only pseudo-version pins must be replaced by approved releases before
+  activation; nothing is installed or deployed by this change.
+
+- **`tangent-plugins.version` pins the protocol-2 rebuild** at
+  `v0.1.2-0.20261004010850-eac2e08457ba` for runner, tesseract and torque.
+  Their SDK pin matches the host's protocol-2 SDK. The GitHub plugin remains
+  protocol 1 and is refused by this host pending its separate migration.
+
+- The empty plugin registry proof endpoint uses SDK registry v2 and shares the
+  lifecycle host epoch. The current browser registry-v1 loader refuses this
+  empty snapshot; loader/catalog adoption is deferred and app boot is unaffected.
+
+- Preserve the earlier v0.1.1 first-party update: the runner validates turns
+  against `plugin.TurnsEnqueueInputSchema`; tesseract and torque changed only
+  their version. The protocol-2 source pin above supersedes that install pin.
+- **Activation order:** replace the source pins with approved releases, rebuild
+  protocol-2 plugins from the first tag, then install those plugins before or
+  together with the new daemon. Until then protocol-1 binaries are refused,
+  `/readyz` reports `plugins: fail`, and the installer exits non-zero after its
+  30-second readiness wait. Runner tools remain unavailable until reinstalled.
+- Requests and replies are limited to 8 MiB, including the frame newline. An
+  over-cap reply is currently dropped; the caller waits for its 30-second budget.
 
 ### Fixed
+
+- Plugin diagnostic scrubbing normalizes common credential encodings while
+  preserving unrelated text, physical newlines and following URL/log fields.
+  Credential names use their last underscore/hyphen/camelCase segment; compound
+  `key` names need a credential prefix. Bare `key`/`auth`/`pwd`/`pass` values are
+  scrubbed without consuming following diagnostics; absolute `PWD` paths remain
+  readable. Quoted names must be identifier-shaped, preserving causes after URLs.
+  The pinned tail drops a possibly partial leading line only when non-blank text
+  follows the first LF, and repeats the rule after a redaction-growth trim.
+  CR-only separators are not line boundaries; exact-boundary cuts may drop a
+  complete line. Windows without a qualifying LF can retain a partial key.
+  Redaction remains best effort; plugins must not log secrets. Bare-colon failure
+  prose stays readable; controls are sanitized only for display. Runtime failures and initial refusals are reported
+  separately, and failed restarts warn once on status/inventory sampling.
+- Relative plugin roots and spawn paths resolve to absolute directories.
 
 - **A LaunchAgent reinstall no longer drops the daemon's extra environment**
   (`CW-20260930-0104`). `tangent-launchagent install` and `tangent-install

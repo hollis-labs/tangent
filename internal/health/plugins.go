@@ -3,10 +3,12 @@ package health
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Plugin health (CW-20260910-0036).
@@ -44,13 +46,16 @@ type PluginRecord struct {
 	At time.Time `json:"at,omitempty"`
 	// Error is why a refused load was refused, bounded like every other
 	// explanation in this package. It is the host's error text, not a stack.
-	Error string `json:"error,omitempty"`
+	Error           string `json:"error,omitempty"`
+	FailedAfterLoad bool   `json:"failed_after_load,omitempty"`
+	RuntimeError    string `json:"runtime_error,omitempty"`
 
 	// Restarts is how many automatic restart attempts this plugin has made
 	// (CW-20260911-0068). Zero for a plugin that never needed one, which reads
 	// the same as "not a subprocess plugin" here — that distinction lives in
 	// Loaded/Error, not in this count.
-	Restarts int `json:"restarts,omitempty"`
+	Restarts  int  `json:"restarts,omitempty"`
+	Exhausted bool `json:"exhausted,omitempty"`
 	// Healthy is the last plugin/health verdict this host has cached, or nil
 	// if it has never been probed (the normal state until a health report is
 	// requested). A pointer because the case that matters is Healthy pointing
@@ -129,25 +134,37 @@ func (r *Reporter) checkPlugins(ctx context.Context) Check {
 		}
 	}
 	inventory := r.plugins(ctx)
+	var failed []string
+	for _, record := range inventory.Plugins {
+		if record.FailedAfterLoad || record.Exhausted {
+			failed = append(failed, record.ID)
+		}
+	}
+	sort.Strings(failed)
 	if inventory.Refused > 0 {
 		var refused []string
 		for _, record := range inventory.Plugins {
-			if record.Error != "" {
+			if record.Error != "" && !record.Loaded && !record.FailedAfterLoad {
 				refused = append(refused, record.ID)
 			}
 		}
 		sort.Strings(refused)
+		detail := pluginFailureDetail(refused, inventory.Refused, failed)
 		return Check{
 			Name:   CheckPlugins,
 			Status: StatusFail,
-			Detail: bound(fmt.Sprintf("%d plugin(s) refused to load: %s",
-				inventory.Refused, joinBounded(refused))),
+			Detail: bound(detail),
 			Action: "A refused plugin contributes no kind, tool or route, so every surface " +
 				"it was built to serve is missing. Read the per-plugin error in this " +
 				"report's plugin inventory; a plugin that cannot load normally fails the " +
 				"boot, so a process serving with one refused is a build that should not " +
 				"have started." + r.redeployHint(),
 		}
+	}
+	if len(failed) > 0 {
+		return Check{Name: CheckPlugins, Status: StatusFail,
+			Detail: pluginFailureDetail(nil, 0, failed),
+			Action: "Read the runtime_error in the plugin inventory; restore the plugin executable or its dependency before restarting it."}
 	}
 	if inventory.Loaded == 0 {
 		return Check{
@@ -208,6 +225,7 @@ func (r *Reporter) Plugins(ctx context.Context) PluginInventory {
 	}
 	for i := range inventory.Plugins {
 		inventory.Plugins[i].Error = bound(inventory.Plugins[i].Error)
+		inventory.Plugins[i].RuntimeError = bound(inventory.Plugins[i].RuntimeError)
 		inventory.Plugins[i].HealthMessage = bound(inventory.Plugins[i].HealthMessage)
 	}
 	return inventory
@@ -222,4 +240,56 @@ func joinBounded(ids []string) string {
 		return strings.Join(ids, ", ")
 	}
 	return strings.Join(ids[:maxNamed], ", ") + " (+" + strconv.Itoa(len(ids)-maxNamed) + " more)"
+}
+
+// Give each failure group its own share of the detail ceiling, so truncating a
+// long refused list cannot hide the independently failed-after-load group.
+func pluginFailureDetail(refused []string, refusedCount int, failed []string) string {
+	refusedLabel := fmt.Sprintf("%d plugin(s) refused to load: ", refusedCount)
+	failedLabel := fmt.Sprintf("%d plugin(s) failed after load: ", len(failed))
+	if refusedCount == 0 {
+		return failedLabel + pluginNamesForBudget(failed, maxDetailBytes-len(failedLabel))
+	}
+	if len(failed) == 0 {
+		return refusedLabel + pluginNamesForBudget(refused, maxDetailBytes-len(refusedLabel))
+	}
+	available := maxDetailBytes - len(refusedLabel) - len(failedLabel) - 2
+	return refusedLabel + pluginNamesForBudget(refused, available/2) + "; " + failedLabel + pluginNamesForBudget(failed, available-available/2)
+}
+func pluginNamesForBudget(ids []string, budget int) string {
+	names := make([]string, 0, min(4, len(ids)))
+	for _, id := range ids[:min(4, len(ids))] {
+		name := filepath.Base(id)
+		if len(name) > 24 {
+			cut, suffix := 8, len(name)-16
+			for cut > 0 && !utf8.RuneStart(name[cut]) {
+				cut--
+			}
+			for suffix < len(name) && !utf8.RuneStart(name[suffix]) {
+				suffix++
+			}
+			name = name[:cut] + "…" + name[suffix:]
+		}
+		candidate := append(names, name)
+		more := len(ids) - len(candidate)
+		text := strings.Join(candidate, ", ")
+		if more > 0 {
+			if text != "" {
+				text += " "
+			}
+			text += fmt.Sprintf("(+%d more)", more)
+		}
+		if len(text) > budget {
+			break
+		}
+		names = candidate
+	}
+	text := strings.Join(names, ", ")
+	if more := len(ids) - len(names); more > 0 {
+		if text != "" {
+			text += " "
+		}
+		text += fmt.Sprintf("(+%d more)", more)
+	}
+	return text
 }

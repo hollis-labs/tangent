@@ -209,7 +209,7 @@ plugin that builds and does not load.
    [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins): a `<name>/` module with
    `cmd/tangent-plugin-<name>/main.go` (modeled on
    `tesseract/cmd/tangent-plugin-tesseract`; it serves the plugin over the
-   plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
+   protocol-2 plugin-sdk subprocess wire and answers `--manifest`) and the plugin under
    `internal/<name>/`, added to that repository's `PLUGINS`. The generator still
    writes into this repository and does not write the program
    (`CW-20260930-0118`), so move what it renders. Then `make dist`,
@@ -224,6 +224,13 @@ plugin that builds and does not load.
 4. **Measure the card bounds.**
 5. **Replace `mechanical()`** with the application's answer, if you scaffolded
    with `-hands-back-work`.
+
+The entrypoint's Init result must advertise `subprocess.ProtocolVersion` (2)
+and `capability.ContractVersion` (1). The SDK validates the host's incarnation
+and explicit grant array before invoking Init. Tangent currently supplies empty
+grants and offers no optional profiles; a plugin cannot treat either its opaque
+identity courier or its environment as an authorization grant. Protocol-1
+binaries are refused before load.
 
 Then `make verify-supported` and `make smoke`.
 
@@ -330,3 +337,70 @@ plugin that loads" a checked claim rather than an assertion.
 
 They have no `cmd/` program and are not a tangent-plugins module, so nothing
 installs them and no build serves their tools.
+
+### Subprocess compatibility and limits
+
+The host requires protocol 2 and capability contract 1. Init sends an empty
+configuration and grant set, a fresh host-owned incarnation, and no optional
+profiles. Identity must exactly match the installed manifest. Both the manifest
+version and the reported version must be strict SemVer (`major.minor.patch`,
+with valid optional prerelease/build metadata); `v` prefixes, missing components,
+and leading zeros are refused. Reported version must exactly match the manifest,
+including prerelease and build metadata. Refusals show bounded printable expected
+and actual metadata, and the plugin is stopped before load or registration.
+
+Both request and reply frames are limited to 8 MiB including the newline. An
+oversized request fails locally; this pinned host currently drops an oversized
+reply, so its caller waits up to the 30-second call budget. Keep replies below
+the cap and paginate large results.
+
+Activation requires approved release pins and protocol-2 binaries rebuilt from
+the first tag. Install those binaries before or together with the new daemon.
+With older protocol-1 binaries still installed, `/readyz` fails its plugin check,
+and the installer exits non-zero after its 30-second readiness wait. Runner
+capabilities return only once its compatible binary is installed. The browser
+registry loader must also adopt registry v2 before this host change ships.
+
+Plugin stderr is untrusted diagnostic text. Tangent retains a bounded tail and
+removes the possibly partial leading line after truncation only when non-blank
+text follows the first LF. The library repeats that rule if configured-secret
+redaction expands the output and a final byte trim is needed. Windows without
+such an LF remain whole within the byte cap, and can retain a partial key.
+CR-only separators are not line boundaries; a cut exactly at a line boundary
+can conservatively remove a complete leading line.
+
+Credential names use their last underscore, hyphen or camelCase segment:
+`token`, `secret`, `password`, `passwd`, `pass`, `passphrase`, `credential`, `jwt`
+and `dsn` (including token/secret/credential plurals). A final `key` in a compound
+name needs a credential prefix such as `api`, `private`, `secret`, `access`, `db`, `client`,
+`session`, `refresh`, `signing` or `encryption`. Thus `OPENAI_API_KEY` and
+`AWS_SECRET_ACCESS_KEY` are scrubbed while `project_key` remains diagnostic
+metadata. Compact `apikey`, `MYTOKEN`, `PGPASSWORD` and `SECRET_KEY_BASE` are
+recognized conventional names. Bare `key`, `auth`, `pwd` and `pass` are also
+scrubbed, regardless of case; their unquoted values end at whitespace. A `PWD`
+value starting with `/` remains readable as an absolute working directory.
+
+Matching normalizes common escaped/Unicode spellings without rewriting
+unrelated percent-encoded text. Values never consume a physical newline;
+quoted, URL-query/form and logfmt values preserve following fields. Quoted keys
+must consist of letters, digits, underscores, dots or hyphens; a quoted URL is
+not a credential name. Authorization headers of any scheme, cookies, URL
+userinfo, scheme-less tcp/unix DSNs, complete
+private-key PEM blocks, bare JWTs and common provider token prefixes are scrubbed.
+Physical line boundaries survive redaction and wrapping; display text sanitizes
+control characters afterwards. Plugin directories and executables resolve to
+absolute paths.
+
+This is **best effort**, not a guarantee against arbitrary secret disclosure;
+plugins must keep secrets out of their logs. Look-alike letters, combining marks,
+mathematical alphabets, arbitrary mid-word wrapping, `-p` flags, passwords with
+an unescaped `@` in a URL, and YAML/bare-colon credentials stay outside the rule.
+Bare-colon failure prose remains readable.
+
+Inventory keeps initial load refusals in `error`, and failures after a successful
+load in `failed_after_load` and `runtime_error`. Registration history remains
+recorded even when a plugin stops serving. Readiness names refusals and runtime
+failures separately, using names and bounded lists with overflow counts. A plugin
+that fails after loading makes `/readyz` return HTTP 503, including restart
+exhaustion; an authored unhealthy answer remains a warning. A failed restart
+emits a deduplicated warning when status or inventory is sampled; the shared library continues to own process supervision.

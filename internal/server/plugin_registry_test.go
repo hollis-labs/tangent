@@ -11,17 +11,23 @@ import (
 // well-formed registry.Response that serializes correctly (CW-20260911-0035
 // minimal proof).
 func TestRegistryResponseShape(t *testing.T) {
-	resp := buildRegistryResponse()
+	resp := buildRegistryResponse("test-host")
 
-	// Protocol must be 1.
-	if resp.Protocol != registry.Protocol {
-		t.Errorf("got protocol %d, want %d", resp.Protocol, registry.Protocol)
+	// Registry version is independent of subprocess protocol.
+	if resp.RegistryVersion != registry.RegistryVersion {
+		t.Errorf("got registry version %d, want %d", resp.RegistryVersion, registry.RegistryVersion)
 	}
-	if resp.Protocol != 1 {
-		t.Errorf("got protocol %d, want 1", resp.Protocol)
+	if resp.RegistryVersion != 2 {
+		t.Errorf("got registry version %d, want 2", resp.RegistryVersion)
 	}
 
-	// Both maps must be non-nil (even when empty).
+	if resp.HostInstance != "test-host" || resp.Revision != 1 {
+		t.Fatalf("invalid snapshot identity: %+v", resp)
+	}
+	// Maps and refusal list must be non-nil, even when empty.
+	if resp.Kinds == nil || resp.Regions == nil || resp.Refusals == nil {
+		t.Fatal("required registry collection is nil")
+	}
 	if resp.Plugins == nil {
 		t.Error("Plugins map is nil; must be non-nil empty map")
 	}
@@ -41,8 +47,8 @@ func TestRegistryResponseShape(t *testing.T) {
 		t.Fatalf("failed to deserialize registry response: %v", err)
 	}
 
-	if decoded.Protocol != 1 {
-		t.Errorf("roundtrip: got protocol %d, want 1", decoded.Protocol)
+	if decoded.RegistryVersion != 2 {
+		t.Errorf("roundtrip: got registry version %d, want 2", decoded.RegistryVersion)
 	}
 	if decoded.Plugins == nil {
 		t.Error("roundtrip: Plugins is nil after deserialize")
@@ -55,7 +61,7 @@ func TestRegistryResponseShape(t *testing.T) {
 // TestRegistryResponseValidates verifies that buildRegistryResponse returns
 // a response that passes the SDK's own Validate check.
 func TestRegistryResponseValidates(t *testing.T) {
-	resp := buildRegistryResponse()
+	resp := buildRegistryResponse("test-host")
 	if err := resp.Validate(); err != nil {
 		t.Errorf("registry response validation failed: %v", err)
 	}

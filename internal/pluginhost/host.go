@@ -95,6 +95,7 @@ import (
 	"sync"
 	"time"
 
+	driver "github.com/hollis-labs/plugin-host"
 	plugin "github.com/hollis-labs/plugin-sdk"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -147,9 +148,11 @@ var reservedProps = []string{
 // Host implements plugin.Host for Tangent. One Host serves the process; it is
 // created at boot with the envelope service the resolved kinds register on.
 type Host struct {
-	ctx    context.Context
-	logger *slog.Logger
-	envSvc *envelope.Service
+	hostInstance string
+	generations  driver.MemoryGenerationStore
+	ctx          context.Context
+	logger       *slog.Logger
+	envSvc       *envelope.Service
 
 	mu sync.Mutex
 	// loaded is every plugin this host has loaded, by id.
@@ -214,22 +217,30 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 	if envSvc == nil {
 		return nil, fmt.Errorf("pluginhost: envelope service is required")
 	}
+	epoch, err := driver.NewHostInstance()
+	if err != nil {
+		return nil, fmt.Errorf("pluginhost: host epoch: %w", err)
+	}
 	return &Host{
-		ctx:     ctx,
-		logger:  logger,
-		envSvc:  envSvc,
-		loaded:  map[string]plugin.Plugin{},
-		kinds:   map[string]string{},
-		tools:   map[string]MCPTool{},
-		routes:  map[string]HTTPRoute{},
-		release: make(chan struct{}),
-		budget:  dispatchBudget,
+		hostInstance: epoch,
+		ctx:          ctx,
+		logger:       logger,
+		envSvc:       envSvc,
+		loaded:       map[string]plugin.Plugin{},
+		kinds:        map[string]string{},
+		tools:        map[string]MCPTool{},
+		routes:       map[string]HTTPRoute{},
+		release:      make(chan struct{}),
+		budget:       dispatchBudget,
 
 		contributeKind: extensions.RegisterContributedKind,
 	}, nil
 }
 
-// Load loads one compiled-in plugin: it records the plugin, then calls Load so
+// HostInstance is the immutable epoch shared by this process's plugin controllers.
+func (h *Host) HostInstance() string { return h.hostInstance }
+
+// Load loads one plugin adapter: it records the plugin, then calls Load so
 // the plugin can register what it offers. A registration failure fails the
 // load — a half-registered plugin is not a state this host keeps.
 //
@@ -242,9 +253,8 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 // — but it fails naming the plugin instead of crashing the process, which is
 // the difference between a line to read and a stack to decipher.
 //
-// There is no subprocess path here. That is the compiled-in concession, not a
-// choice about what this host should be: ADR 0008 §5 records subprocess plus
-// runtime UI loading as the target, and CW-20260910-0034 is the migration.
+// ChildPlugin implements this same contract using the shared subprocess lifecycle;
+// registration and dispatch policy remain here.
 func (h *Host) Load(p plugin.Plugin) (err error) {
 	if p == nil {
 		return fmt.Errorf("pluginhost: plugin is nil")

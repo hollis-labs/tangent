@@ -10,7 +10,8 @@ require (
 	github.com/hollis-labs/go-envelopes v0.5.0
 	github.com/hollis-labs/go-mcp v0.14.1
 	github.com/hollis-labs/go-tether-client v0.8.0
-	github.com/hollis-labs/plugin-sdk v0.5.0
+	github.com/hollis-labs/plugin-host v0.1.3-0.20261004050631-2a522583ab9e
+	github.com/hollis-labs/plugin-sdk v0.6.2-0.20261003211221-5934f3aed260
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26

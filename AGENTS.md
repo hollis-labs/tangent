@@ -45,7 +45,8 @@ something new.
   There is no compiled-in roster: each plugin is its own
   program (`cmd/tangent-plugin-*` in tangent-plugins), installed into
   `~/.tangent/plugins/` with `tangent plugin install` (`make install-plugins`
-  does the first-party ones), spawned as a subprocess over the plugin-sdk wire,
+  does the first-party ones), spawned through plugin-host Lifecycle over the
+  protocol-2 plugin-sdk wire,
   restarted with backoff if it crashes, and gated on its health. `go list -deps ./cmd/tangent` names no
   plugin: the binary is domain-free by its dependency graph. The host resolves
   an ADR 0003 manifest for the kind a plugin names and refuses the registration
@@ -62,7 +63,7 @@ something new.
 - [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins)
   — the first-party plugins (torque, tesseract, runner), one module each,
   pinned by `tangent-plugins.version`; `make install-plugins` installs that
-  release and `make smoke` measures it. Nothing in this repository knows Torque
+  pinned version and `make smoke` measures it. Nothing in this repository knows Torque
   or Tesseract exists. The Torque plugin is the ADR 0007 §6 pattern working: a
   domain-free kind, a mechanical mapping in userland, one agent call in, and a
   sync button that costs no agent turn. It writes to Torque through its own
@@ -152,8 +153,8 @@ decision; do not make a draft into one.
 
 A plugin reaches Tangent as an ordinary local MCP client against `/mcp`
 (`pkg/plugin/hostclient`), with the same authority any local MCP caller
-has and no more: the plugin-sdk wire is host-initiated only, so there is no
-back channel, and the plugin resolves to the same host-assigned identity — see
+has and no more: Tangent offers no reverse RPC on its base-profile wire, and
+the plugin resolves to the same host-assigned identity — see
 [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md) §5.
 `pluginhost.ToolCaller` remains the in-process form of the same thing.
 Reach for a new typed host method only when a tool genuinely cannot
