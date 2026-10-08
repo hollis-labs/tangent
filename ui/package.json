@@ -24,7 +24,7 @@
     "@hollis-labs/design-components": "^0.1.0",
     "@hollis-labs/design-tokens": "^0.1.0",
     "@hollis-labs/kit-dashboard": "^0.1.0",
-    "@hollis-labs/plugin-registry": "^0.1.0",
+    "@hollis-labs/plugin-registry": "0.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.44.0",
