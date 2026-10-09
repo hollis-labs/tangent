@@ -132,9 +132,11 @@ This consistency check does not authenticate that attribution.
 - `routed` requires actual runtime IDs and attribution kind. Sender must equal
   `msg://session/local/<session_id>`. Classification must match the item kind,
   with `final` mapped to `terminal`.
-- `publication` requires `checkpoint`, omits both runtime IDs and options, and
-  has `replyable: false` in the service view. Backend reply attempts are refused
-  without altering the item; explicit dismissal remains supported.
+- `publication` requires `checkpoint` and cannot supply response options. Genuine
+  caller-supplied runtime IDs are optional attribution; absent IDs stay absent.
+  It always has `replyable: false` in the service view, even with supplied IDs.
+  Backend reply attempts are refused without altering the item; explicit
+  dismissal remains supported.
 
 The item view exposes the persisted payload version, typed metadata, and derived
 `replyable`. Both inbox surfaces show an escaped plain-text summary above a

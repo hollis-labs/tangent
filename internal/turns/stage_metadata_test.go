@@ -145,7 +145,7 @@ func TestStageMetadataInvalidAdmissionHasNoPersistence(t *testing.T) {
 		"agent mismatch":      func(r map[string]any) { r["source"].(map[string]any)["agent_id"] = "invented-agent" },
 		"missing routed turn": func(r map[string]any) { delete(r, "turn_id") },
 		"1.0 with new fields": func(r map[string]any) { r["contract_version"] = "1.0" },
-		"publication with runtime IDs": func(r map[string]any) {
+		"publication with response options": func(r map[string]any) {
 			r["source_message"].(map[string]any)["origin"] = "publication"
 			r["kind"] = "checkpoint"
 		},
@@ -174,6 +174,33 @@ func TestStageMetadataInvalidAdmissionHasNoPersistence(t *testing.T) {
 				t.Fatal("invalid admission persisted an interaction")
 			}
 		})
+	}
+}
+
+func TestStageMetadataPublicationSuppliedRuntimeIDsRemainNonreplyable(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	req := stageRequest(t, true)
+	// These are known test-owned producer fields, not fabricated IDs used to
+	// satisfy admission. A publication remains informational with either form.
+	req["session_id"], req["turn_id"] = "actual-session", "actual-turn"
+	handle, err := svc.Enqueue(context.Background(), EnqueueInput{Request: encodeStageRequest(t, req), Caller: testCaller("test")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.InspectTurn(context.Background(), handle.ItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Replyable || view.SessionID != "actual-session" || view.TurnID != "actual-turn" {
+		t.Fatalf("publication changed supplied attribution or enabled a reply: %#v", view)
+	}
+	_, err = svc.Reply(context.Background(), ReplyInput{ItemID: view.ItemID, ExpectedRevision: view.Revision, ResponseText: "must not route"})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("publication reply with IDs: %v", err)
+	}
+	after, err := svc.InspectTurn(context.Background(), view.ItemID)
+	if err != nil || !reflect.DeepEqual(after, view) {
+		t.Fatalf("refusal changed the durable publication: %v", err)
 	}
 }
 

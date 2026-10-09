@@ -109,7 +109,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     component: "",
     packageId: "tangent.turns",
     state: "available",
-    contractDigest: "sha256:68b8f6e9050b46cb9df6dfeb1b6b4c360914699411f2c8df204f5cac5b9562d8",
+    contractDigest: "sha256:c8fdec4c958684bece076433f4d10e3d27350c5b2eb55877e95a5d3f0123672b",
   },
   {
     kind: "tangent.app-board",
