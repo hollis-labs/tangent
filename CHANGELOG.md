@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.17.0] - 2026-10-09
+
 ### Changed
 
 - Adopt published monorepo modules: `libs/plugin-mcp` v0.1.1 for the SDK,
@@ -15,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   package paths. Go 1.26.8 is required; the toolchain pin is 1.26.9.
   Generated envelope provenance reports the containing `ui-go` module.
   Uncooperative plugin teardown retains its graceful-unload failure even when
-  the child is killed and reaped. No installed plugins or daemon are changed.
+  the child is killed and reaped. CI builds compatible first-party sources
+  from `d8f17665f228ea01d27d4aa992b092d9f273d71a`.
+  No installed plugins or daemon are changed.
 
 - Subprocess plugins use plugin-host Lifecycle for protocol-2 handshake,
   process groups, bounded teardown, crash recovery and health gating. Tangent
@@ -24,13 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Breaking:** protocol-1 plugin binaries are refused. Plugins must rebuild
   against the pinned protocol-2 SDK and acknowledge capability contract 1.
   Init sends a fresh incarnation, empty grants and empty config, with no offers.
-  Source-only pseudo-version pins must be replaced by approved releases before
-  activation; nothing is installed or deployed by this change.
+  The SDK and driver use the published plugin-mcp module. Plugin installation
+  and daemon activation remain separate; nothing is deployed by this change.
 
 - **`tangent-plugins.version` pins the protocol-2 rebuild** at
   `v0.1.2-0.20261004010850-eac2e08457ba` for runner, tesseract and torque.
-  Their SDK pin matches the host's protocol-2 SDK. The GitHub plugin remains
-  protocol 1 and is refused by this host pending its separate migration.
+  This older operator pin is retained; its declarations do not satisfy the
+  current manifest-v2 loader. The separate CI source fixture rebuilds all four
+  plugins with the matching SDK. No installation pin is advanced here.
 
 - The empty plugin registry proof endpoint uses SDK registry v2 and shares the
   lifecycle host epoch. The current browser registry-v1 loader refuses this
@@ -39,8 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Preserve the earlier v0.1.1 first-party update: the runner validates turns
   against `plugin.TurnsEnqueueInputSchema`; tesseract and torque changed only
   their version. The protocol-2 source pin above supersedes that install pin.
-- **Activation order:** replace the source pins with approved releases, rebuild
-  protocol-2 plugins from the first tag, then install those plugins before or
+- **Activation order:** select a compatible first-party release, rebuild
+  protocol-2 plugins from that tag, then install those plugins before or
   together with the new daemon. Until then protocol-1 binaries are refused,
   `/readyz` reports `plugins: fail`, and the installer exits non-zero after its
   30-second readiness wait. Runner tools remain unavailable until reinstalled.
@@ -1400,7 +1405,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.17.0...HEAD
+[v0.17.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.17.0
 [v0.16.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.16.0
 [v0.15.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.15.0
 [v0.14.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.14.0
