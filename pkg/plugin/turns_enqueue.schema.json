@@ -4,8 +4,6 @@
   "type": "object",
   "required": [
     "contract_version",
-    "turn_id",
-    "session_id",
     "idempotency_key",
     "kind",
     "source",
@@ -15,7 +13,10 @@
   "properties": {
     "contract_version": {
       "type": "string",
-      "enum": ["1.0"]
+      "enum": [
+        "1.0",
+        "1.1"
+      ]
     },
     "turn_id": {
       "type": "string",
@@ -34,15 +35,34 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["question", "approval", "checkpoint", "failure", "terminal"]
+      "enum": [
+        "question",
+        "approval",
+        "checkpoint",
+        "failure",
+        "terminal"
+      ]
     },
     "source": {
       "type": "object",
-      "required": ["agent_id"],
+      "required": [
+        "agent_id"
+      ],
       "properties": {
-        "agent_id": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "application_id": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "agent_label": { "type": "string", "maxLength": 256 }
+        "agent_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "application_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "agent_label": {
+          "type": "string",
+          "maxLength": 256
+        }
       },
       "additionalProperties": false
     },
@@ -64,12 +84,28 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["label", "value"],
+        "required": [
+          "label",
+          "value"
+        ],
         "properties": {
-          "label": { "type": "string", "minLength": 1, "maxLength": 160 },
-          "value": { "type": "string", "minLength": 1, "maxLength": 256 },
-          "description": { "type": "string", "maxLength": 1000 },
-          "recommended": { "type": "boolean" }
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "recommended": {
+            "type": "boolean"
+          }
         },
         "additionalProperties": false
       },
@@ -78,16 +114,359 @@
     "correlations": {
       "type": "object",
       "properties": {
-        "task_id": { "type": "string", "maxLength": 256 },
-        "project_id": { "type": "string", "maxLength": 256 },
-        "runtime_ref": { "type": "string", "maxLength": 256 }
+        "task_id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "project_id": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "runtime_ref": {
+          "type": "string",
+          "maxLength": 256
+        }
       },
       "additionalProperties": true
     },
     "expires_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "annotations": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "stage_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "stage_version": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "summary"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "maxLength": 600,
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "schema_version",
+          "stage_id",
+          "stage_version",
+          "kind",
+          "summary"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "stage_trace": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "stage_version": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "outcome": {
+            "enum": [
+              "passed",
+              "failed",
+              "timed_out"
+            ]
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failure_code": {
+            "enum": [
+              "stage_error",
+              "stage_timeout",
+              "stage_panic",
+              "stage_refused",
+              "invalid_output",
+              "annotation_limit"
+            ]
+          }
+        },
+        "required": [
+          "stage_id",
+          "stage_version",
+          "outcome",
+          "duration_ms"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "outcome": {
+                  "const": "passed"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "failure_code"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "failure_code"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "source_message": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "origin": {
+          "enum": [
+            "routed",
+            "publication"
+          ]
+        },
+        "endpoint_ref": {
+          "type": "string",
+          "maxLength": 512,
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "message_id": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "sender_urn": {
+          "type": "string",
+          "maxLength": 512,
+          "minLength": 1,
+          "pattern": "^msg://.+"
+        },
+        "output_id": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "attribution": {
+          "type": "object",
+          "properties": {
+            "logical_agent_id": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "project_id": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "workstream_id": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "launch_id": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "launch_display_name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "runtime": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "stop_reason": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "confidence": {
+              "enum": [
+                "exact",
+                "heuristic",
+                "none",
+                "unknown"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "final",
+                "question",
+                "approval",
+                "failure"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "origin",
+        "endpoint_ref",
+        "channel",
+        "message_id",
+        "sequence",
+        "sender_urn"
+      ],
+      "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "contract_version": {
+            "const": "1.0"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "turn_id",
+          "session_id"
+        ],
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "annotations"
+              ]
+            },
+            {
+              "required": [
+                "stage_trace"
+              ]
+            },
+            {
+              "required": [
+                "source_message"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "source_message"
+        ],
+        "properties": {
+          "source_message": {
+            "properties": {
+              "origin": {
+                "const": "publication"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "const": "checkpoint"
+          }
+        },
+        "not": {
+          "required": [
+            "options"
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "turn_id",
+          "session_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "source_message"
+        ],
+        "properties": {
+          "source_message": {
+            "properties": {
+              "origin": {
+                "const": "routed"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "source_message": {
+            "required": [
+              "attribution"
+            ],
+            "properties": {
+              "attribution": {
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -15,10 +15,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
 import {
+  canReplyTurn,
   dismissTurn,
   fetchSessionReplies,
   fetchTurnItem,
@@ -29,6 +29,7 @@ import {
   type TurnsInbox,
 } from "@/lib/turns-api";
 import { cn } from "@/lib/utils";
+import { TurnContent } from "./TurnContent";
 
 type ViewMode = "pending" | "history" | "by-session";
 type KindFilter = "all" | TurnKind;
@@ -130,6 +131,7 @@ export default function TurnsInboxRoute() {
   const sessions = useMemo(() => {
     const map = new Map<string, number>();
     for (const it of allItems) {
+      if (!it.session_id) continue;
       map.set(it.session_id, (map.get(it.session_id) ?? 0) + 1);
     }
     return Array.from(map.entries()).map(([id, count]) => ({ id, count }));
@@ -272,7 +274,7 @@ export default function TurnsInboxRoute() {
   };
 
   const handleReply = async (action: string) => {
-    if (!activeItem) return;
+    if (!activeItem || !canReplyTurn(activeItem)) return;
     setSubmitting(true);
     setActionError("");
     try {
@@ -283,7 +285,7 @@ export default function TurnsInboxRoute() {
         selected_option: selectedOption,
         note: note.trim() || undefined,
       });
-      setBannerNotice(`Reply delivered for turn #${activeItem.queue_sequence}`);
+      setBannerNotice(`Reply saved for turn #${activeItem.queue_sequence}; delivery pending`);
       await syncInbox();
       advanceToNextPending();
     } catch (err) {
@@ -667,12 +669,6 @@ export default function TurnsInboxRoute() {
                   {activeItem.title}
                 </h2>
 
-                {activeItem.summary && (
-                  <div className="text-sm text-zinc-400">
-                    <Markdown content={activeItem.summary} />
-                  </div>
-                )}
-
                 {/* Metadata Badges */}
                 <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-zinc-400">
                   <div className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 border border-zinc-800">
@@ -683,17 +679,25 @@ export default function TurnsInboxRoute() {
                     </strong>
                   </div>
 
-                  <div className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 border border-zinc-800">
-                    <Terminal className="h-3.5 w-3.5 text-sky-400" />
-                    <span>Session:</span>
-                    <span className="font-mono text-zinc-300">{activeItem.session_id}</span>
-                  </div>
+                  {activeItem.session_id ? (
+                    <div className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 border border-zinc-800">
+                      <Terminal className="h-3.5 w-3.5 text-sky-400" />
+                      <span>Session:</span>
+                      <span className="font-mono text-zinc-300">
+                        {activeItem.session_id ?? "Not supplied"}
+                      </span>
+                    </div>
+                  ) : null}
 
-                  <div className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 border border-zinc-800">
-                    <Clock className="h-3.5 w-3.5 text-zinc-400" />
-                    <span>Turn:</span>
-                    <span className="font-mono text-zinc-300">{activeItem.turn_id}</span>
-                  </div>
+                  {activeItem.turn_id ? (
+                    <div className="flex items-center gap-1.5 rounded bg-zinc-900 px-2 py-1 border border-zinc-800">
+                      <Clock className="h-3.5 w-3.5 text-zinc-400" />
+                      <span>Turn:</span>
+                      <span className="font-mono text-zinc-300">
+                        {activeItem.turn_id ?? "Not supplied"}
+                      </span>
+                    </div>
+                  ) : null}
 
                   {Boolean(activeItem.correlations?.task_id) && (
                     <div className="flex items-center gap-1.5 rounded bg-amber-950/30 px-2 py-1 border border-amber-800/60">
@@ -803,7 +807,7 @@ export default function TurnsInboxRoute() {
                       </span>
                     </div>
                     <div className="prose prose-invert max-w-none text-sm leading-relaxed text-zinc-200">
-                      <Markdown content={activeItem.content} />
+                      <TurnContent item={activeItem} />
                     </div>
                   </div>
 
@@ -895,7 +899,7 @@ export default function TurnsInboxRoute() {
                         )}
 
                         <div className="mt-2 flex items-center justify-between pt-2 border-t border-emerald-900/30 text-xs">
-                          <span className="text-zinc-400">Tether Delivery State:</span>
+                          <span className="text-zinc-400">Tangent reply acknowledgement:</span>
                           <span
                             className={cn(
                               "font-medium uppercase tracking-wider",
@@ -911,118 +915,135 @@ export default function TurnsInboxRoute() {
                     </div>
                   )}
 
-                  {/* Response Composer (when item is presented/staged) */}
-                  {(activeItem.state === "presented" || activeItem.state === "staged") && (
-                    <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
-                          Operator Guidance & Response
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90">
-                          <Zap className="h-3 w-3" />
-                          <span>Delivers immediately if idle, or next stop if busy</span>
-                        </div>
-                      </div>
-
-                      {/* Quick Canned Responses */}
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-zinc-500 font-medium">Quick chips:</span>
-                        {QUICK_RESPONSES.map((phrase) => (
-                          <button
-                            key={phrase}
-                            type="button"
-                            onClick={() => handleCannedInsert(phrase)}
-                            className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-                          >
-                            {phrase}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <label
-                          htmlFor="turn-response"
-                          className="text-xs font-medium text-zinc-400 flex items-center justify-between"
-                        >
-                          <span>Response Message</span>
-                          <span className="text-[11px] text-zinc-500">⌘+Enter to submit</span>
-                        </label>
-                        <textarea
-                          ref={textareaRef}
-                          id="turn-response"
-                          rows={4}
-                          value={responseText}
-                          onChange={(e) => setResponseText(e.target.value)}
-                          onKeyDown={handleComposerKeyDown}
-                          placeholder="Type your guidance or decision for the agent..."
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-amber-400 transition-colors"
-                        />
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <label htmlFor="turn-note" className="text-xs font-medium text-zinc-400">
-                          Internal Note (optional)
-                        </label>
-                        <input
-                          id="turn-note"
-                          type="text"
-                          value={note}
-                          onChange={(e) => setNote(e.target.value)}
-                          placeholder="Context for review history..."
-                          className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-amber-400 transition-colors"
-                        />
-                      </div>
-
-                      {/* Actions Bar */}
-                      <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+                  {!canReplyTurn(activeItem) && !activeItem.resolution && (
+                    <section className="space-y-3">
+                      <p>Informational publication — no runtime reply target.</p>
+                      {(activeItem.state === "presented" || activeItem.state === "staged") && (
                         <Button
                           variant="ghost"
-                          size="sm"
-                          onClick={() => void handleDismiss()}
                           disabled={submitting}
-                          className="text-zinc-400 hover:text-rose-400"
+                          onClick={() => void handleDismiss()}
                         >
-                          Dismiss Turn
+                          Dismiss publication
                         </Button>
+                      )}
+                    </section>
+                  )}
+                  {/* Response Composer (when item is presented/staged) */}
+                  {canReplyTurn(activeItem) &&
+                    (activeItem.state === "presented" || activeItem.state === "staged") && (
+                      <div className="flex flex-col gap-4 rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 shadow-sm">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-semibold uppercase tracking-wider text-zinc-300">
+                            Operator Guidance & Response
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90">
+                            <Zap className="h-3 w-3" />
+                            <span>Saves your reply; the consumer reports delivery separately</span>
+                          </div>
+                        </div>
 
-                        <div className="flex items-center gap-2">
-                          {activeItem.kind === "approval" ? (
-                            <>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => void handleReply("reject")}
-                                disabled={submitting}
-                                className="bg-rose-950/60 text-rose-300 hover:bg-rose-900 border border-rose-800"
-                              >
-                                Reject
-                              </Button>
+                        {/* Quick Canned Responses */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-zinc-500 font-medium">
+                            Quick chips:
+                          </span>
+                          {QUICK_RESPONSES.map((phrase) => (
+                            <button
+                              key={phrase}
+                              type="button"
+                              onClick={() => handleCannedInsert(phrase)}
+                              className="rounded-full bg-zinc-800 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+                            >
+                              {phrase}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <label
+                            htmlFor="turn-response"
+                            className="text-xs font-medium text-zinc-400 flex items-center justify-between"
+                          >
+                            <span>Response Message</span>
+                            <span className="text-[11px] text-zinc-500">⌘+Enter to submit</span>
+                          </label>
+                          <textarea
+                            ref={textareaRef}
+                            id="turn-response"
+                            rows={4}
+                            value={responseText}
+                            onChange={(e) => setResponseText(e.target.value)}
+                            onKeyDown={handleComposerKeyDown}
+                            placeholder="Type your guidance or decision for the agent..."
+                            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-100 placeholder-zinc-500 outline-none focus:border-amber-400 transition-colors"
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="turn-note" className="text-xs font-medium text-zinc-400">
+                            Internal Note (optional)
+                          </label>
+                          <input
+                            id="turn-note"
+                            type="text"
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                            placeholder="Context for review history..."
+                            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 outline-none focus:border-amber-400 transition-colors"
+                          />
+                        </div>
+
+                        {/* Actions Bar */}
+                        <div className="flex items-center justify-between pt-2 border-t border-zinc-800/80">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleDismiss()}
+                            disabled={submitting}
+                            className="text-zinc-400 hover:text-rose-400"
+                          >
+                            Dismiss Turn
+                          </Button>
+
+                          <div className="flex items-center gap-2">
+                            {activeItem.kind === "approval" ? (
+                              <>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => void handleReply("reject")}
+                                  disabled={submitting}
+                                  className="bg-rose-950/60 text-rose-300 hover:bg-rose-900 border border-rose-800"
+                                >
+                                  Reject
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => void handleReply("approve")}
+                                  disabled={submitting}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                                >
+                                  Approve
+                                </Button>
+                              </>
+                            ) : (
                               <Button
                                 variant="default"
                                 size="sm"
-                                onClick={() => void handleReply("approve")}
-                                disabled={submitting}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium"
+                                onClick={() => void handleReply("respond")}
+                                disabled={submitting || (!responseText.trim() && !selectedOption)}
+                                className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-medium flex items-center gap-1.5"
                               >
-                                Approve
+                                <span>Submit Response</span>
+                                <CornerDownLeft className="h-3 w-3 text-zinc-900" />
                               </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => void handleReply("respond")}
-                              disabled={submitting || (!responseText.trim() && !selectedOption)}
-                              className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-medium flex items-center gap-1.5"
-                            >
-                              <span>Submit Response</span>
-                              <CornerDownLeft className="h-3 w-3 text-zinc-900" />
-                            </Button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </>
               ) : (
                 /* Technical Telemetry & Correlations Tab */
@@ -1039,12 +1060,16 @@ export default function TurnsInboxRoute() {
 
                     <div className="rounded bg-zinc-950 p-3 border border-zinc-800">
                       <span className="text-zinc-500 block mb-1">Originating Turn ID</span>
-                      <span className="font-mono text-zinc-200">{activeItem.turn_id}</span>
+                      <span className="font-mono text-zinc-200">
+                        {activeItem.turn_id ?? "Not supplied"}
+                      </span>
                     </div>
 
                     <div className="rounded bg-zinc-950 p-3 border border-zinc-800">
                       <span className="text-zinc-500 block mb-1">Tether Session ID</span>
-                      <span className="font-mono text-zinc-200">{activeItem.session_id}</span>
+                      <span className="font-mono text-zinc-200">
+                        {activeItem.session_id ?? "Not supplied"}
+                      </span>
                     </div>
 
                     <div className="rounded bg-zinc-950 p-3 border border-zinc-800">

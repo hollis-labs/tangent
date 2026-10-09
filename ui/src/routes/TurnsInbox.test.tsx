@@ -136,6 +136,56 @@ function createFetchRouter(inboxState: TurnsInbox, sessionReplies: TurnItemView[
 }
 
 describe("<TurnsInboxRoute>", () => {
+  it("renders ordinary publication provenance and permits dismissal but no runtime reply", async () => {
+    const publication: TurnItemView = {
+      ...mockTurn("publication", 1, "checkpoint"),
+      contract_version: "1.1",
+      session_id: undefined,
+      turn_id: undefined,
+      options: undefined,
+      replyable: false,
+      annotations: [
+        {
+          schema_version: 1,
+          stage_id: "summarize",
+          stage_version: "1",
+          kind: "summary",
+          summary: { text: "Summary for publication" },
+        },
+      ],
+      source_message: {
+        schema_version: 1,
+        origin: "publication",
+        endpoint_ref: "test-endpoint",
+        channel: "owner-inbox",
+        message_id: "source-id",
+        sequence: 42,
+        sender_urn: "msg://agent/local/test-sender",
+      },
+    };
+    const fetchMock = createFetchRouter(mockInbox([publication]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
+    render(
+      <MemoryRouter initialEntries={["/turns/items/publication"]}>
+        <Routes>
+          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+          <Route path="/turns" element={<TurnsInboxRoute />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/Informational publication/)).toBeInTheDocument();
+    expect(screen.getByText("Original message")).toBeInTheDocument();
+    expect(screen.getByText("msg://agent/local/test-sender")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Submit Response" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Response Message")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss publication" }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/dismiss"))).toBe(true),
+    );
+    expect(
+      fetchMock.mock.calls.some(([url]) => /\/reply|\/ack|\/sessions\//.test(String(url))),
+    ).toBe(false);
+  });
   beforeEach(() => {
     MockEventSource.instances = [];
     vi.stubGlobal("EventSource", MockEventSource);

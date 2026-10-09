@@ -19,7 +19,7 @@ const AgentTurnEnvelopeType = "tangent.agent-turn"
 const AgentTurnContractVersion = plugin.AgentTurnContractVersion
 
 // AgentTurnDefinitionVersion is the version of the shipped manifest.
-const AgentTurnDefinitionVersion = "1.0"
+const AgentTurnDefinitionVersion = "1.1"
 
 var agentTurnSchema = mustPackageFile(TurnsPackageID, AgentTurnEnvelopeType, requestSchemaFileName)
 

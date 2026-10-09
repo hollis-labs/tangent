@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HITLOperatorItem } from "@/lib/hitl-api";
 import type { InboxEntry } from "@/lib/inbox-api";
+import type { TurnItemView } from "@/lib/turns-api";
 import { InboxItemBody } from "./InboxItemBody";
 
 function attention(id = "attention-1"): HITLOperatorItem {
@@ -63,6 +64,74 @@ function deferred<T>() {
 }
 
 describe("<InboxItemBody> presentation", () => {
+  it("shows a failed publication without a reply composer or fabricated runtime identity", async () => {
+    const item: TurnItemView = {
+      contract_version: "1.1",
+      item_id: "publication",
+      agent_id: "test-sender",
+      kind: "checkpoint",
+      title: "Ordinary publication",
+      content: "Intact original publication",
+      replyable: false,
+      stage_trace: [
+        {
+          stage_id: "summarize",
+          stage_version: "1",
+          outcome: "failed",
+          duration_ms: 1,
+          failure_code: "stage_refused",
+        },
+      ],
+      state: "presented",
+      queue_sequence: 1,
+      revision: 1,
+      created_at: "2026-10-09T00:00:00Z",
+      updated_at: "2026-10-09T00:00:00Z",
+      delivery_state: "queued",
+      source_message: {
+        schema_version: 1,
+        origin: "publication",
+        endpoint_ref: "test-endpoint",
+        channel: "owner-inbox",
+        message_id: "source-id",
+        sequence: 42,
+        sender_urn: "msg://agent/local/test-sender",
+      },
+    };
+    const requests: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        requests.push(String(input));
+        return json(item);
+      }),
+    );
+    const projection: InboxEntry = {
+      sequence: 1,
+      interaction: {
+        interaction_id: item.item_id,
+        definition_binding: { kind: "tangent.agent-turn" },
+        request_snapshot: {},
+        caller_scope: "test",
+        state: item.state,
+        revision: 1,
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+      },
+    };
+    render(
+      <MemoryRouter>
+        <InboxItemBody entry={projection} onChange={async () => {}} />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("heading", { name: item.title })).toBeInTheDocument();
+    expect(screen.getByText("Intact original publication")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Stage summarize failed: stage_refused");
+    expect(screen.queryByRole("button", { name: "Send reply" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(requests.some((path) => path.endsWith("/dismiss"))).toBe(true));
+    expect(requests.some((path) => path.endsWith("/reply") || path.endsWith("/ack"))).toBe(false);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     window.sessionStorage.clear();
@@ -174,6 +243,73 @@ describe("<InboxItemBody> presentation", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Presentation revision changed");
     expect(screen.getByRole("button", { name: "Mark seen" })).toBeDisabled();
     expect(post).toHaveBeenCalledOnce();
+  });
+
+  it("preserves a settled refusal without silently retrying when a later SSE projection arrives", async () => {
+    const staged = attention();
+    let current = staged;
+    const presentation = deferred<Response>();
+    const post = vi.fn(() => presentation.promise);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input).endsWith("/present") ? post() : json(current),
+      ),
+    );
+    const view = (value: HITLOperatorItem) => (
+      <MemoryRouter>
+        <InboxItemBody entry={entry(value)} onChange={async () => {}} />
+      </MemoryRouter>
+    );
+    const rendered = render(view(staged));
+    await waitFor(() => expect(post).toHaveBeenCalledOnce());
+    await act(async () =>
+      presentation.resolve(
+        json({ code: "revision_conflict", message: "Presentation revision changed" }, 409),
+      ),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Presentation revision changed");
+    current = { ...staged, revision: 4 };
+    rendered.rerender(view(current));
+    await screen.findByText("Rev 4");
+    expect(screen.getByRole("alert")).toHaveTextContent("Presentation revision changed");
+    expect(screen.getByRole("button", { name: "Mark seen" })).toBeDisabled();
+    expect(post).toHaveBeenCalledOnce();
+  });
+
+  it("does not carry a presentation refusal into a different keyed item", async () => {
+    let current = attention("refused");
+    const posts: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = String(input);
+        if (path.endsWith("/present")) {
+          posts.push(path);
+          return current.item_id === "refused"
+            ? json({ code: "revision_conflict", message: "Refused first item" }, 409)
+            : json({
+                ...current,
+                state: "presented",
+                revision: 4,
+                presented_projection_revision: 3,
+              });
+        }
+        return json(current);
+      }),
+    );
+    const view = () => (
+      <MemoryRouter>
+        <InboxItemBody key={current.item_id} entry={entry(current)} onChange={async () => {}} />
+      </MemoryRouter>
+    );
+    const rendered = render(view());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Refused first item");
+    current = attention("next-item");
+    rendered.rerender(view());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Mark seen" })).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(posts).toEqual(["/api/hitl/items/refused/present", "/api/hitl/items/next-item/present"]);
   });
 
   it("keeps a newer refreshed revision when an older presentation response arrives", async () => {

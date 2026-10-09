@@ -1336,6 +1336,11 @@ reasonable at 0.x with one user — and it is why
 widening a shared kind. File the narrowing as its own task when the churn is
 felt.
 
+The Agent Turns definition `1.1` (CW-20261002-0134) is an explicit instance:
+its optional stage/source fields keep stored `1.0` bodies readable, but do not
+rewrite their pinned bindings or grant them new operations. Plan the pending-item
+blast radius before installing that host version.
+
 ### `standalone-local` partitions are advisory, not a security boundary
 
 Any local caller can assert any partition, because the partition is the

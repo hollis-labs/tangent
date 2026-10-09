@@ -1,12 +1,12 @@
 manifest_version: "1.0.0"
 publisher: tangent
 kind: tangent.agent-turn
-version: "1.0"
+version: "1.1"
 revision: 1
 title: "Agent turn inbox item"
 description: "Durable operator-facing agent turn item: captures live agent questions, approvals, checkpoints, failures, and completions in arrival order."
 package_id: tangent.turns
-package_version: "1.0.0"
+package_version: "1.1.0"
 ownership_class: host-package
 
 request_schema: request.schema.json
