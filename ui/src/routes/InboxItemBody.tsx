@@ -102,34 +102,40 @@ function ApprovalBody(props: Props) {
   const [presentationError, setPresentationError] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const presentingID = useRef("");
+  const presentationRequest = useRef<object | null>(null);
   const terminal = isTerminal(props.entry);
+  // Inbox keys this body by interaction ID. A refreshed projection of that
+  // same item must not cancel its in-flight presentation; only unmount does.
   useEffect(() => {
-    if (
-      !item ||
-      terminal ||
-      item.presented_projection_revision ||
-      presentingID.current === item.item_id
-    )
+    return () => {
+      presentationRequest.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    if (!item || terminal || item.presented_projection_revision || presentationRequest.current)
       return;
-    let canceled = false;
-    presentingID.current = item.item_id;
+    const request = {};
+    presentationRequest.current = request;
     setPresenting(true);
     setPresentationError("");
     void presentHITLItem(item, getHITLConnectionID())
       .then((next) => {
-        if (!canceled) setItem(next);
+        if (presentationRequest.current === request) {
+          setItem((current) =>
+            current?.item_id === next.item_id && current.revision <= next.revision ? next : current,
+          );
+        }
       })
       .catch((reason) => {
-        if (!canceled) setPresentationError((reason as Error).message);
+        if (presentationRequest.current === request)
+          setPresentationError((reason as Error).message);
       })
       .finally(() => {
-        if (!canceled) setPresenting(false);
-        presentingID.current = "";
+        if (presentationRequest.current === request) {
+          presentationRequest.current = null;
+          setPresenting(false);
+        }
       });
-    return () => {
-      canceled = true;
-    };
   }, [item, terminal, setItem]);
   if (!item)
     return (
