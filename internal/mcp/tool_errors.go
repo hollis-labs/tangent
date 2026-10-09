@@ -1,7 +1,7 @@
 package mcp
 
 import (
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 )
 
 // This file is the tool-error contract every handler in this package returns

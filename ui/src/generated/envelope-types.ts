@@ -1,12 +1,12 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
 // @definition-source sha256:fa55b5c0ad2a6d97618d8551d874b2b84812c2d674a49ff85b2c7264c5e0526e
-// Generated from go-envelopes v0.5.0 — do not edit.
+// Generated from libs/ui-go v0.1.0 (envelopes) — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
 // Coverage: 40 registered kinds — 18 go-envelopes core,
 // 22 Tangent-owned (internal/envelope/extensions).
 //
-// Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)
+// Sources of truth: github.com/hollis-labs/libs/ui-go/envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
 // Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs
 
@@ -1176,7 +1176,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 export const DEFINITION_SOURCE_DIGEST = "sha256:fa55b5c0ad2a6d97618d8551d874b2b84812c2d674a49ff85b2c7264c5e0526e";
 
 /** The Tangent release these types were generated against. */
-export const DEFINITION_HOST_VERSION = "v0.16.0";
+export const DEFINITION_HOST_VERSION = "v0.17.0";
 
 /** One manifest's contribution to the source digest. */
 export interface DefinitionSourceEntry {

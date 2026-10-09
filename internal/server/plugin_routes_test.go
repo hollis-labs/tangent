@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"

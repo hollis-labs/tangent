@@ -5,14 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	public "github.com/hollis-labs/tangent/pkg/plugin"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
 // Existing discovery and failed-upgrade behavior remains covered with native v2 bundles.

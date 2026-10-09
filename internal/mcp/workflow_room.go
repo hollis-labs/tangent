@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 )
 
 // resolveWorkflowRoom names the room one named workflow invocation runs in.

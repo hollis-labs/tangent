@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	driver "github.com/hollis-labs/plugin-host"
-	"github.com/hollis-labs/plugin-sdk/capability"
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
 func echoedIncarnation(t *testing.T, child *ChildPlugin) capability.RuntimeIdentity {
@@ -66,8 +66,12 @@ func TestUnloadCancelsGenerationDispatch(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err := child.Unload(); err != nil {
-		t.Fatal(err)
+	// The fixture deliberately ignores cancellation. The released SDK reports
+	// its failed graceful drain; the driver still kills and reaps the child.
+	// Keep that failure visible instead of claiming a clean plugin/unload.
+	var disposal driver.DisposalReport
+	if err := child.Unload(); !errors.As(err, &disposal) || disposal.Incomplete || len(disposal.Failures) != 1 || disposal.Failures[0].Step != "unload" || disposal.Failures[0].Cause == nil {
+		t.Fatalf("uncooperative unload did not retain its completed-disposal failure: %v", err)
 	}
 	select {
 	case err := <-result:

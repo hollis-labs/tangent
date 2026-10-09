@@ -1,5 +1,5 @@
 // Package pluginhost is Tangent's implementation of the portfolio plugin
-// framework's Host contract (github.com/hollis-labs/plugin-sdk), narrowed to
+// framework's Host contract (github.com/hollis-labs/libs/plugin-mcp/plugin-sdk), narrowed to
 // the registration surfaces Tangent actually honors.
 //
 // # The rule
@@ -95,8 +95,8 @@ import (
 	"sync"
 	"time"
 
-	driver "github.com/hollis-labs/plugin-host"
-	plugin "github.com/hollis-labs/plugin-sdk"
+	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
+	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
 // This file is the failure-isolation boundary (CW-20260910-0036).

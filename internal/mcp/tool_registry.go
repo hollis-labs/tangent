@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	gmcpserver "github.com/hollis-labs/go-mcp/server"
+	gmcpserver "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
 )
 
 // This file is the one place a tool name is claimed on this server, and the

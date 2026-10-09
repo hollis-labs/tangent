@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	plugin "github.com/hollis-labs/plugin-sdk"
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
 // These tests hold CW-20260910-0036: the lifecycle contract, the failure

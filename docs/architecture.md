@@ -96,7 +96,7 @@ which uses React Router to pick up the ID and connect over WS.
 
 ### MCP server (Streamable HTTP + SSE)
 
-`internal/mcp/` — built on `github.com/hollis-labs/go-mcp`, the portfolio's
+`internal/mcp/` — built on `github.com/hollis-labs/libs/plugin-mcp/go-mcp`, the portfolio's
 shared MCP library, itself a thin wrapper around the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable
 HTTP) and `/sse` (legacy SSE) on the same port as the SPA. Runs in
@@ -658,7 +658,7 @@ the payload-bounded diagnostics surface.
 ### Plugin host
 
 `internal/pluginhost/` implements the portfolio plugin framework's `Host`
-contract (`github.com/hollis-labs/plugin-sdk`), and it is how a new interaction
+contract (`github.com/hollis-labs/libs/plugin-mcp/plugin-sdk`), and it is how a new interaction
 kind can arrive without editing Tangent's own registration table.
 [ADR 0007](adr/0007-collaboration-surface-plugin-host-and-view-state.md) §4 is
 the boundary decision and [ADR 0008](adr/0008-the-plugin-model.md) is the model
@@ -686,7 +686,7 @@ snapshot, with writable data/cache outside its inventory; no legacy data moves.
 The public declaration and native runner contracts are each 1.0.0, independent
 of the application release. See [the plugin guide](writing-a-plugin.md#process-manifest-v2-and-the-tangent-extension)
 for the format and refusal boundaries. `ChildPlugin` uses
-[`plugin-host`](https://github.com/hollis-labs/plugin-host) Lifecycle for spawn,
+[`plugin-host`](https://github.com/hollis-labs/libs/tree/main/plugin-mcp/plugin-host) Lifecycle for spawn,
 protocol-2 handshake, process groups, bounded teardown and crash recovery; the
 private child and wire implementations are removed. A host process shares one
 random epoch and an in-memory generation store across its controllers. Each
@@ -706,11 +706,15 @@ authorization and the 30-second dispatch policy remain Tangent-owned.
 The first-party plugins live in
 [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins),
 written against `pkg/plugin` and selected by `tangent-plugins.version`.
-The source integration uses immutable pseudo-version pins for plugin-host,
-plugin-sdk and the protocol-2 first-party rebuild. These pins must be replaced
-by approved releases before activation; follow the activation prerequisites
-and installation order in [the plugin guide](writing-a-plugin.md). Existing
-protocol-1 binaries must be rebuilt before they can load.
+The SDK, lifecycle driver and MCP transports come from the released
+`github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1. Its finite forward
+calls carry a protocol-2 `context` budget, so plugins must use an SDK that
+accepts that field. The first-party installation pin remains a separate
+pseudo-version; adopting the module does not rebuild or install those binaries.
+Follow the activation prerequisites and installation order in
+[the plugin guide](writing-a-plugin.md). Existing protocol-1 binaries and
+protocol-2 builds whose strict decoder predates `context` must be rebuilt
+before they can load.
 Local MCP callbacks remain the existing plugin-to-host path; empty grants do
 not claim enforcement over that local caller's authority. Duplex host RPC,
 durable enabled intent and attributable registration removal remain later work.
@@ -927,7 +931,7 @@ combination rather than trusting a reviewer to catch it.
 
 ### go-envelopes registry
 
-`github.com/hollis-labs/go-envelopes` v0.1.0 — the Go side of the shared
+`github.com/hollis-labs/libs/ui-go/envelopes` (module `ui-go/v0.1.0`) — the Go side of the shared
 envelope catalog. Tangent loads the go-envelopes core definitions, then
 registers its own extensions—including the non-renderer `tangent.hitl-item`
 interaction definition. Extensions use the plugin API rather than forking the

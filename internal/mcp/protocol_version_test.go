@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	gomcpclient "github.com/hollis-labs/go-mcp/client"
+	gomcpclient "github.com/hollis-labs/libs/plugin-mcp/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

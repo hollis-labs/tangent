@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"

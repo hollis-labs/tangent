@@ -26,14 +26,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: hollis-labs/tangent-plugins
-          ref: 71588ff2deac0ac1b206914d9a5890ec17407bcc
+          ref: 3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1
           path: .ci/tangent-plugins
           persist-credentials: false
 
       - name: Verify source fixture identity
         shell: bash
         run: |
-          expected=71588ff2deac0ac1b206914d9a5890ec17407bcc
+          expected=3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1
           actual=$(git -C "$TANGENT_PLUGINS_SRC" rev-parse HEAD)
           test "$actual" = "$expected"
           echo "Manifest-v2 source fixture: $actual"

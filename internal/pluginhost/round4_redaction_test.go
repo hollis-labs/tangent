@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	driver "github.com/hollis-labs/plugin-host"
+	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
 )
 
 func TestRound4VendorAndSegmentCredentialNames(t *testing.T) {

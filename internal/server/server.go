@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	driver "github.com/hollis-labs/plugin-host"
+	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"

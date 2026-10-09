@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/hollis-labs/tangent/internal/definition"
@@ -16,7 +16,7 @@ import (
 // that owns the definition registry, so there is exactly one such string:
 // internal/mcp aliases it rather than declaring its own, and
 // TestHostVersionHasOneSource asserts they have not drifted apart.
-const HostVersion = "v0.16.0"
+const HostVersion = "v0.17.0"
 
 // ProtocolVersion is the go-envelopes wire-model version definitions declare
 // compatibility against via `compatible_protocol_versions`. Upstream exposes

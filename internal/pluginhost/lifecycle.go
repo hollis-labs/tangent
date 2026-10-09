@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	plugin "github.com/hollis-labs/plugin-sdk"
+	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
 )
 
 // This file is the host's lifecycle contract and its plugin inventory

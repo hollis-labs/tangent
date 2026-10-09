@@ -3,8 +3,8 @@ package plugin
 import (
 	"encoding/json"
 
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
 // ToolNamespace is the prefix every tool this build serves carries. It is not

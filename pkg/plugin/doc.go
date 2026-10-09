@@ -2,7 +2,7 @@
 // (CW-20260930-0102).
 //
 // A plugin is its own program, speaking the plugin-sdk subprocess wire
-// (github.com/hollis-labs/plugin-sdk/subprocess) to the Tangent that spawned
+// (github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess) to the Tangent that spawned
 // it. The SDK is host-neutral and stays that way; this package carries only the
 // Tangent-specific half — the shapes a plugin registers, the capability a
 // browser route is gated on, the plugin.yaml a plugin emits, and the one-method

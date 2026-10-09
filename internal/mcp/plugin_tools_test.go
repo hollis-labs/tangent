@@ -9,9 +9,9 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	plugin "github.com/hollis-labs/plugin-sdk"
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
