@@ -706,11 +706,15 @@ authorization and the 30-second dispatch policy remain Tangent-owned.
 The first-party plugins live in
 [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins),
 written against `pkg/plugin` and selected by `tangent-plugins.version`.
-The source integration uses immutable pseudo-version pins for plugin-host,
-plugin-sdk and the protocol-2 first-party rebuild. These pins must be replaced
-by approved releases before activation; follow the activation prerequisites
-and installation order in [the plugin guide](writing-a-plugin.md). Existing
-protocol-1 binaries must be rebuilt before they can load.
+The SDK, lifecycle driver and MCP transports come from the released
+`github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1. Its finite forward
+calls carry a protocol-2 `context` budget, so plugins must use an SDK that
+accepts that field. The first-party installation pin remains a separate
+pseudo-version; adopting the module does not rebuild or install those binaries.
+Follow the activation prerequisites and installation order in
+[the plugin guide](writing-a-plugin.md). Existing protocol-1 binaries and
+protocol-2 builds whose strict decoder predates `context` must be rebuilt
+before they can load.
 Local MCP callbacks remain the existing plugin-to-host path; empty grants do
 not claim enforcement over that local caller's authority. Duplex host RPC,
 durable enabled intent and attributable registration removal remain later work.

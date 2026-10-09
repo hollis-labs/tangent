@@ -54,6 +54,12 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 	findings.Add(smoke.CompareSurface(direct, legacy, "legacy /sse"))
 
 	if len(findings) > 0 {
+		report, _ := endpoint.CallHealthReport(ctx)
+		for _, record := range report.Plugins.Plugins {
+			if record.Error != "" {
+				t.Logf("plugin %s refused: %s", record.ID, record.Error)
+			}
+		}
 		t.Fatalf("shipped build smoke failed:\n%s", findings)
 	}
 
