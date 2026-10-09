@@ -1,107 +1,185 @@
-# Tangent Agent Turns FIFO Inbox contract v1.0
+# Tangent Agent Turns FIFO Inbox contract v1.1
 
-**Status:** Proposed / Active Slice
+**Status:** Implemented source contract; plugin installation and live delivery are separate work.
 
-**Contract version:** `1.0`
+**Payload versions:** `1.0` and `1.1`. **Definition:** `tangent.agent-turn`, version `1.1`.
 
-**Definition kind:** `tangent.agent-turn`
+**Decision basis:** [ADR 0012](../adr/0012-messaging-consumer-and-stage-pipeline.md),
+[ADR 0003](../adr/0003-definition-and-package-ownership.md), and
+[ADR 0005](../adr/0005-product-boundary-and-portfolio-composition.md).
 
-**Decision basis:** [ADR 0001](../adr/0001-lifecycle-boundaries.md), [ADR 0005](../adr/0005-product-boundary-and-portfolio-composition.md), Torque task `CW-20260913-0019`
+## 1. Ownership and admission
 
-## 1. Status and Intent
+Tangent owns durable presentation, operator resolutions, and FIFO ordering.
+Application adapters own their source subscription, stage execution, publication
+ledger, and actual reply delivery. Tangent core has no Tether client or routing
+adapter. The owner-scoped messaging MVP summarizes every admitted publication;
+there is no attention filter, autonomous action, or automatic reply.
 
-This contract defines the second durable FIFO operator inbox in Tangent. It presents running agents' actual turns/responses to the human operator in arrival order. Turns are routed from Tether into Tangent's inbox flow so that operator replies have a durable, recoverable delivery path back to the originating agent session.
+`question`, `approval`, and `failure` retain the producer's classification rather
+than proving human authority or a diagnosis. Routed `final` maps to `terminal`:
+a completed **turn output**, not session termination or task success. An ordinary
+publication is an informational `checkpoint`, with no invented runtime session
+or turn. Source attribution is data, not authentication or a grant.
 
-Tangent owns the durable presentation surface and strict arrival ordering. Tether owns runtime session identity, turn production, and outbound/inbound delivery to agent processes. Torque owns task tracking. Tesseract provides context references.
+Invalid classification, missing routed identity, mismatched sender/session,
+invalid UTF-8, and oversized content are admission refusals. The caller preserves
+its pending obligation and stops advancing its cursor; refusal does not authorize
+truncation, silent skip, or a claim of complete ingestion.
 
----
+## 2. Independent identities
 
-## 2. Canonical Identity & Mappings
+| Identity | Meaning |
+|---|---|
+| `source_message.message_id` | Actual source publication, distinct from its optional producer `output_id`. |
+| `source_message.sequence` | Source channel sequence; not Tangent's queue sequence. |
+| `session_id`, `turn_id` | Actual originating runtime IDs for routed items. Never derived from output ID or text. |
+| `item_id` / `interaction_id` | Tangent's durable interaction UUID. |
+| `queue_sequence` / `surface_sequence` | Transactional arrival ordering in Tangent's surface. |
+| `resolution_id` | Tangent's immutable operator resolution, distinct from an external reply receipt. |
+| `idempotency_key` | Caller-owned deduplication identity. A channel consumer keys by endpoint/channel/publication ID. |
 
-Per Tesseract decision `preferred_item_identity`, identities across systems remain strictly decoupled:
+A suitable publication key is `tether-publication:v1:<SHA-256 of JSON [endpoint,channel,message.id]>`.
+Two outputs in the same turn must not collapse into one item. Persist the exact
+prepared request before enqueue. Existing idempotency conflict behavior can return
+the original item; it is not evidence that a changed request replaced it.
 
-| Concept | Owning System | Invariant |
-|---|---|---|
-| **`session_id`** | Tether | Canonical agent runtime session. |
-| **`turn_id`** / **`turn_sequence`** | Tether | Sequence of the turn within the originating agent session. |
-| **`item_id`** / **`interaction_id`** | Tangent | Tangent's durable interaction UUID for this turn. |
-| **`queue_sequence`** / **`surface_sequence`** | Tangent | Transactionally monotonic arrival sequence on `surface_turns_default`. |
-| **`reply_id`** | Tangent | Immutable operator resolution record UUID. |
-| **`task_id`** | Torque | Optional correlation reference (e.g. `CW-20260913-0019`). Stored as an opaque correlation. |
+## 3. Request and public API
 
----
+The public `pkg/plugin.AgentTurnRequest` describes the payload.
+`plugin.TurnsEnqueueInputSchema()` is the schema advertised by
+`tangent.turns_enqueue`; HTTP `POST /api/turns/enqueue` uses the same service.
+JSON Schema validates the shape; the service additionally checks encoded size,
+summary agreement, unique stage IDs, timeout/code agreement, and routed identity
+before any persistence. Unknown fields in the new typed objects are refused.
 
-## 3. Ingestion & Event Scope
+| Field | Bound and meaning |
+|---|---|
+| `contract_version` | `1.0` or `1.1`. The current public constant is `1.1`. |
+| `turn_id`, `session_id` | Nonempty, at most 256 characters each; required except for an explicit `1.1` publication origin. |
+| `idempotency_key` | Nonempty, at most 256 characters. |
+| `kind` | `question`, `approval`, `checkpoint`, `failure`, or `terminal`. |
+| `source` | Required `agent_id` (1–256 characters); optional `application_id` (1–128) and `agent_label` (up to 256). |
+| `title` | 1–160 characters. |
+| `content` | Original UTF-8 text, 1–65,536 characters. Preserved unchanged, including whitespace. |
+| `summary` | Optional plain text, at most 600 characters; must equal each supplied summary annotation. |
+| `options` | Optional bounded objects `{label,value,description?,recommended?}`, not strings. Publication-origin items cannot supply options. |
+| `correlations` | Existing opaque application correlations; not authority. |
+| `expires_at` | Optional RFC 3339 timestamp. |
 
-For the initial slice, the inbox admits **attention-required turns and milestones** to protect the operator and database from runaway volume:
+Version `1.0` requests retain their original required runtime IDs and cannot
+supply `annotations`, `stage_trace`, or `source_message`. Their stored version and
+content remain readable; the renderer does not fabricate new metadata. Version
+`1.1` without `source_message` also requires runtime IDs, preserving ordinary
+existing callers while allowing them to adopt typed stages.
 
-1. `question`: The agent is blocked waiting for human input or choice.
-2. `approval`: The agent requires operator confirmation before a high-impact action.
-3. `checkpoint`: The agent reached a planned pause / inspection gate.
-4. `failure`: An unrecoverable tool or workflow error requiring human direction.
-5. `terminal`: An agent concluded its task run and published final deliverables.
+### Annotations and traces
 
-Intermediate thoughts, internal scratchpad iterations, and automatic tool telemetry do not enter this inbox unless flagged with `requires_operator: true`.
+`annotations` is an optional array of at most 16 `plugin.TurnAnnotation` objects:
 
----
+```json
+{
+  "schema_version": 1,
+  "stage_id": "summarize",
+  "stage_version": "1",
+  "kind": "summary",
+  "summary": {"text": "Plain-text summary of the original."}
+}
+```
 
-## 4. Item Request Contract (`AgentTurnRequestV1`)
+`stage_trace` is an optional array of at most 16 `plugin.TurnStageTrace` objects:
 
-Required fields when enqueuing a turn into Tangent. The MCP tool `tangent.turns_enqueue`
-takes this request as its arguments, and `POST /api/turns/enqueue` takes it as the body; both
-validate against the same schema.
+```json
+{
+  "stage_id": "summarize",
+  "stage_version": "1",
+  "outcome": "timed_out",
+  "duration_ms": 15000,
+  "failure_code": "stage_timeout"
+}
+```
 
-| Field | Type | Description |
-|---|---|---|
-| `contract_version` | string | Exactly `"1.0"`. |
-| `turn_id` | string | Originating Tether turn identifier. |
-| `session_id` | string | Originating Tether session identifier. |
-| `idempotency_key` | string | Caller-supplied deduplication key (e.g. `tether:<session_id>:<turn_id>`). |
-| `kind` | string | One of: `"question"`, `"approval"`, `"checkpoint"`, `"failure"`, `"terminal"`. |
-| `source` | object | Contains `agent_id` (required), `application_id`, optional `agent_label`. |
-| `title` | string | Short operator-facing summary (1–160 chars). |
-| `content` | string | The message, question, or error text (Markdown supported). |
+Stage IDs and versions are nonempty and at most 128 characters. Each array has
+unique stage IDs. Summary text is nonempty and at most 600 characters. Outcomes
+are `passed`, `failed`, or `timed_out`. A successful stage has no failure code;
+a failed stage requires one of `stage_error`, `stage_timeout`, `stage_panic`,
+`stage_refused`, `invalid_output`, or `annotation_limit` (all within 128 characters).
+`timed_out` agrees only with `stage_timeout`. These are operational codes, not raw
+provider diagnostics or model reasoning. Duration is a nonnegative integer within
+JavaScript's exact range (`0..9007199254740991`).
 
-Optional fields:
-* `options`: Array of strings or `{ label, value, description }` objects for selectable choices.
-* `correlations`: Object containing `task_id`, `project_id`, `runtime_ref`.
-* `expires_at`: RFC 3339 timestamp when the waiting turn is considered abandoned or timed out by the runtime.
+**The combined encoded metadata ceiling is 8 KiB.** The host uses Go's canonical
+`encoding/json` encoding of the object containing the supplied `annotations` and
+`stage_trace` fields, including keys, delimiters, and escapes. Individual Unicode
+character limits do not replace this encoded-byte check. The original content and
+source projection retain their separate field limits. Future annotation kinds
+require an explicit schema change, not an arbitrary payload map.
 
----
+### Source publication
 
-## 5. Tether Delivery, Reply & Recovery Contract
+`source_message` is an optional `plugin.TurnSourceMessage` in version `1.1`:
+`schema_version: 1`, `origin: routed|publication`, nonempty `endpoint_ref`,
+`channel`, `message_id`, positive `sequence`, `sender_urn`, and optional `output_id`
+and typed `attribution`. Endpoint and sender are limited to 512 characters;
+channel/message/output IDs to 256; sequence to JavaScript's exact integer range.
+The sender must be a `msg://` URN. Attribution retains optional logical agent,
+project/workstream, launch ID/display name, runtime, stop reason, classification,
+and extraction confidence (`exact|heuristic|none|unknown`), without inferring authority.
+Attribution strings are bounded to 256 characters. `source.agent_id` must agree
+with a nonempty `logical_agent_id`, otherwise with the supplied sender URN.
+This consistency check does not authenticate that attribution.
 
-When the operator responds to a turn in Tangent:
+- `routed` requires actual runtime IDs and attribution kind. Sender must equal
+  `msg://session/local/<session_id>`. Classification must match the item kind,
+  with `final` mapped to `terminal`.
+- `publication` requires `checkpoint`, omits both runtime IDs and options, and
+  has `replyable: false` in the service view. Backend reply attempts are refused
+  without altering the item; explicit dismissal remains supported.
 
-1. **Resolution Record:** Tangent commits an immutable `ResolutionRecord` in SQLite:
-   * `action`: `"respond"`, `"approve"`, `"reject"`, or `"dismiss"`.
-   * `response_text`: Operator's answer, guidance, or selected option value.
-   * `resolved_at`: Timestamp.
-   * `resolved_by`: Operator identity (`local-operator`).
-2. **Delivery State:** The turn interaction's `delivery_state` moves from `queued` to `delivering`.
-3. **Delivery Channels:**
-   * **Push / Callback:** If Tether registered an active callback or streaming subscriber, Tangent immediately dispatches the reply event.
-   * **Durable Pull / Resume:** If the agent disconnected, restarted, or the HTTP connection expired, the agent/Tether polls or resumes via `tangent.turn_await` or `GET /api/turns/sessions/{session_id}/replies`.
-     * `tangent.turn_await` takes a `session_id` and an optional `wait_ms` (0–50,000; 30,000 by default) and returns the session's replies that are not yet acknowledged, oldest answer first, as `{ wait_status: "replies" | "timeout", replies: [...] }`. A timeout is a result, not an error, and changes no state. A reply is returned again until it is acknowledged, so delivery is at-least-once.
-     * `GET /api/turns/sessions/{session_id}/replies` is the history read: every reply for the session, acknowledged or not.
-     * A dismissed turn has no reply and appears in neither.
-4. **Acknowledgement:** Once Tether delivers the reply to the agent session, Tether submits `tangent.turn_ack` (or `POST /api/turns/items/{item_id}/ack`) with the turn's `item_id` and, optionally, `reply_id`. Tangent marks `delivery_state = acknowledged`. A `reply_id` that is not that turn's reply is refused, a turn nobody has answered cannot be acknowledged, and repeating an acknowledgement changes nothing.
-5. **Session Disappearance:** If Tether confirms the target session has permanently exited before delivery, Tether posts an explicit notification. Tangent records `delivery_state = terminal_failure` with cause `session_offline`. The operator's response is preserved in history and never silently lost.
+The item view exposes the persisted payload version, typed metadata, and derived
+`replyable`. Both inbox surfaces show an escaped plain-text summary above a
+separately expandable, exact original, visible failure markers, compact trace,
+and attributed source. No stage output creates an acting button. Legacy bodies
+without annotations remain readable in their usual presentation.
 
----
+## 4. Operator replies and actual delivery
 
-## 6. Ordering, Presentation, and Retention
+An explicit operator reply saves an immutable resolution in Tangent. A saved
+resolution is not runtime delivery. `tangent.turn_await` returns unacknowledged
+session replies with `wait_status: replies|timeout`; the wait is 30 seconds by
+default, bounded to 50 seconds, and zero means a single read. Repeated reads do
+not acknowledge or consume them. `GET /api/turns/sessions/{session_id}/replies`
+reads history, including acknowledged replies. Dismissal creates no reply.
 
-1. **Strict FIFO Invariant:**
-   * SQLite transactionally assigns `surface_sequence` on `surface_turns_default`.
-   * The queue is strictly ordered by `surface_sequence ASC` (arrival order).
-2. **Presentation Filters (Client-Side / Read-Only):**
-   * *Needs Attention:* Pending items where operator action is awaited (`state: presented`).
-   * *By Session:* Grouped visual threads per `session_id`, while retaining the global sequence indicator.
-   * *Milestones / All:* View toggle between attention-only and complete milestone history.
-   * Filtering and priority flags never mutate queue position or arrival sequence.
-3. **Mute & Dismiss:**
-   * An operator can dismiss a turn without replying. Tangent marks `state = canceled` or `superseded` with cause `participant_dismissed`. History is preserved.
-4. **Retention:**
-   * Items remain in the active view while unresolved.
-   * Resolved items remain accessible in history. Default retention aligns with Tangent host policy (redacted 30 days after terminal).
+An application adapter handles the reply with its own actual source identity and
+publication mapping. The messaging adapter's dedicated Tether reply/receipt
+persistence, capability-gated interrupt, and external delivery projection are
+owned by `CW-20261002-0133`; this rendering change does not implement them.
+Tether queue acceptance, binding handoff, runtime delivery, and Tangent's
+acknowledgement are distinct. An adapter calls `tangent.turn_ack` (or the HTTP ack
+route) only after actual delivery, with the item ID and optional resolution ID.
+A wrong resolution or unanswered item is refused; repeat acknowledgement is
+idempotent. An undeliverable reply stays preserved and unacknowledged. There is
+no shipped core callback or session-disappearance notification contract here.
+
+## 5. Ordering, compatibility, and deployment limits
+
+FIFO sequence is assigned transactionally and preserved across reads, filters,
+operator dismissal, and restart. Client-side filters do not mutate admission or
+queue order. Dismissal cancels an item explicitly; it does not reply to its source.
+This change installs no new retention policy or automatic body purge.
+
+The schema changed, so the shipped definition and package are versioned `1.1`
+(revision 1), with the contract lock and generated projections updated under
+ADR 0003. **Existing pending interactions remain pinned to their old binding.**
+The host's current-binding policy can make them unavailable for subsequent
+operations after this additive bump; old item reads are retained, but old
+requests/bindings are not normalized, migrated, rewritten, or silently reopened.
+See [the current limitation](../architecture.md#an-additive-version-bump-takes-pending-interactions-out-of-service).
+Plan operator handling before installing this host version; a compatibility
+policy change is separate work.
+
+A source merge is not host/plugin installation, routing activation, provider
+availability, or real reply delivery. Consumers use an actual compatible released
+host/public package through the normal release path; the accepted single-owner
+identity, disclosure, and retention limits remain tracked before 1.0.

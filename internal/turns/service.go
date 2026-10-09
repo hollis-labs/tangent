@@ -14,11 +14,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 const (
@@ -58,40 +60,16 @@ var OperatorParticipant = interaction.ActorBinding{
 	Assurance:    "loopback-unverified",
 }
 
-type AgentTurnSource struct {
-	AgentID       string `json:"agent_id"`
-	ApplicationID string `json:"application_id,omitempty"`
-	AgentLabel    string `json:"agent_label,omitempty"`
-}
-
-type AgentTurnOption struct {
-	Label       string `json:"label"`
-	Value       string `json:"value"`
-	Description string `json:"description,omitempty"`
-	Recommended bool   `json:"recommended,omitempty"`
-}
-
-type AgentTurnRequest struct {
-	ContractVersion string            `json:"contract_version"`
-	TurnID          string            `json:"turn_id"`
-	SessionID       string            `json:"session_id"`
-	IdempotencyKey  string            `json:"idempotency_key"`
-	Kind            string            `json:"kind"`
-	Source          AgentTurnSource   `json:"source"`
-	Title           string            `json:"title"`
-	Summary         string            `json:"summary,omitempty"`
-	Content         string            `json:"content"`
-	Options         []AgentTurnOption `json:"options,omitempty"`
-	Correlations    map[string]any    `json:"correlations,omitempty"`
-	ExpiresAt       string            `json:"expires_at,omitempty"`
-}
+type AgentTurnSource = plugin.AgentTurnSource
+type AgentTurnOption = plugin.AgentTurnOption
+type AgentTurnRequest = plugin.AgentTurnRequest
 
 type TurnHandle struct {
 	ContractVersion string                       `json:"contract_version"`
 	SurfaceID       string                       `json:"surface_id"`
 	ItemID          string                       `json:"item_id"`
-	TurnID          string                       `json:"turn_id"`
-	SessionID       string                       `json:"session_id"`
+	TurnID          string                       `json:"turn_id,omitempty"`
+	SessionID       string                       `json:"session_id,omitempty"`
 	AgentID         string                       `json:"agent_id"`
 	Kind            string                       `json:"kind"`
 	State           interaction.InteractionState `json:"state"`
@@ -121,8 +99,8 @@ type TurnResolution struct {
 type TurnItemView struct {
 	ContractVersion string                       `json:"contract_version"`
 	ItemID          string                       `json:"item_id"`
-	TurnID          string                       `json:"turn_id"`
-	SessionID       string                       `json:"session_id"`
+	TurnID          string                       `json:"turn_id,omitempty"`
+	SessionID       string                       `json:"session_id,omitempty"`
 	AgentID         string                       `json:"agent_id"`
 	AgentLabel      string                       `json:"agent_label,omitempty"`
 	ApplicationID   string                       `json:"application_id,omitempty"`
@@ -130,6 +108,10 @@ type TurnItemView struct {
 	Title           string                       `json:"title"`
 	Summary         string                       `json:"summary,omitempty"`
 	Content         string                       `json:"content"`
+	Annotations     []plugin.TurnAnnotation      `json:"annotations,omitempty"`
+	StageTrace      []plugin.TurnStageTrace      `json:"stage_trace,omitempty"`
+	SourceMessage   *plugin.TurnSourceMessage    `json:"source_message,omitempty"`
+	Replyable       bool                         `json:"replyable"`
 	Options         []AgentTurnOption            `json:"options,omitempty"`
 	Correlations    map[string]any               `json:"correlations,omitempty"`
 	State           interaction.InteractionState `json:"state"`
@@ -244,6 +226,9 @@ func NewService(interactions *interaction.Service, opts ...Option) (*Service, er
 }
 
 func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, error) {
+	if !utf8.Valid(input.Request) {
+		return TurnHandle{}, fmt.Errorf("%w: request is not UTF-8", ErrInvalidRequest)
+	}
 	if len(input.Request) == 0 {
 		return TurnHandle{}, fmt.Errorf("%w: request body is empty", ErrInvalidRequest)
 	}
@@ -260,6 +245,9 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, 
 		return TurnHandle{}, fmt.Errorf("%w: unmarshal request: %w", ErrInvalidRequest, err)
 	}
 
+	if err := validateStageMetadata(req, schemaValue); err != nil {
+		return TurnHandle{}, err
+	}
 	if err := s.ensureDefaultSurface(ctx); err != nil {
 		return TurnHandle{}, err
 	}
@@ -465,6 +453,14 @@ func (s *Service) Reply(ctx context.Context, input ReplyInput) (TurnItemView, er
 	}
 	if isTerminal(current.Interaction.State) {
 		return TurnItemView{}, ErrTerminalConflict
+	}
+
+	var request AgentTurnRequest
+	if decodeErr := json.Unmarshal(current.Interaction.RequestSnapshot, &request); decodeErr != nil {
+		return TurnItemView{}, decodeErr
+	}
+	if !requestReplyable(request) {
+		return TurnItemView{}, fmt.Errorf("%w: publication has no runtime reply target", ErrInvalidRequest)
 	}
 
 	responsePayload, err := json.Marshal(AgentTurnResponse{
@@ -716,11 +712,13 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 }
 
 func (s *Service) itemHandle(rec interaction.InteractionRecord, req *AgentTurnRequest) (TurnHandle, error) {
+	contractVersion := ContractVersion
 	turnID := ""
 	sessionID := ""
 	agentID := ""
 	kind := ""
 	if req != nil {
+		contractVersion = req.ContractVersion
 		turnID = req.TurnID
 		sessionID = req.SessionID
 		agentID = req.Source.AgentID
@@ -728,6 +726,7 @@ func (s *Service) itemHandle(rec interaction.InteractionRecord, req *AgentTurnRe
 	} else {
 		var r AgentTurnRequest
 		if err := json.Unmarshal(rec.RequestSnapshot, &r); err == nil {
+			contractVersion = r.ContractVersion
 			turnID = r.TurnID
 			sessionID = r.SessionID
 			agentID = r.Source.AgentID
@@ -735,7 +734,7 @@ func (s *Service) itemHandle(rec interaction.InteractionRecord, req *AgentTurnRe
 		}
 	}
 	return TurnHandle{
-		ContractVersion: ContractVersion,
+		ContractVersion: contractVersion,
 		SurfaceID:       rec.SurfaceID,
 		ItemID:          rec.ID,
 		TurnID:          turnID,
@@ -778,7 +777,7 @@ func buildItemView(rec interaction.InteractionRecord, res *interaction.Resolutio
 	}
 
 	return TurnItemView{
-		ContractVersion: ContractVersion,
+		ContractVersion: req.ContractVersion,
 		ItemID:          rec.ID,
 		TurnID:          req.TurnID,
 		SessionID:       req.SessionID,
@@ -789,6 +788,10 @@ func buildItemView(rec interaction.InteractionRecord, res *interaction.Resolutio
 		Title:           req.Title,
 		Summary:         req.Summary,
 		Content:         req.Content,
+		Annotations:     req.Annotations,
+		StageTrace:      req.StageTrace,
+		SourceMessage:   req.SourceMessage,
+		Replyable:       requestReplyable(req),
 		Options:         req.Options,
 		Correlations:    req.Correlations,
 		State:           rec.State,

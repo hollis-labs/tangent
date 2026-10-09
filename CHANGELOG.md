@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.18.0] - 2026-10-09
+
+### Added
+
+- Agent Turns contract 1.1 carries typed summary annotations, bounded stage
+  traces, and source-publication attribution. Both inbox views show an escaped
+  summary, the intact expandable original, and visible stage failures. Ordinary
+  publications are nonreplyable checkpoints with no invented runtime IDs.
+  Admission enforces field limits, summary agreement, and a combined encoded
+  metadata ceiling of 8 KiB. Stored 1.0 items remain readable without rewriting;
+  the definition version bump retains the documented pending-binding limitation.
+
 ### Fixed
+
+- An inbox projection refresh no longer automatically retries a refused HITL
+  presentation. Each keyed item owns one automatic attempt; navigation starts
+  the next item's independent lifecycle, and pending/late responses retain
+  their original ownership and revision guards.
 
 - Local smoke tests and CI now fetch the same manifest-v2 first-party source
   from `tangent-plugins.smoke-ref`. The older operator installation pin remains
@@ -1412,7 +1429,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.18.0...HEAD
+[v0.18.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.17.0
 [v0.16.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.16.0
 [v0.15.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.15.0

@@ -20,8 +20,15 @@ import {
   resolveHITLAttention,
 } from "@/lib/hitl-api";
 import { categoryOf, type InboxEntry, isTerminal } from "@/lib/inbox-api";
-import { dismissTurn, fetchTurnItem, replyTurn, type TurnItemView } from "@/lib/turns-api";
+import {
+  canReplyTurn,
+  dismissTurn,
+  fetchTurnItem,
+  replyTurn,
+  type TurnItemView,
+} from "@/lib/turns-api";
 import { type ComposerIntent, ItemDetail } from "./HITLInbox";
+import { TurnContent } from "./TurnContent";
 
 interface Props {
   entry: InboxEntry;
@@ -103,6 +110,7 @@ function ApprovalBody(props: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const presentationRequest = useRef<object | null>(null);
+  const presentationAttempted = useRef(false);
   const terminal = isTerminal(props.entry);
   // Inbox keys this body by interaction ID. A refreshed projection of that
   // same item must not cancel its in-flight presentation; only unmount does.
@@ -112,9 +120,16 @@ function ApprovalBody(props: Props) {
     };
   }, []);
   useEffect(() => {
-    if (!item || terminal || item.presented_projection_revision || presentationRequest.current)
+    if (
+      !item ||
+      terminal ||
+      item.presented_projection_revision ||
+      presentationRequest.current ||
+      presentationAttempted.current
+    )
       return;
     const request = {};
+    presentationAttempted.current = true;
     presentationRequest.current = request;
     setPresenting(true);
     setPresentationError("");
@@ -127,8 +142,11 @@ function ApprovalBody(props: Props) {
         }
       })
       .catch((reason) => {
-        if (presentationRequest.current === request)
+        if (presentationRequest.current === request) {
+          // A projection refresh is not a new operator attempt. Retain this
+          // item's refusal instead of silently issuing another POST.
           setPresentationError((reason as Error).message);
+        }
       })
       .finally(() => {
         if (presentationRequest.current === request) {
@@ -400,7 +418,7 @@ function TurnBody(props: Props) {
         {item.delivery_state.replaceAll("_", " ")}
       </p>
       <div className="my-6 flex-1">
-        <Markdown content={item.content} />
+        <TurnContent item={item} />
       </div>
       {error ? (
         <p role="alert" className="mb-3 text-danger">
@@ -409,6 +427,20 @@ function TurnBody(props: Props) {
       ) : null}
       {terminal ? (
         <SavedReply entry={props.entry} />
+      ) : !canReplyTurn(item) ? (
+        <section className="space-y-3 border-t border-border pt-4">
+          <p>Informational publication — no runtime reply target.</p>
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={busy}
+            onClick={() =>
+              void act(() => dismissTurn(item.item_id, { expected_revision: item.revision }))
+            }
+          >
+            Dismiss
+          </button>
+        </section>
       ) : (
         <form
           className="space-y-3 border-t border-border pt-4"
