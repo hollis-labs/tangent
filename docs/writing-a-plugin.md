@@ -319,8 +319,8 @@ The SDK accepts finite forward-call `context` budgets, including Init; strict
 older protocol-2 decoders that reject that field need rebuilding. This source
 change does not activate or migrate any installed plugin.
 
-CI builds first-party sources from the reviewed immutable commit
-`d8f17665f228ea01d27d4aa992b092d9f273d71a` via `TANGENT_PLUGINS_SRC`, verifies
+CI builds first-party sources from the published immutable commit
+`3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1` via `TANGENT_PLUGINS_SRC`, verifies
 that checkout identity, and stages test-owned native bundles. The smoke children
 use a private HOME, database, port and install root. This compatibility fixture
 is separate from `tangent-plugins.version`: the held release pin still names

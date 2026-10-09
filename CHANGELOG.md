@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Generated envelope provenance reports the containing `ui-go` module.
   Uncooperative plugin teardown retains its graceful-unload failure even when
   the child is killed and reaped. CI builds compatible first-party sources
-  from `d8f17665f228ea01d27d4aa992b092d9f273d71a`.
+  from `3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1`.
   No installed plugins or daemon are changed.
 
 - Subprocess plugins use plugin-host Lifecycle for protocol-2 handshake,
