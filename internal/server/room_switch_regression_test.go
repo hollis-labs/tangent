@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

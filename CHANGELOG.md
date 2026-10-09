@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Adopt published monorepo modules: `libs/plugin-mcp` v0.1.1 for the SDK,
+  lifecycle driver and MCP transports, `libs/ui-go` v0.1.0 for envelopes, and
+  `substrate/mesh` v0.1.0 for the Tether client. Plugin scaffolds use the same
+  package paths. Go 1.26.8 is required; the toolchain pin is 1.26.9.
+  Generated envelope provenance reports the containing `ui-go` module.
+  Uncooperative plugin teardown retains its graceful-unload failure even when
+  the child is killed and reaped. No installed plugins or daemon are changed.
+
 - Subprocess plugins use plugin-host Lifecycle for protocol-2 handshake,
   process groups, bounded teardown, crash recovery and health gating. Tangent
   keeps manifest registration, authorization and dispatch policy. Unexpected

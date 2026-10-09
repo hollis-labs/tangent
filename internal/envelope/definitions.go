@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/hollis-labs/tangent/internal/definition"

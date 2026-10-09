@@ -36,7 +36,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 )
 
 // ErrPendingExists is returned by Push if the same envelope id is

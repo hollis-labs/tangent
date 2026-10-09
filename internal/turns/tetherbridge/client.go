@@ -3,7 +3,7 @@ package tetherbridge
 import (
 	"context"
 
-	tether "github.com/hollis-labs/go-tether-client"
+	tether "github.com/hollis-labs/substrate/mesh/tetherclient"
 )
 
 // TetherClient abstracts the subset of Tether's client needed by the turns bridge.

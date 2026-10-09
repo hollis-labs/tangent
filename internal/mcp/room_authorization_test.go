@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"

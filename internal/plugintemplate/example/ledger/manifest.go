@@ -3,7 +3,7 @@ package ledger
 import (
 	"io"
 
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 

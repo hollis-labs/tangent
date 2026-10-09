@@ -35,7 +35,7 @@ import (
 	"fmt"
 	"os"
 
-	sdkmanifest "github.com/hollis-labs/plugin-sdk/manifest"
+	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/pkg/plugin"

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	gmcpserver "github.com/hollis-labs/go-mcp/server"
+	gmcpserver "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
 
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"

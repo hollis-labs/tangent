@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	"go.uber.org/goleak"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/hollis-labs/plugin-sdk/registry"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/registry"
 )
 
 // TestRegistryResponseShape validates that buildRegistryResponse returns a

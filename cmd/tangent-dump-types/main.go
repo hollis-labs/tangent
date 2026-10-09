@@ -66,7 +66,7 @@ import (
 	"runtime/debug"
 	"strings"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
@@ -76,7 +76,7 @@ import (
 // reports. The Node generator embeds that version in the generated file
 // banner so a reviewer can see at a glance which version produced the
 // committed types.
-const envelopesModulePath = "github.com/hollis-labs/go-envelopes"
+const envelopesModulePath = "github.com/hollis-labs/libs/ui-go"
 
 // envelopesVersion reads the selected go-envelopes version out of the
 // binary's own build info rather than repeating it here. The previous

@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	driver "github.com/hollis-labs/plugin-host"
-	plugin "github.com/hollis-labs/plugin-sdk"
-	"github.com/hollis-labs/plugin-sdk/capability"
-	"github.com/hollis-labs/plugin-sdk/subprocess"
+	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
+	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 

@@ -17,7 +17,7 @@
  *
  * There are two sources of truth and the dump tool merges them: the
  * embedded YAML manifest + per-type JSON Schemas in
- * github.com/hollis-labs/go-envelopes for the core catalog, and
+ * github.com/hollis-labs/libs/ui-go/envelopes for the core catalog, and
  * internal/envelope/extensions for the Tangent-owned kinds. The dump tool
  * builds the registry through the same extensions.RegisterAll the server
  * uses, so every kind Tangent renders is typed here (ADR 0003 §9 S1).
@@ -209,13 +209,13 @@ function generate(catalog) {
 
   lines.push('// AUTO-GENERATED FILE — DO NOT EDIT MANUALLY');
   lines.push(`// @definition-source ${catalog.definitionSourceDigest}`);
-  lines.push(`// Generated from go-envelopes ${catalog.envelopesVersion} — do not edit.`);
+  lines.push(`// Generated from libs/ui-go ${catalog.envelopesVersion} (envelopes) — do not edit.`);
   lines.push('// Run `make generate-envelopes` to regenerate.');
   lines.push('//');
   lines.push(`// Coverage: ${types.length} registered kinds — ${coreCount} go-envelopes core,`);
   lines.push(`// ${pluginCount} Tangent-owned (internal/envelope/extensions).`);
   lines.push('//');
-  lines.push('// Sources of truth: github.com/hollis-labs/go-envelopes (core catalog)');
+  lines.push('// Sources of truth: github.com/hollis-labs/libs/ui-go/envelopes (core catalog)');
   lines.push('// and internal/envelope/extensions (Tangent kinds).');
   lines.push('// Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs');
   lines.push('');

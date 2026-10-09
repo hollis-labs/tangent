@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	envelopes "github.com/hollis-labs/go-envelopes"
+	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 )
 
 // Handler produces a Response for an envelope of a specific type. PR 2
