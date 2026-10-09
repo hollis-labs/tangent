@@ -31,7 +31,7 @@ func TestTurnsToolsPublicAnnotatedPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", arguments)
-	if handle.ContractVersion != "1.1" || handle.SessionID != "" || handle.TurnID != "" {
+	if handle.ContractVersion != plugin.AgentTurnContractVersion || handle.SessionID != "" || handle.TurnID != "" {
 		t.Fatalf("publication handle invented runtime identity: %#v", handle)
 	}
 	retry := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", arguments)

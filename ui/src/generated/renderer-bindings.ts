@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:7ea9b8d113d0314bae1375d65b0b3501c9ab1365fb167419f4a49274542a5dfb
+// @definition-source sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 22 manifests under
@@ -97,7 +97,7 @@ export interface RendererBinding {
 export const RENDERER_BINDINGS: readonly RendererBinding[] = [
   {
     kind: "tangent.agent-turn",
-    version: "1.1",
+    version: "1.2",
     rendererId: "tangent.renderer.turns-inbox",
     rendererClass: "react-component",
     entry: "routes/TurnsInbox#TurnsInbox",
@@ -109,7 +109,7 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     component: "",
     packageId: "tangent.turns",
     state: "available",
-    contractDigest: "sha256:c8fdec4c958684bece076433f4d10e3d27350c5b2eb55877e95a5d3f0123672b",
+    contractDigest: "sha256:25006f5b5e2f5151d9af2a1ed0aade03486fdffea87ea07081f2716afa4ac42c",
   },
   {
     kind: "tangent.app-board",

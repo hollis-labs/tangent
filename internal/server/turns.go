@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,11 +50,47 @@ func newTurnsHTTPHandler(service TurnsService) *turnsHTTPHandler {
 }
 
 type turnReplyCommand struct {
-	ExpectedRevision int64  `json:"expected_revision"`
-	Action           string `json:"action"`
-	ResponseText     string `json:"response_text,omitempty"`
-	SelectedOption   string `json:"selected_option,omitempty"`
-	Note             string `json:"note,omitempty"`
+	Interrupt        json.RawMessage `json:"interrupt,omitempty"`
+	ExpectedRevision int64           `json:"expected_revision"`
+	Action           string          `json:"action"`
+	ResponseText     string          `json:"response_text,omitempty"`
+	SelectedOption   string          `json:"selected_option,omitempty"`
+	Note             string          `json:"note,omitempty"`
+}
+
+// Reject duplicate resolution fields as well as non-boolean interrupt values;
+// conflicting user intent must never be collapsed by encoding/json's last-win.
+func (cmd *turnReplyCommand) UnmarshalJSON(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return fmt.Errorf("reply must be an object")
+	}
+	seen := map[string]bool{}
+	for decoder.More() {
+		token, err = decoder.Token()
+		name, ok := token.(string)
+		if err != nil || !ok || seen[name] {
+			return fmt.Errorf("duplicate reply field")
+		}
+		seen[name] = true
+		var value json.RawMessage
+		if err = decoder.Decode(&value); err != nil {
+			return err
+		}
+	}
+	if _, err = decoder.Token(); err != nil {
+		return err
+	}
+	type plain turnReplyCommand
+	decoder = json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var value plain
+	if err = decoder.Decode(&value); err != nil {
+		return err
+	}
+	*cmd = turnReplyCommand(value)
+	return nil
 }
 
 type turnDismissCommand struct {
@@ -89,6 +126,17 @@ func (h *turnsHTTPHandler) reply(w http.ResponseWriter, r *http.Request) {
 		writeTurnsError(w, err)
 		return
 	}
+	interrupt := false
+	if len(cmd.Interrupt) != 0 {
+		switch string(bytes.TrimSpace(cmd.Interrupt)) {
+		case "true":
+			interrupt = true
+		case "false":
+		default:
+			writeTurnsError(w, fmt.Errorf("%w: interrupt must be boolean", turns.ErrInvalidRequest))
+			return
+		}
+	}
 	item, err := h.service.Reply(r.Context(), turns.ReplyInput{
 		ItemID:           r.PathValue("itemID"),
 		ExpectedRevision: cmd.ExpectedRevision,
@@ -96,6 +144,7 @@ func (h *turnsHTTPHandler) reply(w http.ResponseWriter, r *http.Request) {
 		ResponseText:     cmd.ResponseText,
 		SelectedOption:   cmd.SelectedOption,
 		Note:             cmd.Note,
+		Interrupt:        interrupt,
 	})
 	if err != nil {
 		writeTurnsError(w, err)

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.19.0] - 2026-10-09
+
+### Added
+
+- Agent Turns contract/definition 1.2 adds an optional immutable `interrupt`
+  boolean to the operator response. Absent flags remain false; null and other
+  types are refused by the HTTP resolution boundary. The public plugin package
+  exports `AgentTurnResponse`. Payload versions 1.0 and 1.1 remain readable and
+  accepted; pending bindings retain the documented version-bump limitation.
+- Routed inbox items read the messaging plugin's participant-guarded delivery
+  metadata, distinguish Tether acceptance from actual delivery, and offer an
+  interrupt choice only for a supported sender target. Terminal failed replies
+  can be retried by an explicit user action, preserving the same action on an
+  ambiguous HTTP result. GET never sends, resolves, or acknowledges a reply.
+  These controls require the separately installed compatible messaging plugin;
+  this release does not install, activate or deploy it.
+
 ## [v0.18.0] - 2026-10-09
 
 ### Added
@@ -1429,7 +1446,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.19.0...HEAD
+[v0.19.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.17.0
 [v0.16.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.16.0

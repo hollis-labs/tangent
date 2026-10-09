@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:7ea9b8d113d0314bae1375d65b0b3501c9ab1365fb167419f4a49274542a5dfb
+// @definition-source sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d
 // Generated from libs/ui-go v0.1.0 (envelopes) — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
@@ -622,7 +622,7 @@ export interface TableCardData {
 export interface TangentAgentTurnData {
   annotations?: { kind: "summary"; schema_version: 1; stage_id: string; stage_version: string; summary: { text: string } }[];
   content: string;
-  contract_version: "1.0" | "1.1";
+  contract_version: "1.0" | "1.1" | "1.2";
   correlations?: { project_id?: string; runtime_ref?: string; task_id?: string };
   expires_at?: string;
   idempotency_key: string;
@@ -1176,10 +1176,10 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:7ea9b8d113d0314bae1375d65b0b3501c9ab1365fb167419f4a49274542a5dfb";
+export const DEFINITION_SOURCE_DIGEST = "sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d";
 
 /** The Tangent release these types were generated against. */
-export const DEFINITION_HOST_VERSION = "v0.18.0";
+export const DEFINITION_HOST_VERSION = "v0.19.0";
 
 /** One manifest's contribution to the source digest. */
 export interface DefinitionSourceEntry {
@@ -1192,7 +1192,7 @@ export interface DefinitionSourceEntry {
 
 /** Per-kind manifest identity, so drift can name the kind that moved. */
 export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
-  { kind: "tangent.agent-turn", version: "1.1", revision: 1, manifestDigest: "sha256:84dd525aa98edd364d67a04282d3b1e60fb21dfa26059fc1bf5ae062e9784e2b", contractDigest: "sha256:c8fdec4c958684bece076433f4d10e3d27350c5b2eb55877e95a5d3f0123672b" },
+  { kind: "tangent.agent-turn", version: "1.2", revision: 1, manifestDigest: "sha256:be4f2c75363b7edc1eef10cd3364cdd9d8a5fc7f0c9db91f55772d90bb7e06ed", contractDigest: "sha256:25006f5b5e2f5151d9af2a1ed0aade03486fdffea87ea07081f2716afa4ac42c" },
   { kind: "tangent.app-board", version: "0.3", revision: 1, manifestDigest: "sha256:21689b180436900fe77562eaf86f7c435cccc63235baacb0b4870b9d2e064bd5", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
   { kind: "tangent.approval-queue", version: "0.8", revision: 1, manifestDigest: "sha256:40f8023c9c1efa1c83fdba1d80c1e5cab68e037f2296f1f1e5207358ad49bfef", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
   { kind: "tangent.block-draft", version: "0.4", revision: 1, manifestDigest: "sha256:52ff9c8adfffd35ee43826ca5016dd798b1b9f19e8a8755fbd4d816f600218cd", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },

@@ -79,14 +79,10 @@ type TurnHandle struct {
 	CreatedAt       time.Time                    `json:"created_at"`
 }
 
-type AgentTurnResponse struct {
-	Action         string `json:"action"`
-	ResponseText   string `json:"response_text,omitempty"`
-	SelectedOption string `json:"selected_option,omitempty"`
-	Note           string `json:"note,omitempty"`
-}
+type AgentTurnResponse = plugin.AgentTurnResponse
 
 type TurnResolution struct {
+	Interrupt      bool      `json:"interrupt,omitempty"`
 	ResolutionID   string    `json:"resolution_id"`
 	Action         string    `json:"action"`
 	ResponseText   string    `json:"response_text,omitempty"`
@@ -142,6 +138,7 @@ type EnqueueInput struct {
 }
 
 type ReplyInput struct {
+	Interrupt        bool
 	ItemID           string
 	ExpectedRevision int64
 	Action           string
@@ -468,6 +465,7 @@ func (s *Service) Reply(ctx context.Context, input ReplyInput) (TurnItemView, er
 		ResponseText:   input.ResponseText,
 		SelectedOption: input.SelectedOption,
 		Note:           input.Note,
+		Interrupt:      input.Interrupt,
 	})
 	if err != nil {
 		return TurnItemView{}, fmt.Errorf("%w: marshal response: %w", ErrInvalidRequest, err)
@@ -771,6 +769,7 @@ func buildItemView(rec interaction.InteractionRecord, res *interaction.Resolutio
 			ResponseText:   resp.ResponseText,
 			SelectedOption: resp.SelectedOption,
 			Note:           resp.Note,
+			Interrupt:      resp.Interrupt,
 			ResolvedAt:     res.RecordedAt,
 			ResolvedBy:     res.ParticipantRef,
 		}
