@@ -15,28 +15,11 @@ jobs:
       # set as a repo secret) authenticates `git` against github.com.
       GOPRIVATE: "github.com/hollis-labs/*"
       GONOSUMDB: "github.com/hollis-labs/*"
-      # Source compatibility fixture only; tangent-plugins.version stays the
-      # independently held operator release pin. No installed binaries are used.
-      TANGENT_PLUGINS_SRC: ${{ github.workspace }}/.ci/tangent-plugins
+      # The smoke helper fetches the same public source pin in local and CI runs.
+      # tangent-plugins.version remains the separate operator installation pin.
       TANGENT_SMOKE_EXTRA_PLUGINS: github
     steps:
       - uses: actions/checkout@v4
-
-      - name: Check out reviewed manifest-v2 source fixture
-        uses: actions/checkout@v4
-        with:
-          repository: hollis-labs/tangent-plugins
-          ref: 3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1
-          path: .ci/tangent-plugins
-          persist-credentials: false
-
-      - name: Verify source fixture identity
-        shell: bash
-        run: |
-          expected=3efe7d72b70b23e0fe8d377d6c5e44fd617ba8f1
-          actual=$(git -C "$TANGENT_PLUGINS_SRC" rev-parse HEAD)
-          test "$actual" = "$expected"
-          echo "Manifest-v2 source fixture: $actual"
 
       - name: Configure git for private hollis-labs modules
         run: |

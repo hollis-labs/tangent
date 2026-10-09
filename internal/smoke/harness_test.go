@@ -186,9 +186,9 @@ func reservePort(t *testing.T) int {
 // module each; the Makefile's PLUGINS names the same three.
 var firstPartyPlugins = []string{"runner", "tesseract", "torque"}
 
-// pluginsVersionFile pins the tangent-plugins release this Tangent documents
-// and tests against. The Makefile's install-plugins reads the same file.
-const pluginsVersionFile = "tangent-plugins.version"
+// pluginsFixtureRefFile pins the compatible source used only by smoke tests.
+// The operator's independent installation pin is tangent-plugins.version.
+const pluginsFixtureRefFile = "tangent-plugins.smoke-ref"
 
 var (
 	pluginBuildOnce sync.Once
@@ -200,12 +200,11 @@ var (
 // process and returns, per plugin, an installable directory: the binary beside
 // the plugin.yaml it emits.
 //
-// It builds the PINNED MODULE VERSION by default — `go install
-// github.com/hollis-labs/tangent-plugins/<p>/cmd/tangent-plugin-<p>@<version>`,
-// exactly what `make install-plugins` does — so the gate measures what a user
-// installs, not a checkout that happens to be nearby. TANGENT_PLUGINS_SRC names
-// a tangent-plugins checkout to build from instead, for changing a plugin and
-// the document that names its tools in the same sitting.
+// It uses normal public `go install ...@<ref>` resolution of the exact source
+// in tangent-plugins.smoke-ref. This compatibility fixture is independent of
+// the operator installation pin, which still has legacy declarations.
+// TANGENT_PLUGINS_SRC names a checkout to build from instead, for changing a
+// plugin and the document that names its tools in the same sitting.
 //
 // The pinned path needs the module proxy on a cold cache; that is the accepted
 // cost of the plugins living in their own repository.
@@ -234,13 +233,13 @@ func smokePlugins() []string {
 }
 
 func buildFirstPartyPlugins() (map[string]string, error) {
-	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsVersionFile))
+	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsFixtureRefFile))
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", pluginsVersionFile, err)
+		return nil, fmt.Errorf("read %s: %w", pluginsFixtureRefFile, err)
 	}
-	version := strings.TrimSpace(string(raw))
-	if !strings.HasPrefix(version, "v") {
-		return nil, fmt.Errorf("%s holds %q, not a module version", pluginsVersionFile, version)
+	ref := strings.TrimSpace(string(raw))
+	if len(ref) != 40 || strings.Trim(ref, "0123456789abcdef") != "" {
+		return nil, fmt.Errorf("%s holds %q, not a full source commit", pluginsFixtureRefFile, ref)
 	}
 	source := os.Getenv("TANGENT_PLUGINS_SRC")
 
@@ -264,8 +263,8 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 			build.Dir = filepath.Join(source, name)
 		} else {
 			module := "github.com/hollis-labs/tangent-plugins/" + name + "/cmd/" + binaryName
-			// #nosec G204 -- a fixed module path at the pinned version.
-			build = exec.Command("go", "install", module+"@"+version)
+			// #nosec G204 -- a fixed module path at the pinned source commit.
+			build = exec.Command("go", "install", module+"@"+ref)
 			build.Env = append(os.Environ(), "GOBIN="+filepath.Join(dir, "bin"))
 		}
 		if output, err := build.CombinedOutput(); err != nil {
@@ -296,14 +295,15 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 // plugin's tools would fail the documentation gate against it. Dropping those
 // tools from the documented set would measure an artifact nobody runs: the
 // product is Tangent AND its first-party plugins, and `make install-plugins` is
-// how a user gets both. So these tests install them the way a user does and
+// how a user gets both. These tests use a compatible source fixture, then
+// install it through that same command path and
 // measure that — build (or fetch) the plugin, emit its manifest, install it,
 // discover it, spawn it, and advertise its tools.
 //
 // The plugins' tools are still documented in Tangent's own documents while they
 // are first-party. A tool rename in a plugin therefore lands as a tangent-plugins
-// release plus a Tangent change that bumps tangent-plugins.version and the
-// documents together; the gate is what forces that pairing.
+// release plus a Tangent change that advances the installation pin and the
+// documents together. A passing source fixture does not advance that pin.
 func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 	t.Helper()
 	pluginDir := filepath.Join(root, "plugins")

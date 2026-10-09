@@ -19,7 +19,7 @@ import (
 
 // TestInstalledRunnerCarriesATurnThroughTheInbox is the guard the runner's
 // in-tree integration tests used to be (CW-20260930-0102): the REAL runner
-// plugin, installed from its pinned release, in front of the REAL turns tools
+// plugin, installed from its pinned source fixture, in front of the REAL turns tools
 // of the shipped binary.
 //
 // The runner's own tests use a caller that accepts any tool name, so they would

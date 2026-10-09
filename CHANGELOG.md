@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Local smoke tests and CI now fetch the same manifest-v2 first-party source
+  from `tangent-plugins.smoke-ref`. The older operator installation pin remains
+  separate; its legacy YAML declaration no longer breaks clean-checkout smoke
+  setup. Manifest validation and actual plugin installation remain strict.
+
 ## [v0.17.0] - 2026-10-09
 
 ### Changed
