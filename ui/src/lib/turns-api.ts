@@ -1,6 +1,6 @@
 /**
  * Client adapter for Tangent's durable Agent Turns FIFO inbox API (/api/turns).
- * Contracts 1.0 and 1.1 (CW-20260913-0019).
+ * Contracts 1.0, 1.1 and 1.2 (CW-20260913-0019).
  */
 
 export type TurnKind = "question" | "approval" | "checkpoint" | "failure" | "terminal";
@@ -33,6 +33,7 @@ export interface TurnOption {
 }
 
 export interface TurnResolution {
+  interrupt?: boolean;
   resolution_id: string;
   action: string;
   response_text?: string;
@@ -43,7 +44,7 @@ export interface TurnResolution {
 }
 
 export interface TurnItemView {
-  contract_version: "1.0" | "1.1";
+  contract_version: "1.0" | "1.1" | "1.2";
   item_id: string;
   turn_id?: string;
   session_id?: string;
@@ -72,7 +73,7 @@ export interface TurnItemView {
 }
 
 export interface TurnsInbox {
-  contract_version: "1.0" | "1.1";
+  contract_version: "1.0" | "1.1" | "1.2";
   surface_id: string;
   revision: string;
   synced_at: string;
@@ -83,6 +84,7 @@ export interface TurnsInbox {
 }
 
 export interface TurnReplyInput {
+  interrupt?: boolean;
   expected_revision: number;
   action: string;
   response_text?: string;
@@ -227,4 +229,105 @@ export interface TurnSourceMessage {
 }
 export function canReplyTurn(item: TurnItemView): boolean {
   return item.replyable !== false && item.source_message?.origin !== "publication";
+}
+
+/** Plugin-owned, participant-guarded metadata. Acceptance is not delivery. */
+export interface ReplyDeliveryView {
+  schema_version: 1;
+  item_id: string;
+  version: number;
+  resolution_id?: string;
+  action_id?: string;
+  state:
+    | "not_submitted"
+    | "nonreplyable"
+    | "prepared"
+    | "accepted"
+    | "pending"
+    | "queued"
+    | "delivering"
+    | "delivered"
+    | "undeliverable"
+    | "refused"
+    | "unknown";
+  reason?: string;
+  failure_code?: string;
+  failure_status?: number;
+  accepted: boolean;
+  acknowledged: boolean;
+  reply_id?: string;
+  original_session_id?: string;
+  target_session_id?: string;
+  delivered_to_session_id?: string;
+  attempts: number;
+  reply_supported: boolean;
+  interrupt_supported: boolean;
+  interrupt_requested: boolean;
+  retry_allowed: boolean;
+}
+
+export async function fetchReplyDelivery(
+  itemID: string,
+  signal?: AbortSignal,
+): Promise<ReplyDeliveryView> {
+  const view = await requestJSON<ReplyDeliveryView>(
+    `/api/plugins/messaging/delivery?item_id=${encodeURIComponent(itemID)}`,
+    { signal },
+  );
+  return validateReplyDelivery(view, itemID);
+}
+
+function validateReplyDelivery(view: ReplyDeliveryView, itemID: string): ReplyDeliveryView {
+  if (
+    view?.schema_version !== 1 ||
+    view.item_id !== itemID ||
+    !Number.isSafeInteger(view.version) ||
+    view.version < 0 ||
+    !Number.isSafeInteger(view.attempts) ||
+    view.attempts < 0 ||
+    [
+      view.accepted,
+      view.acknowledged,
+      view.reply_supported,
+      view.interrupt_supported,
+      view.interrupt_requested,
+      view.retry_allowed,
+    ].some((flag) => typeof flag !== "boolean") ||
+    ![
+      "not_submitted",
+      "nonreplyable",
+      "prepared",
+      "accepted",
+      "pending",
+      "queued",
+      "delivering",
+      "delivered",
+      "undeliverable",
+      "refused",
+      "unknown",
+    ].includes(view.state)
+  ) {
+    throw new Error("Reply delivery projection does not match this item");
+  }
+  return view;
+}
+
+export async function retryReplyDelivery(
+  itemID: string,
+  expectedVersion: number,
+  actionID: string,
+  interrupt: boolean,
+): Promise<ReplyDeliveryView> {
+  const view = await requestJSON<ReplyDeliveryView>("/api/plugins/messaging/retry", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      item_id: itemID,
+      expected_version: expectedVersion,
+      action_id: actionID,
+      interrupt,
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+  return validateReplyDelivery(view, itemID);
 }

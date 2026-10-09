@@ -64,8 +64,8 @@ var contractLock = map[string]lockedPublication{
 		response:  definition.ResponseSchemaAbsent,
 	},
 	AgentTurnEnvelopeType: {
-		version: "1.1", revision: 1,
-		contract:  "sha256:c8fdec4c958684bece076433f4d10e3d27350c5b2eb55877e95a5d3f0123672b",
+		version: "1.2", revision: 1,
+		contract:  "sha256:25006f5b5e2f5151d9af2a1ed0aade03486fdffea87ea07081f2716afa4ac42c",
 		class:     definition.RendererReactComponent,
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaPresent,

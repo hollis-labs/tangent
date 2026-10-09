@@ -1,8 +1,8 @@
-# Tangent Agent Turns FIFO Inbox contract v1.1
+# Tangent Agent Turns FIFO Inbox contract v1.2
 
 **Status:** Implemented source contract; plugin installation and live delivery are separate work.
 
-**Payload versions:** `1.0` and `1.1`. **Definition:** `tangent.agent-turn`, version `1.1`.
+**Payload versions:** `1.0`, `1.1` and `1.2`. **Definition:** `tangent.agent-turn`, version `1.2`.
 
 **Decision basis:** [ADR 0012](../adr/0012-messaging-consumer-and-stage-pipeline.md),
 [ADR 0003](../adr/0003-definition-and-package-ownership.md), and
@@ -153,10 +153,33 @@ default, bounded to 50 seconds, and zero means a single read. Repeated reads do
 not acknowledge or consume them. `GET /api/turns/sessions/{session_id}/replies`
 reads history, including acknowledged replies. Dismissal creates no reply.
 
+The optional response `interrupt` is a strict boolean; absence means false.
+`plugin.AgentTurnResponse` exposes that response shape. The flag is saved with
+its immutable resolution and returned by `tangent.turn_await`. A later inbox
+refresh cannot change it. This is explicit operator intent, not a grant or proof
+of human identity; a consumer must check the actual target's routing and interrupt
+capabilities before calling its dedicated reply endpoint.
+
 An application adapter handles the reply with its own actual source identity and
-publication mapping. The messaging adapter's dedicated Tether reply/receipt
-persistence, capability-gated interrupt, and external delivery projection are
-owned by `CW-20261002-0133`; this rendering change does not implement them.
+publication mapping. The separately installed messaging plugin owns the private
+reply preparation, receipt and delivery ledger. The host binary has no Tether
+client and does not infer delivery from a saved resolution.
+
+For routed messaging items, the renderer reads the fixed plugin GET route
+`/api/plugins/messaging/delivery?item_id=<item>`. It declares the host's
+participant `view` capability and returns bounded metadata, never message/reply
+text, idempotency keys or upstream diagnostic bodies. Missing/unknown capability
+remains unavailable. The renderer never sends or acknowledges while polling.
+A confirmed terminal failure offers a deliberate POST to
+`/api/plugins/messaging/retry` under the participant `draft` capability, containing
+`item_id`, the expected attempt `version`, a fresh user `action_id`, and the
+explicit boolean `interrupt`. The private adapter must atomically preserve the
+failed predecessor and prepare the new attempt before external dispatch. An
+ambiguous HTTP result reuses that exact action/key/flag; a new key requires a new
+explicit action. Accepted queued replies do not expose a retry button. No
+re-resolution of Tangent's immutable answer or effectful GET is involved.
+This single-owner MVP does not claim Tether per-message reply authorization or a
+verified human principal; those remain before-1.0 work.
 Tether queue acceptance, binding handoff, runtime delivery, and Tangent's
 acknowledgement are distinct. An adapter calls `tangent.turn_ack` (or the HTTP ack
 route) only after actual delivery, with the item ID and optional resolution ID.
@@ -171,8 +194,8 @@ operator dismissal, and restart. Client-side filters do not mutate admission or
 queue order. Dismissal cancels an item explicitly; it does not reply to its source.
 This change installs no new retention policy or automatic body purge.
 
-The schema changed, so the shipped definition and package are versioned `1.1`
-(revision 1), with the contract lock and generated projections updated under
+The response schema changed, so the shipped definition and package are versioned
+`1.2` (revision 1), with the contract lock and generated projections updated under
 ADR 0003. **Existing pending interactions remain pinned to their old binding.**
 The host's current-binding policy can make them unavailable for subsequent
 operations after this additive bump; old item reads are retained, but old

@@ -1338,8 +1338,9 @@ felt.
 
 The Agent Turns definition `1.1` (CW-20261002-0134) is an explicit instance:
 its optional stage/source fields keep stored `1.0` bodies readable, but do not
-rewrite their pinned bindings or grant them new operations. Plan the pending-item
-blast radius before installing that host version.
+rewrite their pinned bindings or grant them new operations. The response/definition `1.2` (CW-20261002-0133) adds explicit immutable
+interrupt intent with the same pending-binding limitation. Plan the pending-item
+blast radius before installing either host version.
 
 ### `standalone-local` partitions are advisory, not a security boundary
 

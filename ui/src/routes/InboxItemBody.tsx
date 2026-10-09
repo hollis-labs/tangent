@@ -23,8 +23,11 @@ import { categoryOf, type InboxEntry, isTerminal } from "@/lib/inbox-api";
 import {
   canReplyTurn,
   dismissTurn,
+  fetchReplyDelivery,
   fetchTurnItem,
+  type ReplyDeliveryView,
   replyTurn,
+  retryReplyDelivery,
   type TurnItemView,
 } from "@/lib/turns-api";
 import { type ComposerIntent, ItemDetail } from "./HITLInbox";
@@ -393,6 +396,13 @@ function TurnBody(props: Props) {
   const [response, setResponse] = useState("");
   const [option, setOption] = useState("");
   const [note, setNote] = useState("");
+  const [interrupt, setInterrupt] = useState(false);
+  const [interruptSupported, setInterruptSupported] = useState(false);
+  const [replySupported, setReplySupported] = useState(false);
+  const onCapability = useCallback((supported: boolean, canInterrupt: boolean) => {
+    setReplySupported(supported);
+    setInterruptSupported(supported && canInterrupt);
+  }, []);
   if (!item)
     return (
       <p role={error ? "alert" : "status"} className="p-6">
@@ -404,6 +414,7 @@ function TurnBody(props: Props) {
     void act(() =>
       replyTurn(item.item_id, {
         expected_revision: item.revision,
+        interrupt: interruptSupported && interrupt,
         action,
         response_text: response || undefined,
         selected_option: option || undefined,
@@ -414,7 +425,7 @@ function TurnBody(props: Props) {
     <article className="flex min-h-full flex-col p-4 sm:p-6 lg:p-8">
       <h2 className="text-xl font-semibold">{item.title}</h2>
       <p className="mt-2 text-xs text-fg-muted">
-        {item.agent_label || item.agent_id} · {item.kind} ·{" "}
+        {item.agent_label || item.agent_id} · {item.kind} · Inbox{" "}
         {item.delivery_state.replaceAll("_", " ")}
       </p>
       <div className="my-6 flex-1">
@@ -424,6 +435,9 @@ function TurnBody(props: Props) {
         <p role="alert" className="mb-3 text-danger">
           {error}
         </p>
+      ) : null}
+      {item.source_message?.origin === "routed" ? (
+        <ReplyDelivery key={item.item_id} item={item} onCapability={onCapability} />
       ) : null}
       {terminal ? (
         <SavedReply entry={props.entry} />
@@ -490,10 +504,25 @@ function TurnBody(props: Props) {
               onChange={(event) => setNote(event.target.value)}
             />
           </label>
+          {interruptSupported ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={interrupt}
+                disabled={busy}
+                onChange={(event) => setInterrupt(event.target.checked)}
+              />
+              Interrupt the sender's active turn
+            </label>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <button
               type="submit"
-              disabled={busy || (!response.trim() && !option)}
+              disabled={
+                busy ||
+                (item.source_message?.origin === "routed" && !replySupported) ||
+                (!response.trim() && !option)
+              }
               className={buttonClass}
             >
               Send reply
@@ -502,7 +531,7 @@ function TurnBody(props: Props) {
               <>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || (item.source_message?.origin === "routed" && !replySupported)}
                   className={buttonClass}
                   onClick={() => respond("approve")}
                 >
@@ -510,7 +539,7 @@ function TurnBody(props: Props) {
                 </button>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || (item.source_message?.origin === "routed" && !replySupported)}
                   className={buttonClass}
                   onClick={() => respond("reject")}
                 >
@@ -537,6 +566,151 @@ function TurnBody(props: Props) {
         </form>
       )}
     </article>
+  );
+}
+
+function replyReason(reason: string): string {
+  const meanings: Record<string, string> = {
+    waiting_for_idle: "Waiting for the sender runtime to become idle.",
+    handed_off: "The reply target moved to a successor session; delivery is not implied.",
+    turn_failed: "The runtime accepted delivery, but that turn failed.",
+    interrupt_unconfirmed:
+      "The interrupt could not be confirmed; no automatic retry will send another reply.",
+    session_ended_no_binding: "The original session ended without a current runtime binding.",
+    bound_session_not_running: "The bound runtime session is not running.",
+    pull_only_binding: "This runtime binding cannot receive a pushed reply.",
+    resolve_failed: "The runtime target could not be resolved.",
+    submit_failed: "The runtime refused reply submission.",
+    no_turn_feed: "This runtime has no supported reply delivery feed.",
+    daemon_restarted_during_delivery: "Tether restarted while delivery was in progress.",
+    body_purged: "The saved reply body is no longer available to Tether.",
+  };
+  return meanings[reason] ?? "Tether reported an unknown delivery reason.";
+}
+
+// The plugin owns dispatch and persistence. Rendering polls metadata only and
+// never acknowledges, re-resolves, or automatically submits a reply.
+function ReplyDelivery({
+  item,
+  onCapability,
+}: {
+  item: TurnItemView;
+  onCapability: (supported: boolean, interrupt: boolean) => void;
+}) {
+  const [view, setView] = useState<ReplyDeliveryView | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [interrupt, setInterrupt] = useState(false);
+  const action = useRef<{ id: string; version: number; interrupt: boolean } | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | undefined;
+    const refresh = async () => {
+      controller = new AbortController();
+      const deadline = setTimeout(() => controller?.abort(), 8000);
+      try {
+        const next = await fetchReplyDelivery(item.item_id, controller.signal);
+        if (!stopped) {
+          setView(next);
+          setError("");
+          onCapability(next.reply_supported, next.interrupt_supported);
+        }
+      } catch {
+        if (!stopped) {
+          setError("Reply delivery is unavailable");
+          onCapability(false, false);
+        }
+      } finally {
+        clearTimeout(deadline);
+        if (!stopped) timer = setTimeout(() => void refresh(), 2000);
+      }
+    };
+    void refresh();
+    return () => {
+      stopped = true;
+      alive.current = false;
+      controller?.abort();
+      clearTimeout(timer);
+      onCapability(false, false);
+    };
+  }, [item.item_id, onCapability]);
+  const retry = async () => {
+    if (!view || busy || (!view.retry_allowed && !action.current)) return;
+    const choice = action.current ?? {
+      id: crypto.randomUUID(),
+      version: view.version,
+      interrupt: view.interrupt_supported && interrupt,
+    };
+    action.current = choice; // Preserve this click after an ambiguous HTTP outcome.
+    setBusy(true);
+    setError("");
+    try {
+      const next = await retryReplyDelivery(
+        item.item_id,
+        choice.version,
+        choice.id,
+        choice.interrupt,
+      );
+      if (next.item_id !== item.item_id || next.schema_version !== 1)
+        throw new Error("Mismatched delivery projection");
+      if (alive.current) {
+        setView(next);
+        action.current = null;
+      }
+    } catch {
+      if (alive.current)
+        setError("Retry was not confirmed; repeat this action to check the same reply attempt");
+    } finally {
+      if (alive.current) setBusy(false);
+    }
+  };
+  return (
+    <section
+      aria-label="Reply delivery"
+      className="mb-4 space-y-2 rounded border border-border p-3"
+    >
+      <p role="status">
+        {view ? `Reply ${view.state.replaceAll("_", " ")}` : "Checking reply delivery…"}
+      </p>
+      {view?.accepted && !["delivered", "undeliverable"].includes(view.state) ? (
+        <p>Accepted by Tether; delivery has not been confirmed.</p>
+      ) : null}
+      {view?.reason ? <p>{replyReason(view.reason)}</p> : null}
+      {view?.failure_code ? (
+        <p role="alert">
+          {view.failure_code.replaceAll("_", " ")}
+          {view.failure_status ? ` (${view.failure_status})` : ""}
+        </p>
+      ) : null}
+      {view?.acknowledged ? <p>Delivered reply acknowledged.</p> : null}
+      {view?.retry_allowed || action.current ? (
+        <div className="space-y-2">
+          {view?.interrupt_supported ? (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={interrupt}
+                disabled={busy || action.current !== null}
+                onChange={(event) => setInterrupt(event.target.checked)}
+              />
+              Interrupt on this retry
+            </label>
+          ) : null}
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={busy}
+            onClick={() => void retry()}
+          >
+            Retry reply
+          </button>
+        </div>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+    </section>
   );
 }
 
