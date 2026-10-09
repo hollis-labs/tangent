@@ -106,6 +106,13 @@ and no shared catalog, and because `internal/smoke` carries no build tag,
 `go test ./...` runs it too. `TANGENT_SMOKE_ENV=1 make smoke` also checks a live
 deployment — see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
+The smoke suite fetches and builds the exact public first-party source commit
+in `tangent-plugins.smoke-ref`, including its manifest-v2 declarations. CI uses
+the same default. `TANGENT_PLUGINS_SRC=<checkout>` is an explicit development
+override. This source fixture does not change the separate operator install
+pin in `tangent-plugins.version`, which still names legacy declarations;
+`make install-plugins` requires a compatible release pin before activation.
+
 Notable suites:
 
 - `internal/server/integration_test.go::TestIntegration_TriageRoundTrip`
