@@ -45,8 +45,10 @@ tangent-plugins `1bbb191b49d80eef6d0f629b907cc36530eb3225`, and Tether
   routable `final|question|approval|failure`, stable output identity, dedicated
   reply acceptance, and separately readable delivery outcomes. An event-bus
   excerpt or staged message is not a committed channel publication.
-- The runner currently imports go-tether-client `v0.8.0`; `0048` owns adoption
-  of `v0.10.0`. That client's channel, capabilities, and reply methods exist,
+- The inspected runner base imports go-tether-client `v0.8.0`; `0048` owns adoption
+  of `v0.10.0`. Its source-only PR 12 subsequently merged at
+  `84c498a76a404aa853c66adf30d7755db5d55c94`, with the public pin verified.
+  That client's channel, capabilities, and reply methods exist,
   including `ReplyDelivery`; neither subscription reconnect nor delivery
   polling is automatic. The old
   [`internal/turns/tetherbridge`](../../internal/turns/tetherbridge/bridge.go)
