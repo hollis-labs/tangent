@@ -30,10 +30,10 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { PageShell } from "../components/layout/PageShell";
+import { useUiChannelAttachment } from "../hooks/useUiCommands";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
 import { fetchRoomState } from "../lib/rooms-api";
 import {
@@ -59,6 +59,7 @@ export default function Room({
 } = {}) {
   const { roomID: routeRoomID } = useParams<{ roomID: string }>();
   const roomID = suppliedRoomID ?? routeRoomID;
+  const attachUi = useUiChannelAttachment();
   const [pending, setPending] = useState<Pending | null>(null);
   // True from the moment a response or cancel goes out until the server either
   // presents something new or refuses it. The renderer stays mounted for the
@@ -146,13 +147,15 @@ export default function Room({
         setError(err.message);
       },
     });
+    const detachUi = client.uiTransport ? attachUi(client.uiTransport) : () => {};
     const lifecycle = createRoomLifecycle(initialRoomRef.current, client);
     lifecycleRef.current = lifecycle;
     return () => {
+      detachUi();
       lifecycle.dispose();
       lifecycleRef.current = null;
     };
-  }, []);
+  }, [attachUi]);
 
   useEffect(() => {
     if (!roomID || !lifecycleRef.current) {
