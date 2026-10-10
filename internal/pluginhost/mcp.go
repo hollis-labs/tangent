@@ -25,9 +25,8 @@ import (
 //
 // So RegisterMCPTool is Tangent's extension, and it takes the handler
 // explicitly rather than type-asserting the plugin. That is not ceremony: the
-// SDK passes no caller identity to a registration call, so this host genuinely
-// does not know which plugin is calling — the same reason RegisterUIComponent
-// reports a kind collision by component name and not by plugin id.
+// scoped host supplied to Load binds the registration to its actual owner;
+// direct registrations on Host itself remain host-owned.
 //
 // # What a plugin cannot do here
 //
@@ -83,7 +82,8 @@ type MCPTool = plugin.MCPTool
 // because a plugin-contributed envelope kind has to be in the registry the MCP
 // server reads at construction. Registration and installation are therefore two
 // steps, and this is the first one.
-func (h *Host) RegisterMCPTool(tool MCPTool) error {
+func (h *Host) RegisterMCPTool(tool MCPTool) error { return h.registerMCPTool(tool, nil) }
+func (h *Host) registerMCPTool(tool MCPTool, owner *registrationOwner) error {
 	if tool.Name == "" {
 		return fmt.Errorf("%w: tool has no name", ErrInvalidTool)
 	}
@@ -118,6 +118,9 @@ func (h *Host) RegisterMCPTool(tool MCPTool) error {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if owner != nil && !h.currentOwnerLocked(owner) {
+		return ErrPluginNotLoaded
+	}
 	if _, claimed := h.tools[tool.Name]; claimed {
 		return fmt.Errorf("%w: %s", ErrToolNameClaimed, tool.Name)
 	}
@@ -126,9 +129,17 @@ func (h *Host) RegisterMCPTool(tool MCPTool) error {
 	// to remember to do it. See isolation.go for what the guard promises — and
 	// for the one thing it does not, which is that the plugin stopped.
 	tool.Handler = guardedMCPHandler{
-		name: tool.Name, release: h.release, budget: h.budget, inner: tool.Handler,
+		name: tool.Name, release: h.release, budget: h.budget, inner: tool.Handler, owner: owner,
+	}
+	if h.toolRegistry != nil {
+		if err := h.toolRegistry.AddPluginTool(tool); err != nil {
+			return err
+		}
 	}
 	h.tools[tool.Name] = tool
+	if owner != nil {
+		h.toolOwners[tool.Name] = owner
+	}
 	h.logger.Info("pluginhost: mcp tool contributed", "tool", tool.Name)
 	return nil
 }

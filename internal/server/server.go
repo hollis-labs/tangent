@@ -128,6 +128,7 @@ type Config struct {
 	// /api/plugins/ prefix, behind the same guards every other browser API
 	// route uses. Empty is the normal state; see plugin_routes.go.
 	PluginRoutes []pluginhost.HTTPRoute
+	PluginHost   *pluginhost.Host
 
 	// PluginHostInstance is the shared plugin lifecycle epoch. Production boot
 	// supplies it; standalone servers create a fresh epoch when it is absent.
@@ -171,6 +172,7 @@ type Server struct {
 	// actually did rather than a hand-maintained list that drifts the way
 	// #37's route did — see ParticipantRoutes.
 	participantRoutes []ParticipantRoute
+	cfgPluginHost     *pluginhost.Host
 }
 
 // ParticipantRoute names one HTTP route requireParticipant gates, and the
@@ -194,7 +196,13 @@ type ParticipantRoute struct {
 // up, present and future, with no per-route test and no hand-maintained
 // list to drift.
 func (s *Server) ParticipantRoutes() []ParticipantRoute {
-	return s.participantRoutes
+	out := append([]ParticipantRoute(nil), s.participantRoutes...)
+	if s.cfgPluginHost != nil {
+		for _, route := range s.cfgPluginHost.HTTPRoutes() {
+			out = append(out, ParticipantRoute{Pattern: route.Pattern(), Capability: route.Capability})
+		}
+	}
+	return out
 }
 
 // registerParticipantRoute wires pattern to handler behind the same
@@ -466,6 +474,7 @@ func New(cfg Config) (*Server, error) {
 		httpS:             httpS,
 		envelope:          cfg.Envelope,
 		participantRoutes: participantRoutes,
+		cfgPluginHost:     cfg.PluginHost,
 	}, nil
 }
 

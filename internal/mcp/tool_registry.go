@@ -263,6 +263,8 @@ func (s *Server) isToolNameClaimed(name string) bool { return s.claimedTools[nam
 // plugin host's contributed set, a document, another build — without anyone
 // writing the surface down. internal/smoke uses it for exactly that.
 func (s *Server) ToolNames() []string {
+	s.pluginMu.RLock()
+	defer s.pluginMu.RUnlock()
 	names := make([]string, 0, len(s.claimedTools))
 	for name := range s.claimedTools {
 		names = append(names, name)

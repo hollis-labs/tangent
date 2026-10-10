@@ -330,8 +330,8 @@ required.
 
 ## Configuration, secrets, lifecycle and enable/disable
 
-Four questions every plugin author asks. All four are answered, and three of the
-answers are a refusal with a reason (`CW-20260910-0036`).
+The host owns lifecycle intent and registration custody; a plugin still owns
+its configuration and credentials.
 
 ### Your plugin reads its own environment. The host holds no config.
 
@@ -349,53 +349,39 @@ variables after your plugin and document them where an operator will look. Your
 process inherits the environment of the `tangent` that spawns it, so that is
 where an operator sets them.
 
-### Unload drops your state and unregisters nothing
+### Unload withdraws exactly your load owner's registrations
 
-That is the host's contract, in `internal/pluginhost/lifecycle.go`, and not a
-decision each plugin makes. An envelope kind cannot be removed because
-go-envelopes' registry is boot-time and has no removal at all; a contributed
-tool or route cannot be removed because the SDK passes no caller identity to a
-registration call, so the host does not know which plugin registered which
-surface and has nothing to select.
+Load receives a scoped host handle. Registrations through it belong to that
+load, not to a guessed identity derived from a tool or component name. Unload
+fences the handle and dispatches, sweeps owned tools/routes/contributed kinds,
+and stops the child. A late registration from the old handle is refused.
+Versioned material for pinned interactions remains; core kinds and other
+plugins' registrations are untouched. Release your own clients and join your
+workers in `Unload` so the shared driver's bounded graceful teardown succeeds.
 
-Your `Unload` therefore drops what you hold — a cached host handle, a client, a
-status — and nothing else. A tool whose plugin has unloaded still dispatches,
-into a plugin that now answers "not loaded"; a readable refusal beats a surface
-that answers nothing. The host calls `UnloadAll` on the way out of the process.
+### Enable intent survives restart; reload obtains a fresh owner
 
-The first host shipped a load-failure cleanup path that could not have worked —
-it looked like a rollback and removed nothing. Refusing honestly is what
-replaced it.
+The host's `.state/enabled.json` stores enabled booleans only. The participant
+management API can enable, disable and reload an installed plugin. Reload first
+stops and sweeps the old owner, then re-verifies and snapshots the installed
+artifact. A fresh process receives a fresh incarnation and generation. Failure
+does not leave the old registration live or masquerade as readiness.
 
-### There is no enable/disable flag, deliberately
+### A defect in your plugin is contained
 
-The enable set is the plugin directory: installed is enabled, removed is not,
-and `tangent` reads it at startup, so `tangent plugin install` / `remove` and a
-restart is how it changes. Nothing has a caller for a runtime toggle. Tether's catalog has the flag and the
-failure mode that came with it — an entry marked enabled but unreachable stalls
-its proxy for 120 seconds — and the way not to inherit that is not to build the
-flag until something needs it.
-
-### A defect in your plugin is contained, not tolerated
-
-Every contributed tool and route is wrapped at registration
-(`internal/pluginhost/isolation.go`). A panic comes back as a named refusal
-rather than taking the host down, and a call that does not return within its
-dispatch budget is abandoned — the *caller* is released. Your process is
-separate, so a crash is contained and restarted with backoff (at most three
-attempts), and calls are gated on your health. Shutdown releases every
-in-flight dispatch at once rather than waiting out the budget.
-
-None of that makes a hang cheap. An abandoned call keeps running in your
-process until it finishes, and `tangent.health_report` will not tell you about
-it. Honor your context.
+Tools and routes remain bounded and panic-contained. Exhausting the dispatch
+budget trips the owner's circuit, fences new dispatch and tears down its child.
+Caller cancellation alone does not trip the circuit. Honor cancellation and
+join workers: graceful drain errors stay visible even when the driver contains
+and reaps an uncooperative process. Crash recovery retains its bounded policy;
+intentional disable does not restart the child.
 
 ### Being legible
 
-`tangent.health_report` carries a plugin inventory: which plugins loaded, which
-refused and why, and what was contributed between them. The contributed lists
-are host-wide and not attributed to a plugin, for the same reason `Unload`
-cannot unregister — the host does not know who registered what.
+`tangent.health_report` and the lifecycle management API report desired enable
+intent separately from actual loaded/failed state. Failed startup and quarantined
+owners remain visible. Contributed surfaces are attributed to their load owner;
+direct host registrations remain host-owned.
 
 ## Stop and report rather than working around
 

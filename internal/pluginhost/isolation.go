@@ -9,44 +9,12 @@ import (
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 )
 
-// This file is the failure-isolation boundary (CW-20260910-0036).
-//
-// # The requirement, and why it is the host's job
-//
-// A plugin that panics, hangs, or returns garbage must not take down the host,
-// corrupt the tool surface, or block shutdown. Two of those three already had
-// an answer in this build: internal/mcp recovers a panicking tool handler and
-// internal/server recovers a panicking route handler, each at the layer that
-// dispatches it.
-//
-// Neither bounded a hang, and a hang is the one that reaches shutdown.
-// CW-20260909-0045 is the prior art and it is worth reading before changing
-// anything here: a single /sse stream that nothing bounded held graceful
-// shutdown past its deadline, so the exiting process still owned the database
-// when its successor booted. A plugin handler that never returns is the same
-// shape of defect with a different name on it.
-//
-// So the guard lives here rather than at the two dispatch sites. Wrapping at
-// *registration* means a handler is bounded before anything can call it, it is
-// bounded identically on both surfaces, and neither internal/mcp nor
-// internal/server has to remember to do it — including whichever surface is
-// added next. The recovery at those two sites stays where it is; a boundary
-// worth having is worth having twice.
-//
-// # What the guard promises, stated exactly
-//
-// It promises the CALLER returns. It does not promise the plugin stopped.
-//
-// A compiled-in plugin shares this process and its goroutines, and Go has no
-// way to interrupt one that ignores its context. So a blown budget leaves the
-// plugin's goroutine running and returns a refusal to the caller anyway. That
-// leak is the honest cost and it is bounded by how often a plugin hangs, which
-// is a defect either way; the alternative is waiting forever on it, which is
-// the failure this exists to prevent. CW-20260910-0034's subprocess mode is
-// what turns "the goroutine leaked" into "the process was killed".
-//
-// # The two budgets
-//
+// Dispatch guards bound callers and contain panics. Owned registrations trip
+// their owner's circuit when the host budget expires: new admission is fenced
+// immediately and the subprocess is torn down through the shared driver. A
+// compiled-in test adapter's uncooperative goroutine cannot be forcibly stopped;
+// quarantine prevents additional work. Caller cancellation is not a defect.
+
 // dispatchBudget bounds one ordinary call. shutdownRelease is not a budget at
 // all — it is the host's own done channel, closed by UnloadAll, and it releases
 // every in-flight dispatch at once. Without it a shutdown arriving one second
@@ -65,7 +33,7 @@ import (
 const dispatchBudget = 30 * time.Second
 
 // ErrDispatchBudget reports a plugin handler that did not return within
-// dispatchBudget. The caller is released; the plugin's goroutine is not.
+// dispatchBudget. Owned plugin admission is fenced before teardown.
 var ErrDispatchBudget = errors.New("pluginhost: plugin handler exceeded its dispatch budget")
 
 // ErrHostShuttingDown reports a dispatch released early because the host is
@@ -116,6 +84,12 @@ func guarded[T any](
 	var zero T
 	select {
 	case result := <-results:
+		if ctx.Err() != nil {
+			return zero, fmt.Errorf("%s: %w", subject, ctx.Err())
+		}
+		if errors.Is(bounded.Err(), context.DeadlineExceeded) {
+			return zero, fmt.Errorf("%w: %s did not return within %s", ErrDispatchBudget, subject, budget)
+		}
 		return result.value, result.err
 	case <-release:
 		return zero, fmt.Errorf("%w: %s was still running and was not waited on", ErrHostShuttingDown, subject)
@@ -143,13 +117,14 @@ type guardedMCPHandler struct {
 	release <-chan struct{}
 	budget  time.Duration
 	inner   subprocess.MCPHandler
+	owner   *registrationOwner
 }
 
 func (g guardedMCPHandler) MCPCallTool(
 	ctx context.Context,
 	request subprocess.MCPCallRequest,
 ) (subprocess.MCPCallResult, error) {
-	return guarded(ctx, g.release, "plugin tool "+g.name, g.budget,
+	return ownedGuard(ctx, g.owner, g.release, "plugin tool "+g.name, g.budget,
 		func(bounded context.Context) (subprocess.MCPCallResult, error) {
 			return g.inner.MCPCallTool(bounded, request)
 		})
@@ -162,14 +137,37 @@ type guardedHTTPHandler struct {
 	release <-chan struct{}
 	budget  time.Duration
 	inner   subprocess.HTTPHandler
+	owner   *registrationOwner
 }
 
 func (g guardedHTTPHandler) HTTPHandle(
 	ctx context.Context,
 	request subprocess.HTTPRequest,
 ) (subprocess.HTTPResponse, error) {
-	return guarded(ctx, g.release, "plugin route "+g.pattern, g.budget,
+	return ownedGuard(ctx, g.owner, g.release, "plugin route "+g.pattern, g.budget,
 		func(bounded context.Context) (subprocess.HTTPResponse, error) {
 			return g.inner.HTTPHandle(bounded, request)
 		})
+}
+
+func ownedGuard[T any](ctx context.Context, owner *registrationOwner, release <-chan struct{}, subject string, budget time.Duration, call func(context.Context) (T, error)) (T, error) {
+	if owner == nil {
+		return guarded(ctx, release, subject, budget, call)
+	}
+	var zero T
+	if !owner.available() {
+		return zero, ErrPluginNotLoaded
+	}
+	bounded, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(owner.ctx, cancel)
+	defer stop()
+	defer cancel()
+	value, err := guarded(bounded, release, subject, budget, call)
+	if errors.Is(err, ErrDispatchBudget) {
+		owner.trip(err)
+	}
+	if owner.ctx.Err() != nil && err == nil {
+		return zero, ErrPluginNotLoaded
+	}
+	return value, err
 }

@@ -11,49 +11,9 @@ import (
 	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
 )
 
-// This file is the host's lifecycle contract and its plugin inventory
-// (CW-20260910-0036).
-//
-// # Unload refuses honestly rather than pretending
-//
-// The SDK's Plugin contract has Load, Unload and Status; before this the host
-// called only Load. The reason was never laziness, and it is worth stating as
-// the contract rather than leaving each plugin to rediscover it in a comment:
-//
-//	**Nothing a plugin registered is removed by unloading it.** An envelope
-//	kind cannot be removed, because go-envelopes' registry is boot-time and
-//	has no removal at all. A contributed MCP tool and a contributed HTTP route
-//	cannot be removed either, for a different and equally real reason: the SDK
-//	passes no caller identity to a registration call, so this host does not
-//	know which plugin registered which tool and has nothing to select.
-//
-// The first host shipped a load-failure cleanup path that could not have
-// worked — it looked like a rollback and removed nothing. That is the specific
-// failure this contract exists to prevent, and it is why the answer is a stated
-// refusal rather than a best-effort removal loop.
-//
-// So Unload means exactly one thing: the plugin drops its own state and comes
-// off this host's roster, so GetPlugin stops handing it out. Both shipped
-// plugins already did that; what was missing was the host saying it, and a test
-// holding it.
-//
-// The registrations that stay behind are not orphans. A contributed tool whose
-// plugin has unloaded still dispatches — into a plugin that now answers "not
-// loaded", which is a refusal a caller can read. A surface that answered
-// nothing at all would be worse.
-//
-// # A plugin that should not be present is one that is not loaded at boot
-//
-// Which is why there is no enable/disable flag here, and its absence is a
-// decision rather than an omission. For compiled-in plugins the enable set is
-// internal/plugins/shipped.go — one file, readable, changed by a rebuild — and
-// nothing in this build has a caller for a runtime toggle. Tether's catalog has
-// the flag and a documented failure mode that comes with it: an entry marked
-// enabled but unreachable stalls its proxy for 120 seconds. The way not to
-// inherit that is not to build the flag until a consumer asks, which is also
-// what ADR 0007 §4 says about implementing a surface the SDK offers.
-// CW-20260910-0036 records the deferral; docs/writing-a-plugin.md carries it
-// where a plugin author will meet it.
+// Lifecycle operations sweep registrations by exact load owner. Enable intent
+// is host-owned and independent of plugin configuration; live surfaces reflect
+// removal immediately, while pinned interaction material remains retained.
 
 // ErrPluginNotLoaded reports an Unload naming a plugin this host does not hold.
 var ErrPluginNotLoaded = errors.New("pluginhost: plugin is not loaded")
@@ -87,6 +47,11 @@ func (h *Host) recordAttempt(p plugin.Plugin, id string, err error) {
 	}
 	h.mu.Lock()
 	h.attempts = append(h.attempts, attempt)
+	if err == nil {
+		if owner := h.owners[id]; owner != nil {
+			owner.ready = true
+		}
+	}
 	h.mu.Unlock()
 }
 
@@ -136,24 +101,57 @@ func safeString(read func() string) (value string) {
 // Unload drops one plugin from this host's roster and calls its Unload so it
 // can release its own state.
 //
-// It removes nothing the plugin registered. See this file's header for why that
-// is the contract rather than a limitation being worked around, and
-// TestUnloadRemovesNothingThePluginRegistered for the test that holds it.
+// The load owner is fenced and its registrations swept before plugin teardown.
+// Unattributed direct host registrations remain host-owned.
 func (h *Host) Unload(id string) error {
+	h.ops.Lock()
+	defer h.ops.Unlock()
+	return h.unload(id)
+}
+
+func (h *Host) unload(id string) error {
 	h.mu.Lock()
 	p, loaded := h.loaded[id]
 	if !loaded {
 		h.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrPluginNotLoaded, id)
 	}
-	delete(h.loaded, id)
-	h.mu.Unlock()
-
-	if err := unloadSafely(p); err != nil {
-		return fmt.Errorf("pluginhost: unload %s: %w", id, err)
+	owner := h.owners[id]
+	if owner != nil {
+		owner.cancel()
 	}
-	h.logger.Info("pluginhost: plugin unloaded", "plugin", id)
-	return nil
+	delete(h.loaded, id)
+	delete(h.owners, id)
+	for name, held := range h.toolOwners {
+		if held == owner {
+			delete(h.tools, name)
+			delete(h.toolOwners, name)
+			if h.toolRegistry != nil {
+				h.toolRegistry.RemovePluginTools(name)
+			}
+		}
+	}
+	for name, held := range h.routeOwners {
+		if held == owner {
+			delete(h.routes, name)
+			delete(h.routeOwners, name)
+		}
+	}
+	var errs []error
+	for name, held := range h.kindOwners {
+		if held == owner {
+			if err := h.envSvc.RemoveContributedKind(name); err != nil {
+				errs = append(errs, err)
+			}
+			delete(h.kinds, name)
+			delete(h.kindOwners, name)
+		}
+	}
+	h.mu.Unlock()
+	if err := unloadSafely(p); err != nil {
+		errs = append(errs, fmt.Errorf("pluginhost: unload %s: %w", id, err))
+	}
+	return errors.Join(errs...)
 }
 
 // UnloadAll releases every in-flight dispatch and unloads every plugin.
@@ -254,7 +252,8 @@ type PluginRecord struct {
 	Loaded bool `json:"loaded"`
 	// Enabled is the plugin's own answer, and is false for a plugin that is
 	// not loaded.
-	Enabled bool `json:"enabled"`
+	Enabled bool   `json:"enabled"`
+	State   string `json:"state"`
 	// At is when the host recorded the load attempt, successful or not.
 	At time.Time `json:"at"`
 	// Error describes an initial refused load only. RuntimeError describes
@@ -328,8 +327,7 @@ type PluginInventory struct {
 }
 
 // attributionNote is the one sentence every inventory carries.
-const attributionNote = "contributed kinds, tools and routes are host-wide: the plugin SDK " +
-	"passes no caller identity to a registration call, so this host cannot attribute them to a plugin"
+const attributionNote = "plugin Load receives an owner-scoped host; registrations are swept by exact load owner, while direct host registrations remain host-owned"
 
 // Inventory reports which plugins loaded, which refused and why, and what they
 // contributed between them.
@@ -350,10 +348,39 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	attempts := make([]*loadAttempt, len(h.attempts))
 	copy(attempts, h.attempts)
 	stillLoaded := map[string]bool{}
+	loading := map[string]bool{}
 	for id := range h.loaded {
-		stillLoaded[id] = true
+		owner := h.owners[id]
+		stillLoaded[id] = owner != nil && owner.ready
+		loading[id] = !stillLoaded[id]
+	}
+	intent := map[string]bool{}
+	faults := map[string]string{}
+	for id := range h.factories {
+		intent[id] = true
+	}
+	for id, enabled := range h.intent {
+		intent[id] = enabled
+	}
+	for id, fault := range h.faults {
+		faults[id] = fault
 	}
 	h.mu.Unlock()
+	// Inventory is current state, not a repetition of every historical attempt.
+	latest := map[string]*loadAttempt{}
+	for _, attempt := range attempts {
+		latest[attempt.id] = attempt
+	}
+	for id := range intent {
+		if latest[id] == nil {
+			latest[id] = &loadAttempt{id: id}
+		}
+	}
+	attempts = attempts[:0]
+	for _, attempt := range latest {
+		attempts = append(attempts, attempt)
+	}
+	sort.Slice(attempts, func(i, j int) bool { return attempts[i].id < attempts[j].id })
 
 	health := probeHealthConcurrently(ctx, attempts, stillLoaded)
 
@@ -385,7 +412,7 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 			Error:   attempt.err,
 		}
 		if record.Loaded && attempt.p != nil {
-			record.Enabled = safeStatus(attempt.p).Enabled
+			record.Enabled = true
 			record.Restarts = safeRestarts(attempt.p)
 			record.Exhausted = safeExhausted(attempt.p)
 			if reporter, ok := attempt.p.(interface{ RuntimeFailure() string }); ok {
@@ -398,6 +425,27 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 			record.Healthy = &healthy
 			record.HealthMessage = probed.message
 			record.HealthCheckedAt = probed.checked
+		}
+		if enabled, known := intent[attempt.id]; known {
+			record.Enabled = enabled
+		}
+		record.State = "disabled"
+		if record.Enabled {
+			record.State = "stopped"
+			if attempt.err != "" {
+				record.State = "failed"
+			}
+		}
+		if record.Loaded {
+			record.State = "running"
+		}
+		if loading[attempt.id] {
+			record.State = "loading"
+		}
+		if fault := faults[attempt.id]; fault != "" {
+			record.RuntimeError = fault
+			record.FailedAfterLoad = true
+			record.State = "quarantined"
 		}
 		if attempt.err != "" {
 			inventory.Refused++
@@ -444,8 +492,7 @@ func probeHealthConcurrently(
 }
 
 // safeProbeHealth calls a plugin's health probe without letting a defect in
-// it fail the whole inventory — the same posture safeStatus already takes
-// toward Status().
+// it fail the whole inventory.
 func safeProbeHealth(ctx context.Context, prober healthProber) (result pluginHealth) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -468,17 +515,6 @@ func safeRestarts(p plugin.Plugin) (count int) {
 		}
 	}()
 	return reporter.Restarts()
-}
-
-// safeStatus reads a plugin's self-reported status without letting a defect in
-// it fail a health report.
-func safeStatus(p plugin.Plugin) (status plugin.PluginStatus) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			status = plugin.PluginStatus{}
-		}
-	}()
-	return p.Status()
 }
 
 func safeExhausted(p plugin.Plugin) (exhausted bool) {

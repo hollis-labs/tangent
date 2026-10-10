@@ -64,45 +64,9 @@ const (
 // hints keep the host's conservative defaults; effect is not inferred from hints.
 func (s *Server) registerPluginTools() error {
 	for _, tool := range s.pluginTools {
-		if s.isToolNameClaimed(tool.Name) {
-			// Refused before the claim rather than reported as a generic
-			// conflict afterwards: this collision has a nameable cause and a
-			// clear remedy, and the message should say so.
-			return fmt.Errorf(
-				"plugin tool %s collides with a tool this build already serves; rename the plugin's "+
-					"tool — the MCP SDK's registry would otherwise have kept the plugin's handler and "+
-					"silently shadowed the host's",
-				tool.Name)
-		}
-		s.claimToolName(tool.Name)
-		schema, err := pluginToolSchema(tool)
-		if err != nil {
+		if err := s.AddPluginTool(tool); err != nil {
 			return err
 		}
-		registered := gmcpserver.Tool{
-			Name:            tool.Name,
-			Description:     tool.Description,
-			InputSchema:     schema,
-			Handler:         pluginToolHandler(tool),
-			DestructiveHint: true,
-			OpenWorldHint:   true,
-		}
-		if a := tool.Annotations; a != nil {
-			registered.Title = a.Title
-			if a.ReadOnlyHint != nil {
-				registered.ReadOnlyHint = *a.ReadOnlyHint
-			}
-			if a.DestructiveHint != nil {
-				registered.DestructiveHint = *a.DestructiveHint
-			}
-			if a.IdempotentHint != nil {
-				registered.IdempotentHint = *a.IdempotentHint
-			}
-			if a.OpenWorldHint != nil {
-				registered.OpenWorldHint = *a.OpenWorldHint
-			}
-		}
-		s.mcp.RegisterTool(registered)
 	}
 	return nil
 }
@@ -131,6 +95,7 @@ func pluginToolSchema(tool pluginhost.MCPTool) (*jsonschema.Schema, error) {
 // at registration. A bad-arguments failure therefore never reaches here.
 func pluginToolHandler(
 	tool pluginhost.MCPTool,
+	resolved *jsonschema.Resolved,
 ) gmcpserver.ToolHandler {
 	return func(
 		ctx context.Context,
@@ -153,6 +118,16 @@ func pluginToolHandler(
 			// schema with no required properties accepts a call that passed
 			// none — which is what every other tool on this surface does.
 			arguments = map[string]any{}
+		}
+
+		// A call racing removal/reload may have passed middleware using the
+		// previous schema. Validate against this captured handler's schema too;
+		// a replacement cannot inherit admission validated for another owner.
+		if err := resolved.ApplyDefaults(&arguments); err != nil {
+			return nil, toolErrorResult("INVALID_ARGUMENTS", err.Error())
+		}
+		if err := resolved.Validate(arguments); err != nil {
+			return nil, toolErrorResult("INVALID_ARGUMENTS", err.Error())
 		}
 
 		// SessionID is deliberately empty. Tangent's MCP transports run
@@ -191,5 +166,78 @@ func pluginToolHandler(
 			}
 		}
 		return body, nil
+	}
+}
+
+// AddPluginTool updates the served MCP registry after validating the schema.
+func (s *Server) AddPluginTool(tool pluginhost.MCPTool) error {
+	s.pluginMu.Lock()
+	defer s.pluginMu.Unlock()
+
+	if s.isToolNameClaimed(tool.Name) {
+		// Refused before the claim rather than reported as a generic
+		// conflict afterwards: this collision has a nameable cause and a
+		// clear remedy, and the message should say so.
+		return fmt.Errorf(
+			"plugin tool %s collides with a tool this build already serves; rename the plugin's "+
+				"tool — the MCP SDK's registry would otherwise have kept the plugin's handler and "+
+				"silently shadowed the host's",
+			tool.Name)
+	}
+	schema, err := pluginToolSchema(tool)
+	if err != nil {
+		return err
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return fmt.Errorf("resolve input schema for %s: %w", tool.Name, err)
+	}
+	if s.resolvedSchemas == nil {
+		s.resolvedSchemas = map[string]*jsonschema.Resolved{}
+	}
+	s.resolvedSchemas[tool.Name] = resolved
+	s.claimToolName(tool.Name)
+	registered := gmcpserver.Tool{
+		Name:            tool.Name,
+		Description:     tool.Description,
+		InputSchema:     schema,
+		Handler:         pluginToolHandler(tool, resolved),
+		DestructiveHint: true,
+		OpenWorldHint:   true,
+	}
+	if a := tool.Annotations; a != nil {
+		registered.Title = a.Title
+		if a.ReadOnlyHint != nil {
+			registered.ReadOnlyHint = *a.ReadOnlyHint
+		}
+		if a.DestructiveHint != nil {
+			registered.DestructiveHint = *a.DestructiveHint
+		}
+		if a.IdempotentHint != nil {
+			registered.IdempotentHint = *a.IdempotentHint
+		}
+		if a.OpenWorldHint != nil {
+			registered.OpenWorldHint = *a.OpenWorldHint
+		}
+	}
+	s.mcp.RegisterTool(registered)
+	if s.dynamicTools == nil {
+		s.dynamicTools = map[string]bool{}
+	}
+	s.dynamicTools[tool.Name] = true
+	return nil
+}
+
+func (s *Server) RemovePluginTools(names ...string) {
+	s.pluginMu.Lock()
+	defer s.pluginMu.Unlock()
+	for _, name := range names {
+		if !s.dynamicTools[name] {
+			continue
+		}
+		s.mcp.RemoveTools(name)
+		delete(s.claimedTools, name)
+		delete(s.dynamicTools, name)
+		delete(s.resolvedSchemas, name)
 	}
 }
