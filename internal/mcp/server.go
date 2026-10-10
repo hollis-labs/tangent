@@ -25,6 +25,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/roomflow"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 	"github.com/hollis-labs/tangent/internal/turns"
+	"github.com/hollis-labs/tangent/internal/uicommand"
 )
 
 // implementationName / implementationVersion are advertised in the MCP
@@ -96,6 +97,8 @@ type Server struct {
 	channels      *channel.Store
 	relay         *relay.Store
 	relayProvider relay.Provider
+
+	uiCommands *uicommand.Broker
 
 	roomflowOptions []roomflow.Option
 
@@ -698,6 +701,9 @@ func (s *Server) registerTools() error {
 	// embedder without the substrate still needs to be able to ask why a kind
 	// is not being served.
 	if err := s.registerDefinitionTools(); err != nil {
+		return err
+	}
+	if err := s.registerUICommandTools(); err != nil {
 		return err
 	}
 	if err := s.registerHealthTool(); err != nil {

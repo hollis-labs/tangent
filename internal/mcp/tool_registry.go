@@ -112,6 +112,14 @@ var toolAnnotationTable = map[string]toolHints{
 	"tangent.session_close":            {Destructive: true, Idempotent: true},
 	"tangent.session_list":             {ReadOnly: true},
 
+	"tangent.view_get":        {ReadOnly: true},
+	"tangent.ui_navigate":     {},
+	"tangent.ui_open_modal":   {},
+	"tangent.ui_close_modal":  {},
+	"tangent.ui_open_drawer":  {},
+	"tangent.ui_close_drawer": {},
+	"tangent.ui_focus_item":   {},
+
 	// Catalog and registry diagnostics.
 	"tangent.list_workflows":                  {ReadOnly: true},
 	"tangent.definition_registry_list":        {ReadOnly: true},

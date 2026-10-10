@@ -221,7 +221,14 @@ sessions can have active Tangent windows concurrently without cross-talk.
 CW-20261009-0086 adds a bounded descriptor store and command/ack broker over
 the existing room WebSocket. Production leaves the verified conversation and
 attachment authority seam unwired; agent reads and commands default to refusal.
-React adoption and MCP exposure are separate work. See
+React adoption and the MCP source adapter are implemented. The MCP surface includes
+`tangent.view_get`, `tangent.ui_navigate`, `tangent.ui_open_modal`,
+`tangent.ui_close_modal`, `tangent.ui_open_drawer`, `tangent.ui_close_drawer`,
+and `tangent.ui_focus_item`. Only core-owned schemas install handlers; the
+current view must still declare the command and participant control must be
+enabled. Missing production composition returns `ui_unavailable`; an injected
+broker without verified authority returns `ui_forbidden`. Browser acknowledgements
+are returned unchanged; timeout is an explicit tool error, never applied success. See
 [host UI commands](ui-commands.md) for frames, limits and the fresh per-turn
 view-observation projection. Drafts remain pull-only.
 

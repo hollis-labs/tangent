@@ -108,8 +108,8 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 }
 
 // TestServer_ListsBaseToolSurface asserts the tool surface a server booted
-// without the durable interaction substrate exposes: the 25 legacy and session
-// tools callers integrate against, plus the 3 definition-registry diagnostics,
+// without the durable interaction substrate exposes: the legacy and session
+// tools callers integrate against, plus the definition-registry diagnostics,
 // tangent.health_report, and tangent.telemetry_query, none of which depend on
 // that substrate — an embedder without it still has to be able to ask why a
 // kind is not being served, whether this host is ready to serve at all, and
@@ -123,12 +123,12 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 31 {
+	if len(res.Tools) != 38 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 31 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 38 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	// tangent.app-board is registered unconditionally like every other room
@@ -174,7 +174,14 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 		// Operability probes (CW-20260825-0066): registered unconditionally so
 		// a build without a health reporter answers `health_unavailable`
 		// rather than silently lacking the tool.
-		"tangent.health_report": false,
+		"tangent.health_report":   false,
+		"tangent.view_get":        false,
+		"tangent.ui_navigate":     false,
+		"tangent.ui_open_modal":   false,
+		"tangent.ui_close_modal":  false,
+		"tangent.ui_open_drawer":  false,
+		"tangent.ui_close_drawer": false,
+		"tangent.ui_focus_item":   false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {

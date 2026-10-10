@@ -227,16 +227,20 @@ func (b *Broker) Get(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
 	_, a := b.latest(binding)
 	if a == nil || a.snapshot.Revision == 0 {
+		b.mu.Unlock()
 		return Snapshot{}, ErrNotVisible
 	}
 	// A caller must not be able to mutate the store through returned maps/slices.
 	raw, _ := json.Marshal(a.snapshot)
+	b.mu.Unlock()
 	var detached Snapshot
 	if err := json.Unmarshal(raw, &detached); err != nil {
 		return Snapshot{}, err
+	}
+	if current, err := b.binding(ctx, Read); err != nil || current != binding {
+		return Snapshot{}, ErrForbidden
 	}
 	return detached, nil
 }
@@ -270,6 +274,9 @@ func (b *Broker) Command(ctx context.Context, name string, args json.RawMessage)
 	defer func() { b.mu.Lock(); delete(b.pending, commandID); b.mu.Unlock() }()
 	select {
 	case ack := <-p.result:
+		if current, err := b.binding(ctx, Control); err != nil || current != binding {
+			return Ack{}, ErrForbidden
+		}
 		return ack, nil
 	case <-waitCtx.Done():
 		if ctx.Err() != nil {
@@ -326,6 +333,12 @@ func (b *Broker) startCommand(ctx context.Context, binding Binding, name string,
 	b.pending[frame.CommandID] = p
 	send := a.send
 	b.mu.Unlock()
+	if current, err := b.binding(ctx, Control); err != nil || current != binding {
+		b.mu.Lock()
+		delete(b.pending, frame.CommandID)
+		b.mu.Unlock()
+		return "", pending{}, ErrForbidden
+	}
 	// Trusted senders must respect context and must not synchronously mutate
 	// attachment state. The room sender is a bounded socket write.
 	if err := send(ctx, frame); err != nil {
