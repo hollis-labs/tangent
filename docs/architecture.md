@@ -762,13 +762,16 @@ is contained and reported (`PLUGIN_FAILED` / `PLUGIN_PANICKED` on a tool, a
 `plugin_error` refusal body on a route); one plugin's defect is not every
 caller's outage.
 
-**How a plugin drives Tangent** is one method, `plugin.ToolCaller` (`pkg/plugin`), and
-that narrowness is the decision. A plugin opening a room and keeping it fresh
-is doing what an agent does, so it is the same kind of caller: `mcp.LoopbackCaller`
-connects an in-process MCP client session over the SDK's in-memory transport,
-which means a plugin's calls go through the real tool surface, the real
-middleware, the real schema validation and the same host-assigned caller
-identity as any local MCP caller — no authority an agent does not already have.
+**Native plugin reads** use `plugin.ToolCaller` through an exact load-owner
+capability adapter. Reviewed host policy and a budget are mandatory; the
+shipped composition has no approved provider and refuses these calls. The
+adapter uses the shared capability enforcer and rechecks authority before
+disclosing a read result. Writes remain unsupported without backend commit
+coupling. The composition root's `mcp.LoopbackCaller` still invokes the real
+tool surface, middleware and schema validation; that host handle is not lent
+directly to plugins. Ordinary local HTTP MCP remains a separate advisory
+surface, not authenticated plugin authority. See
+[plugin capabilities](plugin-capabilities.md) for the descriptor and limits.
 A typed facade per need would grow the host one method at a time; `GetService`
 stays unimplemented for the opposite reason, being untyped and unbounded. The
 composition root closes the session alongside the database.
@@ -1281,6 +1284,13 @@ trusting it.
   agent-facing transport. See the Wails note above.
 
 ### Plugin lifecycle and configuration boundary
+
+CW-20261003-0067 adds a closed, default-refusing native tool-read capability
+adapter. Production reviewed grant issuance and genuine caller/runtime binding
+are unavailable. Child Init grants remain explicitly empty, and local HTTP
+MCP labels are advisory. This does not provide a reverse host-service profile,
+write commit coupling, OS sandboxing or multi-host conformance. See
+[plugin capabilities](plugin-capabilities.md).
 
 Plugin loads receive an owner-scoped registration handle. Unload closes that
 owner's admission before removing its MCP tools, HTTP routes and contributed

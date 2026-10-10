@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,13 +13,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
+
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
 
-// These tests hold both flows end to end, against a fake Ledger and the REAL
-// plugin host.
+// These tests hold registration on the real host and workflow mapping against
+// test-owned tool callbacks and a fake Ledger. Native production callback
+// refusal is tested separately; workflow callbacks are not capability grants.
 //
 // The host is real on purpose. A plugin that registers against a hand-written
 // fake host proves only that the fake accepts it; the host is where a tool name
@@ -154,8 +158,19 @@ func (f *fakeTools) names() []string {
 	return out
 }
 
-// wired loads the plugin on the real host and attaches a fake tool surface, the
-// way the composition root attaches the real one after the MCP server exists.
+// workflowToolHost retains the real registration handle but deliberately
+// supplies a test-owned workflow port. It proves business mapping only, not
+// native write authorization or production admission.
+type workflowToolHost struct {
+	Host
+	caller pluginhost.ToolCaller
+}
+
+func (h workflowToolHost) Tools() (pluginhost.ToolCaller, error) { return h.caller, nil }
+
+// wired loads the plugin on the real registration host, then injects the
+// workflow fake into this test's private plugin instance. No host policy or
+// grant is installed, and no production caller bypass is introduced.
 func wired(t *testing.T, fake *fakeLedger) (*Plugin, *fakeTools) {
 	t.Helper()
 	board, host := loadOnRealHost(t, NewClient(fake.server.URL))
@@ -163,7 +178,43 @@ func wired(t *testing.T, fake *fakeLedger) (*Plugin, *fakeTools) {
 	if err := host.AttachToolCaller(tools); err != nil {
 		t.Fatalf("AttachToolCaller: %v", err)
 	}
+	board.mu.Lock()
+	board.host = workflowToolHost{Host: board.host, caller: tools}
+	board.mu.Unlock()
 	return board, tools
+}
+
+// The real native handle must refuse host room writes without reviewed
+// authority. Registration still succeeds; neither host callbacks nor application
+// mutations may be reached through this default-refusing workflow.
+func TestNativeWorkflowRefusesWithoutReviewedHostAuthority(t *testing.T) {
+	fake := startFakeLedger(t, records(1))
+	board, host := loadOnRealHost(t, NewClient(fake.server.URL))
+	tools := newFakeTools()
+	if err := host.AttachToolCaller(tools); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := host.UnloadAll(); err != nil {
+			t.Error(err)
+		}
+	}()
+	_, openErr := board.Open(context.Background(), OpenInput{})
+	_, syncErr := board.Sync(context.Background(), SyncInput{RoomID: "fixture-room"})
+	for _, refusal := range []error{openErr, syncErr} {
+		var failure *capability.Error
+		if !errors.As(refusal, &failure) || failure.Code != capability.CapabilityDenied {
+			t.Fatalf("native workflow = %v, want capability denial", refusal)
+		}
+	}
+	if len(tools.names()) != 0 {
+		t.Fatal("default refusal reached host callback")
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.applied) != 0 {
+		t.Fatal("refused sync changed the application")
+	}
 }
 
 // ── The fake Ledger ───────────────────────────────────────────────────────
