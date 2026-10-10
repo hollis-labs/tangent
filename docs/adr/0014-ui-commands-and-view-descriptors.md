@@ -75,3 +75,13 @@ claiming it from existing manifests or credentials.
 The accepted UI-command and URL rules remain unchanged. No provider call,
 browser command, grant, deployment or live WebSocket operation was performed
 by CW-20261009-0083.
+
+## Host substrate implementation (CW-20261009-0086)
+
+The host descriptor store, closed command registry, participant-targeted room
+WS frames and acknowledgement broker are implemented behind explicit trusted
+binding adapters. Production binding remains unavailable and unwired; there is
+no effectful MCP exposure or React adoption in this slice (0091 and 0090 own
+those). [Host contract](../ui-commands.md) documents finite limits, latest-active
+targeting, default-refusing authority and Nanite per-turn observation projection.
+The source-reconciliation statements above describe the earlier slice-0 tree.

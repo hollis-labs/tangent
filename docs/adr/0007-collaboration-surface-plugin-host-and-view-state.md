@@ -251,6 +251,13 @@ a draft revision under host custody, and is readable by the caller.**
   decision. A draft is what the user is looking at; only a resolution is what
   the user decided.
 
+**Narrow amendment:** [ADR 0014](0014-ui-commands-and-view-descriptors.md)
+adds opt-in participant-bound UI commands with a browser acknowledgement. This
+command channel does not push drafts or descriptor observations to callers;
+those reads remain pull-only. CW-20261009-0086 implements the default-refusing
+host substrate; verified production binding, React adoption and MCP exposure
+are separate prerequisites. See [host contract](../ui-commands.md).
+
 `draft_custody` gains nothing. The manifest format has carried five values
 since `2e2c48a` — `disabled`, `ephemeral`, `browser-local`, `tangent-custodied`,
 `external` (`internal/definition/manifest.go:145`) — and `tangent-custodied` has
