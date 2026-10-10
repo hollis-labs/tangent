@@ -312,7 +312,7 @@ func TestCanceledApplyDoesNotOwnLifecycleGate(t *testing.T) {
 
 func TestConfigRedactionKeepsRawCauseBoundariesUntilDisplay(t *testing.T) {
 	const fixtureValue = "owned-config-value"
-	raw := scrubRawConfigText("TOKEN=S3CR01\nIMPORTANT CAUSE: failed "+secret+"\nFINAL CAUSE: schema migration failed", []string{fixtureValue})
+	raw := scrubRawConfigText("TOKEN=S3CR01\nIMPORTANT CAUSE: failed "+fixtureValue+"\nFINAL CAUSE: schema migration failed", []string{fixtureValue})
 	if strings.Contains(raw, fixtureValue) || strings.Contains(raw, "S3CR01") || !strings.Contains(raw, "\nIMPORTANT CAUSE") {
 		t.Fatalf("raw secret scrub lost cause boundaries: %q", raw)
 	}
