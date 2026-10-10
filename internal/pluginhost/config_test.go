@@ -321,3 +321,40 @@ func TestConfigRedactionKeepsRawCauseBoundariesUntilDisplay(t *testing.T) {
 		t.Fatalf("unsafe or truncated display: %q", display)
 	}
 }
+
+func TestScopedOwnerCannotApplyAnotherPluginConfiguration(t *testing.T) {
+	h, store := ownerConfigFixture(t)
+	registerOwnerConfig(t, store, "one")
+	registerOwnerConfig(t, store, "two")
+	one, two := ownerFixture("one"), ownerFixture("two")
+	if err := h.RegisterFactory("two", func() (sdk.Plugin, error) { return ownerFixture("two"), nil }); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []sdk.Plugin{one, two} {
+		if err := h.Load(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saved := saveOwnerConfig(t, store, "two", pluginconfig.Changes{Set: map[string]any{"channel": "edited"}})
+	// A third-party native plugin can use a structural interface without importing
+	// the internal Host type. Composition methods must not grant that handle
+	// lifecycle authority over another plugin.
+	applier := any(one.handle).(interface {
+		ApplyConfig(context.Context, string, string) error
+	})
+	if err := applier.ApplyConfig(context.Background(), "two", saved.Revision); !errors.Is(err, pluginconfig.ErrRefused) {
+		t.Errorf("native owner applied another plugin configuration: %v", err)
+	}
+	if value, err := two.handle.GetConfig("channel"); err != nil || value != "original" {
+		t.Errorf("another incarnation was replaced: value=%q err=%v", value, err)
+	}
+	if t.Failed() {
+		return
+	}
+	if err := h.ApplyConfig(context.Background(), "two", saved.Revision); err != nil {
+		t.Fatal("host composition could not apply saved configuration", err)
+	}
+	if _, err := two.handle.GetConfig("channel"); err == nil {
+		t.Fatal("host apply retained stale incarnation")
+	}
+}

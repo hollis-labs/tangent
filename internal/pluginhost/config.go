@@ -76,6 +76,12 @@ func (h *ownedHost) ResolveConfiguration(id string) func(context.Context) (plugi
 	}
 }
 
+// ApplyConfig is composition-only. The embedded Host must not let a scoped
+// native plugin obtain lifecycle authority through a structural interface.
+func (*ownedHost) ApplyConfig(context.Context, string, string) error {
+	return pluginconfig.ErrRefused
+}
+
 // ApplyConfig uses the lifecycle operation gate and one exact revision, unlike
 // ordinary Reload which intentionally resolves the current configuration.
 func (h *Host) ApplyConfig(ctx context.Context, id, revision string) error {
