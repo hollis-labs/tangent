@@ -310,16 +310,8 @@ func TestLoadFailureLeavesNoTrace(t *testing.T) {
 	}
 }
 
-// TestPartialRegistrationIsNotRolledBack pins the honest behavior of a plugin
-// that registers one kind and then fails on the next.
-//
-// The plugin comes off the host. The kind it already registered does NOT come
-// out of the envelope registry, because go-envelopes' registry is boot-time and
-// has no removal — faking a rollback would report a registry state that is not
-// the one in force. It does not matter in practice, because the only production
-// caller is plugins.LoadShipped and a failed load fails the boot; it is pinned
-// here so the doc comment saying so cannot quietly stop being true.
-func TestPartialRegistrationIsNotRolledBack(t *testing.T) {
+// Failed startup removes only the kind registered by that exact load owner.
+func TestPartialRegistrationIsRolledBack(t *testing.T) {
 	t.Parallel()
 	host, svc, kind := newContributingHost(t)
 	before := svc.Len()
@@ -337,13 +329,11 @@ func TestPartialRegistrationIsNotRolledBack(t *testing.T) {
 	if _, found := host.GetPlugin("tangent.plugin.halfway"); found {
 		t.Error("a plugin that failed to load is still on the host")
 	}
-	if svc.Len() != before+1 {
-		t.Errorf("registry size = %d, want %d: the first kind registered and cannot be removed",
-			svc.Len(), before+1)
+	if svc.Len() != before {
+		t.Errorf("failed load changed the surviving registry: size %d, want %d", svc.Len(), before)
 	}
-	if _, found := svc.Lookup(kind); !found {
-		t.Error("the successfully registered kind was removed; go-envelopes has no removal, " +
-			"so this would mean the host is reporting a state it cannot produce")
+	if _, found := svc.Lookup(kind); found {
+		t.Error("failed load left its partial kind registration active")
 	}
 }
 

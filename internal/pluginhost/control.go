@@ -17,7 +17,7 @@ import (
 func (h *Host) ConfigureIntent(path string) error {
 	h.ops.Lock()
 	defer h.ops.Unlock()
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- host-selected boolean intent file under the configured install root.
 	var data []byte
 	if err == nil {
 		data, err = io.ReadAll(io.LimitReader(f, 1<<20+1))
@@ -178,7 +178,7 @@ func (h *Host) saveIntent(id string, enabled bool) error {
 			return err
 		}
 		name := f.Name()
-		defer os.Remove(name)
+		defer func() { _ = os.Remove(name) }()
 		if _, err = f.Write(data); err == nil {
 			err = f.Sync()
 		}
@@ -189,7 +189,7 @@ func (h *Host) saveIntent(id string, enabled bool) error {
 		if err = os.Rename(name, path); err != nil {
 			return err
 		}
-		directory, err := os.Open(dir)
+		directory, err := os.Open(dir) // #nosec G304 -- sync the parent of the host-selected intent file.
 		if err != nil {
 			return err
 		}

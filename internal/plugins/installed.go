@@ -85,8 +85,8 @@ func LoadInstalled(
 	if err != nil {
 		return nil, fmt.Errorf("plugins: resolve install root: %w", err)
 	}
-	if err := host.ConfigureIntent(filepath.Join(root, ".state", "enabled.json")); err != nil {
-		return nil, fmt.Errorf("plugins: enabled intent: %w", err)
+	if intentErr := host.ConfigureIntent(filepath.Join(root, ".state", "enabled.json")); intentErr != nil {
+		return nil, fmt.Errorf("plugins: enabled intent: %w", intentErr)
 	}
 	installed, rejected, err := pluginpkg.Scan(root)
 	if err != nil {

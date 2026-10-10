@@ -50,6 +50,7 @@ func (h *Host) recordAttempt(p plugin.Plugin, id string, err error) {
 	if err == nil {
 		if owner := h.owners[id]; owner != nil {
 			owner.ready = true
+			owner.attempt = attempt
 		}
 	}
 	h.mu.Unlock()
@@ -238,11 +239,9 @@ func unloadSafely(p plugin.Plugin) (err error) {
 
 // PluginRecord is one plugin as this host knows it.
 //
-// The split between what the host asserts and what the plugin reports is
-// deliberate and load-bearing. Loaded and Error are the host's own record of
-// whether Load returned; Enabled and LoadedAt are read back from the plugin's
-// Status, because the host has no independent view of them. A report that
-// blended the two would let a plugin claim it loaded when it did not.
+// Loaded, Enabled and State are host-owned facts. Successful startup, desired
+// enabled intent and current availability remain separate, so a failed or
+// quarantined plugin cannot report itself ready.
 type PluginRecord struct {
 	ID      string `json:"id"`
 	Name    string `json:"name,omitempty"`
@@ -250,14 +249,13 @@ type PluginRecord struct {
 	// Loaded is the host's answer: Load was called and returned nil, and the
 	// plugin has not been unloaded since.
 	Loaded bool `json:"loaded"`
-	// Enabled is the plugin's own answer, and is false for a plugin that is
-	// not loaded.
+	// Enabled is durable host intent, independent of current availability.
 	Enabled bool   `json:"enabled"`
 	State   string `json:"state"`
 	// At is when the host recorded the load attempt, successful or not.
 	At time.Time `json:"at"`
 	// Error describes an initial refused load only. RuntimeError describes
-	// unavailability after successful load; registrations remain recorded.
+	// unavailability after successful load.
 	Error           string `json:"error,omitempty"`
 	FailedAfterLoad bool   `json:"failed_after_load,omitempty"`
 	RuntimeError    string `json:"runtime_error,omitempty"`
@@ -302,13 +300,8 @@ type restartReporter interface {
 
 // PluginInventory is what this host loaded and what it refused.
 //
-// The three contributed lists are host-wide and NOT attributed to a plugin.
-// That is not an omission to fix later: plugin_sdk.Host passes no caller
-// identity to a registration call, so this host genuinely does not know which
-// plugin registered which tool, and a report that guessed would be a report
-// that is wrong the first time two plugins contribute the same surface. The
-// same fact is why RegisterUIComponent reports a kind collision by component
-// name rather than by plugin id.
+// The contributed lists aggregate the current surface. Exact owner identity is
+// maintained internally for removal; direct host registrations stay host-owned.
 type PluginInventory struct {
 	Loaded  int `json:"loaded"`
 	Refused int `json:"refused"`
@@ -349,10 +342,14 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	copy(attempts, h.attempts)
 	stillLoaded := map[string]bool{}
 	loading := map[string]bool{}
+	currentAttempts := map[string]*loadAttempt{}
 	for id := range h.loaded {
 		owner := h.owners[id]
 		stillLoaded[id] = owner != nil && owner.ready
 		loading[id] = !stillLoaded[id]
+		if stillLoaded[id] {
+			currentAttempts[id] = owner.attempt
+		}
 	}
 	intent := map[string]bool{}
 	faults := map[string]string{}
@@ -370,6 +367,11 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	latest := map[string]*loadAttempt{}
 	for _, attempt := range attempts {
 		latest[attempt.id] = attempt
+	}
+	for id, attempt := range currentAttempts {
+		if attempt != nil {
+			latest[id] = attempt
+		}
 	}
 	for id := range intent {
 		if latest[id] == nil {
@@ -439,13 +441,18 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 		if record.Loaded {
 			record.State = "running"
 		}
+		if record.Enabled && record.FailedAfterLoad {
+			record.State = "failed"
+		}
 		if loading[attempt.id] {
 			record.State = "loading"
 		}
 		if fault := faults[attempt.id]; fault != "" {
 			record.RuntimeError = fault
 			record.FailedAfterLoad = true
-			record.State = "quarantined"
+			if record.Enabled {
+				record.State = "quarantined"
+			}
 		}
 		if attempt.err != "" {
 			inventory.Refused++
