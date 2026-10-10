@@ -64,15 +64,9 @@ func (p *lifecyclePlugin) Unload() error {
 
 func (p *lifecyclePlugin) Status() plugin.PluginStatus { return p.status }
 
-// TestUnloadRemovesNothingThePluginRegistered is the lifecycle contract itself.
-//
-// It is the most important test in this file, because the behavior it pins
-// looks like a bug to a reader who has not read lifecycle.go. go-envelopes has
-// no registry removal and the SDK passes no caller identity to a registration
-// call, so a host that appeared to unregister would be reporting a registry
-// state that is not the one in force — which is what the first host's
-// load-failure cleanup path did.
-func TestUnloadRemovesNothingThePluginRegistered(t *testing.T) {
+// Direct calls on Host are host-owned, not inferred to belong to the last
+// plugin loaded. A scoped plugin's actual registrations are covered separately.
+func TestUnloadPreservesDirectHostRegistrations(t *testing.T) {
 	host, svc, kind := newContributingHost(t)
 
 	p := &lifecyclePlugin{id: "tangent.plugin.lifecycle"}
@@ -102,12 +96,11 @@ func TestUnloadRemovesNothingThePluginRegistered(t *testing.T) {
 		t.Error("an unloaded plugin is still on the roster; GetPlugin would hand it to a dependent")
 	}
 	if _, registered := svc.Lookup(kind); !registered {
-		t.Errorf("%s left the envelope registry on unload; go-envelopes has no removal, so a host "+
-			"that reported one would be reporting a registry state that is not in force", kind)
+		t.Errorf("%s left the envelope registry on unload; the registration was made directly by the host, not this plugin", kind)
 	}
 	if len(host.MCPTools()) != 1 {
 		t.Error("a contributed tool was dropped on unload; the host cannot attribute one to a " +
-			"plugin, so it has nothing to select for removal")
+			"plugin from a preceding unrelated direct registration")
 	}
 	if len(host.HTTPRoutes()) != 1 {
 		t.Error("a contributed route was dropped on unload, for the same reason")

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -284,20 +284,26 @@ describe("<TurnsInboxRoute>", () => {
     const fetchMock = createFetchRouter(mockInbox([item1]));
     vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
-    render(
-      <MemoryRouter initialEntries={["/turns/items/turn-shortcut"]}>
-        <Routes>
-          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    // Complete initial fetches and the active-item composer reset before typing.
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={["/turns/items/turn-shortcut"]}>
+          <Routes>
+            <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
 
     expect(
       await screen.findByRole("heading", { name: "Title for turn-shortcut" }),
     ).toBeInTheDocument();
 
     const textarea = screen.getByPlaceholderText("Type your guidance or decision for the agent...");
-    fireEvent.change(textarea, { target: { value: "Quick reply via shortcut" } });
+    fireEvent.change(textarea, {
+      target: { value: "Quick reply via shortcut" },
+    });
+    expect(textarea).toHaveValue("Quick reply via shortcut");
     fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
 
     await waitFor(() => {

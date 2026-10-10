@@ -716,8 +716,8 @@ Follow the activation prerequisites and installation order in
 protocol-2 builds whose strict decoder predates `context` must be rebuilt
 before they can load.
 Local MCP callbacks remain the existing plugin-to-host path; empty grants do
-not claim enforcement over that local caller's authority. Duplex host RPC,
-durable enabled intent and attributable registration removal remain later work.
+not claim enforcement over that local caller's authority. Duplex host RPC remains separate. Enable intent is persisted independently of
+plugin configuration; registrations belong to their exact load owner.
 
 **Two more surfaces extend the SDK's base contract** (`internal/pluginhost/mcp.go`,
 `internal/pluginhost/http.go`). The SDK's `Host` carries neither, and says in as
@@ -751,9 +751,11 @@ nothing a plugin author writes is Tangent-shaped.
   `Set-Cookie` never crosses it outbound; both directions are allowlisted, and
   a dropped response header is logged by name.
 
-Both surfaces are recorded at plugin load and installed later —
-`mcp.WithPluginTools`, `server.Config.PluginRoutes` — because plugins load
-before the MCP and HTTP servers exist: a plugin-contributed envelope kind has
+Both surfaces are recorded through an owner-scoped host at plugin load.
+The composition root attaches the live MCP registry, and HTTP requests resolve
+the current route map behind participant guards, so disable/reload changes the
+served surface without restarting Tangent. Initial plugins load before the
+MCP and HTTP servers exist: a plugin-contributed envelope kind has
 to be in the registry `mcp.New` reads. A plugin handler that errors or panics
 is contained and reported (`PLUGIN_FAILED` / `PLUGIN_PANICKED` on a tool, a
 `plugin_error` refusal body on a route); one plugin's defect is not every
@@ -1277,36 +1279,36 @@ trusting it.
 - **No desktop shell and no Nanite-native channel.** MCP is the only
   agent-facing transport. See the Wails note above.
 
-### The plugin host: what unload, config and a hung handler actually do
+### Plugin lifecycle and configuration boundary
 
-Three of these are scope decisions (`CW-20260910-0036`) and the fourth is a
-bounded cost that has a task.
+Plugin loads receive an owner-scoped registration handle. Unload closes that
+owner's admission before removing its MCP tools, HTTP routes and contributed
+kind registrations, then invokes real subprocess teardown. A retained handle
+cannot register into a replacement owner. Core definitions and other owners
+are never swept; versioned definition material remains available for retained
+interactions already pinned to it.
 
-- **Unloading a plugin removes nothing it registered.** An envelope kind cannot
-  be removed — go-envelopes' registry is boot-time and has no removal — and a
-  contributed tool or route cannot be removed either, because the plugin SDK
-  passes no caller identity to a registration call, so the host does not know
-  which plugin registered which surface. `Unload` therefore means the plugin
-  drops its own state and comes off the roster. A tool whose plugin has
-  unloaded still dispatches, into a plugin that answers "not loaded". The host
-  refuses honestly rather than performing a removal it cannot do.
-- **The host holds no plugin configuration.** `GetConfig`, `SetConfig` and
-  `RegisterConfigSchema` are unimplemented and ratified as such: a plugin reads
-  its own process environment. This is what keeps ADR 0005 §3.1's secret
-  boundary true by construction rather than by policy — there is no store to
-  leak, migrate, or redact. A plugin process inherits the environment of the
-  `tangent` process that spawns it, so an operator sets a plugin's variables
-  where `tangent` runs.
-- **There is no runtime enable/disable.** The installed set in the plugin
-  directory is read at startup; `tangent plugin install` / `remove` and a
-  restart is how it changes. Deferred with the reason rather than omitted: Tether's equivalent flag carries a documented enabled-but-unreachable
-  stall, and nothing here has a caller for a toggle.
-- **A blown dispatch budget releases the caller, not the plugin.** Every
-  contributed tool and route is bounded at registration, and a call that
-  overruns returns to its caller; the plugin's own process may keep working on
-  it, and nothing reports that. Plugins run as separate processes, so a crash is
-  contained and restarted (backoff, at most three attempts), but a plugin that
-  ignores its context still holds that work until it finishes.
+`GET /api/plugin-management` reports current installed lifecycle state and
+desired enable intent. Participant-guarded `POST` actions at
+`/api/plugin-management/{pluginID}/enable`, `/disable` and `/reload` serialize
+lifecycle operations. Disable intent survives host restart in the boolean-only
+`.state/enabled.json` under the install root. Reload stops the old owner before
+rescanning and snapshotting the installed artifact; every new child receives a
+fresh host-issued incarnation and generation. A failed replacement is reported
+failed and does not revive old registrations.
+
+A dispatch that exhausts the host budget trips that owner's circuit: further
+calls refuse immediately, and teardown stops and reaps its subprocess. The
+failed/quarantined state remains visible until explicit enable/reload or a new
+host startup. Caller
+cancellation does not trip a healthy owner's circuit. In-process test adapters
+cannot have an uncooperative Go goroutine forcibly interrupted; they are fenced
+and receive no additional work. Installed plugins run out of process.
+
+The host still holds no plugin configuration: `GetConfig`, `SetConfig` and
+`RegisterConfigSchema` remain unimplemented. A plugin reads its own environment;
+enable intent contains no configuration or credentials. Config/secrets support
+is separate work, not a consequence of lifecycle controls.
 
 ### Browser plugin registry integration
 

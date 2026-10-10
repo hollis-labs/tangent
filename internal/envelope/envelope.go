@@ -265,3 +265,16 @@ func (s *Service) RegisteredKinds() []string {
 	}
 	return kinds
 }
+
+// RemoveContributedKind withdraws the active registration. Retained versioned
+// material remains available to interactions already pinned to it. Core kinds
+// are protected by the registry; callers must first prove registration ownership.
+func (s *Service) RemoveContributedKind(name string) error {
+	if err := s.registry.UnregisterType(name); err != nil {
+		return err
+	}
+	s.materialMu.Lock()
+	delete(s.current, name)
+	s.materialMu.Unlock()
+	return nil
+}

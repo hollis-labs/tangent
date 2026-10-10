@@ -354,8 +354,6 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// ordering — a plugin-contributed envelope kind has to be in the registry
 	// before mcp.New reads it, so plugins necessarily load first and the host
 	// holds their declarations until there is something to install them onto.
-	pluginTools := pluginHost.MCPTools()
-	pluginRoutes := pluginHost.HTTPRoutes()
 
 	// Dispatcher is shared across transports. The MCP triage handler below
 	// bridges it to a WebSocket-connected room.
@@ -569,13 +567,16 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithRelay(channelStore, relayStore),
 		// Whatever the shipped plugins contributed (ADR 0007 §4). Empty is
 		// normal; a name colliding with a host tool fails this call.
-		mcp.WithPluginTools(pluginTools),
+
 	)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
 		// surface as part of its v0.1 contract, so booting without it
 		// would silently strip a documented capability.
 		return release(fmt.Errorf("build mcp server: %w", err))
+	}
+	if attachErr := pluginHost.AttachToolRegistry(mcpSrv); attachErr != nil {
+		return release(fmt.Errorf("attach plugin tools: %w", attachErr))
 	}
 	// The plugin host's tool caller (CW-20260910-0031). A plugin drives Tangent
 	// by calling the same tools an agent calls, in process, with the same
@@ -658,7 +659,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		EffectContext:      interactionService,
 		Health:             healthReporter,
 		Telemetry:          recorder,
-		PluginRoutes:       pluginRoutes,
+		PluginHost:         pluginHost,
 		PluginHostInstance: pluginHost.HostInstance(),
 	})
 	if err != nil {
@@ -712,6 +713,7 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 			Version:         record.Version,
 			Loaded:          record.Loaded,
 			Enabled:         record.Enabled,
+			State:           record.State,
 			At:              record.At,
 			Error:           record.Error,
 			FailedAfterLoad: record.FailedAfterLoad,

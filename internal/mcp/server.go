@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -107,6 +108,8 @@ type Server struct {
 
 	// claimedTools and toolConflicts are the name registry every registration
 	// goes through. See tool_registry.go.
+	pluginMu      sync.RWMutex
+	dynamicTools  map[string]bool
 	claimedTools  map[string]bool
 	toolConflicts []string
 
