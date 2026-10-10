@@ -25,13 +25,15 @@ import (
 
 type echoPlugin struct {
 	// initParams is kept so the test can assert what the host sent — in
-	// particular that Config arrived EMPTY, which is Tangent's secret boundary
-	// expressed on the wire rather than in a policy document.
+	// particular that each incarnation gets a detached reviewed Config snapshot.
 	initParams subprocess.InitParams
 }
 
 func (p *echoPlugin) Init(_ context.Context, params subprocess.InitParams) (subprocess.InitResult, error) {
 	p.initParams = params
+	if os.Getenv("ECHO_PLUGIN_REPORT_CONFIG_STDERR") == "1" {
+		fmt.Fprintln(os.Stderr, "config fixture", params.Config["token"])
+	}
 	if text := os.Getenv("ECHO_PLUGIN_STDERR"); text != "" {
 		fmt.Fprintln(os.Stderr, text)
 	}
@@ -95,16 +97,18 @@ func (p *echoPlugin) MCPCallTool(
 	switch request.ToolName {
 	case "tangent.echo":
 		body, err := json.Marshal(map[string]any{
-			"tool":                request.ToolName,
-			"arguments":           request.Arguments,
-			"config_size":         len(p.initParams.Config),
-			"data_dir":            p.initParams.DataDir,
-			"host":                p.initParams.HostInfo.Version,
-			"incarnation":         p.initParams.Incarnation,
-			"grants":              p.initParams.Grants,
-			"capability_contract": p.initParams.CapabilityContract,
-			"host_services":       p.initParams.HostServices,
-			"hooks_profile":       p.initParams.HooksProfile,
+			"tool":                     request.ToolName,
+			"arguments":                request.Arguments,
+			"config_size":              len(p.initParams.Config),
+			"configured_channel":       p.initParams.Config["channel"],
+			"configured_token_present": p.initParams.Config["token"] != "",
+			"data_dir":                 p.initParams.DataDir,
+			"host":                     p.initParams.HostInfo.Version,
+			"incarnation":              p.initParams.Incarnation,
+			"grants":                   p.initParams.Grants,
+			"capability_contract":      p.initParams.CapabilityContract,
+			"host_services":            p.initParams.HostServices,
+			"hooks_profile":            p.initParams.HooksProfile,
 			// Proves the child reads its OWN environment rather than being
 			// handed config by the host.
 			"secret_from_env": os.Getenv("ECHO_PLUGIN_SECRET"),

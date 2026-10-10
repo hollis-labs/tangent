@@ -160,10 +160,14 @@ the plugin resolves to the same host-assigned identity — see
 Reach for a new typed host method only when a tool genuinely cannot
 express the need; `GetService` stays unimplemented.
 
-**The host holds no plugin configuration, so it can never hold a plugin's
-secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
-unimplemented: a plugin reads its own environment, which
-keeps ADR 0005 §3.1's secret boundary true by construction instead of by policy.
+Reviewed plugin configuration is host-owned under CW-20261003-0063. Scalars
+are persisted in a private settings database; declared secrets live in the OS
+keychain and appear in browser snapshots only as presence. Each load receives
+a detached scoped snapshot through Init.Config. Global `GetConfig`, `SetConfig`
+and `RegisterConfigSchema` remain refused; current owner handles may access only
+their reviewed keys, and schema registration cannot widen the manifest. Save is
+revision-CAS protected; explicit apply/restart checks that revision before
+replacing the current owner. See [plugin configuration](docs/plugin-configuration.md).
 `Unload` fences the exact load owner's handle and dispatches, withdraws its
 registrations, and tears down its subprocess. Core definitions and other owners
 remain; retained material for pinned interactions is not erased. Enable intent

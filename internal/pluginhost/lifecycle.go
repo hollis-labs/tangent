@@ -37,13 +37,19 @@ type loadAttempt struct {
 // name itself — identify turns that into something printable rather than a
 // blank row.
 func (h *Host) recordAttempt(p plugin.Plugin, id string, err error) {
+	h.mu.Lock()
+	var secrets []string
+	if owner := h.owners[id]; owner != nil {
+		secrets = owner.config.Secrets
+	}
+	h.mu.Unlock()
 	attempt := &loadAttempt{id: id, at: time.Now().UTC(), p: p}
 	if err != nil {
 		attempt.err = err.Error()
 	}
 	if p != nil {
-		attempt.name = safeString(p.Name)
-		attempt.version = safeString(p.Version)
+		attempt.name = scrubConfigText(safeString(p.Name), secrets)
+		attempt.version = scrubConfigText(safeString(p.Version), secrets)
 	}
 	h.mu.Lock()
 	h.attempts = append(h.attempts, attempt)
@@ -150,7 +156,11 @@ func (h *Host) unload(id string) error {
 	}
 	h.mu.Unlock()
 	if err := unloadSafely(p); err != nil {
-		errs = append(errs, fmt.Errorf("pluginhost: unload %s: %w", id, err))
+		text := err.Error()
+		if owner != nil {
+			text = scrubConfigText(text, owner.config.Secrets)
+		}
+		errs = append(errs, &pluginDiagnosticError{cause: err, text: fmt.Sprintf("pluginhost: unload %s: %s", id, text)})
 	}
 	return errors.Join(errs...)
 }

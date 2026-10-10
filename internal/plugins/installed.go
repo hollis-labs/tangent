@@ -69,12 +69,22 @@ func LoadInstalled(
 	// it carries: false (the zero value, what a caller that omits it gets) is
 	// the gate staying on.
 	disableHealthGate bool,
+	options ...LoadOption,
 ) (*pluginhost.Host, error) {
 	host, err := pluginhost.New(ctx, logger, envSvc)
 	if err != nil {
 		return nil, err
 	}
 
+	settings := loadOptions{}
+	for _, option := range options {
+		option(&settings)
+	}
+	if settings.config != nil {
+		if err = host.ConfigureConfig(settings.config); err != nil {
+			return nil, err
+		}
+	}
 	if root == "" {
 		root, err = pluginpkg.DefaultRoot()
 		if err != nil {
@@ -104,6 +114,12 @@ func LoadInstalled(
 
 	for _, source := range installed {
 		id := source.Manifest.ID
+		if settings.config != nil {
+			if err := settings.config.Register(ctx, id, source.Manifest.Config); err != nil {
+				host.RecordUnusable(id, err)
+				continue
+			}
+		}
 		factory := func() (sdkplugin.Plugin, error) {
 			// Rescan the exact installed directory on every operation: install
 			// metadata, integrity and entrypoint must be verified again.
@@ -123,11 +139,23 @@ func LoadInstalled(
 				if kindErr := resolveKinds(envSvc, item.Manifest.Bindings.Kinds); kindErr != nil {
 					return nil, kindErr
 				}
+				if settings.config != nil {
+					if err := settings.config.Register(ctx, id, item.Manifest.Config); err != nil {
+						return nil, err
+					}
+				}
 				entry, cleanup, snapshotErr := pluginpkg.Snapshot(item, root)
 				if snapshotErr != nil {
 					return nil, snapshotErr
 				}
-				return pluginhost.NewChildPlugin(specFor(entry, root, cleanup), toolsFor(entry), routesFor(entry), pluginhost.WithHealthGate(!disableHealthGate)), nil
+				spec := specFor(entry, root, cleanup)
+				if settings.config != nil {
+					spec.ResolveConfig = host.ResolveConfiguration(id)
+					spec.ConfigApplied = func(ctx context.Context, revision string) error {
+						return settings.config.MarkApplied(ctx, id, revision)
+					}
+				}
+				return pluginhost.NewChildPlugin(spec, toolsFor(entry), routesFor(entry), pluginhost.WithHealthGate(!disableHealthGate)), nil
 			}
 			return nil, fmt.Errorf("plugins: %s is no longer installed", id)
 		}
@@ -195,11 +223,10 @@ const (
 // not this host intends it to. The only thing this decides is whether the
 // intended path is the real one.
 //
-// The URL travels in the environment rather than in InitParams for the reason
-// the config map is empty: the host tells a child WHERE things are, and the
-// child reads its own environment. Neither of these is configuration the host
-// holds. See internal/pluginhost/childplugin.go, where the empty config map is
-// explained at the call site.
+// The callback address stays in the environment. Reviewed configuration is
+// resolved separately into each incarnation's Init.Config by the scoped host
+// store; this address does not confer additional capability grants.
+
 func specFor(entry pluginpkg.Installed, root string, cleanup func() error) pluginhost.ChildSpec {
 	return pluginhost.ChildSpec{
 		ID:       entry.Manifest.ID,

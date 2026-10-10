@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"sync"
 
 	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
@@ -46,6 +47,7 @@ type registrationOwner struct {
 	once    sync.Once
 	ready   bool
 	attempt *loadAttempt
+	config  pluginconfig.Runtime
 }
 
 func newRegistrationOwner(h *Host, id string) *registrationOwner {
@@ -67,7 +69,7 @@ func (o *registrationOwner) trip(err error) {
 			return
 		}
 		o.cancel()
-		h.faults[o.id] = redactPluginDiagnostic(err.Error())
+		h.faults[o.id] = scrubConfigText(err.Error(), o.config.Secrets)
 		h.mu.Unlock()
 		go func() {
 			h.ops.Lock()
