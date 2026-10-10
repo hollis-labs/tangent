@@ -157,7 +157,7 @@ here is the boundary.**
 Three properties are essential and the template emits all three: a
 distinguishable unavailability error, so an operator restarts a service instead
 of reading Tangent's logs; reading the plugin's own environment, because
-`GetConfig` is deliberately unimplemented; and a readiness probe. The bearer
+global `GetConfig` is deliberately refused; and a readiness probe. The bearer
 token is incidental — Tesseract takes one and Torque does not — so it is
 `-auth`.
 
@@ -310,9 +310,9 @@ subprocess wrapper described above. A kind scaffold additionally requires host
 approval of its definition package and renderer before it can load.
 
 Configuration and capability requests are declarations only. Tangent keeps the
-existing environment and local-MCP callback path, sends empty Init config and
-grants, and does not provide scoped host callbacks, broker-secret delivery or
-new configuration storage in this adoption. The SDK comes from the released
+existing environment and local-MCP callback path, sends a detached reviewed
+Init.Config snapshot and empty grants, and does not offer reverse host callbacks
+or broker-secret capabilities. The SDK comes from the released
 `github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1. Plugin entrypoints
 import `plugin-sdk/subprocess` and `plugin-sdk/manifest` under that module.
 The SDK accepts finite forward-call `context` budgets, including Init; strict
@@ -330,24 +330,27 @@ required.
 
 ## Configuration, secrets, lifecycle and enable/disable
 
-The host owns lifecycle intent and registration custody; a plugin still owns
-its configuration and credentials.
+The host owns lifecycle intent, registration custody and reviewed flat settings.
+The plugin owns the domain interpretation of those settings.
 
-### Your plugin reads its own environment. The host holds no config.
+### Reviewed settings and secrets are scoped to each load
 
-`GetConfig`, `SetConfig` and `RegisterConfigSchema` are unimplemented, and that
-is the ratified answer rather than a gap waiting to be filled. **The host holds
-no plugin configuration, so it can never hold a plugin's secret.** ADR 0005
-§3.1 keeps a secret boundary — Tangent does not store or rotate provider
-secrets — and a config surface here would be the obvious place to put a
-credential. Holding nothing keeps that boundary true by construction: there is
-no store to leak, none to migrate, and none to redact out of a health report.
+Declare scalar fields and secrets in manifest-v2 `config`. The host projects
+reviewed fields through published kit-settings controls; it never parses a
+plugin's domain JSON. Scalars have a private SQLite store and secrets have OS
+keychain references. A browser receives presence only, never a saved secret.
+Each process attempt receives a detached declared-key snapshot in Init.Config;
+no ambient environment value is substituted into that snapshot. Empty Config
+may retain a plugin's documented standalone environment mode, as messaging does.
 
-So read a base URL and, where one is needed, a token from your own process
-environment. The shipped plugins do; the scaffold writes it for you. Name the
-variables after your plugin and document them where an operator will look. Your
-process inherits the environment of the `tangent` that spawns it, so that is
-where an operator sets them.
+Native in-process plugins receive a current owner-scoped Host. `GetConfig` reads
+that incarnation's snapshot; `SetConfig` saves declared overrides without
+changing the running snapshot or restarting. `RegisterConfigSchema` must agree
+with the reviewed manifest. Global Host calls and stale owner calls are refused.
+Subprocesses have no reverse config callback. Saving settings is revision-aware;
+explicit apply/restart uses the selected revision and obtains a fresh owner.
+See [plugin configuration](plugin-configuration.md) for scope precedence, typed
+defaults, file/settings consumer modes and keychain failure semantics.
 
 ### Unload withdraws exactly your load owner's registrations
 
@@ -420,8 +423,8 @@ installs them and no build serves their tools.
 
 ### Subprocess compatibility and limits
 
-The host requires protocol 2 and capability contract 1. Init sends an empty
-configuration and grant set, a fresh host-owned incarnation, and no optional
+The host requires protocol 2 and capability contract 1. Init sends a detached reviewed
+configuration and an empty grant set, a fresh host-owned incarnation, and no optional
 profiles. Identity must exactly match the installed manifest. Both the manifest
 version and the reported version must be strict SemVer (`major.minor.patch`,
 with valid optional prerelease/build metadata); `v` prefixes, missing components,
