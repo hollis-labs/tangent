@@ -311,13 +311,13 @@ func TestCanceledApplyDoesNotOwnLifecycleGate(t *testing.T) {
 }
 
 func TestConfigRedactionKeepsRawCauseBoundariesUntilDisplay(t *testing.T) {
-	const secret = "owned-config-secret"
-	raw := scrubRawConfigText("TOKEN=S3CR01\nIMPORTANT CAUSE: failed "+secret+"\nFINAL CAUSE: schema migration failed", []string{secret})
-	if strings.Contains(raw, secret) || strings.Contains(raw, "S3CR01") || !strings.Contains(raw, "\nIMPORTANT CAUSE") {
+	const fixtureValue = "owned-config-value"
+	raw := scrubRawConfigText("TOKEN=S3CR01\nIMPORTANT CAUSE: failed "+secret+"\nFINAL CAUSE: schema migration failed", []string{fixtureValue})
+	if strings.Contains(raw, fixtureValue) || strings.Contains(raw, "S3CR01") || !strings.Contains(raw, "\nIMPORTANT CAUSE") {
 		t.Fatalf("raw secret scrub lost cause boundaries: %q", raw)
 	}
-	display := scrubConfigText("plugin/init refused\nplugin stderr:\n"+raw, []string{secret})
-	if strings.Contains(display, secret) || strings.Contains(display, "S3CR01") || strings.Contains(display, "\n") || !strings.Contains(display, "IMPORTANT CAUSE") || !strings.Contains(display, "FINAL CAUSE: schema migration failed") {
+	display := scrubConfigText("plugin/init refused\nplugin stderr:\n"+raw, []string{fixtureValue})
+	if strings.Contains(display, fixtureValue) || strings.Contains(display, "S3CR01") || strings.Contains(display, "\n") || !strings.Contains(display, "IMPORTANT CAUSE") || !strings.Contains(display, "FINAL CAUSE: schema migration failed") {
 		t.Fatalf("unsafe or truncated display: %q", display)
 	}
 }
