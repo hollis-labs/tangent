@@ -3,8 +3,11 @@ package pluginhost
 import (
 	"context"
 	"errors"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
 )
@@ -20,12 +23,17 @@ type fixtureUIObserver struct {
 	mu       sync.Mutex
 	receipts []*observerReceipt
 	failure  error
+	refusal  chan struct{}
 }
 
 func (o *fixtureUIObserver) Activated(_ context.Context, owner driver.Owner, current func() bool) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.receipts = append(o.receipts, &observerReceipt{owner: owner, current: current, readyAtActivation: current()})
+	if o.failure != nil && o.refusal != nil {
+		close(o.refusal)
+		o.refusal = nil
+	}
 	return o.failure
 }
 func (o *fixtureUIObserver) Revoked(_ context.Context, owner driver.Owner) error {
@@ -81,5 +89,43 @@ func TestUIObserverBindsRealDriverReadinessAndFencesFailedActivation(t *testing.
 	third := observer.receipts[2]
 	if !third.revoked || third.current() || refused.pid() != 0 {
 		t.Fatal("failed activation retained UI authority or child")
+	}
+}
+
+func TestUIObserverRefusedRestartDoesNotMarkConfigurationApplied(t *testing.T) {
+	host, _ := newHost(t)
+	observer := &fixtureUIObserver{}
+	spec := echoSpec(t, buildEchoPlugin(t))
+	var applied atomic.Int32
+	spec.ResolveConfig = func(context.Context) (pluginconfig.Runtime, error) {
+		return pluginconfig.Runtime{Values: map[string]string{}, Revision: "owned-fixture-revision"}, nil
+	}
+	spec.ConfigApplied = func(context.Context, string) error { applied.Add(1); return nil }
+	child := NewChildPlugin(spec, nil, nil, WithUIObserver(observer))
+	if err := host.Load(child); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.UnloadAll() })
+	initial := applied.Load()
+	if initial != 1 {
+		t.Fatal("initial actual load not applied")
+	}
+	refused := make(chan struct{})
+	observer.mu.Lock()
+	observer.failure = errors.New("synthetic restart UI refusal")
+	observer.refusal = refused
+	observer.mu.Unlock()
+	if err := killCurrent(child); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-refused:
+	case <-time.After(10 * time.Second):
+		t.Fatal("actual restart did not reach UI refusal")
+	}
+	// The refusal occurs before the apply callback; observing the failure channel
+	// must never expose a new configuration as successfully applied.
+	if applied.Load() != initial {
+		t.Fatal("refused UI restart marked configuration applied")
 	}
 }

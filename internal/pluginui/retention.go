@@ -1,6 +1,7 @@
 package pluginui
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -21,6 +23,8 @@ type Retention struct {
 }
 
 const retentionMarker = "retention.identity"
+const reservationHistory = "consumed.scopes"
+const maxHistoryBytes = 8 << 20
 
 // InitializeRetention is only for an explicitly new, nonexistent private store.
 // The caller must retain the returned identity independently and pass it on
@@ -40,6 +44,9 @@ func InitializeRetention(directory string) (identity string, err error) {
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
 	if err = writeExclusive(root, retentionMarker, []byte(identity)); err != nil {
+		return "", err
+	}
+	if err = writeExclusive(root, reservationHistory, nil); err != nil {
 		return "", err
 	}
 	// Persist the directory entry in its parent as well as the store contents.
@@ -94,7 +101,8 @@ func (r *Retention) verify() error {
 	if string(raw) != r.identity {
 		return errors.New("pluginui: retention identity mismatch")
 	}
-	return nil
+	_, err = r.history()
+	return err
 }
 func writeExclusive(root *os.Root, name string, value []byte) error {
 	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -124,12 +132,75 @@ func (r *Retention) reserve(scope string, record []byte) error {
 	if err := r.verify(); err != nil {
 		return err
 	}
+	history, err := r.history()
+	if err != nil {
+		return err
+	}
+	key := digestBytes([]byte(scope))
+	if len(history)*65+65 > maxHistoryBytes {
+		return errors.New("pluginui: retention capacity exhausted")
+	}
+	if history[key] {
+		return errors.New("pluginui: route scope permanently consumed")
+	}
+	// Journal consumption BEFORE exposing bytes or creating optional metadata.
+	// A failed/uncertain append burns the store or the scope, never rolls it back.
+	f, err := r.root.OpenFile(reservationHistory, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	entry := []byte(key + "\n")
+	n, writeErr := f.Write(entry)
+	if writeErr == nil && n != len(entry) {
+		writeErr = io.ErrShortWrite
+	}
+	if writeErr == nil {
+		writeErr = f.Sync()
+	}
+	if err = errors.Join(writeErr, f.Close()); err != nil {
+		return err
+	}
 	// This filename depends only on the route scope, never the replacement owner.
 	if err := writeExclusive(r.root, digestBytes([]byte(scope))+".reserved", record); err != nil {
 		return fmt.Errorf("pluginui: route scope unavailable: %w", err)
 	}
 	return nil
 }
+
+// history is the authority for consumed scopes, independent of optional
+// reservation metadata. It is never truncated, expired or compacted here.
+func (r *Retention) history() (map[string]bool, error) {
+	info, err := r.root.Lstat(reservationHistory)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Size() > maxHistoryBytes {
+		return nil, errors.New("pluginui: invalid retention history")
+	}
+	f, err := r.root.Open(reservationHistory)
+	if err != nil {
+		return nil, err
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(f, maxHistoryBytes+1))
+	if err = errors.Join(readErr, f.Close()); err != nil {
+		return nil, err
+	}
+	if len(raw) > maxHistoryBytes || len(raw)%65 != 0 {
+		return nil, errors.New("pluginui: incomplete retention history")
+	}
+	consumed := make(map[string]bool, len(raw)/65)
+	for len(raw) > 0 {
+		entry := raw[:65]
+		raw = raw[65:]
+		key := string(bytes.TrimSuffix(entry, []byte("\n")))
+		if entry[64] != '\n' || !validDigest(key) || consumed[key] || strings.ContainsAny(key, "\r\n") {
+			return nil, errors.New("pluginui: corrupt retention history")
+		}
+		consumed[key] = true
+	}
+	return consumed, nil
+}
+
 func (r *Retention) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

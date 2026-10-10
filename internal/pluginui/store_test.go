@@ -42,8 +42,8 @@ func testStore(t *testing.T) (*Store, *Retention, string, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := retention.Close(); err != nil {
-			t.Error(err)
+		if closeErr := retention.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	})
 	store, err := NewStore("https://tangent.test", retention)
@@ -76,18 +76,18 @@ func TestGraphRequiresReviewAndDetachedExactInventory(t *testing.T) {
 	}
 	module := Module{ID: "plugin", Bytes: []byte("export const a = 1;")}
 	module.SHA256 = digestBytes(module.Bytes)
-	if _, err := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, nil); err == nil {
+	if _, admitGraphErr := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, nil); admitGraphErr == nil {
 		t.Fatal("implicit graph review")
 	}
 	refuse := errors.New("computed import not reviewed")
-	if _, err := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, func([]Module, []Import) error { return refuse }); !errors.Is(err, refuse) {
+	if _, admitGraphErr := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, func([]Module, []Import) error { return refuse }); !errors.Is(admitGraphErr, refuse) {
 		t.Fatal("review refusal lost")
 	}
-	if _, err := AdmitGraph(strings.Repeat("a", 64), []Module{module}, []Import{{"react", "missing"}}, func([]Module, []Import) error { return nil }); err == nil {
+	if _, admitGraphErr := AdmitGraph(strings.Repeat("a", 64), []Module{module}, []Import{{"react", "missing"}}, func([]Module, []Import) error { return nil }); admitGraphErr == nil {
 		t.Fatal("unadmitted mapping")
 	}
 	module.Bytes[0] = 'X'
-	if _, err := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, func([]Module, []Import) error { return nil }); err == nil {
+	if _, admitGraphErr := AdmitGraph(strings.Repeat("a", 64), []Module{module}, nil, func([]Module, []Import) error { return nil }); admitGraphErr == nil {
 		t.Fatal("hash mismatch")
 	}
 }
@@ -126,7 +126,7 @@ func TestSealedScopeRetainsCustodyUntilStopAndNeverReusesAfterRestart(t *testing
 	if _, ok := store.Read(strings.Replace(modulePath, "sample.panel", "other.owner", 1)); ok {
 		t.Fatal("foreign owner alias")
 	}
-	if err := delivery.Release(context.Background()); err == nil {
+	if releaseErr := delivery.Release(context.Background()); releaseErr == nil {
 		t.Fatal("uncertain frame stop accepted")
 	}
 	if _, ok := store.Read(modulePath); ok {
@@ -139,29 +139,29 @@ func TestSealedScopeRetainsCustodyUntilStopAndNeverReusesAfterRestart(t *testing
 		t.Fatal("bytes dropped before frame stop")
 	}
 	stopped = true
-	if err := delivery.Release(context.Background()); err != nil {
-		t.Fatal(err)
+	if releaseErr := delivery.Release(context.Background()); releaseErr != nil {
+		t.Fatal(releaseErr)
 	}
-	if _, err := store.Provision(scope, testLease(2, &live), graph, func(context.Context) error { return nil }); err == nil {
+	if _, provisionErr := store.Provision(scope, testLease(2, &live), graph, func(context.Context) error { return nil }); provisionErr == nil {
 		t.Fatal("disposed scope rebound")
 	}
-	if err := retention.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := retention.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	reopened, err := OpenRetention(dir, identity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := reopened.Close(); err != nil {
-			t.Error(err)
+		if closeErr := reopened.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	}()
 	next, err := NewStore("https://tangent.test", reopened)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := next.Provision(scope, testLease(2, &live), graph, func(context.Context) error { return nil }); err == nil {
+	if _, provisionErr := next.Provision(scope, testLease(2, &live), graph, func(context.Context) error { return nil }); provisionErr == nil {
 		t.Fatal("restart rebound old URL scope")
 	}
 	if _, ok := next.Read(modulePath); ok {
@@ -170,16 +170,16 @@ func TestSealedScopeRetainsCustodyUntilStopAndNeverReusesAfterRestart(t *testing
 }
 func TestMissingOrWrongRetentionFailsClosed(t *testing.T) {
 	_, _, dir, identity := testStore(t)
-	if _, err := OpenRetention(dir, strings.Repeat("d", 64)); err == nil {
+	if _, openRetentionErr := OpenRetention(dir, strings.Repeat("d", 64)); openRetentionErr == nil {
 		t.Fatal("wrong retained identity accepted")
 	}
-	if err := os.Remove(filepath.Join(dir, retentionMarker)); err != nil {
-		t.Fatal(err)
+	if removeErr := os.Remove(filepath.Join(dir, retentionMarker)); removeErr != nil {
+		t.Fatal(removeErr)
 	}
-	if _, err := OpenRetention(dir, identity); err == nil {
+	if _, openRetentionErr := OpenRetention(dir, identity); openRetentionErr == nil {
 		t.Fatal("missing history reset")
 	}
-	if _, err := InitializeRetention(dir); err == nil {
+	if _, initializeRetentionErr := InitializeRetention(dir); initializeRetentionErr == nil {
 		t.Fatal("existing store initialized again")
 	}
 }
@@ -195,10 +195,10 @@ func TestControllerExactOwnerFenceAndReplacement(t *testing.T) {
 	newLive.Store(true)
 	old := testLease(1, &oldLive)
 	next := testLease(2, &newLive)
-	if err := controller.Publish(old, graph); err != nil {
-		t.Fatal(err)
+	if publishErr := controller.Publish(old, graph); publishErr != nil {
+		t.Fatal(publishErr)
 	}
-	if err := controller.Publish(next, graph); err == nil {
+	if publishErr := controller.Publish(next, graph); publishErr == nil {
 		t.Fatal("unwithdrawn owner replaced")
 	}
 	stopped := false
@@ -207,17 +207,17 @@ func TestControllerExactOwnerFenceAndReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	seal(t, frame)
-	if err := controller.Withdraw(context.Background(), old.Owner); err != nil {
-		t.Fatal(err)
+	if withdrawErr := controller.Withdraw(context.Background(), old.Owner); withdrawErr != nil {
+		t.Fatal(withdrawErr)
 	}
 	if !stopped {
 		t.Fatal("frame not joined")
 	}
-	if err := controller.Publish(next, graph); err != nil {
-		t.Fatal(err)
+	if publishErr := controller.Publish(next, graph); publishErr != nil {
+		t.Fatal(publishErr)
 	}
-	if err := controller.Withdraw(context.Background(), old.Owner); err != nil {
-		t.Fatal(err)
+	if withdrawErr := controller.Withdraw(context.Background(), old.Owner); withdrawErr != nil {
+		t.Fatal(withdrawErr)
 	}
 	nextFrame, err := controller.Provision(context.Background(), next.Owner, strings.Repeat("f", 64), func(context.Context) error { return nil })
 	if err != nil {
@@ -228,10 +228,10 @@ func TestControllerExactOwnerFenceAndReplacement(t *testing.T) {
 	if _, ok := store.Read(pathFromURL(nextFrame.DocumentURL())); ok {
 		t.Fatal("ended driver served document")
 	}
-	if err := controller.Withdraw(context.Background(), next.Owner); err != nil {
-		t.Fatal(err)
+	if withdrawErr := controller.Withdraw(context.Background(), next.Owner); withdrawErr != nil {
+		t.Fatal(withdrawErr)
 	}
-	if err := controller.Publish(next, graph); err == nil {
+	if publishErr := controller.Publish(next, graph); publishErr == nil {
 		t.Fatal("same driver generation reused")
 	}
 }
@@ -256,8 +256,8 @@ func TestWithdrawFencesPendingProvisionBeforeLateCompletion(t *testing.T) {
 		}
 		return live.Load()
 	}
-	if err := controller.Publish(lease, graph); err != nil {
-		t.Fatal(err)
+	if publishErr := controller.Publish(lease, graph); publishErr != nil {
+		t.Fatal(publishErr)
 	}
 	var stopped atomic.Bool
 	result := make(chan error, 1)
@@ -268,17 +268,78 @@ func TestWithdrawFencesPendingProvisionBeforeLateCompletion(t *testing.T) {
 	<-entered
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := controller.Withdraw(canceled, lease.Owner); !errors.Is(err, context.Canceled) {
-		t.Fatal("pending withdrawal did not retain cancellation", err)
+	if withdrawErr := controller.Withdraw(canceled, lease.Owner); !errors.Is(withdrawErr, context.Canceled) {
+		t.Fatal("pending withdrawal did not retain cancellation", withdrawErr)
 	}
 	close(resume)
-	if err := <-result; err == nil {
+	if operationErr := <-result; operationErr == nil {
 		t.Fatal("late provision escaped fence")
 	}
 	if !stopped.Load() {
 		t.Fatal("late owned frame not stopped")
 	}
-	if err := controller.Withdraw(context.Background(), lease.Owner); err != nil {
+	if withdrawErr := controller.Withdraw(context.Background(), lease.Owner); withdrawErr != nil {
+		t.Fatal(withdrawErr)
+	}
+}
+
+func TestMissingReservationFileCannotRecycleDisposedScope(t *testing.T) {
+	store, retention, dir, identity := testStore(t)
+	var live atomic.Bool
+	live.Store(true)
+	scope := strings.Repeat("9", 64)
+	delivery, err := store.Provision(scope, testLease(1, &live), testGraph(t), func(context.Context) error { return nil })
+	if err != nil {
 		t.Fatal(err)
+	}
+	if releaseErr := delivery.Release(context.Background()); releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	// Loss of optional metadata must not erase the durable consumed-scope ledger.
+	if removeErr := os.Remove(filepath.Join(dir, digestBytes([]byte(scope))+".reserved")); removeErr != nil {
+		t.Fatal(removeErr)
+	}
+	if closeErr := retention.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	reopened, err := OpenRetention(dir, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if closeErr := reopened.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	}()
+	next, err := NewStore("https://tangent.test", reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, provisionErr := next.Provision(scope, testLease(2, &live), testGraph(t), func(context.Context) error { return nil }); provisionErr == nil {
+		t.Fatal("disposed scope reused after metadata loss")
+	}
+}
+
+func TestMissingOrIncompleteConsumedJournalRefusesReopen(t *testing.T) {
+	for _, damage := range []string{"missing", "partial"} {
+		t.Run(damage, func(t *testing.T) {
+			_, retention, dir, identity := testStore(t)
+			if closeErr := retention.Close(); closeErr != nil {
+				t.Fatal(closeErr)
+			}
+			path := filepath.Join(dir, reservationHistory)
+			if damage == "missing" {
+				if removeErr := os.Remove(path); removeErr != nil {
+					t.Fatal(removeErr)
+				}
+			} else {
+				if writeFileErr := os.WriteFile(path, []byte("truncated uncertain reservation"), 0600); writeFileErr != nil {
+					t.Fatal(writeFileErr)
+				}
+			}
+			if _, openRetentionErr := OpenRetention(dir, identity); openRetentionErr == nil {
+				t.Fatal("damaged consumed journal silently reset")
+			}
+		})
 	}
 }

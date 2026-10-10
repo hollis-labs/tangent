@@ -272,10 +272,13 @@ func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *dr
 	p.identity = proc.Info()
 	p.status = plugin.PluginStatus{Loaded: true, Enabled: true, LoadedAt: time.Now().UTC()}
 	p.mu.Unlock()
-	p.configurationActivated(ctx)
 	if p.uiObserver != nil {
-		return p.uiObserver.Activated(ctx, owner, func() bool { return p.uiCurrent(owner) })
+		if err := p.uiObserver.Activated(ctx, owner, func() bool { return p.uiCurrent(owner) }); err != nil {
+			return err
+		}
 	}
+	// An observer refusal must not mark restart configuration applied.
+	p.configurationActivated(ctx)
 	return nil
 }
 func (p *ChildPlugin) revoke(ctx context.Context, owner driver.Owner) error {

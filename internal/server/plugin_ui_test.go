@@ -28,8 +28,8 @@ func TestSealedUIResponsesAreExactAndUnmounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := retention.Close(); err != nil {
-			t.Error(err)
+		if closeErr := retention.Close(); closeErr != nil {
+			t.Error(closeErr)
 		}
 	}()
 	store, err := pluginui.NewStore("https://tangent.test", retention)
@@ -50,8 +50,8 @@ func TestSealedUIResponsesAreExactAndUnmounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := pluginui.Document{FrameID: scope, HTML: "<!doctype html><p>generated fixture</p>", CSP: "script-src 'none'; object-src 'none'", PermissionsPolicy: "camera=()"}
-	if err := delivery.SealDocument(doc, func(pluginui.Document) error { return nil }); err != nil {
-		t.Fatal(err)
+	if sealDocumentErr := delivery.SealDocument(doc, func(pluginui.Document) error { return nil }); sealDocumentErr != nil {
+		t.Fatal(sealDocumentErr)
 	}
 	handler := pluginUISealedHandler(store)
 	request := func(method, target string) *httptest.ResponseRecorder {
@@ -93,7 +93,7 @@ func TestSealedUIResponsesAreExactAndUnmounted(t *testing.T) {
 	if request(http.MethodGet, module).Code != http.StatusNotFound {
 		t.Fatal("ended owner served")
 	}
-	if err := delivery.Release(context.Background()); err != nil {
-		t.Fatal(err)
+	if releaseErr := delivery.Release(context.Background()); releaseErr != nil {
+		t.Fatal(releaseErr)
 	}
 }
