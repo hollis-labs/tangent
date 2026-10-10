@@ -70,5 +70,8 @@ cover reached reads, current generation, refusal, withdrawal before disclosure,
 budget release and sanitized telemetry. This proves the adapter, not a deployed
 issuer, subprocess reverse profile, OS isolation or another host's enforcement.
 Production positive execution requires a settled reviewed provider and genuine
-caller/runtime binding. Shared `mcp.reach` reverse-service admission and atomic
+caller/runtime binding (CW-20261010-0106, DEC-075). PM disposition on
+2026-10-10 makes those positives explicitly unsupported in the interim; the
+chat rail and Portfolio Manager UI remain dev/test-only until that support
+exists. Shared `mcp.reach` reverse-service admission and atomic
 write backends remain unsupported here.
