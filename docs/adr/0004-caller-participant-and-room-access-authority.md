@@ -165,7 +165,7 @@ powers.
 
 | Capability | Grants | Shipped operations it gates |
 |---|---|---|
-| `view` | Read a surface or interaction projection, its definition binding, its state, and its terminal outcome. Reading a terminal outcome writes a `TerminalOutcomeRetrievalRecord`. | `surface_get`, `interaction_get`, `interaction_await`, `session_get`, `session_list`, `hitl_get`, `hitl_await`, `GET /api/hitl`, `GET /api/hitl/items/{id}`, `GET /api/hitl/events`, evidence reference and preview reads, the WebSocket projection stream. |
+| `view` | Read a surface or interaction projection, its definition binding, its state, and its terminal outcome. Reading a terminal outcome writes a `TerminalOutcomeRetrievalRecord`. | `tangent.inbox_list`, `tangent.inbox_search`, `tangent.inbox_get` (pure caller/surface-owner reads; no retrieval write), `surface_get`, `interaction_get`, `interaction_await`, `session_get`, `session_list`, `hitl_get`, `hitl_await`, `GET /api/hitl`, `GET /api/hitl/items/{id}`, `GET /api/hitl/events`, evidence reference and preview reads, the WebSocket projection stream. |
 | `submit` | Create an interaction on a surface, mutate caller-owned surface workflow state, and open a surface under a given owner scope. | `interaction_submit`, `session_advance`, `session_advance_phase`, `session_set_phase_output`, `surface_open`, `hitl_enqueue`, the 17 workflow tools. |
 | `draft` | Write an immutable `DraftRevision` and acknowledge a presented projection revision. Never terminal. | `SaveDraft`, `POST /api/hitl/items/{id}/present`, the SPA's per-workflow draft persistence when it becomes server-custodied. |
 | `resolve` | Submit a terminal response to a presented interaction at its exact pinned revisions. Sealed as an immutable `ResolutionRecord`. | `POST /api/hitl/items/{id}/resolve`, the WebSocket `response` frame. |
@@ -867,3 +867,26 @@ token, which is worse.
   (caller-scope precursor), `CW-20260825-0075` (implementation),
   `CW-20260825-0077` (host-mediated capabilities), `CW-20260825-0078`
   (payload-safe telemetry)
+
+### Inbox read tools (CW-20261003-0034)
+
+The pure MCP inbox tools use the existing caller-application `view` decision
+with `PartitionScoped` access: a record's caller or its owning surface may read
+it; a foreign caller authority is always hidden. Reserved HITL/docs/turns
+surfaces admit this pure read workflow separately from their unchanged mutation
+capabilities. No wire field can supply that host policy or a participant grant.
+
+| Reader / condition | List and search | Get / cursor |
+|---|---|---|
+| Caller or owning surface, same authority, host read policy permits | Matching metadata only; no global counts | Retained request and confirmed response only; cursor rechecks access |
+| Same-authority nonsubscriber | Omitted, including matches and next-page evidence | Fixed `unauthorized`; invalid cursor if the anchor is not visible |
+| Foreign authority | Omitted, including matches and next-page evidence | Fixed `not_found`; invalid cursor without existence details |
+| Host read policy refuses | Omitted | Fixed `unauthorized`; revoked cursor is invalid |
+| Hidden or purged item | Omitted | `not_found`; anchor cursor is invalid |
+| Retained redaction tombstone | Metadata may remain; removed content and tombstone text never match | Explicit tombstone and redacted flags; no recovery from other stores |
+
+Unsubmitted drafts, participant bindings, policy, external refs, delivery
+metadata and audit journals are outside this projection. Reads make no durable
+retrieval/ACK or lifecycle writes. This does not change participant browser
+access, authority-wide legacy session reads, or the advisory nature of local
+caller partitions.

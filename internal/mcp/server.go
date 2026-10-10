@@ -716,6 +716,9 @@ func (s *Server) registerTools() error {
 		}
 	}
 	if s.interactions != nil {
+		if err := s.registerInboxReadTools(); err != nil {
+			return fmt.Errorf("register inbox read tools: %w", err)
+		}
 		if err := s.registerInteractionTools(); err != nil {
 			return fmt.Errorf("register interaction tools: %w", err)
 		}

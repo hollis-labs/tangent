@@ -14,3 +14,8 @@ func (SurfaceAccessPolicy) Authorize(surfaceID string, capability string) bool {
 		capability == reservedSurfaceCapability ||
 		capability == evidenceReferenceCapability
 }
+
+// AuthorizeInboxRead admits the pure read workflow only; it never authorizes
+// submit, close, resolution, or another lifecycle command. Caller View checks
+// remain mandatory in the interaction service.
+func (SurfaceAccessPolicy) AuthorizeInboxRead(string) bool { return true }
