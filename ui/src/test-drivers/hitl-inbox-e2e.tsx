@@ -561,8 +561,13 @@ async function run(command: DriverCommand) {
 
 installBrowserGlobals();
 const input = createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY });
+// vite-node closes its transform server when this module completes. Own the
+// command stream until shutdown/EOF and join the admitted command before return;
+// run() performs dynamic imports after the ready handshake.
+const closed = new Promise<void>((resolve) => input.once("close", resolve));
+let processing = Promise.resolve();
 input.on("line", (line) => {
-  void (async () => {
+  processing = processing.then(async () => {
     try {
       const command = JSON.parse(line) as DriverCommand;
       if (command.command === "shutdown") {
@@ -579,10 +584,10 @@ input.on("line", (line) => {
       process.exitCode = 1;
       input.close();
     }
-  })();
-});
-input.on("close", () => {
-  void browserWindow.happyDOM.abort();
+  });
 });
 
 emit({ event: "ready" });
+await closed;
+await processing;
+await browserWindow.happyDOM.abort();

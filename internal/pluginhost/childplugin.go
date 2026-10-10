@@ -147,7 +147,7 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 			p.mu.Unlock()
 			tail := ""
 			if proc != nil {
-				tail = p.redactFailure(sanitizePluginDiagnostic(proc.Diagnostics()))
+				tail = p.redactFailure(proc.Diagnostics())
 			}
 			h.logger.Warn("pluginhost: child crashed", "plugin", p.ID(), "exit_code", info.Code, "signal", info.Signal, "stderr", tail)
 			if controller.Status().RetryAttempts >= maxChildRestarts {
@@ -170,7 +170,10 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 		return err
 	}
 	if err = l.Enable(host.Context()); err != nil {
-		err = &pluginDiagnosticError{cause: err, text: p.redactFailure(err.Error())}
+		// The enclosing Host performs display sanitization after wrapping. Keep
+		// raw line boundaries until then so a second credential scrub cannot
+		// consume the following diagnostic cause.
+		err = &pluginDiagnosticError{cause: err, text: p.redactRawFailure(err.Error())}
 		p.fail(err)
 		return err
 	}

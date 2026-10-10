@@ -212,13 +212,17 @@ func (h *ownedHost) RegisterConfigSchema(fields []sdk.ConfigFieldDef) error {
 	return nil
 }
 
-func scrubConfigText(text string, secrets []string) string {
+func scrubRawConfigText(text string, secrets []string) string {
 	for _, value := range secrets {
 		if value != "" {
 			text = strings.ReplaceAll(text, value, "[redacted]")
 		}
 	}
-	return redactPluginDiagnostic(text)
+	return redactRawDiagnostic(text)
+}
+
+func scrubConfigText(text string, secrets []string) string {
+	return sanitizePluginDiagnostic(scrubRawConfigText(text, secrets))
 }
 
 func ownerDefault(kind, text string) any {
@@ -269,4 +273,11 @@ func (p *ChildPlugin) redactFailure(text string) string {
 	secrets := slices.Clone(p.configSecrets)
 	p.mu.Unlock()
 	return scrubConfigText(text, secrets)
+}
+
+func (p *ChildPlugin) redactRawFailure(text string) string {
+	p.mu.Lock()
+	secrets := slices.Clone(p.configSecrets)
+	p.mu.Unlock()
+	return scrubRawConfigText(text, secrets)
 }
