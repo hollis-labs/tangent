@@ -19,10 +19,12 @@ import (
 // is that an agent drives Tangent. A plugin doing the same work should be the
 // same kind of caller, not a second kind with a private door.
 //
-// So the host grants one method, and it grants no authority a local MCP caller
-// does not already have: the calls go through the real tool surface, the real
-// middleware, and the same host-assigned caller identity every direct MCP
-// caller resolves to. Adding a typed method per need would be the shape ADR
+// The method is not a grant. A native plugin's owner-scoped handle requires
+// current, reviewed host capability policy before invoking the real tool
+// surface. Without that policy it refuses; writes are unsupported by the
+// read-only adapter. The ordinary local HTTP MCP client remains a separate,
+// advisory surface, not authenticated plugin authority. Adding a typed method
+// per need would be the shape ADR
 // 0007's risk section warns about — a host surface that grows because the SDK
 // or a consumer asked, one method at a time, until the boundary is a list.
 //

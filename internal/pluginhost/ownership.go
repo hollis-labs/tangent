@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 )
 
 // ToolRegistry is the live MCP surface. Hooks run under the registration lock;
@@ -48,6 +49,7 @@ type registrationOwner struct {
 	ready   bool
 	attempt *loadAttempt
 	config  pluginconfig.Runtime
+	runtime capability.RuntimeIdentity
 }
 
 func newRegistrationOwner(h *Host, id string) *registrationOwner {
