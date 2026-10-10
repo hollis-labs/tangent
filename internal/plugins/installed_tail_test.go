@@ -13,6 +13,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/pluginintent"
 )
 
 func TestInstalledTruncatedCredentialIsAbsentFromTangentLog(t *testing.T) {
@@ -29,6 +30,9 @@ func TestInstalledTruncatedCredentialIsAbsentFromTangentLog(t *testing.T) {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	writeEchoManifest(t, dir, binary)
+	if _, err := pluginintent.Set(context.Background(), pluginintent.Path(root), "tangent.plugin.echo", true); err != nil {
+		t.Fatal(err)
+	}
 	raw := strings.Repeat("p", 501) + "PASSWORD=S4CRCUT\nFINAL CAUSE: failure\n"
 	raw += strings.Repeat("p", 4600-len(raw))
 	t.Setenv("ECHO_PLUGIN_STDERR", raw)

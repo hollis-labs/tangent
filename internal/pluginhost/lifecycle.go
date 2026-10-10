@@ -364,7 +364,7 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	intent := map[string]bool{}
 	faults := map[string]string{}
 	for id := range h.factories {
-		intent[id] = true
+		intent[id] = false
 	}
 	for id, enabled := range h.intent {
 		intent[id] = enabled

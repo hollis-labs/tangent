@@ -37,6 +37,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
+	"github.com/hollis-labs/tangent/internal/pluginintent"
 	"github.com/hollis-labs/tangent/internal/pluginpkg"
 	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
@@ -95,7 +96,7 @@ func LoadInstalled(
 	if err != nil {
 		return nil, fmt.Errorf("plugins: resolve install root: %w", err)
 	}
-	if intentErr := host.ConfigureIntent(filepath.Join(root, ".state", "enabled.json")); intentErr != nil {
+	if intentErr := host.ConfigureIntent(pluginintent.Path(root)); intentErr != nil {
 		return nil, fmt.Errorf("plugins: enabled intent: %w", intentErr)
 	}
 	installed, rejected, err := pluginpkg.Scan(root)

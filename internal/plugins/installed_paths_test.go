@@ -15,6 +15,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
+	"github.com/hollis-labs/tangent/internal/pluginintent"
 	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
@@ -32,6 +33,9 @@ func TestRelativeInstallRootProducesAbsoluteChildDirectories(t *testing.T) {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	writeEchoManifest(t, dir, binary)
+	if _, err := pluginintent.Set(context.Background(), pluginintent.Path(root), "tangent.plugin.echo", true); err != nil {
+		t.Fatal(err)
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

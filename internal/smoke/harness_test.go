@@ -314,7 +314,7 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 		staged := stagedFirstPartyPlugins(t)[name]
 		// Installed through the real command, not by copying files here. If
 		// `tangent plugin install` is broken, these tests should fail.
-		install := exec.Command(tangentBinary, "plugin", "install", staged) // #nosec G204 -- both are this test's own paths.
+		install := exec.Command(tangentBinary, "plugin", "install", "--enable", staged) // #nosec G204 -- explicit opt-in for this test-owned bundle.
 		install.Env = append(os.Environ(), "HOME="+root, "TANGENT_PLUGIN_DIR="+pluginDir)
 		if output, err := install.CombinedOutput(); err != nil {
 			t.Fatalf("tangent plugin install %s: %v\n%s", name, err, output)
