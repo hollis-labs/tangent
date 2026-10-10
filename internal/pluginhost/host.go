@@ -143,11 +143,13 @@ var reservedProps = []string{
 // Host implements plugin.Host for Tangent. One Host serves the process; it is
 // created at boot with the envelope service the resolved kinds register on.
 type Host struct {
-	hostInstance string
-	generations  driver.MemoryGenerationStore
-	ctx          context.Context
-	logger       *slog.Logger
-	envSvc       *envelope.Service
+	hostInstance          string
+	toolHostInstance      string
+	generations           driver.MemoryGenerationStore
+	capabilityGenerations driver.MemoryGenerationStore
+	ctx                   context.Context
+	logger                *slog.Logger
+	envSvc                *envelope.Service
 
 	mu           sync.Mutex
 	ops          operationGate
@@ -194,7 +196,8 @@ type Host struct {
 	routes map[string]HTTPRoute
 	// toolCaller is the host's own MCP tool surface, which is how a plugin
 	// drives Tangent. Nil until the composition root attaches it; see tools.go.
-	toolCaller ToolCaller
+	toolCaller       ToolCaller
+	toolCapabilities *toolCapabilityBoundary
 	// contributeKind is the ADR 0007 §4 door: it resolves a kind's manifest and
 	// installs it, or refuses. New sets it to extensions.RegisterContributedKind
 	// and production never changes it.
@@ -227,19 +230,24 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 	if err != nil {
 		return nil, fmt.Errorf("pluginhost: host epoch: %w", err)
 	}
+	toolEpoch, err := driver.NewHostInstance()
+	if err != nil {
+		return nil, fmt.Errorf("pluginhost: native tool epoch: %w", err)
+	}
 	return &Host{
-		hostInstance: epoch,
-		ops:          make(operationGate, 1),
-		ctx:          ctx,
-		logger:       logger,
-		envSvc:       envSvc,
-		loaded:       map[string]plugin.Plugin{},
-		owners:       map[string]*registrationOwner{},
-		toolOwners:   map[string]*registrationOwner{},
-		routeOwners:  map[string]*registrationOwner{},
-		kindOwners:   map[string]*registrationOwner{},
-		factories:    map[string]func() (plugin.Plugin, error){},
-		intent:       map[string]bool{}, faults: map[string]string{},
+		hostInstance:     epoch,
+		toolHostInstance: toolEpoch,
+		ops:              make(operationGate, 1),
+		ctx:              ctx,
+		logger:           logger,
+		envSvc:           envSvc,
+		loaded:           map[string]plugin.Plugin{},
+		owners:           map[string]*registrationOwner{},
+		toolOwners:       map[string]*registrationOwner{},
+		routeOwners:      map[string]*registrationOwner{},
+		kindOwners:       map[string]*registrationOwner{},
+		factories:        map[string]func() (plugin.Plugin, error){},
+		intent:           map[string]bool{}, faults: map[string]string{},
 		kinds:   map[string]string{},
 		tools:   map[string]MCPTool{},
 		routes:  map[string]HTTPRoute{},
@@ -334,6 +342,9 @@ func (h *Host) load(p plugin.Plugin) (err error) {
 	h.mu.Unlock()
 
 	if err = h.prepareOwnerConfig(owner); err != nil {
+		return err
+	}
+	if err = h.prepareToolCapabilityOwner(owner); err != nil {
 		return err
 	}
 	if loadErr := p.Load(&ownedHost{Host: h, owner: owner}); loadErr != nil {

@@ -156,7 +156,11 @@ A plugin reaches Tangent as an ordinary local MCP client against `/mcp`
 has and no more: Tangent offers no reverse RPC on its base-profile wire, and
 the plugin resolves to the same host-assigned identity — see
 [ADR 0010](docs/adr/0010-the-boundary-is-coupling-not-write-direction.md) §5.
-`pluginhost.ToolCaller` remains the in-process form of the same thing.
+The native owner-scoped `pluginhost.ToolCaller` now requires a reviewed host
+capability provider and budget; absent those inputs it refuses. Its closed
+adapter supports reads only and rechecks before disclosure. This does not
+authenticate ordinary local HTTP MCP as a plugin or grant child capabilities.
+See [plugin capabilities](docs/plugin-capabilities.md).
 Reach for a new typed host method only when a tool genuinely cannot
 express the need; `GetService` stays unimplemented.
 
