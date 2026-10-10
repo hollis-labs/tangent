@@ -42,6 +42,7 @@
 // routing label and grants nothing.
 
 import { z } from "zod";
+import { UiCommandSchema, type UiEvent, type UiTransport, ViewPublishedSchema } from "./ui-channel";
 
 const ConnectionViewSchema = z.object({
   connection_id: z.string(),
@@ -116,6 +117,8 @@ const InboundSchema = z.discriminatedUnion("type", [
   ConnectionMessageSchema,
   SyncMessageSchema,
   ErrorMessageSchema,
+  UiCommandSchema,
+  ViewPublishedSchema,
 ]);
 
 type InboundMessage = z.infer<typeof InboundSchema>;
@@ -235,6 +238,8 @@ export type WSClientOptions = {
 };
 
 export type WSClient = {
+  /** Presentation-only adapter over this exact room socket. Grants no authority. */
+  uiTransport?: UiTransport;
   /** True between successful open and close. */
   isConnected: () => boolean;
 
@@ -297,6 +302,10 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   const clientKind = opts.clientKind ?? getTabClientKind();
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   let connected = false;
+  const uiListeners = new Set<(event: UiEvent) => void>();
+  const emitUI = (event: UiEvent) => {
+    for (const listener of [...uiListeners]) listener(event);
+  };
   let currentRoomID = roomID;
   // The next draft revision per envelope. The store computes
   // MAX(revision) + 1 and refuses anything else, so this sequence is a
@@ -349,6 +358,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
       connected = true;
       startHeartbeat(socket);
       opts.onOpen?.();
+      emitUI({ type: "attached" });
     });
 
     socket.addEventListener("message", (ev) => {
@@ -378,6 +388,7 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
     socket.addEventListener("close", (ev) => {
       if (socket !== ws) return;
       connected = false;
+      emitUI({ type: "detached" });
       stopHeartbeat();
       const reason = ev.reason || `closed (code=${ev.code})`;
       opts.onClose?.(reason);
@@ -392,6 +403,10 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
 
   function dispatch(msg: InboundMessage) {
     switch (msg.type) {
+      case "ui.command":
+      case "view.published":
+        emitUI(msg);
+        return;
       case "envelope":
         opts.onEnvelope(msg.envelopeId, msg.envelope, msg.revision);
         return;
@@ -408,6 +423,10 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
         opts.onSync?.(msg.sync);
         return;
       case "error":
+        if (msg.code === "ui_command_rejected") {
+          emitUI({ type: "refused" });
+          return;
+        }
         if (recoverStaleDraft(msg)) return;
         opts.onServerError?.({
           code: msg.code,
@@ -464,6 +483,24 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   }
 
   return {
+    uiTransport: {
+      connected: () => connected,
+      subscribe: (listener) => {
+        uiListeners.add(listener);
+        return () => {
+          uiListeners.delete(listener);
+        };
+      },
+      send: (frame) => {
+        if (!connected || ws.readyState !== WebSocket.OPEN) return false;
+        try {
+          ws.send(JSON.stringify(frame));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+    },
     isConnected: () => connected,
     clientID: () => clientID,
     submitResponse: (envelopeId, response, revision = 0) => {
@@ -509,11 +546,14 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
         // ignore close errors during handoff
       }
       connected = false;
+      emitUI({ type: "detached" });
       stopHeartbeat();
       currentRoomID = roomID;
       ws = openSocket(roomID);
     },
     close: () => {
+      connected = false;
+      emitUI({ type: "detached" });
       stopHeartbeat();
       try {
         ws.close(1000, "client closed");
@@ -524,7 +564,14 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
   };
 }
 
-const KNOWN_FRAME_TYPES = new Set(["envelope", "connection", "sync", "error"]);
+const KNOWN_FRAME_TYPES = new Set([
+  "envelope",
+  "connection",
+  "sync",
+  "error",
+  "ui.command",
+  "view.published",
+]);
 
 function isKnownFrameType(parsed: unknown): boolean {
   if (!parsed || typeof parsed !== "object") return false;

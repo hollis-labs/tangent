@@ -23,10 +23,10 @@ operation. It accepts no agent-supplied targeting arguments. Missing or
 incomplete bindings refuse both disclosure and delivery. Tests supply synthetic
 verified bindings only. This is not end-to-end agent readiness.
 
-React publication, route/plugin adoption, router dispatch and accessibility
-belong to CW-20261009-0090. MCP exposure belongs to CW-20261009-0091. They must
-use this service and the verified authority provider, rather than invent an
-alternative label-based path. Existing WebSocket upgrades remain room-scoped;
+CW-20261009-0090 adds React publication, route adoption, router dispatch and
+accessible read-only modals. MCP exposure belongs to CW-20261009-0091. React
+uses the existing room transport or an explicitly injected transport; neither
+path establishes the production verified authority provider. Existing WebSocket upgrades remain room-scoped;
 this task does not add a global socket endpoint or create rooms on attachment.
 
 ## Descriptor v1 and observation projection
@@ -159,10 +159,82 @@ router, including navigation and filters already encoded in the URL. Navigation
 arguments may include query/fragment, unlike the descriptor pathname, but must
 remain local. The browser adapter must enforce ephemeral handlers cannot change
 history and must refuse unsupported targets; the Go host cannot observe browser
-history or certify compliance before CW-20261009-0090. No data-writing or
+history. The React adapter guards synchronous ephemeral history calls and
+checks the unchanged URL; the actual Chrome acceptance covers modal behavior. No data-writing or
 destructive application action belongs in this registry.
 
 Verification uses synthetic descriptor/attachment fixtures: strict validation,
 registry/argument refusal, authority denial, control opt-in, multi-tab targeting,
 ack correlation/statuses, cancellation, timeout, detach and actual WS round trips.
 Existing room tests protect the independent pull-only draft path.
+
+
+## React adoption (CW-20261009-0090)
+
+`UiChannelProvider` creates no socket, room, participant or conversation. The
+existing `Room` hands it the presentation-only adapter on its exact `WSClient`.
+An embedder may inject that interface for synthetic tests or a future verified
+host integration. Unattached routes report unavailable; host refusal disables
+control and requires a new attachment before retry. Nonadopting routes retire
+activity and control. Production keeps the same unwired, default-refusing
+binding seam described above.
+
+`useUiCommands` couples each declaration to argument validation and a synchronous
+presentation handler. `useViewDescriptor` publishes on committed changes after
+a debounce longer than the host's publication interval. One publication is
+outstanding per transport; its acknowledgement remains correlated across route
+replacement and gaps with no adopter. A changed view immediately fences the old
+revision. Reconnect clears revisions and participant control opt-in. Commands
+check the exact revision/current observation, foreground focus, opt-in, declared
+scope, arguments and explicit visible targets. A bounded duplicate fence applies
+within a revision. Acknowledgement follows `flushSync` application, including
+modal rendering and focus. Route retirement caused by a command follows its ack,
+so it cannot cancel a successfully applied navigation before acknowledgement.
+
+The declarative router uses `useTransitions={false}` so URL-backed handlers commit
+within that application boundary; a queued router transition cannot count as an
+applied route. Ephemeral handlers cannot call `pushState` or `replaceState` while
+applying. Navigation accepts only mounted application paths; unsupported paths
+refuse before router application. Commands perform no data writes. Accepted commands are:
+
+| View | Ephemeral | URL-backed |
+| --- | --- | --- |
+| Inbox | `open_modal`, `close_modal`, `focus_item` | `navigate`, `set_filter`, `set_search`, `select_item` |
+| DocsInbox component | `open_modal`, `close_modal`, `focus_item`, `open_doc` | `navigate` |
+| Channels | `open_modal`, `close_modal`, `focus_item` | `navigate` |
+
+DocsInbox's existing local filters remain local. Unified Inbox continues to own
+the public document route; adoption does not restore a separate Docs route.
+Drawer commands are undeclared because these route adapters provide read-only
+modals, not drawers. Unknown or hidden targets return explicit refusal.
+
+Observations deliberately sample at most the first 32 displayed targets, with
+IDs and fixed category summaries rather than titles, document bodies, message
+previews, source metadata, credentials or draft input. Selected IDs, fixed display
+filters (with unsupported URL values represented by a fixed marker), search
+presence and modal/queue visibility are opt-in route observations
+under the v1 limits. Raw participant search text is withheld; a local-only view
+key still fences its changes even when the observation stays identical. Oversized or malformed observations refuse as a whole; user state
+is never silently shortened. An embedder authoring a different descriptor remains responsible for excluding
+sensitive display values: schema validation cannot prove text contains no secrets.
+Consumers must still follow the per-turn transient retention rules above.
+
+Channels preserves successful ordinary participant selection, direct-link and
+back/forward read behavior. Command-origin navigation suppresses the automatic
+read receipt: changing what is displayed is not a message read/write command.
+Participant navigation clears that origin marker. Focus and modal commands never
+record channel receipts, send messages or perform HITL/Docs actions.
+
+Read-only modals use the existing Radix dialog primitive: named dialog, focus
+entry, keyboard trap, Escape close and restoration to the prior connected focus
+target. Unsupported focus targets and targets hidden by a modal refuse.
+
+Verification includes component tests and the existing WS client/lifecycle tests.
+Run `heavytest node scripts/ui-commands-browser.mjs` with the supported Node and
+a private `TMPDIR` for actual Chrome acceptance; set `TANGENT_BROWSER_BIN` to a
+Chrome executable on other hosts. It creates an isolated browser profile and a
+loopback Vite fixture, tests the production Inbox/Channels components using an
+injected synthetic transport, then removes its scratch. It verifies modal URL
+and history invariance, focus entry/trap/restore, router filter/navigation commit
+and absence of writes. It does not exercise a live Tangent, real binding provider,
+MCP command exposure or end-to-end agent readiness.

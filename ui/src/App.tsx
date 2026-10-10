@@ -2,6 +2,7 @@ import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-
 
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { TabStrip } from "./components/TabStrip";
+import { UiChannelProvider } from "./hooks/useUiCommands";
 import ChannelPane from "./routes/ChannelPane";
 import Inbox from "./routes/Inbox";
 import Settings from "./routes/Settings";
@@ -26,19 +27,23 @@ function Layout() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Inbox />} />
-          <Route path="/inbox" element={<Inbox />} />
-          <Route path="/inbox/items/:itemID" element={<Inbox />} />
-          <Route path="/channels" element={<ChannelPane />} />
-          <Route path="/channels/:channelID" element={<ChannelPane />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/r/:roomID" element={<Inbox />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    // UI commands acknowledge committed presentation. Declarative router
+    // transitions would defer the route commit beyond the acknowledgement.
+    <UiChannelProvider>
+      <BrowserRouter useTransitions={false}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<Inbox />} />
+            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/inbox/items/:itemID" element={<Inbox />} />
+            <Route path="/channels" element={<ChannelPane />} />
+            <Route path="/channels/:channelID" element={<ChannelPane />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/r/:roomID" element={<Inbox />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </UiChannelProvider>
   );
 }
 

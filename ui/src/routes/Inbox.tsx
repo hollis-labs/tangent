@@ -5,6 +5,8 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { EnvelopeRouter } from "@/components/envelopes/EnvelopeRouter";
 import { PageShell } from "@/components/layout/PageShell";
 import { ResponseSummary } from "@/components/ResponseSummary";
+import { UiControl, useUiCommands, useViewDescriptor } from "@/hooks/useUiCommands";
+import { useViewPresentation } from "@/hooks/useViewPresentation";
 import {
   categoryOf,
   entrySource,
@@ -13,6 +15,7 @@ import {
   type InboxEntry,
   isTerminal,
 } from "@/lib/inbox-api";
+import { idCommand, type UiHandler } from "@/lib/ui-channel";
 import { cn } from "@/lib/utils";
 import { InboxItemBody } from "./InboxItemBody";
 import Room from "./Room";
@@ -95,6 +98,108 @@ export default function Inbox() {
     navigate(
       `/inbox/items/${entry.interaction.interaction_id}${params.toString() ? `?${params}` : ""}`,
     );
+  const presentation = useViewPresentation(
+    filtered.slice(0, 32).map((entry) => ({
+      id: entry.interaction.interaction_id,
+      title: entryTitle(entry),
+      body: (
+        <p>
+          {labels[categoryOf(entry)]} · {entry.interaction.state}
+        </p>
+      ),
+    })),
+    navigate,
+  );
+  const filterCommand: UiHandler = {
+    declaration: {
+      name: "set_filter",
+      scope: "url-backed",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string", enum: ["view", "type", "sort"] },
+          value: { type: "string", maxLength: 32 },
+        },
+        required: ["name", "value"],
+        additionalProperties: false,
+      },
+    },
+    validate: (args) =>
+      Object.keys(args).length === 2 &&
+      typeof args.name === "string" &&
+      typeof args.value === "string" &&
+      (
+        {
+          view: ["pending", "history", "all"],
+          type: ["all", "approval", "document", "turn", "workflow"],
+          sort: ["oldest", "newest"],
+        }[args.name] ?? []
+      ).includes(args.value),
+    apply: (args) => {
+      updateFilter(args.name as string, args.value as string);
+      return "applied";
+    },
+  };
+  const searchCommand: UiHandler = {
+    declaration: {
+      name: "set_search",
+      scope: "url-backed",
+      input_schema: {
+        type: "object",
+        properties: { search: { type: "string", maxLength: 1024 } },
+        required: ["search"],
+        additionalProperties: false,
+      },
+    },
+    validate: (args) =>
+      Object.keys(args).length === 1 &&
+      typeof args.search === "string" &&
+      new TextEncoder().encode(args.search).length <= 1024,
+    apply: (args) => {
+      updateFilter("q", args.search as string);
+      return "applied";
+    },
+  };
+  const commands = useUiCommands([
+    ...presentation.handlers,
+    filterCommand,
+    searchCommand,
+    idCommand("select_item", "url-backed", (args) => {
+      const entry = filtered.slice(0, 32).find((row) => row.interaction.interaction_id === args.id);
+      if (!entry) return "not_visible";
+      select(entry);
+      return "applied";
+    }),
+  ]);
+  const control = useViewDescriptor(
+    {
+      active_filters: [
+        { name: "modal", values: [presentation.modalID ?? "closed"] },
+        { name: "search", values: [search ? "active" : "empty"] },
+        { name: "queue", values: [expanded ? "hidden" : "shown"] },
+        {
+          name: "view",
+          values: [["pending", "history", "all"].includes(view) ? view : "unsupported"],
+        },
+        {
+          name: "type",
+          values: [
+            ["all", "approval", "document", "turn", "workflow"].includes(category)
+              ? category
+              : "unsupported",
+          ],
+        },
+        { name: "sort", values: [["oldest", "newest"].includes(sort) ? sort : "unsupported"] },
+      ],
+      selected_ids: selected ? [selected.interaction.interaction_id] : [],
+      visible_rows: filtered.slice(0, 32).map((entry) => ({
+        id: entry.interaction.interaction_id,
+        summary: labels[categoryOf(entry)],
+      })),
+    },
+    commands,
+    params.toString(),
+  );
   useEffect(() => {
     void itemID;
     void roomID;
@@ -105,6 +210,7 @@ export default function Inbox() {
       <header className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold">Inbox</h1>
+          <UiControl control={control} />
           <span className="text-xs text-fg-muted">
             {entries.filter((entry) => !isTerminal(entry)).length} pending
           </span>
@@ -212,6 +318,7 @@ export default function Inbox() {
                   <li key={record.interaction_id}>
                     <button
                       type="button"
+                      ref={presentation.targetRef(record.interaction_id)}
                       aria-current={
                         selected?.interaction.interaction_id === record.interaction_id
                           ? "true"
@@ -335,6 +442,7 @@ export default function Inbox() {
           )}
         </section>
       </div>
+      {presentation.dialog}
     </PageShell>
   );
 }

@@ -3,6 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
 import {
+  UiControl,
+  useUiCommandOrigin,
+  useUiCommands,
+  useViewDescriptor,
+} from "@/hooks/useUiCommands";
+import { useViewPresentation } from "@/hooks/useViewPresentation";
+import {
   type ChannelAgentPresence,
   ChannelAPIError,
   type ChannelDetail,
@@ -58,6 +65,7 @@ function saveDraft(channelID: string, value: string): void {
 export default function ChannelPaneRoute() {
   const { channelID } = useParams<{ channelID?: string }>();
   const navigate = useNavigate();
+  const commandOrigin = useUiCommandOrigin();
   const [channels, setChannels] = useState<ChannelSummary[] | null>(null);
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
   const [listError, setListError] = useState("");
@@ -123,21 +131,46 @@ export default function ChannelPaneRoute() {
     return () => window.clearInterval(poll);
   }, [channelID, syncDetail]);
 
-  // Marking read is a caller-explicit action, never a side effect of the
-  // GET that loaded this channel — it fires once per channel open, driven
-  // by an actual unread count, not by the fetch itself.
+  // Successful participant opens (including deep links/back-forward) retain read
+  // behavior. Agent navigation is presentation-only and cannot record receipts.
   useEffect(() => {
-    if (!channelID || !detail || detail.channel_id !== channelID) return;
+    if (commandOrigin.current || !channelID || !detail || detail.channel_id !== channelID) return;
     const hasUnread = channels?.find((c) => c.channel_id === channelID)?.unread_count ?? 0;
     if (hasUnread === 0 || markedReadFor.current === channelID) return;
     markedReadFor.current = channelID;
     markChannelRead(channelID)
-      .then(() => syncChannels())
+      .then(syncChannels)
       .catch(() => {
         markedReadFor.current = "";
       });
-  }, [channelID, channels, detail, syncChannels]);
+  }, [channelID, channels, detail, syncChannels, commandOrigin]);
+  const selectChannel = (channel: ChannelSummary) => {
+    commandOrigin.current = false;
+    navigate(`/channels/${encodeURIComponent(channel.channel_id)}`);
+  };
 
+  const presentation = useViewPresentation(
+    (channels ?? []).slice(0, 32).map((channel) => ({
+      id: channel.channel_id,
+      title: channel.title || shortID(channel.channel_id),
+      body: <p>Channel view</p>,
+    })),
+    navigate,
+  );
+  const commands = useUiCommands(presentation.handlers);
+  const control = useViewDescriptor(
+    {
+      active_filters: [{ name: "modal", values: [presentation.modalID ?? "closed"] }],
+      selected_ids:
+        channelID && channels?.some((channel) => channel.channel_id === channelID)
+          ? [channelID]
+          : [],
+      visible_rows: (channels ?? [])
+        .slice(0, 32)
+        .map((channel) => ({ id: channel.channel_id, summary: "Channel" })),
+    },
+    commands,
+  );
   const orderedMessages = useMemo(() => (detail ? [...detail.messages].reverse() : []), [detail]);
 
   const send = async () => {
@@ -168,6 +201,7 @@ export default function ChannelPaneRoute() {
       >
         <header className="border-b border-zinc-800 px-4 py-3">
           <h1 className="text-sm font-semibold tracking-wide text-zinc-100">Channels</h1>
+          <UiControl control={control} />
           <p className="mt-1 text-xs leading-5 text-zinc-500">
             Opened by an agent, over the relay. Reading never consumes an agent's inbox.
           </p>
@@ -192,7 +226,8 @@ export default function ChannelPaneRoute() {
               <li key={channel.channel_id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/channels/${encodeURIComponent(channel.channel_id)}`)}
+                  ref={presentation.targetRef(channel.channel_id)}
+                  onClick={() => selectChannel(channel)}
                   aria-current={channel.channel_id === channelID ? "page" : undefined}
                   className={cn(
                     "block w-full border-b border-zinc-900 px-4 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
@@ -346,6 +381,7 @@ export default function ChannelPaneRoute() {
           </>
         )}
       </section>
+      {presentation.dialog}
     </PageShell>
   );
 }

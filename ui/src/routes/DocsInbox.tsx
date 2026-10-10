@@ -5,6 +5,8 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
+import { UiControl, useUiCommands, useViewDescriptor } from "@/hooks/useUiCommands";
+import { useViewPresentation } from "@/hooks/useViewPresentation";
 import {
   acknowledgeDoc,
   archiveDoc,
@@ -14,6 +16,7 @@ import {
   fetchDocsInbox,
   markDocRead,
 } from "@/lib/docs-api";
+import { idCommand } from "@/lib/ui-channel";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "pending" | "archived";
@@ -130,6 +133,35 @@ export default function DocsInboxRoute() {
     }
   }, [activeItem?.item_id]);
 
+  const presentation = useViewPresentation(
+    filteredItems.slice(0, 32).map((item) => ({
+      id: item.item_id,
+      title: item.title,
+      body: <Markdown content={item.content_markdown} />,
+    })),
+    navigate,
+  );
+  const commands = useUiCommands([
+    ...presentation.handlers,
+    idCommand("open_doc", "ephemeral", (args) => presentation.open(args.id as string)),
+  ]);
+  const control = useViewDescriptor(
+    {
+      active_filters: [
+        { name: "modal", values: [presentation.modalID ?? "closed"] },
+        { name: "search", values: [search ? "active" : "empty"] },
+        { name: "view", values: [view] },
+        { name: "read", values: [readFilter] },
+        { name: "sort", values: [sortOrder] },
+      ],
+      selected_ids: activeItem ? [activeItem.item_id] : [],
+      visible_rows: filteredItems
+        .slice(0, 32)
+        .map((item) => ({ id: item.item_id, summary: "Document" })),
+    },
+    commands,
+    search,
+  );
   const handleSelect = (targetID: string) => {
     navigate(`/docs/items/${encodeURIComponent(targetID)}`);
   };
@@ -192,6 +224,7 @@ export default function DocsInboxRoute() {
           <div className="flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-amber-400" />
             <h1 className="text-sm font-semibold tracking-tight text-zinc-100">Docs inbox</h1>
+            <UiControl control={control} />
           </div>
           <div className="flex items-center gap-1.5 text-xs text-zinc-400">
             <LiveDot tone={error ? "danger" : "success"} pulsing={!error} />
@@ -320,6 +353,7 @@ export default function DocsInboxRoute() {
                     <button
                       key={item.item_id}
                       type="button"
+                      ref={presentation.targetRef(item.item_id)}
                       onClick={() => handleSelect(item.item_id)}
                       className={cn(
                         "flex w-full flex-col gap-1.5 p-3.5 text-left transition-colors",
@@ -482,6 +516,7 @@ export default function DocsInboxRoute() {
           )}
         </div>
       </div>
+      {presentation.dialog}
     </PageShell>
   );
 }

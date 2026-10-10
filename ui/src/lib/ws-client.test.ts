@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { UiEvent } from "./ui-channel";
 import { connect, getTabClientID, getTabClientKind, seedShellClientIdentity } from "./ws-client";
 
 class MockWebSocket extends EventTarget {
@@ -43,6 +44,80 @@ class MockWebSocket extends EventTarget {
 }
 
 describe("ws-client", () => {
+  it("adapts UI frames on the exact room socket, independently of drafts and room refusals", () => {
+    MockWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const onError = vi.fn(),
+      onServerError = vi.fn(),
+      onEnvelope = vi.fn();
+    const client = connect("synthetic-room", {
+      onEnvelope,
+      onError,
+      onServerError,
+      heartbeatMs: 0,
+      clientID: "routing-label",
+    });
+    const transport = client.uiTransport;
+    expect(transport).toBeDefined();
+    const events: UiEvent[] = [];
+    const unsubscribe = transport?.subscribe((event) => events.push(event));
+    try {
+      expect(transport?.send({ type: "view.active", active: true })).toBe(false);
+      const first = MockWebSocket.instances[0];
+      first.emitOpen();
+      first.emitMessage(JSON.stringify({ type: "view.published", view_revision: 1 }));
+      const command = {
+        type: "ui.command",
+        command_id: "synthetic-command",
+        view_revision: 1,
+        name: "open_modal",
+        scope: "ephemeral",
+        arguments: { id: "synthetic-item" },
+      };
+      first.emitMessage(JSON.stringify(command));
+      expect(events).toEqual([
+        { type: "attached" },
+        { type: "view.published", view_revision: 1 },
+        command,
+      ]);
+      expect(
+        transport?.send({
+          type: "ui.ack",
+          ack: { command_id: "synthetic-command", view_revision: 1, status: "applied" },
+        }),
+      ).toBe(true);
+      expect(JSON.parse(first.sent[0]).type).toBe("ui.ack");
+      first.emitMessage(JSON.stringify({ ...command, view_revision: 0 }));
+      expect(onError).toHaveBeenCalledTimes(1);
+      first.emitMessage(
+        JSON.stringify({
+          type: "error",
+          code: "ui_command_rejected",
+          message: "verified binding unavailable",
+        }),
+      );
+      expect(events.at(-1)).toEqual({ type: "refused" });
+      expect(onServerError).not.toHaveBeenCalled();
+      expect(onEnvelope).not.toHaveBeenCalled();
+      client.switchRoom("synthetic-other-room");
+      expect(events.at(-1)).toEqual({ type: "detached" });
+      const before = events.length;
+      first.emitMessage(JSON.stringify(command));
+      expect(events).toHaveLength(before);
+      expect(transport?.connected()).toBe(false);
+      MockWebSocket.instances[1].emitOpen();
+      expect(transport?.connected()).toBe(true);
+      client.close();
+      expect(events.at(-1)).toEqual({ type: "detached" });
+      expect(transport?.connected()).toBe(false);
+      expect(first.sent.some((frame) => JSON.parse(frame).type === "draft")).toBe(false);
+    } finally {
+      unsubscribe?.();
+      client.close();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("ignores stale socket events after switchRoom", () => {
     const originalWS = globalThis.WebSocket;
     Object.assign(MockWebSocket, {
