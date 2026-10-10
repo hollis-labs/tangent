@@ -83,6 +83,8 @@ type ChildPlugin struct {
 	configLoaded    bool
 	configApply     func(context.Context) error
 	configSecrets   []string
+	uiObserver      UIObserver
+	uiReady         func() bool
 }
 
 func NewChildPlugin(spec ChildSpec, tools []MCPTool, routes []HTTPRoute, opts ...ChildPluginOption) *ChildPlugin {
@@ -125,6 +127,13 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 	}
 	p.mu.Lock()
 	p.logger = h.logger
+	if p.uiObserver != nil {
+		if !scopedOK {
+			p.mu.Unlock()
+			return errors.New("pluginhost: UI observer requires scoped load owner")
+		}
+		p.uiReady = scoped.owner.available
+	}
 	if p.lifecycle != nil {
 		p.mu.Unlock()
 		return fmt.Errorf("pluginhost: %s already loaded", p.ID())
@@ -264,15 +273,25 @@ func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *dr
 	p.status = plugin.PluginStatus{Loaded: true, Enabled: true, LoadedAt: time.Now().UTC()}
 	p.mu.Unlock()
 	p.configurationActivated(ctx)
+	if p.uiObserver != nil {
+		return p.uiObserver.Activated(ctx, owner, func() bool { return p.uiCurrent(owner) })
+	}
 	return nil
 }
-func (p *ChildPlugin) revoke(_ context.Context, owner driver.Owner) error {
+func (p *ChildPlugin) revoke(ctx context.Context, owner driver.Owner) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.owner == owner && p.cancel != nil {
+	same := p.owner == owner
+	if same && p.cancel != nil {
 		p.cancel()
 		p.active = nil
 		p.cancel = nil
+	}
+	observer := p.uiObserver
+	p.mu.Unlock()
+	// Fence child admission before joining owned UI resources; do not hold the
+	// child mutex while callbacks consult their exact current-driver predicate.
+	if same && observer != nil {
+		return observer.Revoked(ctx, owner)
 	}
 	return nil
 }
