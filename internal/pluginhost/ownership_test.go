@@ -200,8 +200,6 @@ func TestOwnerDispatchBudgetTripsCircuitWithoutStoppingAnotherOwner(t *testing.T
 	if _, err = guardedTool.Handler.MCPCallTool(context.Background(), subprocess.MCPCallRequest{}); !errors.Is(err, ErrPluginNotLoaded) {
 		t.Fatalf("circuit allowed another call: %v", err)
 	}
-	host.ops.Lock()
-	host.ops.Unlock() // synchronizes only started teardown; use lifecycle completion below.
 	deadline := time.After(time.Second)
 	for stuck.unloads.Load() == 0 {
 		select {
@@ -299,4 +297,42 @@ func TestQueuedControlCancellationNeverRunsLater(t *testing.T) {
 		t.Fatal("canceled control waited for operation gate")
 	}
 	host.ops.Unlock()
+}
+
+func TestInventoryDuplicateRefusalPreservesCurrentOwner(t *testing.T) {
+	host, _ := newHost(t)
+	p := ownerFixture("current")
+	if err := host.Load(p); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.UnloadAll() })
+	if err := host.Load(ownerFixture("current")); !errors.Is(err, ErrDuplicatePlugin) {
+		t.Fatal(err)
+	}
+	inventory := host.Inventory(context.Background())
+	if len(inventory.Plugins) != 1 {
+		t.Fatalf("unexpected inventory: %+v", inventory)
+	}
+	current := inventory.Plugins[0]
+	if !current.Loaded || current.State != "running" || current.Error != "" {
+		t.Fatalf("duplicate refusal hid active owner: %+v", current)
+	}
+}
+
+type failedRuntimePlugin struct{ *owningPlugin }
+
+func (*failedRuntimePlugin) RuntimeFailure() string { return "fixture terminal runtime failure" }
+
+func TestInventoryTerminalRuntimeFailureIsNotRunning(t *testing.T) {
+	host, _ := newHost(t)
+	p := &failedRuntimePlugin{ownerFixture("failed")}
+	if err := host.Load(p); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = host.UnloadAll() })
+	inventory := host.Inventory(context.Background())
+	current := inventory.Plugins[0]
+	if current.State != "failed" || !current.FailedAfterLoad || current.RuntimeError == "" {
+		t.Fatalf("terminal runtime failure reported running: %+v", current)
+	}
 }

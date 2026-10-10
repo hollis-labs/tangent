@@ -50,6 +50,7 @@ func (h *Host) recordAttempt(p plugin.Plugin, id string, err error) {
 	if err == nil {
 		if owner := h.owners[id]; owner != nil {
 			owner.ready = true
+			owner.attempt = attempt
 		}
 	}
 	h.mu.Unlock()
@@ -341,10 +342,14 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	copy(attempts, h.attempts)
 	stillLoaded := map[string]bool{}
 	loading := map[string]bool{}
+	currentAttempts := map[string]*loadAttempt{}
 	for id := range h.loaded {
 		owner := h.owners[id]
 		stillLoaded[id] = owner != nil && owner.ready
 		loading[id] = !stillLoaded[id]
+		if stillLoaded[id] {
+			currentAttempts[id] = owner.attempt
+		}
 	}
 	intent := map[string]bool{}
 	faults := map[string]string{}
@@ -362,6 +367,11 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 	latest := map[string]*loadAttempt{}
 	for _, attempt := range attempts {
 		latest[attempt.id] = attempt
+	}
+	for id, attempt := range currentAttempts {
+		if attempt != nil {
+			latest[id] = attempt
+		}
 	}
 	for id := range intent {
 		if latest[id] == nil {
@@ -431,13 +441,18 @@ func (h *Host) Inventory(ctx context.Context) PluginInventory {
 		if record.Loaded {
 			record.State = "running"
 		}
+		if record.Enabled && record.FailedAfterLoad {
+			record.State = "failed"
+		}
 		if loading[attempt.id] {
 			record.State = "loading"
 		}
 		if fault := faults[attempt.id]; fault != "" {
 			record.RuntimeError = fault
 			record.FailedAfterLoad = true
-			record.State = "quarantined"
+			if record.Enabled {
+				record.State = "quarantined"
+			}
 		}
 		if attempt.err != "" {
 			inventory.Refused++

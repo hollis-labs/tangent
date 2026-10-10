@@ -39,16 +39,17 @@ func (h *Host) AttachToolRegistry(registry ToolRegistry) error {
 }
 
 type registrationOwner struct {
-	host   *Host
-	id     string
-	ctx    context.Context
-	cancel context.CancelFunc
-	once   sync.Once
-	ready  bool
+	host    *Host
+	id      string
+	ctx     context.Context
+	cancel  context.CancelFunc
+	once    sync.Once
+	ready   bool
+	attempt *loadAttempt
 }
 
 func newRegistrationOwner(h *Host, id string) *registrationOwner {
-	ctx, cancel := context.WithCancel(h.ctx)
+	ctx, cancel := context.WithCancel(h.ctx) // #nosec G118 -- retained by the load owner; unload, failed startup and circuit trip cancel it.
 	return &registrationOwner{host: h, id: id, ctx: ctx, cancel: cancel}
 }
 func (h *Host) currentOwnerLocked(owner *registrationOwner) bool {

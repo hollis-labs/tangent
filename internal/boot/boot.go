@@ -575,8 +575,8 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// would silently strip a documented capability.
 		return release(fmt.Errorf("build mcp server: %w", err))
 	}
-	if err := pluginHost.AttachToolRegistry(mcpSrv); err != nil {
-		return release(fmt.Errorf("attach plugin tools: %w", err))
+	if attachErr := pluginHost.AttachToolRegistry(mcpSrv); attachErr != nil {
+		return release(fmt.Errorf("attach plugin tools: %w", attachErr))
 	}
 	// The plugin host's tool caller (CW-20260910-0031). A plugin drives Tangent
 	// by calling the same tools an agent calls, in process, with the same
