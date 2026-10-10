@@ -109,6 +109,11 @@ func (p *ChildPlugin) Dependencies() []string { return nil }
 
 func (p *ChildPlugin) Load(host plugin.Host) error {
 	h, ok := host.(*Host)
+	scoped, scopedOK := host.(*ownedHost)
+	if scopedOK {
+		h = scoped.Host
+		ok = true
+	}
 	if !ok || h == nil {
 		return fmt.Errorf("pluginhost: %s: Tangent host required; got %T", p.ID(), host)
 	}
@@ -158,20 +163,20 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 	if err != nil {
 		return err
 	}
-	if err = l.Enable(h.Context()); err != nil {
+	if err = l.Enable(host.Context()); err != nil {
 		err = &pluginDiagnosticError{cause: err, text: redactPluginDiagnostic(err.Error())}
 		p.fail(err)
 		return err
 	}
 	for _, tool := range p.tools {
 		tool.Handler = p
-		if err = h.RegisterMCPTool(tool); err != nil {
+		if err = registerChildTool(host, tool); err != nil {
 			return p.failAndStop(err)
 		}
 	}
 	for _, route := range p.route {
 		route.Handler = p
-		if err = h.RegisterHTTPRoute(route); err != nil {
+		if err = registerChildRoute(host, route); err != nil {
 			return p.failAndStop(err)
 		}
 	}

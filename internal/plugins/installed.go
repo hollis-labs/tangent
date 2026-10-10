@@ -33,6 +33,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 
+	sdkplugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
@@ -84,6 +85,9 @@ func LoadInstalled(
 	if err != nil {
 		return nil, fmt.Errorf("plugins: resolve install root: %w", err)
 	}
+	if err := host.ConfigureIntent(filepath.Join(root, ".state", "enabled.json")); err != nil {
+		return nil, fmt.Errorf("plugins: enabled intent: %w", err)
+	}
 	installed, rejected, err := pluginpkg.Scan(root)
 	if err != nil {
 		return nil, fmt.Errorf("plugins: %w", err)
@@ -99,28 +103,44 @@ func LoadInstalled(
 	}
 
 	for _, source := range installed {
-		if kindErr := resolveKinds(envSvc, source.Manifest.Bindings.Kinds); kindErr != nil {
-			host.RecordUnusable(source.Dir, kindErr)
-			logger.Warn("plugins: required kind is unavailable", "plugin", source.Manifest.ID, "error", kindErr)
+		id := source.Manifest.ID
+		factory := func() (sdkplugin.Plugin, error) {
+			// Rescan the exact installed directory on every operation: install
+			// metadata, integrity and entrypoint must be verified again.
+			current, refused, scanErr := pluginpkg.Scan(root)
+			if scanErr != nil {
+				return nil, scanErr
+			}
+			for _, reject := range refused {
+				if reject.Dir == source.Dir {
+					return nil, reject.Reason
+				}
+			}
+			for _, item := range current {
+				if item.Manifest.ID != id {
+					continue
+				}
+				if kindErr := resolveKinds(envSvc, item.Manifest.Bindings.Kinds); kindErr != nil {
+					return nil, kindErr
+				}
+				entry, cleanup, snapshotErr := pluginpkg.Snapshot(item, root)
+				if snapshotErr != nil {
+					return nil, snapshotErr
+				}
+				return pluginhost.NewChildPlugin(specFor(entry, root, cleanup), toolsFor(entry), routesFor(entry), pluginhost.WithHealthGate(!disableHealthGate)), nil
+			}
+			return nil, fmt.Errorf("plugins: %s is no longer installed", id)
+		}
+		if err := host.RegisterFactory(id, factory); err != nil {
+			return nil, err
+		}
+		if !host.DesiredEnabled(id) {
 			continue
 		}
-		entry, cleanup, snapshotErr := pluginpkg.Snapshot(source, root)
-		if snapshotErr != nil {
-			host.RecordUnusable(source.Dir, snapshotErr)
-			continue
+		if loadErr := host.SetEnabled(ctx, id, true); loadErr != nil {
+			host.RecordUnusable(id, loadErr)
+			logger.Warn("plugins: installed plugin failed to load", "plugin", id, "error", loadErr)
 		}
-
-		child := pluginhost.NewChildPlugin(
-			specFor(entry, root, cleanup), toolsFor(entry), routesFor(entry),
-			pluginhost.WithHealthGate(!disableHealthGate))
-		if loadErr := host.Load(child); loadErr != nil {
-			_ = child.Unload()
-			logger.Warn("plugins: installed plugin failed to load",
-				"plugin", entry.Manifest.ID, "error", loadErr)
-			continue
-		}
-		logger.Info("plugins: loaded",
-			"plugin", entry.Manifest.ID, "version", entry.Manifest.Version)
 	}
 	return host, nil
 }

@@ -61,16 +61,12 @@
 //     Ratified by CW-20260910-0036: the host holds no plugin config, so it can
 //     never hold a plugin's secret. A plugin reads its own environment. The
 //     reasoning is at GetConfig.
-//   - An enable/disable flag. For compiled-in plugins the enable set is
-//     internal/plugins/shipped.go and nothing has a caller for a runtime
-//     toggle; see lifecycle.go for why not building it is the way not to
-//     inherit Tether's enabled-but-unreachable stall.
+//
+// Lifecycle enable/disable and reload are host-owned controls, not SDK config.
 //
 // Not yet, per the model (ADR 0008) — these are the ones expected to move:
 //
-//   - Subprocess plugins. The SDK supports them; this host does not spawn them.
-//     Compiled-in is the dogfood concession, not the target shape (ADR 0008 §5),
-//     and CW-20260910-0034 is the migration.
+// Installed plugins already run through the shared protocol-2 subprocess driver.
 //   - Runtime asset loading. This host ships every renderer in ui_dist. ADR 0008
 //     §3 adopts Nanite's model, in which the browser dynamic-imports a plugin's
 //     own bundle, so this is a not-yet rather than a refusal — ADR 0007 §4 stated
@@ -154,7 +150,17 @@ type Host struct {
 	logger       *slog.Logger
 	envSvc       *envelope.Service
 
-	mu sync.Mutex
+	mu           sync.Mutex
+	ops          operationGate
+	owners       map[string]*registrationOwner
+	toolOwners   map[string]*registrationOwner
+	routeOwners  map[string]*registrationOwner
+	kindOwners   map[string]*registrationOwner
+	toolRegistry ToolRegistry
+	factories    map[string]func() (plugin.Plugin, error)
+	intent       map[string]bool
+	intentPath   string
+	faults       map[string]string
 	// loaded is every plugin this host has loaded, by id.
 	loaded map[string]plugin.Plugin
 	// attempts is every Load call in the order it was made, refusals
@@ -174,8 +180,7 @@ type Host struct {
 	// can shrink it to something a test can wait for.
 	budget time.Duration
 	// kinds maps a contributed envelope kind to the NAME OF THE COMPONENT that
-	// claimed it — not to a plugin id, which this host cannot know because
-	// plugin_sdk.Host passes no caller identity to a registration call. It
+	// claimed it. kindOwners separately records the exact scoped load owner. It
 	// exists so a second claim on the same kind is refused here, with a
 	// readable message, rather than racing the registry's duplicate check.
 	kinds map[string]string
@@ -223,15 +228,22 @@ func New(ctx context.Context, logger *slog.Logger, envSvc *envelope.Service) (*H
 	}
 	return &Host{
 		hostInstance: epoch,
+		ops:          make(operationGate, 1),
 		ctx:          ctx,
 		logger:       logger,
 		envSvc:       envSvc,
 		loaded:       map[string]plugin.Plugin{},
-		kinds:        map[string]string{},
-		tools:        map[string]MCPTool{},
-		routes:       map[string]HTTPRoute{},
-		release:      make(chan struct{}),
-		budget:       dispatchBudget,
+		owners:       map[string]*registrationOwner{},
+		toolOwners:   map[string]*registrationOwner{},
+		routeOwners:  map[string]*registrationOwner{},
+		kindOwners:   map[string]*registrationOwner{},
+		factories:    map[string]func() (plugin.Plugin, error){},
+		intent:       map[string]bool{}, faults: map[string]string{},
+		kinds:   map[string]string{},
+		tools:   map[string]MCPTool{},
+		routes:  map[string]HTTPRoute{},
+		release: make(chan struct{}),
+		budget:  dispatchBudget,
 
 		contributeKind: extensions.RegisterContributedKind,
 	}, nil
@@ -255,11 +267,18 @@ func (h *Host) HostInstance() string { return h.hostInstance }
 //
 // ChildPlugin implements this same contract using the shared subprocess lifecycle;
 // registration and dispatch policy remain here.
-func (h *Host) Load(p plugin.Plugin) (err error) {
+func (h *Host) Load(p plugin.Plugin) error {
+	h.ops.Lock()
+	defer h.ops.Unlock()
+	return h.load(p)
+}
+
+func (h *Host) load(p plugin.Plugin) (err error) {
 	if p == nil {
 		return fmt.Errorf("pluginhost: plugin is nil")
 	}
 	var id string
+	var owned bool
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("pluginhost: load %s: panicked: %v", identify(id), recovered)
@@ -269,6 +288,9 @@ func (h *Host) Load(p plugin.Plugin) (err error) {
 			// the name and version it managed to report, and safeString keeps a
 			// plugin that panics describing itself from taking the record with
 			// it. Inventory never reads a refused attempt's Status.
+			if owned {
+				_ = h.unload(id)
+			}
 			h.recordAttempt(p, id, err)
 		}
 	}()
@@ -292,30 +314,21 @@ func (h *Host) Load(p plugin.Plugin) (err error) {
 			return fmt.Errorf("pluginhost: %s depends on %s, which is not loaded", id, dep)
 		}
 	}
+	if h.unloaded {
+		h.mu.Unlock()
+		return ErrHostShuttingDown
+	}
+	owner := newRegistrationOwner(h, id)
+	h.owners[id] = owner
+	delete(h.faults, id)
+	if _, known := h.intent[id]; !known {
+		h.intent[id] = true
+	}
 	h.loaded[id] = p
+	owned = true
 	h.mu.Unlock()
 
-	if loadErr := p.Load(h); loadErr != nil {
-		// The plugin comes back off the host so GetPlugin cannot hand another
-		// plugin a dependency that never finished loading.
-		//
-		// Any kind it DID register before failing stays in the envelope
-		// registry: go-envelopes' registry is boot-time and has no removal, and
-		// faking a rollback here would report a registry state that is not the
-		// one in force. It does not matter in practice because the only caller
-		// is LoadShipped, and a plugin that fails to load fails the boot — but
-		// a reader deserves the real reason rather than a cleanup loop that
-		// looks like it undoes something.
-		//
-		// Any tool or route it registered stays recorded for a second reason,
-		// and it is worth stating rather than leaving to be inferred: this host
-		// cannot attribute a registration to a plugin at all (the SDK passes no
-		// caller identity), so there is nothing to select for removal. Both
-		// maps are drained by a caller that only ever runs after a successful
-		// LoadShipped, so an entry from a failed load is never installed.
-		h.mu.Lock()
-		delete(h.loaded, id)
-		h.mu.Unlock()
+	if loadErr := p.Load(&ownedHost{Host: h, owner: owner}); loadErr != nil {
 		return fmt.Errorf("pluginhost: load %s: %w", id, loadErr)
 	}
 	h.recordAttempt(p, id, nil)
@@ -335,6 +348,9 @@ func (h *Host) Load(p plugin.Plugin) (err error) {
 // accommodating would mean four registration points that record something
 // nothing ever reads.
 func (h *Host) RegisterUIComponent(component plugin.UIComponent) error {
+	return h.registerUIComponent(component, nil)
+}
+func (h *Host) registerUIComponent(component plugin.UIComponent, owner *registrationOwner) error {
 	if component.Type != plugin.UIComponentTypeEnvelope {
 		return fmt.Errorf(
 			"%w: UI component type %q (this host registers %q only)",
@@ -363,15 +379,15 @@ func (h *Host) RegisterUIComponent(component plugin.UIComponent) error {
 	}
 
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if owner != nil && !h.currentOwnerLocked(owner) {
+		return ErrPluginNotLoaded
+	}
 	if component, claimed := h.kinds[kind]; claimed {
-		h.mu.Unlock()
-		// Named by component, not by plugin: plugin_sdk.Host carries no caller
-		// identity, so this host genuinely does not know which plugin is
-		// calling and will not guess in an error message.
+		// The component label describes the collision; the scoped handle owns it.
 		return fmt.Errorf(
 			"pluginhost: %s is already contributed by component %q", kind, component)
 	}
-	h.mu.Unlock()
 
 	// The manifest requirement, and the only place it is enforced.
 	if err := h.contributeKind(h.envSvc, kind); err != nil {
@@ -383,9 +399,10 @@ func (h *Host) RegisterUIComponent(component plugin.UIComponent) error {
 		return fmt.Errorf("pluginhost: register %s: %w", kind, err)
 	}
 
-	h.mu.Lock()
 	h.kinds[kind] = component.Name
-	h.mu.Unlock()
+	if owner != nil {
+		h.kindOwners[kind] = owner
+	}
 	h.logger.Info("pluginhost: envelope kind contributed", "kind", kind, "component", component.Name)
 	return nil
 }

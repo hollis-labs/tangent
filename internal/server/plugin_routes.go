@@ -88,6 +88,20 @@ func registerPluginRoutes(
 				"authorizes them, and mounting them without one would publish them unguarded",
 			len(cfg.PluginRoutes))
 	}
+	if cfg.PluginHost != nil {
+		if cfg.Participants == nil {
+			return fmt.Errorf("server: live plugin host requires participant gate")
+		}
+		mux.Handle(pluginhost.RoutePrefix, hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			route, ok := cfg.PluginHost.HTTPRoute(r.Method, r.URL.Path)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			requireParticipant(cfg.Participants, cfg.Telemetry, route.Capability, pluginRouteHandler(route, logger)).ServeHTTP(w, r)
+		})))
+		registerPluginManagement(mux, routes, cfg)
+	}
 	for _, route := range cfg.PluginRoutes {
 		if !authz.Grants(authz.KindParticipant, route.Capability) {
 			return fmt.Errorf(

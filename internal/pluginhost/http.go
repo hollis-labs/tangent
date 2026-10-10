@@ -76,7 +76,8 @@ type HTTPRoute = plugin.HTTPRoute
 //
 // Like RegisterMCPTool it only records: plugins load before the HTTP server is
 // constructed, and internal/server mounts what HTTPRoutes() reports.
-func (h *Host) RegisterHTTPRoute(route HTTPRoute) error {
+func (h *Host) RegisterHTTPRoute(route HTTPRoute) error { return h.registerHTTPRoute(route, nil) }
+func (h *Host) registerHTTPRoute(route HTTPRoute, owner *registrationOwner) error {
 	switch route.Method {
 	case http.MethodGet, http.MethodPost:
 	case "":
@@ -111,6 +112,9 @@ func (h *Host) RegisterHTTPRoute(route HTTPRoute) error {
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if owner != nil && !h.currentOwnerLocked(owner) {
+		return ErrPluginNotLoaded
+	}
 	if _, claimed := h.routes[route.Pattern()]; claimed {
 		return fmt.Errorf("%w: %s", ErrRouteClaimed, route.Pattern())
 	}
@@ -118,9 +122,12 @@ func (h *Host) RegisterHTTPRoute(route HTTPRoute) error {
 	// gives: a participant pressing a button must get an answer, and a handler
 	// that never returns must not be what graceful shutdown is waiting on.
 	route.Handler = guardedHTTPHandler{
-		pattern: route.Pattern(), release: h.release, budget: h.budget, inner: route.Handler,
+		pattern: route.Pattern(), release: h.release, budget: h.budget, inner: route.Handler, owner: owner,
 	}
 	h.routes[route.Pattern()] = route
+	if owner != nil {
+		h.routeOwners[route.Pattern()] = owner
+	}
 	h.logger.Info("pluginhost: http route contributed",
 		"method", route.Method, "path", route.Path, "capability", route.Capability)
 	return nil

@@ -164,13 +164,12 @@ express the need; `GetService` stays unimplemented.
 secret.** `GetConfig`, `SetConfig` and `RegisterConfigSchema` are ratified
 unimplemented: a plugin reads its own environment, which
 keeps ADR 0005 §3.1's secret boundary true by construction instead of by policy.
-`Unload` is the same posture — it drops the plugin's own state and unregisters
-nothing, because neither the envelope registry nor an unattributable tool
-registration can be removed, and a pretend unload is what the first host shipped.
-`internal/pluginhost/lifecycle.go` and `isolation.go` carry both, plus the
-dispatch guard: a contributed tool or route is bounded and panic-contained at
-registration, and shutdown releases in-flight dispatches rather than waiting on
-them.
+`Unload` fences the exact load owner's handle and dispatches, withdraws its
+registrations, and tears down its subprocess. Core definitions and other owners
+remain; retained material for pinned interactions is not erased. Enable intent
+is a separate boolean-only store, not plugin configuration. The live MCP and
+HTTP registries resolve the current owner, and budget exhaustion quarantines
+that owner before teardown. Caller cancellation does not quarantine it.
 
 A change that moves a manifest's `contract_digest` is a **version** bump, never
 a `revision` bump — ADR 0003 §3, and `revision` is a non-semantic edit counter

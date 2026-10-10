@@ -53,7 +53,9 @@ func (s *Server) resolveToolSchemas() error {
 		}
 		resolved[def.Name] = r
 	}
+	s.pluginMu.Lock()
 	s.resolvedSchemas = resolved
+	s.pluginMu.Unlock()
 	return nil
 }
 
@@ -70,7 +72,9 @@ func (s *Server) inputSchemaValidationMiddleware(next mcpsdk.MethodHandler) mcps
 		if !ok || call.Params == nil {
 			return next(ctx, method, req)
 		}
+		s.pluginMu.RLock()
 		resolved := s.resolvedSchemas[call.Params.Name]
+		s.pluginMu.RUnlock()
 		if resolved == nil {
 			return next(ctx, method, req)
 		}

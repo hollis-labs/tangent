@@ -33,8 +33,7 @@ import (
 
 // PluginRecord is one plugin as the host knows it.
 //
-// Loaded is the host's own record of whether Load returned; Enabled is the
-// plugin's self-report. They are separate fields because a report that blended
+// Loaded is the host's own record of whether Load returned; Enabled is desired host intent; State reports the current lifecycle. They are separate fields because a report that blended
 // them would let a plugin claim it loaded when the host says it did not.
 type PluginRecord struct {
 	ID      string `json:"id"`
@@ -42,6 +41,7 @@ type PluginRecord struct {
 	Version string `json:"version,omitempty"`
 	Loaded  bool   `json:"loaded"`
 	Enabled bool   `json:"enabled"`
+	State   string `json:"state"`
 	// At is when the host recorded the load attempt, successful or not.
 	At time.Time `json:"at,omitempty"`
 	// Error is why a refused load was refused, bounded like every other
