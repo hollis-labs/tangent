@@ -2,14 +2,11 @@ package pluginhost
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 
 	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/tangent/internal/pluginintent"
 )
 
 // ConfigureIntent opens the host-owned enabled-intent store. It holds booleans
@@ -17,23 +14,9 @@ import (
 func (h *Host) ConfigureIntent(path string) error {
 	h.ops.Lock()
 	defer h.ops.Unlock()
-	f, err := os.Open(path) // #nosec G304 -- host-selected boolean intent file under the configured install root.
-	var data []byte
-	if err == nil {
-		data, err = io.ReadAll(io.LimitReader(f, 1<<20+1))
-		err = errors.Join(err, f.Close())
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	intent, err := pluginintent.Read(path)
+	if err != nil {
 		return err
-	}
-	intent := map[string]bool{}
-	if err == nil {
-		if len(data) > 1<<20 {
-			return errors.New("pluginhost: enabled intent exceeds limit")
-		}
-		if err = json.Unmarshal(data, &intent); err != nil || intent == nil {
-			return errors.New("pluginhost: invalid enabled intent")
-		}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -65,9 +48,13 @@ func (h *Host) RegisterFactory(id string, factory func() (plugin.Plugin, error))
 func (h *Host) DesiredEnabled(id string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	enabled, known := h.intent[id]
-	return !known || enabled
+	return h.intent[id]
 }
+
+// Lifecycle management is an operator/composition action, never authority
+// acquired by asserting an interface on an embedded scoped SDK handle.
+func (*ownedHost) SetEnabled(context.Context, string, bool) error { return ErrSurfaceNotHonored }
+func (*ownedHost) Reload(context.Context, string) error           { return ErrSurfaceNotHonored }
 
 // SetEnabled serializes durable operator intent and actual lifecycle work.
 // Failed startup remains enabled-but-failed in Inventory, never reported ready.
@@ -90,7 +77,7 @@ func (h *Host) SetEnabled(ctx context.Context, id string, enabled bool) error {
 	if closing {
 		return ErrHostShuttingDown
 	}
-	if err := h.saveIntent(id, enabled); err != nil {
+	if err := h.saveIntent(ctx, id, enabled); err != nil {
 		return err
 	}
 	if !enabled {
@@ -155,48 +142,18 @@ func (h *Host) loadFactory(id string, factory func() (plugin.Plugin, error)) err
 	return nil
 }
 
-func (h *Host) saveIntent(id string, enabled bool) error {
+func (h *Host) saveIntent(ctx context.Context, id string, enabled bool) error {
 	h.mu.Lock()
-	intent := make(map[string]bool, len(h.intent)+1)
-	for key, value := range h.intent {
-		intent[key] = value
-	}
 	path := h.intentPath
+	if path == "" {
+		h.intent[id] = enabled
+		h.mu.Unlock()
+		return nil
+	}
 	h.mu.Unlock()
-	intent[id] = enabled
-	if path != "" {
-		data, err := json.Marshal(intent)
-		if err != nil {
-			return err
-		}
-		dir := filepath.Dir(path)
-		if err = os.MkdirAll(dir, 0700); err != nil {
-			return err
-		}
-		f, err := os.CreateTemp(dir, ".enabled-*")
-		if err != nil {
-			return err
-		}
-		name := f.Name()
-		defer func() { _ = os.Remove(name) }()
-		if _, err = f.Write(data); err == nil {
-			err = f.Sync()
-		}
-		err = errors.Join(err, f.Close())
-		if err != nil {
-			return err
-		}
-		if err = os.Rename(name, path); err != nil {
-			return err
-		}
-		directory, err := os.Open(dir) // #nosec G304 -- sync the parent of the host-selected intent file.
-		if err != nil {
-			return err
-		}
-		err = errors.Join(directory.Sync(), directory.Close())
-		if err != nil {
-			return err
-		}
+	intent, err := pluginintent.Set(ctx, path, id, enabled)
+	if err != nil {
+		return err
 	}
 	h.mu.Lock()
 	h.intent = intent

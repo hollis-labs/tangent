@@ -364,8 +364,28 @@ workers in `Unload` so the shared driver's bounded graceful teardown succeeds.
 
 ### Enable intent survives restart; reload obtains a fresh owner
 
-The host's `.state/enabled.json` stores enabled booleans only. The participant
-management API can enable, disable and reload an installed plugin. Reload first
+The host's `.state/enabled.json` stores explicit enabled booleans only. An
+unknown ID is disabled: discovering a bundle or saving its settings never opts
+it in. Existing true/false decisions are preserved without a migration. Previous
+hosts recorded true when starting an installed plugin; those decisions continue
+to work. Merely dropped-in bundles with no decision remain disabled.
+
+The Settings page shows desired enable intent separately from actual runtime
+state. Its participant-guarded controls can enable, disable and reload a discovered
+plugin. No view, config save or disabled reload implicitly enables one.
+
+For an approved rollout, `tangent plugin install <dir>` installs without changing
+an existing decision. A new install remains disabled. Use `tangent plugin install
+--enable <dir>` or `tangent plugin enable <id>` for explicit opt-in; `--disable` or
+`tangent plugin disable <id>` records explicit disabled intent. CLI decisions
+apply on the next host start, while Settings operates on the running host.
+`tangent plugin list` shows artifact usability and next-start enable intent; it
+cannot claim the running process state. Upgrading without a flag preserves the
+previous decision. Shared locked read-modify-write keeps sibling decisions when
+CLI and host writes overlap, or refuses a competing writer for an explicit retry.
+Enable decisions grant no capabilities or credential access.
+
+Reload first
 stops and sweeps the old owner, then re-verifies and snapshots the installed
 artifact. A fresh process receives a fresh incarnation and generation. Failure
 does not leave the old registration live or masquerade as readiness.

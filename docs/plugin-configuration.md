@@ -48,6 +48,11 @@ values again on every save. Environment declarations are metadata, not permissio
 to inherit an environment variable. Conditional domain requirements, such as
 messaging's file/settings mode, remain the plugin's responsibility.
 
+Saving settings for a disabled plugin does not enable it. Settings exposes
+explicit lifecycle enable/disable controls and shows desired intent separately
+from runtime state. Apply refuses a disabled plugin; enable is a separate
+participant-authorized choice.
+
 Save persists a revision. Apply explicitly reloads the plugin with a detached
 resolved `Init.Config`, including its declared secrets. The successful full load
 and registration point marks that incarnation's revision applied. Planning or
