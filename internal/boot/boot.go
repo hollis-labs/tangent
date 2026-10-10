@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/channel"
@@ -46,6 +47,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/packages"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/pluginpkg"
 	"github.com/hollis-labs/tangent/internal/plugins"
@@ -103,6 +105,12 @@ type Config struct {
 	// uses ~/.tangent/plugins. It is a field so a test can point a boot at a
 	// directory it owns rather than at the operator's real plugins.
 	PluginDir string
+	// ConfigScopes are host-selected client/environment/project overlays. The
+	// default client scope is local; browser/plugin requests cannot add scopes.
+	ConfigScopes []pluginconfig.Scope
+	// ConfigSecrets allows an embedder to supply its genuine keychain service.
+	// Tests use synthetic owned backends; production defaults to OSKeychain.
+	ConfigSecrets pluginconfig.Secrets
 
 	// DisablePluginHealthGate turns off the health gate: normally, a
 	// subprocess plugin's cached plugin/health verdict can refuse a caller's
@@ -153,17 +161,15 @@ type Services struct {
 type ownedCloser struct {
 	db        *sql.DB
 	ownership *tangentdb.Ownership
-	// plugins is the plugin host. UnloadAll runs first on the way out: it
-	// releases every in-flight plugin dispatch rather than waiting out the
-	// dispatch budget, then lets each plugin drop its own state. It removes
-	// nothing a plugin registered, which is the host's stated contract and not
-	// an oversight — internal/pluginhost/lifecycle.go says why.
+	// plugins is torn down before the configuration/keychain reference store.
+	// Unload fences owners, withdraws registrations and joins subprocess work.
 	//
 	// First for the same reason the loopback closes before the database: a
 	// plugin handler that nothing bounded is exactly what CW-20260909-0045
 	// measured graceful shutdown waiting on, and a process still holding the
 	// database when its successor boots is the cost.
 	plugins *pluginhost.Host
+	config  *pluginconfig.Store
 	// loopback is the plugin host's in-process MCP session. It is closed
 	// before the database because it can still be serving a plugin's tool
 	// call, and it holds the SDK's reader goroutines — a process that forgot
@@ -177,6 +183,11 @@ func (c *ownedCloser) Close() error {
 	if c.plugins != nil {
 		if err := c.plugins.UnloadAll(); err != nil {
 			errs = append(errs, fmt.Errorf("unload plugins: %w", err))
+		}
+	}
+	if c.config != nil {
+		if err := c.config.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close plugin config: %w", err))
 		}
 	}
 	if c.loopback != nil {
@@ -337,8 +348,21 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		}
 		pluginRoot = resolved
 	}
+	scopes := cfg.ConfigScopes
+	if len(scopes) == 0 {
+		scopes = []pluginconfig.Scope{{Kind: "client", ID: "local"}}
+	}
+	secrets := cfg.ConfigSecrets
+	if secrets == nil {
+		secrets = pluginconfig.OSKeychain{}
+	}
+	configStore, configErr := pluginconfig.Open(context.Background(), filepath.Join(pluginRoot, ".state", "config"), secrets, scopes)
+	if configErr != nil {
+		return release(fmt.Errorf("plugin config: %w", configErr))
+	}
+	closer.config = configStore
 	pluginHost, pluginErr := plugins.LoadInstalled(
-		context.Background(), logger, envSvc, pluginRoot, cfg.DisablePluginHealthGate)
+		context.Background(), logger, envSvc, pluginRoot, cfg.DisablePluginHealthGate, plugins.WithConfigStore(configStore))
 	if pluginErr != nil {
 		return release(fmt.Errorf("load installed plugins: %w", pluginErr))
 	}
@@ -660,6 +684,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		Health:             healthReporter,
 		Telemetry:          recorder,
 		PluginHost:         pluginHost,
+		PluginConfig:       configStore,
 		PluginHostInstance: pluginHost.HostInstance(),
 	})
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	tangentplugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
@@ -30,16 +31,18 @@ const (
 // Env explicitly supplements the inherited environment, preserving the existing
 // plugin-owned environment configuration. It conveys no capability grants.
 type ChildSpec struct {
-	ID       string
-	Version  string
-	Command  string
-	Args     []string
-	WorkDir  string
-	Env      []string
-	DataDir  string
-	CacheDir string
-	Verify   func() error
-	Cleanup  func() error
+	ID            string
+	Version       string
+	Command       string
+	Args          []string
+	WorkDir       string
+	Env           []string
+	DataDir       string
+	CacheDir      string
+	Verify        func() error
+	Cleanup       func() error
+	ResolveConfig func(context.Context) (pluginconfig.Runtime, error)
+	ConfigApplied func(context.Context, string) error
 }
 
 var ErrChildGone = driver.ErrGone
@@ -77,6 +80,9 @@ type ChildPlugin struct {
 	process         *driver.Process
 	logger          *slog.Logger
 	reportedFailure string
+	configLoaded    bool
+	configApply     func(context.Context) error
+	configSecrets   []string
 }
 
 func NewChildPlugin(spec ChildSpec, tools []MCPTool, routes []HTTPRoute, opts ...ChildPluginOption) *ChildPlugin {
@@ -89,19 +95,19 @@ func NewChildPlugin(spec ChildSpec, tools []MCPTool, routes []HTTPRoute, opts ..
 func (p *ChildPlugin) ID() string { return p.spec.ID }
 func (p *ChildPlugin) Name() string {
 	if info := p.info(); info.Name != "" {
-		return info.Name
+		return p.redactFailure(info.Name)
 	}
 	return p.spec.ID
 }
 func (p *ChildPlugin) Version() string {
 	if info := p.info(); info.Version != "" {
-		return info.Version
+		return p.redactFailure(info.Version)
 	}
 	return "unknown"
 }
 func (p *ChildPlugin) Description() string {
 	if info := p.info(); info.Description != "" {
-		return info.Description
+		return p.redactFailure(info.Description)
 	}
 	return "subprocess plugin " + p.spec.ID
 }
@@ -141,7 +147,7 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 			p.mu.Unlock()
 			tail := ""
 			if proc != nil {
-				tail = sanitizePluginDiagnostic(proc.Diagnostics())
+				tail = p.redactFailure(sanitizePluginDiagnostic(proc.Diagnostics()))
 			}
 			h.logger.Warn("pluginhost: child crashed", "plugin", p.ID(), "exit_code", info.Code, "signal", info.Signal, "stderr", tail)
 			if controller.Status().RetryAttempts >= maxChildRestarts {
@@ -164,7 +170,7 @@ func (p *ChildPlugin) Load(host plugin.Host) error {
 		return err
 	}
 	if err = l.Enable(host.Context()); err != nil {
-		err = &pluginDiagnosticError{cause: err, text: redactPluginDiagnostic(err.Error())}
+		err = &pluginDiagnosticError{cause: err, text: p.redactFailure(err.Error())}
 		p.fail(err)
 		return err
 	}
@@ -204,6 +210,22 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 			return driver.Plan{}, fmt.Errorf("pluginhost: verify reviewed bundle: %w", err)
 		}
 	}
+	runtime := pluginconfig.Runtime{Values: map[string]string{}}
+	if p.spec.ResolveConfig != nil {
+		var err error
+		runtime, err = p.spec.ResolveConfig(ctx)
+		if err != nil {
+			return driver.Plan{}, err
+		}
+	}
+	p.mu.Lock()
+	p.configSecrets = append([]string(nil), runtime.Secrets...)
+	p.configApply = nil
+	if p.spec.ConfigApplied != nil {
+		revision := runtime.Revision
+		p.configApply = func(ctx context.Context) error { return p.spec.ConfigApplied(ctx, revision) }
+	}
+	p.mu.Unlock()
 	dir := p.spec.WorkDir
 	if dir == "" {
 		dir = filepath.Dir(p.spec.Command)
@@ -213,13 +235,12 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 		Command: p.spec.Command, Args: p.spec.Args, Dir: p.spec.WorkDir,
 		Env:         driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
 		Redact:      redactRawDiagnostic,
+		Secrets:     runtime.Secrets,
 		StderrBytes: pluginStderrBytes,
 		Init: subprocess.InitParams{
 			PluginDir: dir, DataDir: p.spec.DataDir, CacheDir: p.spec.CacheDir,
-			// Do not plumb host-held configuration through Init: plugins read
-			// their own environment. This keeps configuration and its secrets
-			// outside Tangent's stores, inventory and reports.
-			Config: map[string]string{}, Grants: capability.GrantSet{},
+			// Detached reviewed scalar configuration belongs to this attempt only.
+			Config: runtime.Values, Grants: capability.GrantSet{},
 			CapabilityContract: capability.ContractVersion,
 			HostInfo:           subprocess.HostInfo{Version: hostVersionForChildren, Protocol: subprocess.ProtocolVersion},
 		},
@@ -228,8 +249,8 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 
 func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *driver.Process) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if err := ctx.Err(); err != nil {
+		p.mu.Unlock()
 		return err
 	}
 	p.owner = owner
@@ -238,6 +259,8 @@ func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *dr
 	p.gate = driver.NewHealthGate(proc.Client().Health, healthProbeCacheTTL)
 	p.identity = proc.Info()
 	p.status = plugin.PluginStatus{Loaded: true, Enabled: true, LoadedAt: time.Now().UTC()}
+	p.mu.Unlock()
+	p.configurationActivated(ctx)
 	return nil
 }
 func (p *ChildPlugin) revoke(_ context.Context, owner driver.Owner) error {
@@ -284,7 +307,7 @@ func (p *ChildPlugin) Status() plugin.PluginStatus {
 	if runtimeError != "" {
 		s.LastError = runtimeError
 	} else if state.LastFailure != nil {
-		s.LastError = state.LastFailure.Error()
+		s.LastError = p.redactFailure(state.LastFailure.Error())
 	}
 	if state.Exhausted && !strings.Contains(s.LastError, "restart attempts exhausted") {
 		s.LastError += "; restart attempts exhausted"
@@ -381,7 +404,7 @@ func (p *ChildPlugin) probeHealth(ctx context.Context) pluginHealth {
 		}
 		return pluginHealth{message: message, checked: time.Now().UTC()}
 	}
-	return pluginHealth{ok: v.OK, message: v.Message, checked: v.Checked, reachable: v.Reachable}
+	return pluginHealth{ok: v.OK, message: p.redactFailure(v.Message), checked: v.Checked, reachable: v.Reachable}
 }
 func (p *ChildPlugin) info() subprocess.InitResult {
 	p.mu.Lock()
@@ -389,9 +412,10 @@ func (p *ChildPlugin) info() subprocess.InitResult {
 	return p.identity
 }
 func (p *ChildPlugin) fail(err error) {
+	text := p.redactFailure(err.Error())
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.status.LastError = err.Error()
+	p.status.LastError = text
 }
 func (p *ChildPlugin) failAndStop(err error) error {
 	stopErr := p.Unload()
@@ -438,7 +462,7 @@ func (p *ChildPlugin) RuntimeFailure() string {
 	if state.Exhausted {
 		text += "; restart attempts exhausted"
 	}
-	text = redactPluginDiagnostic(text)
+	text = p.redactFailure(text)
 	if len(text) > 2048 {
 		text = strings.ToValidUTF8(text[:2048], "")
 	}

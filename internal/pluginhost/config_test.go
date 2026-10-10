@@ -8,9 +8,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
 	manifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 )
 
@@ -132,11 +135,11 @@ func TestScopedConfigSnapshotAndStaleOwnerRefusal(t *testing.T) {
 func TestFailedRegistrationKeepsConfigPendingAndScrubsLoadDiagnostic(t *testing.T) {
 	h, s := ownerConfigFixture(t)
 	registerOwnerConfig(t, s, "bad")
-	snap := saveOwnerConfig(t, s, "bad", pluginconfig.Changes{Set: map[string]any{"token": "literal-opaque-config-fixture"}})
+	snap := saveOwnerConfig(t, s, "bad", pluginconfig.Changes{Set: map[string]any{"token": "synthetic-opaque-config-fixture"}})
 	bad := ownerFixture("bad")
-	bad.loadFailure = errors.New("literal-opaque-config-fixture")
+	bad.loadFailure = errors.New("synthetic-opaque-config-fixture")
 	err := h.Load(bad)
-	if err == nil || strings.Contains(err.Error(), "literal-opaque-config-fixture") {
+	if err == nil || strings.Contains(err.Error(), "synthetic-opaque-config-fixture") {
 		t.Fatal("load diagnostic leaked config")
 	}
 	after, err := s.Read(context.Background(), "bad", s.Scopes()[0])
@@ -144,7 +147,7 @@ func TestFailedRegistrationKeepsConfigPendingAndScrubsLoadDiagnostic(t *testing.
 		t.Fatal("failed load marked applied", err)
 	}
 	raw, err := json.Marshal(h.Inventory(context.Background()))
-	if err != nil || strings.Contains(string(raw), "literal-opaque-config-fixture") {
+	if err != nil || strings.Contains(string(raw), "synthetic-opaque-config-fixture") {
 		t.Fatal("inventory leaked config", err)
 	}
 }
@@ -163,20 +166,146 @@ func TestApplyConfigRefusesStaleRevisionBeforeReplacingOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	current := saveOwnerConfig(t, s, "one", pluginconfig.Changes{Set: map[string]any{"channel": "applied"}})
-	if err := h.ApplyConfig(context.Background(), "one", old.Revision); !errors.Is(err, pluginconfig.ErrConflict) {
+	if err = h.ApplyConfig(context.Background(), "one", old.Revision); !errors.Is(err, pluginconfig.ErrConflict) {
 		t.Fatal("stale apply accepted", err)
 	}
-	if _, err := original.handle.GetConfig("channel"); err != nil {
+	if _, err = original.handle.GetConfig("channel"); err != nil {
 		t.Fatal("stale apply stopped current owner", err)
 	}
-	if err := h.ApplyConfig(context.Background(), "one", current.Revision); err != nil {
+	if err = h.ApplyConfig(context.Background(), "one", current.Revision); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := original.handle.GetConfig("channel"); err == nil {
+	if _, err = original.handle.GetConfig("channel"); err == nil {
 		t.Fatal("old handle retained")
 	}
 	after, err := s.Read(context.Background(), "one", s.Scopes()[0])
 	if err != nil || after.PendingRestart {
 		t.Fatal("successful load not applied", err)
 	}
+}
+
+func TestChildConfigIsFreshPerIncarnationAndRedacted(t *testing.T) {
+	h, s := ownerConfigFixture(t)
+	id := "tangent.plugin.echo"
+	registerOwnerConfig(t, s, id)
+	saveOwnerConfig(t, s, id, pluginconfig.Changes{Set: map[string]any{"token": "synthetic-literal-runtime-key"}})
+	binary := buildEchoPlugin(t)
+	factory := func() (sdk.Plugin, error) {
+		spec := echoSpec(t, binary)
+		spec.Env = append(spec.Env, "ECHO_PLUGIN_REPORT_CONFIG_STDERR=1", "ECHO_PLUGIN_HEALTH=synthetic-literal-runtime-key")
+		spec.ResolveConfig = h.ResolveConfiguration(id)
+		spec.ConfigApplied = func(ctx context.Context, revision string) error { return s.MarkApplied(ctx, id, revision) }
+		return NewChildPlugin(spec, []MCPTool{{Name: "tangent.echo", Description: "Config fixture", InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil, WithHealthGate(false)), nil
+	}
+	if err := h.RegisterFactory(id, factory); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetEnabled(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	read := func() (*ChildPlugin, capability.RuntimeIdentity, string) {
+		t.Helper()
+		loaded, ok := h.GetPlugin(id)
+		if !ok {
+			t.Fatal("missing child")
+		}
+		child := loaded.(*ChildPlugin)
+		result, err := child.MCPCallTool(context.Background(), subprocess.MCPCallRequest{ToolName: "tangent.echo"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Channel     string                     `json:"configured_channel"`
+			Token       bool                       `json:"configured_token_present"`
+			Incarnation capability.RuntimeIdentity `json:"incarnation"`
+		}
+		if err = json.Unmarshal(result.Content, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !got.Token {
+			t.Fatal("declared secret absent from Init")
+		}
+		return child, got.Incarnation, got.Channel
+	}
+	child, initial, channel := read()
+	if channel != "original" {
+		t.Fatal("wrong initial config")
+	}
+	saveOwnerConfig(t, s, id, pluginconfig.Changes{Set: map[string]any{"channel": "replacement"}})
+	_, same, channel := read()
+	if channel != "original" || same != initial {
+		t.Fatal("save mutated current instance")
+	}
+	raw, err := json.Marshal(h.Inventory(context.Background()))
+	if err != nil || strings.Contains(string(raw), "synthetic-literal-runtime-key") {
+		t.Fatal("health inventory leaked runtime secret")
+	}
+	if strings.Contains(child.process.Diagnostics(), "synthetic-literal-runtime-key") {
+		t.Fatal("stderr tail leaked runtime secret")
+	}
+	firstPID := child.pid()
+	if err = killCurrent(child); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && (child.pid() == 0 || child.pid() == firstPID || !child.Status().Loaded) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if child.pid() == 0 || child.pid() == firstPID || !child.Status().Loaded {
+		t.Fatal("recovery did not activate")
+	}
+	_, recovered, channel := read()
+	if recovered == initial || channel != "replacement" {
+		t.Fatal("retry reused old config or incarnation")
+	}
+	snap, err := s.Read(context.Background(), id, s.Scopes()[0])
+	if err != nil || snap.PendingRestart {
+		t.Fatal("recovered activation not applied", err)
+	}
+	saved := saveOwnerConfig(t, s, id, pluginconfig.Changes{Set: map[string]any{"channel": "explicit"}})
+	if err = h.ApplyConfig(context.Background(), id, saved.Revision); err != nil {
+		t.Fatal(err)
+	}
+	_, next, channel := read()
+	if next == recovered || channel != "explicit" {
+		t.Fatal("explicit apply reused snapshot")
+	}
+}
+
+func TestMissingRequiredConfigRefusesBeforeChildSpawn(t *testing.T) {
+	h, s := ownerConfigFixture(t)
+	id := "tangent.plugin.echo"
+	if err := s.Register(context.Background(), id, manifest.Config{Secrets: map[string]manifest.Secret{"token": {Required: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	spec := echoSpec(t, filepath.Join(t.TempDir(), "not-an-executable"))
+	spec.ResolveConfig = h.ResolveConfiguration(id)
+	child := NewChildPlugin(spec, nil, nil)
+	if err := h.Load(child); !errors.Is(err, pluginconfig.ErrRefused) {
+		t.Fatal("missing declared config did not refuse before execution", err)
+	}
+	if child.lifecycle != nil || child.pid() != 0 {
+		t.Fatal("driver started before required input validation")
+	}
+	if _, ok := h.GetPlugin(id); ok {
+		t.Fatal("refused child still loaded")
+	}
+}
+
+func TestCanceledApplyDoesNotOwnLifecycleGate(t *testing.T) {
+	h, _ := ownerConfigFixture(t)
+	h.ops.Lock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan error, 1)
+	go func() { done <- h.ApplyConfig(ctx, "one", "revision") }()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled apply waited for lifecycle gate")
+	}
+	h.ops.Unlock()
 }

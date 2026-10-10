@@ -19,6 +19,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -129,6 +130,7 @@ type Config struct {
 	// route uses. Empty is the normal state; see plugin_routes.go.
 	PluginRoutes []pluginhost.HTTPRoute
 	PluginHost   *pluginhost.Host
+	PluginConfig *pluginconfig.Store
 
 	// PluginHostInstance is the shared plugin lifecycle epoch. Production boot
 	// supplies it; standalone servers create a fresh epoch when it is absent.
@@ -423,6 +425,9 @@ func New(cfg Config) (*Server, error) {
 	// so the browser loader can resolve plugins. Registered before plugin-served
 	// routes so it cannot be claimed by a plugin.
 	registerPluginRegistryRoute(mux, logger, cfg.PluginHostInstance)
+	if cfg.PluginConfig != nil && cfg.PluginHost != nil {
+		registerPluginConfig(mux, &participantRoutes, cfg, cfg.PluginConfig)
+	}
 
 	// Plugin-served routes (ADR 0007 §4, CW-20260910-0030). Mounted last, so
 	// every route this package writes by hand has already claimed its pattern

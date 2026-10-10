@@ -71,7 +71,7 @@ func registerPluginConfig(mux *http.ServeMux, routes *[]ParticipantRoute, cfg Co
 					writePluginConfigError(w, pluginconfig.ErrConflict)
 					return
 				}
-				if e = cfg.PluginHost.Reload(r.Context(), id); e != nil {
+				if e = cfg.PluginHost.ApplyConfig(r.Context(), id, input.Revision); e != nil {
 					writePluginError(w, http.StatusConflict, "PLUGIN_CONFIG_APPLY_REFUSED", "Plugin reload refused; saved configuration remains pending.")
 					return
 				}

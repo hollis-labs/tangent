@@ -57,10 +57,8 @@
 //     process. ADR 0007's risk section names this exact instance: implementing
 //     a surface because the SDK offers it rather than because a consumer needs
 //     it is how the boundary rots.
-//   - Plugin configuration (GetConfig, SetConfig, RegisterConfigSchema).
-//     Ratified by CW-20260910-0036: the host holds no plugin config, so it can
-//     never hold a plugin's secret. A plugin reads its own environment. The
-//     reasoning is at GetConfig.
+//   - Global configuration methods lack a calling owner and remain refused.
+//     CW-20261003-0063 supports reviewed settings on exact owner-scoped handles.
 //
 // Lifecycle enable/disable and reload are host-owned controls, not SDK config.
 //
@@ -96,6 +94,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
 )
 
 // Errors this host returns. They are distinguishable because the tests that
@@ -160,6 +159,8 @@ type Host struct {
 	factories    map[string]func() (plugin.Plugin, error)
 	intent       map[string]bool
 	intentPath   string
+	configStore  *pluginconfig.Store
+	configApply  *configApplication
 	faults       map[string]string
 	// loaded is every plugin this host has loaded, by id.
 	loaded map[string]plugin.Plugin
@@ -279,11 +280,15 @@ func (h *Host) load(p plugin.Plugin) (err error) {
 	}
 	var id string
 	var owned bool
+	var owner *registrationOwner
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("pluginhost: load %s: panicked: %v", identify(id), recovered)
 		}
 		if err != nil {
+			if owner != nil {
+				err = &pluginDiagnosticError{cause: err, text: scrubConfigText(err.Error(), owner.config.Secrets)}
+			}
 			// The plugin itself, not nil: a refused attempt should still carry
 			// the name and version it managed to report, and safeString keeps a
 			// plugin that panics describing itself from taking the record with
@@ -318,7 +323,7 @@ func (h *Host) load(p plugin.Plugin) (err error) {
 		h.mu.Unlock()
 		return ErrHostShuttingDown
 	}
-	owner := newRegistrationOwner(h, id)
+	owner = newRegistrationOwner(h, id)
 	h.owners[id] = owner
 	delete(h.faults, id)
 	if _, known := h.intent[id]; !known {
@@ -328,11 +333,15 @@ func (h *Host) load(p plugin.Plugin) (err error) {
 	owned = true
 	h.mu.Unlock()
 
+	if err = h.prepareOwnerConfig(owner); err != nil {
+		return err
+	}
 	if loadErr := p.Load(&ownedHost{Host: h, owner: owner}); loadErr != nil {
 		return fmt.Errorf("pluginhost: load %s: %w", id, loadErr)
 	}
 	h.recordAttempt(p, id, nil)
-	h.logger.Info("pluginhost: plugin loaded", "plugin", id, "version", p.Version())
+	h.markOwnerConfig(p, owner)
+	h.logger.Info("pluginhost: plugin loaded", "plugin", id, "version", scrubConfigText(p.Version(), owner.config.Secrets))
 	return nil
 }
 
@@ -467,41 +476,19 @@ func (h *Host) GetService(name string) (interface{}, error) {
 	return nil, fmt.Errorf("%w: GetService(%q)", ErrSurfaceNotHonored, name)
 }
 
-// GetConfig is not implemented, and CW-20260910-0036 ratified that as the
-// answer rather than as a gap.
-//
-// **The host holds no plugin configuration, so it can never hold a plugin's
-// secret.** A plugin reads its own environment — the shipped ones read a base
-// URL and, where one is needed, a token — and the scaffold in
-// internal/plugintemplate writes that pattern for the next one.
-//
-// The reasoning is that ADR 0005 §3.1 keeps a secret boundary: Tangent does not
-// store or rotate provider secrets. A config surface here would be the obvious
-// place to put a plugin's credential, and the boundary would then hold only as
-// long as everyone remembered the policy. Holding nothing keeps it true by
-// construction — there is no store to leak, no store to migrate, and no store
-// to redact from a health report or a support bundle.
-//
-// It is also the ADR 0007 §4 test applied to itself: the SDK offers this
-// surface, no consumer has asked for it, and implementing a host surface
-// because the SDK offers it is exactly how that boundary rots. The day a plugin
-// genuinely needs host-held configuration — one with no process environment to
-// read, which in practice means a subprocess plugin under CW-20260910-0034 —
-// that is the decision to reopen, with the secret question answered first.
+// GetConfig on the global host is refused. Only a current owner-scoped handle
+// can access that plugin's reviewed, detached incarnation configuration.
 func (h *Host) GetConfig(key string) (string, error) {
 	return "", fmt.Errorf("%w: GetConfig(%q)", ErrSurfaceNotHonored, key)
 }
 
-// SetConfig is not implemented, for the same reason as GetConfig — and more
-// sharply: a write surface is how a secret would get *in*.
+// SetConfig on the global host has no caller identity and remains refused.
 func (h *Host) SetConfig(key string, _ string) error {
 	return fmt.Errorf("%w: SetConfig(%q)", ErrSurfaceNotHonored, key)
 }
 
-// RegisterConfigSchema is not implemented. It exists so a frontend can render a
-// settings form over host-held configuration; this host holds none, so the form
-// would edit nothing. Building it would create the store GetConfig exists to
-// not have.
+// RegisterConfigSchema on the global host is refused. Scoped declarations must
+// agree with the reviewed installed manifest; they cannot create new keys.
 func (h *Host) RegisterConfigSchema(_ []plugin.ConfigFieldDef) error {
 	return fmt.Errorf("%w: RegisterConfigSchema", ErrSurfaceNotHonored)
 }

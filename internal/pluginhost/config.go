@@ -56,6 +56,26 @@ func (h *Host) resolveConfig(ctx context.Context, id string) (pluginconfig.Runti
 	return store.Runtime(ctx, id, "")
 }
 
+// ResolveConfiguration binds a reviewed installed ID to the private store. It
+// is used by the composition loader, never exposed through SDK Host.
+func (h *Host) ResolveConfiguration(id string) func(context.Context) (pluginconfig.Runtime, error) {
+	return func(ctx context.Context) (pluginconfig.Runtime, error) { return h.resolveConfig(ctx, id) }
+}
+
+// A scoped handle cannot use the composition resolver to read another plugin.
+func (h *ownedHost) ResolveConfiguration(id string) func(context.Context) (pluginconfig.Runtime, error) {
+	return func(ctx context.Context) (pluginconfig.Runtime, error) {
+		h.mu.Lock()
+		current := h.currentOwnerLocked(h.owner) && id == h.owner.id
+		runtime := h.owner.config
+		h.mu.Unlock()
+		if !current || ctx.Err() != nil {
+			return pluginconfig.Runtime{}, pluginconfig.ErrRefused
+		}
+		return pluginconfig.Runtime{Values: maps.Clone(runtime.Values), Secrets: slices.Clone(runtime.Secrets), Revision: runtime.Revision}, nil
+	}
+}
+
 // ApplyConfig uses the lifecycle operation gate and one exact revision, unlike
 // ordinary Reload which intentionally resolves the current configuration.
 func (h *Host) ApplyConfig(ctx context.Context, id, revision string) error {

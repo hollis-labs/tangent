@@ -690,7 +690,8 @@ for the format and refusal boundaries. `ChildPlugin` uses
 protocol-2 handshake, process groups, bounded teardown and crash recovery; the
 private child and wire implementations are removed. A host process shares one
 random epoch and an in-memory generation store across its controllers. Each
-attempt gets a fresh incarnation, explicit empty grants and empty config, with
+attempt gets a fresh incarnation, explicit empty grants and a detached reviewed
+configuration snapshot, with
 no host-service or hooks-profile offers. Identity and version must match the
 resolved manifest before load or registration, and frames are bounded to 8 MiB
 in both directions.
@@ -1305,10 +1306,13 @@ cancellation does not trip a healthy owner's circuit. In-process test adapters
 cannot have an uncooperative Go goroutine forcibly interrupted; they are fenced
 and receive no additional work. Installed plugins run out of process.
 
-The host still holds no plugin configuration: `GetConfig`, `SetConfig` and
-`RegisterConfigSchema` remain unimplemented. A plugin reads its own environment;
-enable intent contains no configuration or credentials. Config/secrets support
-is separate work, not a consequence of lifecycle controls.
+Reviewed manifest settings have a private host store and OS-keychain-backed
+secret references. Browser responses expose secret presence only. Each child
+attempt resolves its own immutable Init.Config snapshot; current owner handles
+can access only their declared keys. Global config calls remain refused. Save
+uses a revision CAS; apply/restart checks that exact revision under the lifecycle
+operation gate and only successful load/registration marks it applied. Enable
+intent remains boolean-only and separate. See [plugin configuration](plugin-configuration.md).
 
 ### Browser plugin registry integration
 

@@ -15,8 +15,10 @@ explicit host inputs, not browser or plugin identity claims. Saving at a scope
 changes only that scope, and resetting removes selected overrides rather than
 replacing history or other scopes.
 
-Non-secret values and opaque secret references are kept in a private SQLite
-settings database. Declared secret values are kept in the OS keychain: macOS
+Non-secret values and opaque secret references are kept in the private SQLite
+`<plugin-root>/.state/config/config.sqlite` settings database. Normal boot selects
+client scope `local`; embedders can provide an explicit `boot.Config.ConfigScopes`
+chain. Environment/project scopes are not guessed from a plugin or browser input. Declared secret values are kept in the OS keychain: macOS
 Keychain, Windows Credential Manager or Linux Secret Service. There is no
 plaintext file or environment fallback. The browser receives presence only,
 never a saved secret. A replacement secret exists temporarily in the submitted
