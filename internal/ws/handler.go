@@ -48,6 +48,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
+	"github.com/hollis-labs/tangent/internal/uicommand"
 )
 
 // Wire error codes. They are stable strings the SPA branches on, so a losing
@@ -108,8 +109,10 @@ func defaultParticipant(*http.Request) (room.ParticipantBinding, error) {
 // MCP call decides to bridge to the UI). This is the rejection of
 // "any tab can spawn a room": room ids are server-issued.
 type Handler struct {
-	manager *room.Manager
-	logger  *slog.Logger
+	manager   *room.Manager
+	uiBroker  *uicommand.Broker
+	uiBinding UIAttachmentResolver
+	logger    *slog.Logger
 
 	// originPatterns are passed to coder/websocket.Accept. Defaults to
 	// localhost-friendly patterns when empty (test code can override).
@@ -269,6 +272,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"room", roomID, "connection", connection.ID(),
 		"client", connection.ClientID(), "role", rm.RoleOf(connection))
 	h.reportAttachment(r.Context(), rm, connection)
+	h.attachUI(r, connection)
+	defer func() {
+		if h.uiBroker != nil {
+			h.uiBroker.Detach(connection.ID())
+		}
+	}()
 
 	// Connection state first, then the durable revision snapshot, then the
 	// envelopes themselves. A client therefore knows who else is here and what
@@ -345,6 +354,9 @@ func (h *Handler) readLoop(ctx context.Context, rm *room.Room, c *room.Connectio
 		}
 		if msgType != websocket.MessageText {
 			h.logger.Debug("ws: ignoring non-text frame", "room", rm.ID, "type", msgType)
+			continue
+		}
+		if h.dispatchUI(ctx, c, payload) {
 			continue
 		}
 		var msg inboundMessage

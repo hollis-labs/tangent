@@ -216,6 +216,15 @@ replayed at a fresh revision after refresh or reconnect, while replaced or
 stale presentations cannot resolve it. Rooms are independent, so multiple agent
 sessions can have active Tangent windows concurrently without cross-talk.
 
+### Opt-in host UI-command channel
+
+CW-20261009-0086 adds a bounded descriptor store and command/ack broker over
+the existing room WebSocket. Production leaves the verified conversation and
+attachment authority seam unwired; agent reads and commands default to refusal.
+React adoption and MCP exposure are separate work. See
+[host UI commands](ui-commands.md) for frames, limits and the fresh per-turn
+view-observation projection. Drafts remain pull-only.
+
 ### Connection lifecycle: multiple clients per surface
 
 `internal/room/connection.go` implements the Connection lifecycle of
