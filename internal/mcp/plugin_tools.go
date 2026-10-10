@@ -88,11 +88,9 @@ func pluginToolSchema(tool pluginhost.MCPTool) (*jsonschema.Schema, error) {
 // pluginToolHandler adapts one plugin's SDK dispatch interface to go-mcp's
 // untyped tool handler.
 //
-// Argument validation against the plugin's own declared schema is no longer
-// this function's job: inputSchemaValidationMiddleware (schema_validation.go)
-// validates every registered tool's arguments — host and plugin alike —
-// before any handler runs, from the same resolved schema this file supplies
-// at registration. A bad-arguments failure therefore never reaches here.
+// Central middleware validates all tools. This handler also retains and checks
+// its own resolved schema, so a concurrent reload cannot reuse another owner's
+// argument admission.
 func pluginToolHandler(
 	tool pluginhost.MCPTool,
 	resolved *jsonschema.Resolved,
