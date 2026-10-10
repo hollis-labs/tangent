@@ -738,3 +738,18 @@ func (c compoundSurfaceAccessPolicy) Authorize(surfaceID string, capability stri
 	}
 	return true
 }
+
+// AuthorizeInboxRead forwards only the pure read policy. It cannot satisfy
+// any existing lifecycle capability gate. Each constituent policy must allow.
+func (c compoundSurfaceAccessPolicy) AuthorizeInboxRead(surfaceID string) bool {
+	for _, policy := range c {
+		if reader, ok := policy.(interaction.InboxReadSurfacePolicy); ok {
+			if !reader.AuthorizeInboxRead(surfaceID) {
+				return false
+			}
+		} else if !policy.Authorize(surfaceID, "") {
+			return false
+		}
+	}
+	return true
+}

@@ -38,6 +38,58 @@ open the latest interaction in that presentation container. The browser uses
 `/api/inbox` to discover work and each kind's existing application API or
 WebSocket bridge to respond. See [the operator guide](inbox.md).
 
+## Agent inbox reads
+
+`tangent.inbox_list`, `tangent.inbox_search`, and `tangent.inbox_get` are pure
+reads through the interaction service. They do not present an item, record a
+terminal retrieval, deliver a response, or acknowledge an outcome.
+
+All three require `requester_scope`, a declared application partition. The MCP
+adapter always derives `standalone-local` authority; spelling `gateway:*` or
+`operator:*`, adding a capability, or supplying context metadata cannot grant
+another authority or participant access. **Local partitions remain advisory,
+not a security boundary:** any local caller can assert another local partition.
+These tools use the narrower caller-or-owning-surface rule rather than the
+operator browser's authority-wide inbox. A same-authority nonsubscriber gets
+`unauthorized` on get; a foreign-authority item is `not_found`. Listings and
+search omit inaccessible rows entirely, without a global count.
+
+| Tool | Arguments and result |
+|---|---|
+| `tangent.inbox_list` | Optional `kind` (exact definition kind), `status` (canonical interaction state), `created_from` (inclusive RFC3339), `created_before` (exclusive RFC3339), `limit` (default 20, 1–100), and `cursor`. Returns `items` metadata in global arrival order, without exposing global sequence numbers or bodies. |
+| `tangent.inbox_search` | Required `query` (1–1024 UTF-8 bytes after trimming), plus the same filters/pagination. Literal case-insensitive substring search across **JSON string values** in retained caller requests and confirmed responses, including nested values. No SQL wildcard/operator syntax, stemming, ranking, key names, private drafts, external refs or delivery metadata. Returns metadata. |
+| `tangent.inbox_get` | Required `item_id`. Returns metadata plus the retained `request` and `response_history`. The canonical interaction seals at most one terminal resolution, so history is empty or contains that confirmed response; unsubmitted drafts and other interactions in a legacy room are not response history for this item. |
+
+Metadata contains `item_id`, `surface_id`, `kind`, `definition_version`, `status`,
+creation/update times and `request_redacted`. Get's responses include the sealed
+resolution id, kind, payload, recorded time and explicit `redacted` flag. Policy,
+participant credentials/bindings, delivery destinations and audit journals are
+not projected. A read does not follow external references or recover content
+from legacy copies, backups, caches, logs or a search index.
+
+Pass `next_cursor` back unchanged with the same requester and filters. The cursor
+names a previously visible item, not a global offset/count, and is reauthorized
+on every page. A changed filter, hidden/purged anchor or revoked surface read
+policy returns `invalid_request`; restart without a cursor. Pages use separate
+consistent read snapshots, so later arrivals and lifecycle changes may appear
+on subsequent pages. Changing `limit` is allowed. A missing next cursor means
+there are no more matching, authorized items in that page's snapshot.
+
+Retention erasure stays authoritative: get returns the existing tombstone with
+`request_redacted`/response `redacted`; search excludes tombstone metadata and
+erased content. Hidden or purged items are absent from both listing and get.
+No retention operation or lifecycle mutation is exposed by these tools.
+
+For example, discover your pending turns, then inspect a selected item:
+
+```json
+{"requester_scope":"my-chat-app","status":"staged","limit":20}
+```
+
+Use the returned item's exact `kind`, status and `item_id` rather than guessing
+a definition name. `tangent.inbox_search` also accepts a request such as
+`{"requester_scope":"my-chat-app","query":"deployment question","limit":10}`.
+
 ## Install
 
 The latest **git tag** is `v0.11.0`. Everything the foundation phase added —

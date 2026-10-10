@@ -123,6 +123,11 @@ var toolAnnotationTable = map[string]toolHints{
 	"tangent.telemetry_query":  {ReadOnly: true},
 	"tangent.retention_status": {ReadOnly: true},
 
+	// Pure caller inbox reads: no retrieval, presentation, delivery or ACK writes.
+	"tangent.inbox_list":   {ReadOnly: true, Idempotent: true},
+	"tangent.inbox_search": {ReadOnly: true, Idempotent: true},
+	"tangent.inbox_get":    {ReadOnly: true, Idempotent: true},
+
 	// Generic durable interaction surface.
 	"tangent.interaction_list_kinds":         {ReadOnly: true},
 	"tangent.interaction_resolve_definition": {ReadOnly: true},
