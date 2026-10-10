@@ -15,23 +15,16 @@ import (
 
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/registry"
+	plugin "github.com/hollis-labs/tangent/pkg/plugin"
 )
 
 const MaxArtifactBytes = 8 << 20
 
 var token = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-var exportName = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
 // Declaration is a host-reviewed contribution, never a child registration call.
 // Component surfaces run only under the exact accepted isolation.
-type Declaration struct {
-	Key      string `json:"key"`
-	Kind     string `json:"kind"`
-	Export   string `json:"export"`
-	Region   string `json:"region"`
-	Title    string `json:"title"`
-	Priority int    `json:"priority"`
-}
+type Declaration = plugin.UIContribution
 
 type Prepared struct {
 	owner        string
@@ -44,40 +37,40 @@ type Prepared struct {
 // Prepare verifies the complete reviewed artifact tree, then captures UI bytes
 // through a confined root and verifies their individual inventory digests again.
 // Publication never serves mutable installation paths.
-func Prepare(m manifest.Manifest, directory string, declarations []Declaration) (*Prepared, error) {
-	if err := m.Validate(); err != nil {
+func Prepare(m manifest.Manifest, directory string, declarations []Declaration) (prepared *Prepared, err error) {
+	if err = m.Validate(); err != nil {
 		return nil, err
 	}
 	if m.UI == nil {
 		return nil, errors.New("pluginui: missing browser declaration")
 	}
-	if err := m.VerifyBundle(directory); err != nil {
+	if err = m.VerifyBundle(directory); err != nil {
 		return nil, err
 	}
-	if len(declarations) == 0 || len(declarations) > 32 {
-		return nil, errors.New("pluginui: invalid contribution inventory")
-	}
-	seen := map[string]bool{}
-	for _, d := range declarations {
-		if !token.MatchString(d.Key) || !exportName.MatchString(d.Export) || len(d.Key) > 128 || len(d.Export) > 128 || len(d.Title) > 128 || seen[d.Key] {
-			return nil, errors.New("pluginui: invalid or duplicate contribution")
-		}
-		if (d.Kind != "panel" && d.Kind != "widget") || d.Region != "right" {
-			return nil, errors.New("pluginui: unsupported contribution kind or region")
-		}
-		seen[d.Key] = true
+	if err = plugin.ValidateUIContributions(declarations); err != nil {
+		return nil, err
 	}
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return nil, err
 	}
-	defer root.Close()
-	read := func(name string) ([]byte, error) {
+	defer func() {
+		if closeErr := root.Close(); err == nil && closeErr != nil {
+			prepared = nil
+			err = closeErr
+		}
+	}()
+	read := func(name string) (data []byte, err error) {
 		f, openErr := root.Open(name)
 		if openErr != nil {
 			return nil, openErr
 		}
-		defer f.Close()
+		defer func() {
+			if closeErr := f.Close(); err == nil && closeErr != nil {
+				data = nil
+				err = closeErr
+			}
+		}()
 		data, readErr := io.ReadAll(io.LimitReader(f, MaxArtifactBytes+1))
 		if readErr != nil {
 			return nil, readErr
