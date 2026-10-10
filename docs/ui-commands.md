@@ -24,10 +24,36 @@ incomplete bindings refuse both disclosure and delivery. Tests supply synthetic
 verified bindings only. This is not end-to-end agent readiness.
 
 CW-20261009-0090 adds React publication, route adoption, router dispatch and
-accessible read-only modals. MCP exposure belongs to CW-20261009-0091. React
+accessible read-only modals. CW-20261009-0091 adds MCP source exposure. React
 uses the existing room transport or an explicitly injected transport; neither
 path establishes the production verified authority provider. Existing WebSocket upgrades remain room-scoped;
 this task does not add a global socket endpoint or create rooms on attachment.
+
+## MCP source adapter (CW-20261009-0091)
+
+`mcp.WithUICommands` injects the same broker used by `ws.SetUICommands`,
+before serving. Omission returns `ui_unavailable`; a broker with absent or
+denied verified authority returns `ui_forbidden`. Production omits this option.
+The shipped tools are `tangent.view_get`, `tangent.ui_navigate`,
+`tangent.ui_open_modal`, `tangent.ui_close_modal`, `tangent.ui_open_drawer`,
+`tangent.ui_close_drawer` and `tangent.ui_focus_item`. Inputs are the core-owned
+closed argument objects, with no participant/session/conversation selectors.
+View reads return the fresh detached descriptor, revision and control setting,
+without binding or attachment identifiers. Reads remain allowed when control
+is disabled. Authority is rechecked before disclosure and command delivery.
+
+Only reviewed core definitions install MCP tools; view/plugin descriptive
+schemas cannot install handlers or grant access. View-specific commands such
+as `set_filter` and `open_doc` remain unexposed in this bounded slice; they
+require reviewed host tool definitions before MCP adoption. The current view
+must declare any core command it accepts. Unknown arguments refuse before
+delivery and undeclared core commands return `ui_rejected`. Browser ack results
+retain command ID, exact view revision, status and bounded reason. Missing
+view returns `not_visible`; disabled control returns `ui_disabled`; missing
+ack returns a `timeout` tool error. Cancellation returns `ui_canceled`; delivery
+or validation failure returns `ui_rejected`, without echoing arguments. A
+timeout or cancellation cannot prove the browser did not apply the command.
+No provider, global endpoint or live integration is supplied here.
 
 ## Descriptor v1 and observation projection
 
