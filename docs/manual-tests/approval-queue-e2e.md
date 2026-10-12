@@ -8,7 +8,7 @@ Manual smoke for the approval-queue workflow. This validates:
 - same-room reopen from the latest submitted approval-queue state
 - evidence-pane rendering and keyboard navigation
 - local refresh recovery for unsent comments
-- durable `approval_queue` projection in `tangent.session_get`
+- durable `approval_queue` projection in `tangent_session_get`
 
 ## 1. Start Tangent
 
@@ -19,7 +19,7 @@ make build
 
 ## 2. Trigger the first approval-queue turn
 
-Ask Claude Code to call `tangent.approval-queue` with two items and one
+Ask Claude Code to call `tangent_approval_queue` with two items and one
 evidence pane per item.
 
 In the browser:
@@ -56,7 +56,7 @@ Claude should receive a structured `data` response with `queue_id`,
 
 ## 3. Reopen the same room
 
-Ask Claude Code to call `tangent.approval-queue` again with the same
+Ask Claude Code to call `tangent_approval_queue` again with the same
 `meta.roomID` and intentionally stale notes/current index.
 
 Expected:
@@ -69,7 +69,7 @@ Click `Cancel` on this second turn.
 
 ## 4. Verify persisted room state
 
-Ask Claude Code to call `tangent.session_get` for the same room and
+Ask Claude Code to call `tangent_session_get` for the same room and
 inspect `approval_queue`.
 
 Expected:

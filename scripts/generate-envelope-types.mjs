@@ -81,7 +81,7 @@ function loadCatalog() {
 
 /**
  * Convert a wire name to a PascalCase identifier stem:
- * "info-card" → "InfoCard", "tangent.diff-review" → "TangentDiffReview".
+ * "info-card" → "InfoCard", "tangent_diff_review" → "TangentDiffReview".
  * The dot separator matters — plugin kinds are namespaced, and a bare
  * split on "-" would leave an illegal "." in the emitted identifier.
  */
@@ -344,7 +344,7 @@ function generate(catalog) {
   //
   // The stamp above is a comment, which makes it readable but not usable by
   // running code. These exports are the same values as data, so a client can
-  // compare them against what tangent.definition_registry_list reports and
+  // compare them against what tangent_definition_list reports and
   // refuse to submit against a definition it was not generated for (§4.4),
   // and so a hand-written adapter over a $defs bundle can assert it still
   // matches the bundle it was written against (§4.7).

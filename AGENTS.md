@@ -82,6 +82,17 @@ something new.
 - `internal/smoke/` — derives the MCP surface from the shipped binary rather
   than from a number written down; `docs_test.go` is the documentation gate.
 
+## MCP tool names
+
+Every tool is `tangent_<noun>_<verb>` matching `^[a-z][a-z0-9_]*$`: no dots,
+no hyphens, because strict function-calling clients and the tether gateway
+reject anything else. The scheme, the old-to-new table and the deprecated
+aliases (callable, unlisted unless `TANGENT_MCP_LEGACY_TOOL_NAMES` is set) are in
+`docs/mcp-tool-names.md`; the alias table is `internal/mcp/tool_names.go`. A new
+tool needs an entry in `legacyToolNames` only if it replaces a name that
+existed; otherwise it just has to match the charset. Envelope kinds
+(`tangent.app-board`) are not tool names and keep their wire spelling.
+
 ## Commands
 
 ```bash

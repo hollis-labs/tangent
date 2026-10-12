@@ -52,7 +52,7 @@ func TestRoomWorkflowCompletionOverLegacySSE(t *testing.T) {
 
 	// Reuse the rig's room-creation path, then drive everything over SSE.
 	roomID, _ := createSession(t, rg, "sse")
-	fixture := fixtureByTool(t, "tangent.spreadsheet-review")
+	fixture := fixtureByTool(t, "tangent_spreadsheet_review")
 	const envelopeID = "sse-1"
 
 	pending := callToolOverSession(ctx, t, session, fixture.tool, map[string]any{
@@ -78,7 +78,7 @@ func TestRoomWorkflowCompletionOverLegacySSE(t *testing.T) {
 	awaitInteractionState(t, rg, receipt.Handle.InteractionID, "resolved", 5*time.Second)
 
 	// Handle recovery over SSE.
-	getResult := callToolOverSession(ctx, t, session, "tangent.interaction_get", map[string]any{
+	getResult := callToolOverSession(ctx, t, session, "tangent_interaction_get", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
@@ -96,7 +96,7 @@ func TestRoomWorkflowCompletionOverLegacySSE(t *testing.T) {
 	}
 
 	// Bounded await over SSE returns the same immutable result.
-	awaited := callToolOverSession(ctx, t, session, "tangent.interaction_await", map[string]any{
+	awaited := callToolOverSession(ctx, t, session, "tangent_interaction_await", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 		"maximum_wait_ms": 2000,
@@ -106,11 +106,11 @@ func TestRoomWorkflowCompletionOverLegacySSE(t *testing.T) {
 	}
 
 	// Acknowledgement over SSE is idempotent.
-	first := callToolOverSession(ctx, t, session, "tangent.interaction_acknowledge", map[string]any{
+	first := callToolOverSession(ctx, t, session, "tangent_interaction_ack", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
-	second := callToolOverSession(ctx, t, session, "tangent.interaction_acknowledge", map[string]any{
+	second := callToolOverSession(ctx, t, session, "tangent_interaction_ack", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
@@ -169,12 +169,12 @@ func TestRoomWorkflowToolsAdvertiseCompletionMode(t *testing.T) {
 
 	acknowledge := false
 	for _, tool := range listed.Tools {
-		if tool.Name == "tangent.interaction_acknowledge" {
+		if tool.Name == "tangent_interaction_ack" {
 			acknowledge = true
 		}
 	}
 	if !acknowledge {
-		t.Fatal("tangent.interaction_acknowledge is not advertised")
+		t.Fatal("tangent_interaction_ack is not advertised")
 	}
 }
 

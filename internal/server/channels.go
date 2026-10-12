@@ -15,7 +15,7 @@ import (
 // The channel pane's browser API (CW-20260907-0017).
 //
 // This surface is the operator's send/read path over channels — 0066
-// shipped the agent-facing tangent.relay_* MCP tools only, and its package
+// shipped the agent-facing tangent_relay_* MCP tools only, and its package
 // doc says so explicitly. An operator is not an MCP client; this is a REST
 // route over channel.Store and relay.Store (via internal/channelpane),
 // mirroring /api/hitl and /api/rooms rather than reaching for the tool

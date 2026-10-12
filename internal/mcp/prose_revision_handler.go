@@ -22,7 +22,7 @@ func (s *Server) handleProseRevision(
 		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
-				"tangent.prose_revision rejects envelope type %q; want %q",
+				"tangent_prose_revision rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				proseRevisionEnvelopeType,
 			),

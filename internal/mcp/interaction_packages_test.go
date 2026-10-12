@@ -18,7 +18,7 @@ import (
 func formCollectFixture(t *testing.T) workflowFixture {
 	t.Helper()
 	for _, fixture := range shippedRoomWorkflows() {
-		if fixture.tool == "tangent.form-collect" {
+		if fixture.tool == "tangent_form_collect" {
 			return fixture
 		}
 	}
@@ -77,7 +77,7 @@ func TestSessionGetProjectsPackagedStateAtTheTopLevel(t *testing.T) {
 	roomID := submitFormCollect(t, rg, fixture, "projection-1")
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ func TestPackagedKindFailsClosedWithoutItsPackage(t *testing.T) {
 	// The definition is still registered and still listed. Removing behavior
 	// must not remove the host's ability to explain the kind.
 	listRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.definition_registry_list", Arguments: map[string]any{},
+		Name: "tangent_definition_list", Arguments: map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("definition_registry_list: %v", err)
@@ -163,7 +163,7 @@ func TestPackagedKindFailsClosedWithoutItsPackage(t *testing.T) {
 	// Every unpackaged kind is untouched: removal is scoped to the package.
 	triage := workflowFixture{}
 	for _, candidate := range shippedRoomWorkflows() {
-		if candidate.tool == "tangent.triage" {
+		if candidate.tool == "tangent_triage" {
 			triage = candidate
 		}
 	}

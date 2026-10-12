@@ -86,7 +86,7 @@ func TestFeedback_RoundTrip(t *testing.T) {
 		callCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		res, callErr = clientSession.CallTool(callCtx, &mcpsdk.CallToolParams{
-			Name: "tangent.feedback",
+			Name: "tangent_feedback",
 			Arguments: map[string]any{"envelope": map[string]any{
 				"v":    1,
 				"id":   "feedback-roundtrip-1",

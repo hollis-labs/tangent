@@ -23,7 +23,7 @@ func (s *Server) handleBlockDraft(
 		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
-				"tangent.block_draft rejects envelope type %q; want %q",
+				"tangent_block_draft rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				blockDraftEnvelopeType,
 			),

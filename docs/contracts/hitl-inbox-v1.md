@@ -17,7 +17,7 @@ resolutions, non-resolution terminal outcomes, stable handles, and retrieval
 projections. The four MCP operations that expose it are implemented separately;
 the schema and semantics here are their source of truth.
 
-`tangent.approval-queue` is not this contract. It remains the existing bounded
+`tangent_approval_queue` is not this contract. It remains the existing bounded
 batch workflow with one explicit submit boundary and its current wire shape.
 
 ## Canonical mappings
@@ -42,10 +42,10 @@ The schema bundle's named `$defs` are stable generation entry points:
 
 | Operation | Input definition | Successful result definition |
 |---|---|---|
-| `tangent.hitl_enqueue` | `HITLItemRequestV1` | `HITLItemHandleV1` |
-| `tangent.hitl_get` | `HITLGetCommandV1` | `HITLRetrievalResultV1` |
-| `tangent.hitl_await` | `HITLAwaitCommandV1` | `HITLRetrievalResultV1` |
-| `tangent.hitl_withdraw` | `HITLWithdrawCommandV1` | `HITLTerminalOutcomeV1` |
+| `tangent_hitl_enqueue` | `HITLItemRequestV1` | `HITLItemHandleV1` |
+| `tangent_hitl_get` | `HITLGetCommandV1` | `HITLRetrievalResultV1` |
+| `tangent_hitl_await` | `HITLAwaitCommandV1` | `HITLRetrievalResultV1` |
+| `tangent_hitl_withdraw` | `HITLWithdrawCommandV1` | `HITLTerminalOutcomeV1` |
 | participant resolve command | `HITLResolutionCommandV1` | `HITLTerminalOutcomeV1` |
 
 MCP adapters extract the relevant object definition so every tool input schema
@@ -57,7 +57,7 @@ conflicts use `HITLStaleRevisionErrorV1` or
 These entry points are now declared in the package's own
 [`manifest.yaml`](../../internal/envelope/extensions/packages/tangent.hitl/hitl-item/manifest.yaml)
 under `named_definitions`, so the table above has a machine-readable
-counterpart the registry serves through `tangent.definition_get`. The
+counterpart the registry serves through `tangent_definition_get`. The
 `response_schema` and `error_schema` the manifest references are projections of
 this same bundle — `HITLResponseV1`, and a `oneOf` of the two typed conflicts —
 committed as files and drift-tested against it.
@@ -71,7 +71,7 @@ reviewed against the new bundle before the stamp is updated.
 
 ## Item request
 
-`tangent.hitl_enqueue` accepts the root `HITLItemRequestV1` schema. Required
+`tangent_hitl_enqueue` accepts the root `HITLItemRequestV1` schema. Required
 fields are:
 
 | Field | Meaning |
@@ -294,7 +294,7 @@ interaction staleness because it never accepts a projection revision.
 
 ## Withdrawal, expiry, and other terminal outcomes
 
-`tangent.hitl_withdraw` accepts `HITLWithdrawCommandV1`, including its required
+`tangent_hitl_withdraw` accepts `HITLWithdrawCommandV1`, including its required
 `caller` assertion. The adapter applies the direct-loopback or verified-gateway
 rule above, and the resolved caller must equal the interaction's immutable
 `caller_scope`; an optional expected revision enables stricter stale detection.
@@ -330,8 +330,8 @@ immutable and apply to one item only; there is no all-items submit boundary.
 
 ## Get and Await retrieval
 
-`tangent.hitl_get` accepts `HITLGetCommandV1` and immediately returns
-`HITLRetrievalResultV1`. `tangent.hitl_await` accepts `HITLAwaitCommandV1`; its
+`tangent_hitl_get` accepts `HITLGetCommandV1` and immediately returns
+`HITLRetrievalResultV1`. `tangent_hitl_await` accepts `HITLAwaitCommandV1`; its
 optional `wait_ms` must be 0–50,000 ms and defaults to 30,000 ms. Values outside
 that range are rejected rather than clamped. The ceiling preserves response
 headroom below Tangent's 60-second HTTP write timeout. Await returns when the
@@ -387,6 +387,6 @@ cannot alter the human result.
   enum requires a new major contract version.
 - Unknown fields are rejected in v1 so misspellings do not silently become
   untrusted operational metadata.
-- Existing `tangent.session_*`, workflow adapters, and
-  `tangent.approval-queue` retain their current request/response shapes and
+- Existing `tangent_session_*`, workflow adapters, and
+  `tangent_approval_queue` retain their current request/response shapes and
   behavior. They are not migrated to this contract by implication.

@@ -339,7 +339,7 @@ async function run(command: DriverCommand) {
 
   // An MCP mutation made outside the component must appear and disappear only
   // after the production EventSource causes a durable resync.
-  const sseHandle = await callMCPTool(relativeFetch, "tangent.hitl_enqueue", {
+  const sseHandle = await callMCPTool(relativeFetch, "tangent_hitl_enqueue", {
     contract_version: "1.0",
     kind: "attention",
     idempotency_key: "joined-browser-sse-only",
@@ -349,7 +349,7 @@ async function run(command: DriverCommand) {
     source: { application_id: "sse-driver", agent_id: "external-worker" },
   });
   await screen.findByRole("button", { name: /SSE-only incoming warning/ });
-  await callMCPTool(relativeFetch, "tangent.hitl_withdraw", {
+  await callMCPTool(relativeFetch, "tangent_hitl_withdraw", {
     contract_version: "1.0",
     item_id: sseHandle.item_id,
     expected_revision: sseHandle.revision,

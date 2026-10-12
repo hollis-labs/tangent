@@ -151,7 +151,7 @@ type Normalizer interface {
 }
 
 // Service is the shared compatibility adapter every named room workflow and
-// tangent.session_advance routes through.
+// tangent_session_advance routes through.
 type Service struct {
 	interactions *interaction.Service
 	rooms        *room.Manager
@@ -644,8 +644,8 @@ func (s *Service) receipt(handle Handle) *PendingReceipt {
 		Status: StatusPending,
 		Handle: handle,
 		Resume: Resume{
-			GetTool:       "tangent.interaction_get",
-			AwaitTool:     "tangent.interaction_await",
+			GetTool:       "tangent_interaction_get",
+			AwaitTool:     "tangent_interaction_await",
 			RetryOriginal: true,
 		},
 	}

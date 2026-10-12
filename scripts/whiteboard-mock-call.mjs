@@ -32,7 +32,7 @@ async function main() {
     const roomID = await createRoom("whiteboard-submit-contract");
     const ws = await openRoomSocket(roomID);
 
-    const firstCall = callTool("tangent.whiteboard", {
+    const firstCall = callTool("tangent_whiteboard", {
       envelope: {
         v: 1,
         id: "whiteboard-1",
@@ -87,7 +87,7 @@ async function main() {
       throw new Error(`first result missing revision_id: ${JSON.stringify(firstResult)}`);
     }
 
-    const secondCall = callTool("tangent.whiteboard", {
+    const secondCall = callTool("tangent_whiteboard", {
       envelope: {
         v: 1,
         id: "whiteboard-2",
@@ -212,13 +212,13 @@ async function respondToWhiteboard(ws, payload) {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   const payload = JSON.parse(result.result.content[0].text);
   return payload.roomID;
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

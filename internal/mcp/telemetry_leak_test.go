@@ -78,7 +78,7 @@ func TestTelemetryCarriesNoPlantedTokenAcrossTheWholePath(t *testing.T) {
 	// form-collect is the fixture with the widest surface: a schema, free-text
 	// answers, and a notes field, so the planted values reach the request
 	// snapshot, the presented envelope, and the immutable resolution.
-	fixture := namedFixture(t, "tangent.form-collect")
+	fixture := namedFixture(t, "tangent_form_collect")
 	const envelopeID = "leak-envelope-1"
 	data := map[string]any{
 		"form_id": "form-1",
@@ -137,19 +137,19 @@ func TestTelemetryCarriesNoPlantedTokenAcrossTheWholePath(t *testing.T) {
 	}
 	sweepEverything(t, "metric snapshot", string(snapshot), planted)
 
-	queried := callTool(t, rg, "tangent.telemetry_query", map[string]any{
+	queried := callTool(t, rg, "tangent_telemetry_query", map[string]any{
 		"interaction_id":    singleInteractionID(t, rg, envelopeID),
 		"include_metrics":   true,
 		"include_aggregate": true,
 	})
-	sweepEverything(t, "tangent.telemetry_query", queried, planted)
+	sweepEverything(t, "tangent_telemetry_query", queried, planted)
 
-	reported := callTool(t, rg, "tangent.health_report", map[string]any{})
+	reported := callTool(t, rg, "tangent_health_get", map[string]any{})
 	// The health report is swept for the planted token only. Its operator
 	// actions legitimately name commands and probe paths, and CW-20260825-0066
 	// already owns the shape assertions for that document.
 	if strings.Contains(reported, leakToken) {
-		t.Fatalf("tangent.health_report carried the planted token:\n%s", reported)
+		t.Fatalf("tangent_health_get carried the planted token:\n%s", reported)
 	}
 
 	// The canary. A non-zero dropped-attribute count means a shipped call site
@@ -179,7 +179,7 @@ func TestOneTraceFollowsTheWholePath(t *testing.T) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	fixture := namedFixture(t, "tangent.triage")
+	fixture := namedFixture(t, "tangent_triage")
 	const envelopeID = "correlated-1"
 	done := make(chan advanceResult, 1)
 	go func() { done <- callWorkflow(t, rg, fixture, roomID, envelopeID, nil, nil) }()

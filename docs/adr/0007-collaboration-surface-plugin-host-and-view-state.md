@@ -244,7 +244,7 @@ a draft revision under host custody, and is readable by the caller.**
 - A stale revision is **refused**, not merged and not silently overwritten.
   The participant's client resynchronizes and retries. Losing a participant's
   view state to a lost race is a defect, not a tradeoff.
-- The caller reads it through the existing `tangent.surface_get`, which already
+- The caller reads it through the existing `tangent_surface_get`, which already
   projects `Drafts []DraftRevision`.
 - Reading view state is a **pull**. Tangent does not push a participant's
   in-progress state to a caller, and a caller must not present a draft as a

@@ -146,7 +146,7 @@ async function callFeedback(envelope) {
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name: "tangent.feedback", arguments: { envelope } },
+    params: { name: "tangent_feedback", arguments: { envelope } },
   };
   const r = await fetch(MCP_URL, {
     method: "POST",

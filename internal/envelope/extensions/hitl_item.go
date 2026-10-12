@@ -14,7 +14,7 @@ const HITLPackageID = "tangent.hitl"
 
 // HITLItemEnvelopeType is the immutable definition kind used by items in the
 // durable operator-owned HITL inbox. The public MCP tools remain operation
-// names (tangent.hitl_enqueue/get/await/withdraw); this name identifies the
+// names (tangent_hitl_enqueue/get/await/withdraw); this name identifies the
 // request definition pinned by an InteractionRecord.
 const HITLItemEnvelopeType = "tangent.hitl-item"
 

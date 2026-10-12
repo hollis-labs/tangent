@@ -10,14 +10,14 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestDurableSessionOperationsRemainCorrect asserts the `tangent.session_*`
+// TestDurableSessionOperationsRemainCorrect asserts the `tangent_session_*`
 // surface still behaves the way callers depend on once workflows route through
 // the durable adapter: a room reports the envelope it is presenting, history
 // accumulates the accepted response, and the room list stays accurate.
 func TestDurableSessionOperationsRemainCorrect(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "session-ops")
 
 	const envelopeID = "session-ops-1"
@@ -68,7 +68,7 @@ func TestDurableSessionOperationsRemainCorrect(t *testing.T) {
 func TestDurableSessionCloseTerminalizesCanonicallyFirst(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "session-close")
 
 	const envelopeID = "session-close-1"
@@ -77,7 +77,7 @@ func TestDurableSessionCloseTerminalizesCanonicallyFirst(t *testing.T) {
 	).result)
 
 	closeRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_close",
+		Name:      "tangent_session_close",
 		Arguments: map[string]any{"roomID": roomID, "status": "done"},
 	})
 	if err != nil {
@@ -148,7 +148,7 @@ type sessionStateView struct {
 func readSessionState(t *testing.T, rg *sessionRig, roomID string) sessionStateView {
 	t.Helper()
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_get", Arguments: map[string]any{"roomID": roomID},
+		Name: "tangent_session_get", Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
 		t.Fatalf("session_get: %v", err)
@@ -166,7 +166,7 @@ func readSessionState(t *testing.T, rg *sessionRig, roomID string) sessionStateV
 func readSessionList(t *testing.T, rg *sessionRig, activeOnly bool) map[string]string {
 	t.Helper()
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_list", Arguments: map[string]any{"active_only": activeOnly},
+		Name: "tangent_session_list", Arguments: map[string]any{"active_only": activeOnly},
 	})
 	if err != nil {
 		t.Fatalf("session_list: %v", err)

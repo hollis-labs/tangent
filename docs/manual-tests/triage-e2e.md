@@ -1,6 +1,6 @@
 # Triage e2e — manual test recipe
 
-End-to-end smoke for `tangent.triage` driven by a real Claude Code
+End-to-end smoke for `tangent_triage` driven by a real Claude Code
 session. Verifies the multi-envelope room acceptance gate: a real LLM client calls the
 MCP tool, the human responds in the browser, and the LLM receives a
 structured response payload.
@@ -80,7 +80,7 @@ claude
 
 Send something like:
 
-> Use the tangent.triage tool to triage these items: `["read the new
+> Use the tangent_triage tool to triage these items: `["read the new
 > draft", "respond to the staging-env email", "delete the cw-3 branch"]`.
 
 Claude will assemble a `tangent.triage` envelope and call the tool. The
@@ -173,7 +173,7 @@ no errors in either log.
 
 ## Mock-driven equivalent
 
-`scripts/triage-mock-call.mjs` — Node script that POSTs a `tangent.triage`
+`scripts/triage-mock-call.mjs` — Node script that POSTs a `tangent_triage`
 MCP call and replies through the WS bridge. No LLM needed. Use this for
 CI smoke and for when you want to verify the wire shape without
 involving Claude:

@@ -27,9 +27,9 @@ import (
 // `cat` as the agent — cat echoes what the runner writes to it, so an answer
 // the runner delivers comes straight back out as the agent's next turn — and
 // follows one turn all the way round: it reaches the inbox through
-// tangent.turns_enqueue, the operator answers it through the browser API, the
-// runner finds the answer through tangent.turn_await, writes it to the agent,
-// and acknowledges it through tangent.turn_ack.
+// tangent_turns_enqueue, the operator answers it through the browser API, the
+// runner finds the answer through tangent_turns_await, writes it to the agent,
+// and acknowledges it through tangent_turns_ack.
 func TestInstalledRunnerCarriesATurnThroughTheInbox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots the shipped binary with its installed plugins; skipped under -short")

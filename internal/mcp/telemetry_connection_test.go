@@ -94,7 +94,7 @@ func TestStaleClientRefusalIsFiledUnderTheInvocationTrace(t *testing.T) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	fixture := namedFixture(t, "tangent.triage")
+	fixture := namedFixture(t, "tangent_triage")
 	const envelopeID = "stale-1"
 	done := make(chan advanceResult, 1)
 	go func() { done <- callWorkflow(t, rg, fixture, roomID, envelopeID, nil, nil) }()

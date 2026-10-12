@@ -189,7 +189,7 @@ func TestAPanickingLoadFailsTheBootWithoutCrashingIt(t *testing.T) {
 }
 
 // TestInventoryReportsWhatLoadedAndWhatRefused is the observability half. It is
-// the answer `tangent.health_report` gives, and the reason it cannot be
+// the answer `tangent_health_get` gives, and the reason it cannot be
 // inferred from a tool list is right here in the fixture: the loaded plugin
 // contributes no tool at all.
 func TestInventoryReportsWhatLoadedAndWhatRefused(t *testing.T) {

@@ -14,7 +14,7 @@ is `source` on every call below. Pick stable values for the life of one
 collaboration; identity resolves by this exact pair
 (`channel.Store.UpsertParticipant`), not by anything Tangent verifies.
 
-## tangent.relay_open_channel
+## tangent_relay_channel_open
 
 Creates a new channel and its canonical operator participant. Never call
 this to check whether a channel exists — it always creates one.
@@ -34,7 +34,7 @@ Both fields optional. Result:
 }
 ```
 
-## tangent.relay_attach
+## tangent_relay_attach
 
 `channel_id` must already exist — this never creates one, unlike
 `relay_open_channel`. Re-attach after every relaunch; `generation`
@@ -52,7 +52,7 @@ advances and the previous binding for this participant is superseded.
 Result carries `participant_id`, `channel_id`, `generation`,
 `runtime_authority`, `runtime_endpoint_ref`, `attached_at`.
 
-## tangent.relay_detach
+## tangent_relay_detach
 
 Best-effort clean exit. Supersedes the current binding in the same
 transaction as ending membership — never assume this fires on a crash or a
@@ -65,7 +65,7 @@ killed process.
 }
 ```
 
-## tangent.relay_send
+## tangent_relay_send
 
 `recipient_application_id` and `recipient_agent_id` are flat fields, not a
 nested object — give both together, or omit both to default to the
@@ -93,7 +93,7 @@ operator recipient has no runtime binding to be "current" about),
 `recipient_presence` (see the presence caveat in `SKILL.md`), and echoed
 `subject_id`/`reply_to_exchange_id` when given.
 
-## tangent.relay_receive — the durable check-in call
+## tangent_relay_receive — the durable check-in call
 
 ```json
 {
@@ -136,7 +136,7 @@ Result:
 no outstanding work. `items` is empty on a timeout. Ack every item you
 handle (see `relay_ack` below) before your next check-in, or it reappears.
 
-## tangent.relay_ack
+## tangent_relay_ack
 
 ```json
 {
@@ -149,7 +149,7 @@ Refused as `unauthorized` if the caller is not the exchange's recipient.
 `already_acked` is `true` on a repeat ack of the same exchange — acking
 twice is safe and idempotent, never an error.
 
-## tangent.relay_capabilities
+## tangent_relay_capabilities_get
 
 Neither field, or both together — never one alone:
 

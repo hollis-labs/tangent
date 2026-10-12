@@ -43,7 +43,7 @@ func TestOperatorCompletionSurvivesCallerWriteTimeout(t *testing.T) {
 
 	rg := newSessionRigWith(t, sessionRigOptions{durable: true, window: window})
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.approval-queue")
+	fixture := fixtureByTool(t, "tangent_approval_queue")
 	roomID, _ := createSession(t, rg, "write-timeout-evidence")
 
 	// A transport with the v0.12 deadline behavior: the response write deadline
@@ -144,7 +144,7 @@ func TestOperatorCompletionSurvivesCallerWriteTimeout(t *testing.T) {
 	// What v0.12 got wrong: the caller can now come back for it, by handle and
 	// by retrying the identical invocation, and both return the same immutable
 	// result the operator produced.
-	stored := interactionResolutionPayload(t, rg, "tangent.interaction_get", map[string]any{
+	stored := interactionResolutionPayload(t, rg, "tangent_interaction_get", map[string]any{
 		"interaction_id":  interactionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
@@ -167,7 +167,7 @@ func TestOperatorCompletionSurvivesCallerWriteTimeout(t *testing.T) {
 func TestLostCallerTransportNeverTerminalizes(t *testing.T) {
 	rg := newSessionRigWith(t, sessionRigOptions{durable: true, window: 10 * time.Second})
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "lost-transport")
 
 	const envelopeID = "lost-transport-1"

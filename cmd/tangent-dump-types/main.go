@@ -199,7 +199,7 @@ type dumpDoc struct {
 	// DefinitionSourceDigest is the @definition-source stamp for the whole
 	// registry: a stable hash over the ordered (kind, version, revision,
 	// manifest_digest) set. A generated artifact carries it, and
-	// tangent.definition_registry_list reports the live value, so a client can
+	// tangent_definition_list reports the live value, so a client can
 	// refuse to submit against a definition it was not generated for.
 	DefinitionSourceDigest string `json:"definitionSourceDigest"`
 	// TrustProfiles is the whole renderer trust model, dumped so the SPA's copy

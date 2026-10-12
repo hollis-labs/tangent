@@ -22,7 +22,7 @@ func (s *Server) handleSynthesisNotes(
 		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
-				"tangent.synthesis_notes rejects envelope type %q; want %q",
+				"tangent_synthesis_notes rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				synthesisNotesEnvelopeType,
 			),

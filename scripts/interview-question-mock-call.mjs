@@ -143,11 +143,11 @@ async function callInterviewQuestion(envelopeID, roomID = null, threadID, topicL
     },
     ...(roomID ? { meta: { roomID } } : {}),
   };
-  return callTool("tangent.interview_question", { envelope });
+  return callTool("tangent_interview_question", { envelope });
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 
@@ -248,7 +248,7 @@ async function waitForServer(url, timeoutMs) {
 async function waitForInterviewRoom(timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const listed = await callTool("tangent.session_list", { active_only: true });
+    const listed = await callTool("tangent_session_list", { active_only: true });
     const rooms = JSON.parse(listed.result.content[0].text).rooms ?? [];
     const match = rooms.find((room) => room.current_envelope_type === "tangent.interview-question");
     if (match?.id) {

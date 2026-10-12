@@ -30,7 +30,7 @@ func TestRoomWorkflow_IdenticalRetryReturnsOneRoomAndOneHandle(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			rg := newSessionRigWith(t, sessionRigOptions{durable: true, window: testWindow})
 			defer rg.cleanup()
-			fixture := fixtureByTool(t, "tangent.approval-queue")
+			fixture := fixtureByTool(t, "tangent_approval_queue")
 
 			const (
 				envelopeID = "acceptance-aq-001"
@@ -135,11 +135,11 @@ func TestRoomWorkflow_IdenticalRetryReturnsOneRoomAndOneHandle(t *testing.T) {
 // still the same request — and it must receive the bound room's handle rather
 // than acquire a second projection in the room it named.
 //
-// tangent.session_advance is included because it names its room as a top-level
+// tangent_session_advance is included because it names its room as a top-level
 // argument and never passes through the shared room resolution, so it is the
 // case that only the adapter's own handle construction can get right.
 func TestRoomWorkflow_RetryIntoAnotherRoomKeepsTheBoundHandle(t *testing.T) {
-	for _, tool := range []string{"tangent.triage", "tangent.session_advance"} {
+	for _, tool := range []string{"tangent_triage", "tangent_session_advance"} {
 		t.Run(tool, func(t *testing.T) {
 			rg := newDurableRig(t)
 			defer rg.cleanup()

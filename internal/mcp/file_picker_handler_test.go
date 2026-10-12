@@ -147,7 +147,7 @@ func TestFilePicker_SubmitReopenAndPersistState(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -273,7 +273,7 @@ func TestFilePicker_InvalidSubmitReturnsRejectedPayloadAndPreservesAcceptedState
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -314,7 +314,7 @@ func callFilePicker(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.file-picker",
+		Name: "tangent_file_picker",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

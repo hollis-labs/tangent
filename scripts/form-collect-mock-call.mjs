@@ -56,7 +56,7 @@ async function main() {
     };
 
     const roomURLPromise = waitForRoomURL(stderrBuf, envelopeId);
-    const callPromise = callTool("tangent.form-collect", { envelope });
+    const callPromise = callTool("tangent_form_collect", { envelope });
     const roomURL = await roomURLPromise;
     const roomID = roomURL.split("/r/")[1];
 

@@ -199,7 +199,7 @@ type definitionRegistryDiagnosticsResult struct {
 	// would give it content.
 	//
 	// Readiness and capability health are deliberately *not* folded in here.
-	// CW-20260825-0066 kept them a separate tool (tangent.health_report) and a
+	// CW-20260825-0066 kept them a separate tool (tangent_health_get) and a
 	// separate set of HTTP probes, because this result answers "what is in the
 	// registry" and those answer "can this process serve" — collapsing the two
 	// is the same mistake as a /healthz that returns 200 with no database.
@@ -207,21 +207,21 @@ type definitionRegistryDiagnosticsResult struct {
 }
 
 func (s *Server) registerDefinitionTools() error {
-	if err := addInteractionTool(s, "tangent.definition_registry_list",
+	if err := addInteractionTool(s, "tangent_definition_list",
 		"List the versioned interaction-definition registry with each definition's materialization state, "+
 			"ownership, renderer binding, and manifest digests. Paged and payload-bounded; schema bodies are "+
 			"never included.",
 		s.handleDefinitionRegistryList); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.definition_get",
+	if err := addInteractionTool(s, "tangent_definition_get",
 		"Get one interaction definition manifest's full inspectable projection: contract, renderer, "+
 			"capabilities, persistence, trust, compatibility, and derived digests. Schema bodies are returned "+
 			"only with include_schemas and only under a size ceiling.",
 		s.handleDefinitionGet); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.definition_registry_diagnostics",
+	if err := addInteractionTool(s, "tangent_definition_diagnostics_get",
 		"Report registry health: the definition source digest, counts by materialization state, every "+
 			"unservable definition with its reason, retained-material coverage, and the host-mediated "+
 			"capabilities definitions request.",

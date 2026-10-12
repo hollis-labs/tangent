@@ -51,7 +51,7 @@ import (
 //
 // # Why the board is cancelled and re-presented rather than superseded
 //
-// `tangent.interaction_supersede` needs its replacement to exist first, and the
+// `tangent_interaction_supersede` needs its replacement to exist first, and the
 // only thing that can put an envelope in front of a participant is a room
 // advance — which refuses while another envelope is pending. So the pending
 // board is withdrawn (a caller-side terminal disposition) and the fresh board is
@@ -289,7 +289,7 @@ func readBoard(
 	tools tangentplugin.ToolCaller,
 	roomID string,
 ) (boardState, error) {
-	result, err := tools.CallTool(ctx, "tangent.surface_get", map[string]any{
+	result, err := tools.CallTool(ctx, "tangent_surface_get", map[string]any{
 		"surface_id": roomID,
 		// The caller reading back the surface it opened, which is the pull ADR
 		// 0007 §5 describes rather than a third party reading someone else's
@@ -400,7 +400,7 @@ func cancelInteraction(
 	interactionID string,
 	revision int64,
 ) error {
-	result, err := tools.CallTool(ctx, "tangent.interaction_cancel", map[string]any{
+	result, err := tools.CallTool(ctx, "tangent_interaction_cancel", map[string]any{
 		"interaction_id":    interactionID,
 		"expected_revision": revision,
 		// The caller a room workflow resolves to. A room-backed tool carries no

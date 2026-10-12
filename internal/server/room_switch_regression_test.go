@@ -350,7 +350,7 @@ func startRegressionTriageCall(rg *rig, roomID, envelopeID string) <-chan regres
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		result, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.triage",
+			Name:      "tangent_triage",
 			Arguments: map[string]any{"envelope": envelopeArg},
 		})
 		done <- regressionToolOutcome{result: result, err: err}

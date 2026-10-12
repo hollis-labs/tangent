@@ -103,7 +103,7 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 		t.Fatalf("build session_create schema: %v", err)
 	}
 	mcpsdk.AddTool(tangentServer.mcp, &mcpsdk.Tool{
-		Name: "tangent.session_create", Description: "Create a Tangent room.",
+		Name: "tangent_session_create", Description: "Create a Tangent room.",
 		InputSchema: sessionCreateSchema,
 	}, tangentServer.handleSessionCreate)
 	triageSchema, err := buildRoomWorkflowSchema(triageInputSchemaJSON, "triage")
@@ -111,7 +111,7 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 		t.Fatalf("build triage schema: %v", err)
 	}
 	mcpsdk.AddTool(tangentServer.mcp, &mcpsdk.Tool{
-		Name: "tangent.triage", Description: "Dispatch a triage envelope.",
+		Name: "tangent_triage", Description: "Dispatch a triage envelope.",
 		InputSchema: triageSchema,
 	}, tangentServer.handleTriage)
 	if err := tangentServer.registerInteractionTools(); err != nil {
@@ -150,13 +150,13 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 	for _, rawTool := range tools {
 		tool, _ := rawTool.(map[string]any)
 		switch tool["name"] {
-		case "tangent.triage":
+		case "tangent_triage":
 			schema, _ := tool["inputSchema"].(map[string]any)
 			properties, _ := schema["properties"].(map[string]any)
 			if _, ok := properties["completion"].(map[string]any); ok {
 				sawCompletion = true
 			}
-		case "tangent.interaction_acknowledge":
+		case "tangent_interaction_ack":
 			sawAcknowledge = true
 		}
 	}
@@ -165,10 +165,10 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 			upstreamRequests.String())
 	}
 	if !sawAcknowledge {
-		t.Fatal("Tether native-flat tools/list omitted tangent.interaction_acknowledge")
+		t.Fatal("Tether native-flat tools/list omitted tangent_interaction_ack")
 	}
 
-	created := gateway.callTool(t, 3, "tangent.session_create", map[string]any{"title": "tether roomflow"}, false)
+	created := gateway.callTool(t, 3, "tangent_session_create", map[string]any{"title": "tether roomflow"}, false)
 	roomID, _ := created["roomID"].(string)
 	if roomID == "" {
 		t.Fatalf("session_create returned no roomID: %#v", created)
@@ -217,7 +217,7 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 	// Handle recovery through the gateway.
 	var stored map[string]any
 	for attempt := range 40 {
-		outcome := gateway.callTool(t, 5+attempt, "tangent.interaction_get", map[string]any{
+		outcome := gateway.callTool(t, 5+attempt, "tangent_interaction_get", map[string]any{
 			"interaction_id": interactionID, "requester_scope": roomflow.DefaultCaller.Scope,
 		}, false)
 		if resolution, ok := outcome["resolution"].(map[string]any); ok {
@@ -243,10 +243,10 @@ func TestTetherNativeFlatRoomWorkflowCompletion(t *testing.T) {
 		t.Fatalf("Tether retry payload diverged: %#v vs %#v", retried["payload"], stored["payload"])
 	}
 
-	first := gateway.callTool(t, 101, "tangent.interaction_acknowledge", map[string]any{
+	first := gateway.callTool(t, 101, "tangent_interaction_ack", map[string]any{
 		"interaction_id": interactionID, "requester_scope": roomflow.DefaultCaller.Scope,
 	}, false)
-	second := gateway.callTool(t, 102, "tangent.interaction_acknowledge", map[string]any{
+	second := gateway.callTool(t, 102, "tangent_interaction_ack", map[string]any{
 		"interaction_id": interactionID, "requester_scope": roomflow.DefaultCaller.Scope,
 	}, false)
 	if first["created"] != true || second["created"] != false ||

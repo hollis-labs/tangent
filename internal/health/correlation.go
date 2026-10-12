@@ -32,7 +32,7 @@ import (
 // telemetryTool names the reader. It is a constant here rather than a string
 // assembled at the call site so the report cannot advertise a tool that does
 // not exist.
-const telemetryTool = "tangent.telemetry_query"
+const telemetryTool = "tangent_telemetry_query"
 
 // Correlation is where the rest of a failure's story is.
 type Correlation struct {

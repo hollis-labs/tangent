@@ -34,7 +34,7 @@ import (
 // plugin — is refused by name. The MCP SDK's registry is a map keyed by name
 // and a second AddTool on the same name silently replaces the first, which is
 // the exact failure this refusal exists to prevent: an agent calling
-// `tangent.session_create` and reaching a plugin instead would be
+// `tangent_session_create` and reaching a plugin instead would be
 // indistinguishable from it working.
 //
 // It cannot leave the namespace either. Every tool this build serves is

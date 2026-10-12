@@ -207,7 +207,7 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 
 	// The kinds whose drafts are Tangent's own durable records rather than a
 	// browser's localStorage. ADR 0007 §5 is the decision; Service.SaveDraft is
-	// the mechanism, and `tangent.surface_get` is how the caller reads them.
+	// the mechanism, and `tangent_surface_get` is how the caller reads them.
 	//
 	// This list being short is the point. `tangent-custodied` is a new class of
 	// retained participant content under ADR 0002 custody, so a kind joining it

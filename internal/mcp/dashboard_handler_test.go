@@ -192,7 +192,7 @@ func TestDashboard_ReopenAndPersistState(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -316,7 +316,7 @@ func TestDashboard_InvalidSubmitReturnsRejectedPayloadAndPreservesState(t *testi
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -430,7 +430,7 @@ func TestDashboard_InvalidStateSubmitReturnsRejectedPayloadAndPreservesState(t *
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -474,7 +474,7 @@ func callDashboard(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.dashboard",
+		Name: "tangent_dashboard",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

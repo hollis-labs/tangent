@@ -100,7 +100,7 @@ func (r *Room) SetPhaseOutput(phase, key string, value any) error {
 //
 // It is the workflow-neutral write an interaction package persists through
 // (internal/interactionpkg.StateStore). SetPhaseOutput sets one key at a time,
-// which is the right primitive for tangent.session_set_phase_output but not
+// which is the right primitive for tangent_session_phase_output_set but not
 // for a package that owns the whole blob and has already normalized it: a
 // package's state is one document, and writing it key-by-key would let a
 // half-applied snapshot exist.

@@ -18,17 +18,17 @@ outlive the originating request, connection, or Tangent process.
    when useful, both approval impacts, source assertion, correlations, and only
    relevant evidence. Omit unknown optional facts; never invent correlation or
    artifact identity to make a template look complete.
-3. Call `tangent.hitl_enqueue`. Return control as soon as its durable handle
+3. Call `tangent_hitl_enqueue`. Return control as soon as its durable handle
    arrives. Retain `surface_id`, `item_id`, `item_url`, `inbox_url`,
    `queue_sequence`, current `state`/`revision`, `source.application_id`, and
    the caller-chosen `idempotency_key`. Treat `queue_position` as a changing
    projection. Copy handle values from the actual enqueue result; never predict
    an ID, revision, sequence, position, or state before that result exists. Do
    not keep the original tool call open for the human decision.
-4. Continue independent work. Later call `tangent.hitl_get`, or use a bounded
-   `tangent.hitl_await` when waiting is useful. An await timeout is a successful
+4. Continue independent work. Later call `tangent_hitl_get`, or use a bounded
+   `tangent_hitl_await` when waiting is useful. An await timeout is a successful
    pending projection and changes no lifecycle state.
-5. Call `tangent.hitl_withdraw` only when the originating application no longer
+5. Call `tangent_hitl_withdraw` only when the originating application no longer
    needs a still-pending item. Reuse the same `caller.application_id` used as
    `source.application_id` at enqueue.
 6. Treat `approved`, `denied`, and `acknowledged` as captured operator outcomes.
@@ -48,7 +48,7 @@ outlive the originating request, connection, or Tangent process.
   `tangent_reference`, and authority-owned `artifact_ref` metadata. Preview
   requires an explicitly supported authority/capability adapter. Never turn a
   path, `file:` URI, label, or ambient agent access into artifact authority.
-- Use `tangent.approval-queue` instead when the operator needs the existing
+- Use `tangent_approval_queue` instead when the operator needs the existing
   room-backed batch review with one submit boundary. Do not translate that
   workflow into HITL items implicitly.
 

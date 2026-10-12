@@ -32,19 +32,19 @@ async function main() {
     const roomID = await createRoom("writing-flow-output");
     const ws = await openRoomSocket(roomID);
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "interview" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "interview" });
     await runInterviewQuestion(ws, roomID, "shape-1", "What are we writing, and how big should it be?");
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "synthesis" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "synthesis" });
     await runSynthesis(ws, roomID);
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "drafting" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "drafting" });
     await runDraftAccept(ws, roomID, "draft-1", "Original opening paragraph with too much setup and two examples.");
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "revision" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "revision" });
     await runRevision(ws, roomID, "review-1", "review");
 
-    await callTool("tangent.session_advance_phase", {
+    await callTool("tangent_session_phase_advance", {
       roomID,
       to_phase: "drafting",
       reason: "jump back after review to tighten the opening",
@@ -56,10 +56,10 @@ async function main() {
       "Lead with the claim, then keep one concrete example.",
     );
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "revision" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "revision" });
     await runRevision(ws, roomID, "copy-1", "copy");
 
-    await callTool("tangent.session_advance_phase", { roomID, to_phase: "output" });
+    await callTool("tangent_session_phase_advance", { roomID, to_phase: "output" });
     await runOutputRender(
       ws,
       roomID,
@@ -85,7 +85,7 @@ async function main() {
 }
 
 async function runInterviewQuestion(ws, roomID, envelopeID, prompt) {
-  const call = callTool("tangent.interview_question", {
+  const call = callTool("tangent_interview_question", {
     envelope: {
       v: 1,
       id: envelopeID,
@@ -106,7 +106,7 @@ async function runInterviewQuestion(ws, roomID, envelopeID, prompt) {
 }
 
 async function runSynthesis(ws, roomID) {
-  const call = callTool("tangent.synthesis_notes", {
+  const call = callTool("tangent_synthesis_notes", {
     envelope: {
       v: 1,
       id: "synth-1",
@@ -129,7 +129,7 @@ async function runSynthesis(ws, roomID) {
 }
 
 async function runDraftAccept(ws, roomID, envelopeID, content) {
-  const call = callTool("tangent.block_draft", {
+  const call = callTool("tangent_block_draft", {
     envelope: {
       v: 1,
       id: envelopeID,
@@ -153,7 +153,7 @@ async function runDraftAccept(ws, roomID, envelopeID, content) {
 }
 
 async function runDraftInlineEdit(ws, roomID, envelopeID, editedText) {
-  const call = callTool("tangent.block_draft", {
+  const call = callTool("tangent_block_draft", {
     envelope: {
       v: 1,
       id: envelopeID,
@@ -179,7 +179,7 @@ async function runDraftInlineEdit(ws, roomID, envelopeID, editedText) {
 }
 
 async function runRevision(ws, roomID, envelopeID, lens) {
-  const call = callTool("tangent.prose_revision", {
+  const call = callTool("tangent_prose_revision", {
     envelope: {
       v: 1,
       id: envelopeID,
@@ -211,7 +211,7 @@ async function runRevision(ws, roomID, envelopeID, lens) {
 }
 
 async function runOutputRender(ws, roomID, markdown) {
-  const call = callTool("tangent.output_render", {
+  const call = callTool("tangent_output_render", {
     envelope: {
       v: 1,
       id: "output-1",
@@ -232,13 +232,13 @@ async function runOutputRender(ws, roomID, markdown) {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   const payload = JSON.parse(result.result.content[0].text);
   return payload.roomID;
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

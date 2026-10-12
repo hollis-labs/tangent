@@ -83,9 +83,9 @@ func TestRelayToolsRegisterWithFlatSchemasAndNoConditionals(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	want := map[string]bool{
-		"tangent.relay_open_channel": false, "tangent.relay_attach": false, "tangent.relay_detach": false,
-		"tangent.relay_send": false, "tangent.relay_receive": false, "tangent.relay_ack": false,
-		"tangent.relay_capabilities": false,
+		"tangent_relay_channel_open": false, "tangent_relay_attach": false, "tangent_relay_detach": false,
+		"tangent_relay_send": false, "tangent_relay_receive": false, "tangent_relay_ack": false,
+		"tangent_relay_capabilities_get": false,
 	}
 	for _, tool := range listed.Tools {
 		if _, tracked := want[tool.Name]; !tracked {
@@ -199,7 +199,7 @@ func TestRelayOpenChannelCreatesChannelWithTheOperatorAsAMember(t *testing.T) {
 		ContractVersion       string `json:"contract_version"`
 		ChannelID             string `json:"channel_id"`
 		OperatorParticipantID string `json:"operator_participant_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{"title": "test channel"})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{"title": "test channel"})
 	if opened.ChannelID == "" || opened.OperatorParticipantID == "" {
 		t.Fatalf("relay_open_channel = %+v, want both ids populated", opened)
 	}
@@ -218,7 +218,7 @@ func TestRelayAttachRequiresAnExistingChannelRatherThanCreatingOne(t *testing.T)
 	defer h.close()
 
 	result, err := h.client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.relay_attach",
+		Name: "tangent_relay_attach",
 		Arguments: map[string]any{
 			"channel_id": "does-not-exist",
 			"source":     map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"},
@@ -244,13 +244,13 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 	opened := callInteractionTool[struct {
 		ChannelID             string `json:"channel_id"`
 		OperatorParticipantID string `json:"operator_participant_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	attached := callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
 		Generation    int64  `json:"generation"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource,
 		"runtime": map[string]any{"authority": "claude-code-cli", "endpoint_ref": "session-alpha"},
 	})
@@ -266,7 +266,7 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 			ParticipantID string `json:"participant_id"`
 		} `json:"recipient"`
 		RecipientBindingCurrent bool `json:"recipient_binding_current"`
-	}](t, h.client, "tangent.relay_send", map[string]any{
+	}](t, h.client, "tangent_relay_send", map[string]any{
 		"channel_id": opened.ChannelID, "idempotency_key": "idem-1", "source": agentSource,
 		"body": "attached and reporting in",
 	})
@@ -295,7 +295,7 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 			Body       string `json:"body"`
 		} `json:"items"`
 		NextCursor int64 `json:"next_cursor"`
-	}](t, h.client, "tangent.relay_receive", map[string]any{
+	}](t, h.client, "tangent_relay_receive", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource,
 	})
 	if received.Status != "ok" || len(received.Items) != 1 || received.Items[0].ExchangeID != reply.ID ||
@@ -305,7 +305,7 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 
 	acked := callInteractionTool[struct {
 		AlreadyAcked bool `json:"already_acked"`
-	}](t, h.client, "tangent.relay_ack", map[string]any{
+	}](t, h.client, "tangent_relay_ack", map[string]any{
 		"source": agentSource, "exchange_id": reply.ID,
 	})
 	if acked.AlreadyAcked {
@@ -313,7 +313,7 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 	}
 	ackedAgain := callInteractionTool[struct {
 		AlreadyAcked bool `json:"already_acked"`
-	}](t, h.client, "tangent.relay_ack", map[string]any{
+	}](t, h.client, "tangent_relay_ack", map[string]any{
 		"source": agentSource, "exchange_id": reply.ID,
 	})
 	if !ackedAgain.AlreadyAcked {
@@ -321,7 +321,7 @@ func TestRelayFullLoopAttachSendReceiveAckDetach(t *testing.T) {
 	}
 
 	if _, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_detach", Arguments: map[string]any{"channel_id": opened.ChannelID, "source": agentSource},
+		Name: "tangent_relay_detach", Arguments: map[string]any{"channel_id": opened.ChannelID, "source": agentSource},
 	}); err != nil {
 		t.Fatalf("relay_detach transport error: %v", err)
 	}
@@ -336,13 +336,13 @@ func TestRelaySendWithAnExplicitFlatRecipient(t *testing.T) {
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentA := map[string]any{"application_id": "claude-code", "agent_id": "agent-a"}
 	agentB := map[string]any{"application_id": "claude-code", "agent_id": "agent-b"}
 	for _, source := range []map[string]any{agentA, agentB} {
 		callInteractionTool[struct {
 			ParticipantID string `json:"participant_id"`
-		}](t, h.client, "tangent.relay_attach", map[string]any{
+		}](t, h.client, "tangent_relay_attach", map[string]any{
 			"channel_id": opened.ChannelID, "source": source, "runtime": map[string]any{"authority": "claude-code-cli"},
 		})
 	}
@@ -352,7 +352,7 @@ func TestRelaySendWithAnExplicitFlatRecipient(t *testing.T) {
 			ParticipantID string `json:"participant_id"`
 			AgentID       string `json:"agent_id"`
 		} `json:"recipient"`
-	}](t, h.client, "tangent.relay_send", map[string]any{
+	}](t, h.client, "tangent_relay_send", map[string]any{
 		"channel_id": opened.ChannelID, "idempotency_key": "idem-explicit", "source": agentA,
 		"recipient_application_id": "claude-code", "recipient_agent_id": "agent-b",
 		"body": "for agent B specifically",
@@ -368,16 +368,16 @@ func TestRelaySendRefusesAHalfGivenRecipient(t *testing.T) {
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
 	})
 
 	result, err := h.client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.relay_send",
+		Name: "tangent_relay_send",
 		Arguments: map[string]any{
 			"channel_id": opened.ChannelID, "idempotency_key": "idem-half", "source": agentSource,
 			"recipient_application_id": "claude-code", // recipient_agent_id deliberately omitted
@@ -400,11 +400,11 @@ func TestRelaySendRefusesAnAmbiguousDefaultRecipient(t *testing.T) {
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource,
 		"runtime": map[string]any{"authority": "claude-code-cli"},
 	})
@@ -429,7 +429,7 @@ func TestRelaySendRefusesAnAmbiguousDefaultRecipient(t *testing.T) {
 	}
 
 	zeroResult, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_send",
+		Name: "tangent_relay_send",
 		Arguments: map[string]any{
 			"channel_id": opened.ChannelID, "idempotency_key": "idem-zero", "source": agentSource, "body": "hello?",
 		},
@@ -459,7 +459,7 @@ func TestRelaySendRefusesAnAmbiguousDefaultRecipient(t *testing.T) {
 	}
 
 	twoResult, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_send",
+		Name: "tangent_relay_send",
 		Arguments: map[string]any{
 			"channel_id": opened.ChannelID, "idempotency_key": "idem-two", "source": agentSource, "body": "hello?",
 		},
@@ -481,14 +481,14 @@ func TestRelayAckRefusesACallerThatIsNotTheRecipient(t *testing.T) {
 	opened := callInteractionTool[struct {
 		ChannelID             string `json:"channel_id"`
 		OperatorParticipantID string `json:"operator_participant_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 
 	agentA := map[string]any{"application_id": "claude-code", "agent_id": "agent-a"}
 	agentB := map[string]any{"application_id": "claude-code", "agent_id": "agent-b"}
 	for _, source := range []map[string]any{agentA, agentB} {
 		callInteractionTool[struct {
 			ParticipantID string `json:"participant_id"`
-		}](t, h.client, "tangent.relay_attach", map[string]any{
+		}](t, h.client, "tangent_relay_attach", map[string]any{
 			"channel_id": opened.ChannelID, "source": source, "runtime": map[string]any{"authority": "claude-code-cli"},
 		})
 	}
@@ -508,7 +508,7 @@ func TestRelayAckRefusesACallerThatIsNotTheRecipient(t *testing.T) {
 	}
 
 	result, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_ack", Arguments: map[string]any{"source": agentB, "exchange_id": exchange.ID},
+		Name: "tangent_relay_ack", Arguments: map[string]any{"source": agentB, "exchange_id": exchange.ID},
 	})
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
@@ -525,18 +525,18 @@ func TestRelayReceiveTimesOutWithStatusNotError(t *testing.T) {
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
 	})
 
 	received := callInteractionTool[struct {
 		Status string `json:"status"`
 		Items  []any  `json:"items"`
-	}](t, h.client, "tangent.relay_receive", map[string]any{
+	}](t, h.client, "tangent_relay_receive", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "wait_ms": 150,
 	})
 	if received.Status != "timeout" || len(received.Items) != 0 {
@@ -552,11 +552,11 @@ func TestRelayReceiveReplaysEverythingSinceAnOldCursorNoGaps(t *testing.T) {
 	opened := callInteractionTool[struct {
 		ChannelID             string `json:"channel_id"`
 		OperatorParticipantID string `json:"operator_participant_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
 	})
 	agentParticipant, err := h.channels.UpsertParticipant(ctx, channel.UpsertParticipantParams{
@@ -578,7 +578,7 @@ func TestRelayReceiveReplaysEverythingSinceAnOldCursorNoGaps(t *testing.T) {
 	received := callInteractionTool[struct {
 		Items      []any `json:"items"`
 		NextCursor int64 `json:"next_cursor"`
-	}](t, h.client, "tangent.relay_receive", map[string]any{
+	}](t, h.client, "tangent_relay_receive", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "cursor": 0,
 	})
 	if len(received.Items) != 3 {
@@ -598,11 +598,11 @@ func TestRelayReceiveUnackedOnlyIsTheDurableCheckInShape(t *testing.T) {
 	opened := callInteractionTool[struct {
 		ChannelID             string `json:"channel_id"`
 		OperatorParticipantID string `json:"operator_participant_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
 	})
 	agentParticipant, err := h.channels.UpsertParticipant(context.Background(), channel.UpsertParticipantParams{
@@ -636,7 +636,7 @@ func TestRelayReceiveUnackedOnlyIsTheDurableCheckInShape(t *testing.T) {
 			ExchangeID string `json:"exchange_id"`
 			Body       string `json:"body"`
 		} `json:"items"`
-	}](t, h.client, "tangent.relay_receive", map[string]any{
+	}](t, h.client, "tangent_relay_receive", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "cursor": 0, "unacked_only": true,
 	})
 	if len(checkIn.Items) != 1 || checkIn.Items[0].Body != "idem-old-2" {
@@ -651,11 +651,11 @@ func TestRelaySendCorrelatesToAStructuredSubject(t *testing.T) {
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 	agentSource := map[string]any{"application_id": "claude-code", "agent_id": "tangent-14"}
 	callInteractionTool[struct {
 		ParticipantID string `json:"participant_id"`
-	}](t, h.client, "tangent.relay_attach", map[string]any{
+	}](t, h.client, "tangent_relay_attach", map[string]any{
 		"channel_id": opened.ChannelID, "source": agentSource, "runtime": map[string]any{"authority": "claude-code-cli"},
 	})
 	subject, err := h.channels.AddSubject(ctx, channel.CreateSubjectParams{
@@ -667,7 +667,7 @@ func TestRelaySendCorrelatesToAStructuredSubject(t *testing.T) {
 
 	sent := callInteractionTool[struct {
 		SubjectID string `json:"subject_id"`
-	}](t, h.client, "tangent.relay_send", map[string]any{
+	}](t, h.client, "tangent_relay_send", map[string]any{
 		"channel_id": opened.ChannelID, "idempotency_key": "idem-subject", "source": agentSource,
 		"subject_id": subject.ID, "body": "about that thread",
 	})
@@ -686,7 +686,7 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	for _, tool := range listed.Tools {
-		if tool.Name != "tangent.relay_capabilities" {
+		if tool.Name != "tangent_relay_capabilities_get" {
 			continue
 		}
 		raw, _ := json.Marshal(tool.InputSchema)
@@ -698,26 +698,26 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 			t.Fatalf("unmarshal schema: %v", unmarshalErr)
 		}
 		if len(schema.Required) != 0 {
-			t.Fatalf("tangent.relay_capabilities schema requires %v, want both fields independently optional", schema.Required)
+			t.Fatalf("tangent_relay_capabilities_get schema requires %v, want both fields independently optional", schema.Required)
 		}
 	}
 
 	// Neither field: succeeds, generic answer.
 	generic := callInteractionTool[struct {
 		Adapter string `json:"adapter"`
-	}](t, h.client, "tangent.relay_capabilities", map[string]any{})
+	}](t, h.client, "tangent_relay_capabilities_get", map[string]any{})
 	if generic.Adapter != "cli-relay" {
 		t.Fatalf("relay_capabilities (generic) = %+v", generic)
 	}
 
 	opened := callInteractionTool[struct {
 		ChannelID string `json:"channel_id"`
-	}](t, h.client, "tangent.relay_open_channel", map[string]any{})
+	}](t, h.client, "tangent_relay_channel_open", map[string]any{})
 
 	// channel_id without application_id/agent_id: the pairing rule refuses
 	// in code.
 	paired, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_capabilities", Arguments: map[string]any{"channel_id": opened.ChannelID},
+		Name: "tangent_relay_capabilities_get", Arguments: map[string]any{"channel_id": opened.ChannelID},
 	})
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
@@ -730,7 +730,7 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 	// application_id without agent_id: the two flat fields must be given
 	// together, the same rule relay_send's recipient fields enforce.
 	halfPaired, err := h.client.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.relay_capabilities",
+		Name: "tangent_relay_capabilities_get",
 		Arguments: map[string]any{
 			"channel_id": opened.ChannelID, "application_id": "claude-code",
 		},
@@ -746,7 +746,7 @@ func TestRelayCapabilitiesValidatesPairingInCodeNotSchema(t *testing.T) {
 	// Both fields, a real channel and a resolvable identity: succeeds.
 	scoped := callInteractionTool[struct {
 		Adapter string `json:"adapter"`
-	}](t, h.client, "tangent.relay_capabilities", map[string]any{
+	}](t, h.client, "tangent_relay_capabilities_get", map[string]any{
 		"channel_id": opened.ChannelID, "application_id": "claude-code", "agent_id": "tangent-14",
 	})
 	if scoped.Adapter != "cli-relay" {

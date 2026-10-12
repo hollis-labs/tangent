@@ -144,7 +144,7 @@ func TestProgressPanel_SubmitReopenAndPersistState(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -267,7 +267,7 @@ func TestProgressPanel_InvalidSubmitReturnsRejectedPayloadAndPreservesState(t *t
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -374,7 +374,7 @@ func callProgressPanel(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.progress-panel",
+		Name: "tangent_progress_panel",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

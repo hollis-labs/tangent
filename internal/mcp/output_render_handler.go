@@ -23,7 +23,7 @@ func (s *Server) handleOutputRender(
 		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
-				"tangent.output_render rejects envelope type %q; want %q",
+				"tangent_output_render rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				outputRenderEnvelopeType,
 			),

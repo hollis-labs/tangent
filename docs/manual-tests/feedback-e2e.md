@@ -1,7 +1,7 @@
 # Feedback e2e
 
-End-to-end smoke for `tangent.feedback` driven by a real Claude Code
-session. This mirrors the `tangent.triage` manual recipe, but exercises
+End-to-end smoke for `tangent_feedback` driven by a real Claude Code
+session. This mirrors the `tangent_triage` manual recipe, but exercises
 the structured question form workflow.
 
 ## Prerequisites
@@ -44,7 +44,7 @@ claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 
 In Claude Code, send a prompt like:
 
-> Use `tangent.feedback` to ask me for a launch headline, a yes/no
+> Use `tangent_feedback` to ask me for a launch headline, a yes/no
 > direction choice, and a set of release tags.
 
 Claude should call the tool, and Tangent should print the room URL.
@@ -89,5 +89,5 @@ node scripts/feedback-mock-call.mjs
 ```
 
 Feedback also works as one step inside a longer-lived room via
-`tangent.session_advance`; see
+`tangent_session_advance`; see
 [`multi-envelope-session-e2e.md`](./multi-envelope-session-e2e.md).

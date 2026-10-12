@@ -72,6 +72,12 @@ const (
 	// envOpenTelemetry takes toward opting in — unset means the safer
 	// behavior, here staying gated rather than staying off.
 	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
+
+	// envListLegacyToolNames makes tools/list include the deprecated
+	// tangent.<name> aliases of the renamed MCP tools. Unset, the aliases are
+	// callable but unlisted, so strict clients never see a name outside
+	// [a-z0-9_]. See docs/mcp-tool-names.md.
+	envListLegacyToolNames = "TANGENT_MCP_LEGACY_TOOL_NAMES"
 )
 
 // main is a thin wrapper so that every exit path runs the deferred cleanup
@@ -294,6 +300,7 @@ func run() int {
 		ManagedResource:         os.Getenv(envManagedResource),
 		OTel:                    os.Getenv(envOpenTelemetry) != "",
 		DisablePluginHealthGate: os.Getenv(envDisablePluginHealthGate) != "",
+		ListLegacyToolNames:     os.Getenv(envListLegacyToolNames) != "",
 		OwnerLabel:              "tangent serve",
 		Logger:                  logger,
 	})

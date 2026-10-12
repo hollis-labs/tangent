@@ -43,11 +43,11 @@ claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 
 ## 3. Trigger the first spreadsheet-review turn
 
-Ask Claude Code to call `tangent.spreadsheet-review` with a small table.
+Ask Claude Code to call `tangent_spreadsheet_review` with a small table.
 
 Example prompt:
 
-> Use `tangent.spreadsheet-review` to open a table called `table-1` with
+> Use `tangent_spreadsheet_review` to open a table called `table-1` with
 > two rows and one bulk action, then wait for my submit/cancel response.
 
 ## 4. Refresh recovery before submit
@@ -104,7 +104,7 @@ back to the agent, even though both are persisted to the room.
 
 ## 6. Reopen the same room
 
-Ask Claude Code to call `tangent.spreadsheet-review` again with
+Ask Claude Code to call `tangent_spreadsheet_review` again with
 `meta.roomID` pointing at the same room.
 
 Confirm the reopened spreadsheet starts from the last submitted room
@@ -118,7 +118,7 @@ state, not the stale seed envelope:
 
 ## 7. Verify persisted room state
 
-Have Claude call `tangent.session_get` for the room and confirm:
+Have Claude call `tangent_session_get` for the room and confirm:
 
 - `spreadsheet_review.table_id` matches the workflow table
 - `spreadsheet_review.query_state` matches the latest submit
@@ -131,7 +131,7 @@ Have Claude call `tangent.session_get` for the room and confirm:
 
 ## Cancel check
 
-Trigger one more `tangent.spreadsheet-review` turn in the same room and
+Trigger one more `tangent_spreadsheet_review` turn in the same room and
 click `Cancel`. Confirm Claude receives a cancelled response and the
 persisted spreadsheet-review state remains unchanged.
 

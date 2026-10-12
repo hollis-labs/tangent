@@ -121,6 +121,12 @@ type Config struct {
 	// off by omission.
 	DisablePluginHealthGate bool
 
+	// ListLegacyToolNames makes tools/list also include the deprecated
+	// tangent.<name> aliases of the renamed MCP tools. Off by default: the
+	// aliases stay callable either way, but listing a name outside [a-z0-9_]
+	// breaks strict clients. See docs/mcp-tool-names.md.
+	ListLegacyToolNames bool
+
 	// Logger receives every constructed service's structured logs. Nil
 	// defaults to slog.Default(). Boot does not call slog.SetDefault —
 	// that is a process-global side effect the caller owns.
@@ -554,7 +560,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 
 	// The minimal channel pane (CW-20260907-0017): the operator's own
-	// send/read path over the same two stores, never the tangent.relay_*
+	// send/read path over the same two stores, never the tangent_relay_*
 	// MCP surface. hitlService correlates HITL items to the channel's
 	// agent by reading its already-public Inbox(), with no change to
 	// internal/hitl's own contract.
@@ -563,18 +569,14 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		return release(fmt.Errorf("construct channel pane service: %w", err))
 	}
 
-	// tangent.retention_status reads through this reporter so the MCP
+	// tangent_retention_get reads through this reporter so the MCP
 	// transport holds no database handle (.golangci.transport.yml).
 	retentionReporter, err := retention.NewReporter(sqlDB, cfg.DBPath)
 	if err != nil {
 		return release(fmt.Errorf("construct retention reporter: %w", err))
 	}
 
-	mcpSrv, err := mcp.New(
-		envSvc,
-		dispatcher,
-		roomMgr,
-		roomURLBase,
+	mcpOptions := []mcp.Option{
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
@@ -582,17 +584,18 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
 		mcp.WithTelemetry(recorder, telemetryStore),
-		// tangent.retention_status. Read-only by design: the retention
+		// tangent_retention_get. Read-only by design: the retention
 		// operations are CLI commands, because erasure authority belongs
 		// to the local user and MCP has no authenticated caller identity
 		// to hold it.
 		mcp.WithRetentionReporter(retentionReporter),
-		// tangent.relay_*: the cooperative MCP inbox.
+		// tangent_relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
-		// Whatever the shipped plugins contributed (ADR 0007 §4). Empty is
-		// normal; a name colliding with a host tool fails this call.
-
-	)
+	}
+	if cfg.ListLegacyToolNames {
+		mcpOptions = append(mcpOptions, mcp.WithLegacyToolNamesListed())
+	}
+	mcpSrv, err := mcp.New(envSvc, dispatcher, roomMgr, roomURLBase, mcpOptions...)
 	if err != nil {
 		// MCP construction failure is fatal: the binary advertises an MCP
 		// surface as part of its v0.1 contract, so booting without it

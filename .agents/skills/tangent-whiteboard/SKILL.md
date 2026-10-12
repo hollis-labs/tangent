@@ -1,16 +1,16 @@
 ---
 name: tangent-whiteboard
-description: Use when launching Tangent's `tangent.whiteboard` workflow. Provides a minimal copy/paste example and pointers to the deeper manual recipe, integration guide, and schema.
+description: Use when launching Tangent's `tangent_whiteboard` workflow. Provides a minimal copy/paste example and pointers to the deeper manual recipe, integration guide, and schema.
 ---
 
 # Tangent Whiteboard
 
-Use this skill when you need to launch `tangent.whiteboard`.
+Use this skill when you need to launch `tangent_whiteboard`.
 
 ## Copy/paste example
 
 ```text
-Use `tangent.whiteboard` to open a board called `board-1` so I can sketch a simple layout, then wait for my submit/cancel response.
+Use `tangent_whiteboard` to open a board called `board-1` so I can sketch a simple layout, then wait for my submit/cancel response.
 ```
 
 ## Notes
@@ -34,12 +34,12 @@ default: wait up to 45 seconds, return the normal response if the operator
 answers in time, and otherwise return that same pending receipt — never an
 error, and never a cancellation.
 
-Recover a result three equivalent ways: `tangent.interaction_get`,
-`tangent.interaction_await`, or by retrying this call with the identical
+Recover a result three equivalent ways: `tangent_interaction_get`,
+`tangent_interaction_await`, or by retrying this call with the identical
 envelope id and payload. All three return the same immutable result. A retry
 with a *changed* payload is an `IDEMPOTENCY_CONFLICT`; use a new envelope id.
 
-Acknowledge with `tangent.interaction_acknowledge` when your side has committed
+Acknowledge with `tangent_interaction_ack` when your side has committed
 to the result. Reading a result does not acknowledge it.
 
 Full contract: `docs/room-workflow-completion.md`

@@ -101,7 +101,7 @@ const CheckPlugins = "plugins"
 // It takes a context because building the inventory sends plugin/health to
 // every loaded subprocess plugin (CW-20260911-0069) — a real round trip, not
 // a pure read, and bounded by whatever budget the caller (Readiness, or
-// tangent.health_report directly) passes down.
+// tangent_health_get directly) passes down.
 func WithPlugins(probe func(ctx context.Context) PluginInventory) Option {
 	return func(r *Reporter) { r.plugins = probe }
 }

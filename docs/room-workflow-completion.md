@@ -1,7 +1,7 @@
 # Room workflow completion, waiting, and recovery
 
 **Status:** Implemented
-**Applies to:** every named room-backed workflow tool and `tangent.session_advance`
+**Applies to:** every named room-backed workflow tool and `tangent_session_advance`
 
 ## The problem this solves
 
@@ -57,8 +57,8 @@ error, and not a cancellation:
     "url": "http://127.0.0.1:7842/r/…"
   },
   "resume": {
-    "get_tool": "tangent.interaction_get",
-    "await_tool": "tangent.interaction_await",
+    "get_tool": "tangent_interaction_get",
+    "await_tool": "tangent_interaction_await",
     "retry_original": true
   }
 }
@@ -85,10 +85,10 @@ behavior.
 Three routes, all equivalent. Each returns the **same immutable result**, byte
 for byte, however many times you ask.
 
-1. **`tangent.interaction_get`** — `{"interaction_id": "…", "requester_scope":
+1. **`tangent_interaction_get`** — `{"interaction_id": "…", "requester_scope":
    "standalone-local"}`. Returns the current state, or the terminal outcome
    with its `resolution.response_payload`.
-2. **`tangent.interaction_await`** — the same arguments plus
+2. **`tangent_interaction_await`** — the same arguments plus
    `maximum_wait_ms` (up to 50000). Bounded; a timeout changes nothing.
 3. **Retry the original invocation.** Call the same tool again with the same
    envelope id, type, and payload. This is the route that works when the first
@@ -142,8 +142,8 @@ These are the only things that produce a terminal outcome:
 
 - the participant submitting a response,
 - the participant cancelling (returns the pre-foundation `ack` / `cancelled` shape),
-- an authorized caller cancelling via `tangent.interaction_cancel`,
-- an authorized caller closing the room via `tangent.session_close`, which
+- an authorized caller cancelling via `tangent_interaction_cancel`,
+- an authorized caller closing the room via `tangent_session_close`, which
   dispositions everything outstanding under a named surface policy.
 
 After a restart, room presentation and history are rebuilt from canonical
@@ -155,7 +155,7 @@ resolved — the `legacy_room_history_v12` view reports both, and the canonical
 
 ## Acknowledgement
 
-`tangent.interaction_acknowledge` records that a caller has taken
+`tangent_interaction_ack` records that a caller has taken
 responsibility for a terminal outcome:
 
 ```json

@@ -36,7 +36,7 @@ TANGENT_DB_PATH=/tmp/tangent-completion-e2e.db TANGENT_HTTP_PORT=7843 ./tangent
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"completion e2e"}}}'
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"completion e2e"}}}'
 ```
 
 Note the `roomID`, then:
@@ -45,7 +45,7 @@ Note the `roomID`, then:
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.triage","arguments":{"completion":{"mode":"async"},"envelope":{"v":1,"id":"completion-e2e-1","type":"tangent.triage","data":{"prompt":"Triage these","items":["one","two"]},"meta":{"roomID":"<ROOM_ID>"}}}}}'
+  --data '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_triage","arguments":{"completion":{"mode":"async"},"envelope":{"v":1,"id":"completion-e2e-1","type":"tangent.triage","data":{"prompt":"Triage these","items":["one","two"]},"meta":{"roomID":"<ROOM_ID>"}}}}}'
 ```
 
 Expect an immediate result with `"status":"pending"`, a `handle` carrying
@@ -75,7 +75,7 @@ Submit the triage response in the browser. Then, as the caller:
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.interaction_get","arguments":{"interaction_id":"<INTERACTION_ID>","requester_scope":"standalone-local"}}}'
+  --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_interaction_get","arguments":{"interaction_id":"<INTERACTION_ID>","requester_scope":"standalone-local"}}}'
 ```
 
 Then recover the same result by *retrying the original invocation* — the exact
@@ -112,10 +112,10 @@ cancellation. Confirm:
 - it carries an `interaction_id` and a room URL;
 - the browser still shows the envelope waiting, untouched;
 - answering it afterwards still produces a terminal outcome, retrievable with
-  `tangent.interaction_get`.
+  `tangent_interaction_get`.
 
 Then confirm the same interaction can be waited on again with
-`tangent.interaction_await`, and that re-issuing the identical original
+`tangent_interaction_await`, and that re-issuing the identical original
 invocation returns the same durable handle rather than creating a second
 interaction.
 
@@ -129,7 +129,7 @@ timing the step.
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.interaction_acknowledge","arguments":{"interaction_id":"<INTERACTION_ID>","requester_scope":"standalone-local"}}}'
+  --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent_interaction_ack","arguments":{"interaction_id":"<INTERACTION_ID>","requester_scope":"standalone-local"}}}'
 ```
 
 The first call returns `"created": true`. Repeat it: the same

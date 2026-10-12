@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	gmcpserver "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
 	"github.com/hollis-labs/tangent/internal/uicommand"
@@ -28,7 +29,7 @@ func (s *Server) registerUICommandTools() error {
 	if err != nil {
 		return err
 	}
-	addTool(s, gmcpserver.Tool{Name: "tangent.view_get", Description: "Read the caller's fresh participant view. Requires a verified participant/conversation/browser binding; unavailable in production until that provider is installed. No targeting arguments.", InputSchema: empty}, s.handleViewGet)
+	addTool(s, gmcpserver.Tool{Name: "tangent_view_get", Description: "Read the caller's fresh participant view. Requires a verified participant/conversation/browser binding; unavailable in production until that provider is installed. No targeting arguments.", InputSchema: empty}, s.handleViewGet)
 	// Only reviewed core definitions become tools. Descriptive schemas supplied
 	// by a browser or plugin never install effectful MCP handlers.
 	for _, declaration := range uicommand.CoreCommands() {
@@ -37,7 +38,7 @@ func (s *Server) registerUICommandTools() error {
 		if err != nil {
 			return err
 		}
-		addTool(s, gmcpserver.Tool{Name: "tangent.ui_" + name, Description: "Apply the declared " + name + " presentation command to the verified caller's active browser. Requires participant control opt-in and current view declaration. Returns browser acknowledgement; timeout does not prove the command was unapplied. Production binding is unavailable.", InputSchema: schema}, func(ctx context.Context, args map[string]any) (any, error) {
+		addTool(s, gmcpserver.Tool{Name: uiToolName(name), Description: "Apply the declared " + name + " presentation command to the verified caller's active browser. Requires participant control opt-in and current view declaration. Returns browser acknowledgement; timeout does not prove the command was unapplied. Production binding is unavailable.", InputSchema: schema}, func(ctx context.Context, args map[string]any) (any, error) {
 			return s.handleUICommand(ctx, name, args)
 		})
 	}
@@ -89,4 +90,17 @@ func uiCommandError(err error) error {
 		code, message = "ui_canceled", "UI command wait canceled; application outcome is unknown"
 	}
 	return toolErrorResult(code, message)
+}
+
+// uiToolName is the tool name for a core UI command. Command names are the
+// browser wire vocabulary (verb_noun, e.g. open_modal) and do not change; the
+// tool name follows the tangent_<noun>_<verb> scheme.
+func uiToolName(command string) string {
+	if verb, noun, ok := strings.Cut(command, "_"); ok {
+		switch verb {
+		case "open", "close", "focus":
+			return "tangent_ui_" + noun + "_" + verb
+		}
+	}
+	return "tangent_ui_" + command
 }

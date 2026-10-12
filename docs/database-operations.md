@@ -474,7 +474,7 @@ row. A plan is not an act, and logging it as one would make the erasure log lie.
 would cancel and does not close.
 
 **Only operator-initiated closes appear in the erasure log.** A close performed
-through `tangent.session_close` or the HTTP surface is recorded in
+through `tangent_session_close` or the HTTP surface is recorded in
 `surface_events`, which is where lifecycle audit belongs; putting every one of
 them in `retention_operations` would bury the erasures under transitions that
 removed nothing.
@@ -510,7 +510,7 @@ fact worth keeping.
 
 ## 8. MCP surface
 
-One tool, read-only: **`tangent.retention_status`**. The size of the surrounding
+One tool, read-only: **`tangent_retention_get`**. The size of the surrounding
 tool surface is derived by `make smoke`, never written down here — see
 [mcp-smoketest.md](mcp-smoketest.md).
 
@@ -535,7 +535,7 @@ deletion authority to whatever is on the other end of the socket.
 ## 9. What deletion cannot reach
 
 Stated plainly rather than implied away, and returned with every
-`tangent.retention_status`:
+`tangent_retention_get`:
 
 - **Backups.** A backup taken before an erasure still holds the content. The
   operation records which backups it knew about; it does not claim to have

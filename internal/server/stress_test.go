@@ -26,7 +26,7 @@ func TestStress_ConcurrentRoomsAcrossWorkflows(t *testing.T) {
 
 	cases := []scenario{
 		{
-			tool:       "tangent.triage",
+			tool:       "tangent_triage",
 			envelopeID: "stress-triage",
 			envelope: map[string]any{
 				"v":    1,
@@ -36,7 +36,7 @@ func TestStress_ConcurrentRoomsAcrossWorkflows(t *testing.T) {
 			},
 		},
 		{
-			tool:       "tangent.feedback",
+			tool:       "tangent_feedback",
 			envelopeID: "stress-feedback",
 			envelope: map[string]any{
 				"v":    1,
@@ -50,7 +50,7 @@ func TestStress_ConcurrentRoomsAcrossWorkflows(t *testing.T) {
 			},
 		},
 		{
-			tool:       "tangent.design-iteration",
+			tool:       "tangent_design_iteration",
 			envelopeID: "stress-design-a",
 			envelope: map[string]any{
 				"v":    1,
@@ -66,7 +66,7 @@ func TestStress_ConcurrentRoomsAcrossWorkflows(t *testing.T) {
 			},
 		},
 		{
-			tool:       "tangent.design-iteration",
+			tool:       "tangent_design_iteration",
 			envelopeID: "stress-design-b",
 			envelope: map[string]any{
 				"v":    1,
@@ -176,13 +176,13 @@ func responseFrame(tc struct {
 }) map[string]any {
 	payload := map[string]any{"workflow": tc.envelopeID}
 	switch tc.tool {
-	case "tangent.feedback":
+	case "tangent_feedback":
 		payload = map[string]any{
 			"answers": []any{
 				map[string]any{"questionId": "q1", "value": tc.envelopeID},
 			},
 		}
-	case "tangent.design-iteration":
+	case "tangent_design_iteration":
 		data := tc.envelope["data"].(map[string]any)
 		prompts := data["prompts"].([]any)
 		firstPrompt := prompts[0].(map[string]any)

@@ -73,25 +73,25 @@ type Server struct {
 	// durable substrate — and the tool says so rather than inventing a report.
 	health *health.Reporter
 
-	// telemetry answers tangent.telemetry_query and is handed to the roomflow
+	// telemetry answers tangent_telemetry_query and is handed to the roomflow
 	// adapter so a workflow invocation is observed at the point it acquires
 	// its durable identity. Nil is valid; the tool then says so.
 	telemetry      *telemetry.Recorder
 	telemetryStore *telemetry.SQLStore
 
-	// retention answers tangent.retention_status through the service layer
+	// retention answers tangent_retention_get through the service layer
 	// (internal/retention), so this transport holds no database handle. It is
 	// read-only: the retention *operations* are operator commands on the
 	// machine, never tools (see retention_tool.go). Nil is valid; the tool is
 	// then not registered.
 	retention *retention.Reporter
 
-	// channels and relay answer the tangent.relay_* tools (CW-20260906-0066):
+	// channels and relay answer the tangent_relay_* tools (CW-20260906-0066):
 	// the cooperative MCP inbox over channels/participants/bindings
 	// (internal/channel) and the exchange journal/outbox
 	// (internal/relay). Both nil is a valid state — a build with no
 	// database has nothing to relay — and the tools are then not
-	// registered at all, the same choice tangent.retention_status makes for
+	// registered at all, the same choice tangent_retention_get makes for
 	// the same reason: there is no useful "unavailable" answer to give for
 	// a surface that answers nothing without a database.
 	channels      *channel.Store
@@ -115,6 +115,10 @@ type Server struct {
 	dynamicTools  map[string]bool
 	claimedTools  map[string]bool
 	toolConflicts []string
+	// legacyAliases (deprecated name -> current name) and listLegacyTools back
+	// tool_names.go.
+	legacyAliases   map[string]string
+	listLegacyTools bool
 
 	// resolvedSchemas backs inputSchemaValidationMiddleware (schema_validation.go):
 	// go-mcp registers tools through the official SDK's raw, untyped AddTool,
@@ -142,7 +146,7 @@ func WithInteractionService(service *interaction.Service) Option {
 	}
 }
 
-// WithHealthReporter enables tangent.health_report. Omitting it leaves the
+// WithHealthReporter enables tangent_health_get. Omitting it leaves the
 // tool registered and answering `health_unavailable`, which is the honest
 // answer for a build that cannot measure its own readiness.
 func WithHealthReporter(reporter *health.Reporter) Option {
@@ -160,7 +164,7 @@ func WithHealthReporter(reporter *health.Reporter) Option {
 // Both are passed together because they answer different halves of one
 // question: the recorder is what observes, and the store is what a caller
 // queries afterwards. A build with a recorder and no store still emits metrics
-// and still exports spans; it simply cannot answer tangent.telemetry_query,
+// and still exports spans; it simply cannot answer tangent_telemetry_query,
 // and the tool says that rather than returning an empty trace.
 func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Option {
 	return func(server *Server) error {
@@ -174,7 +178,7 @@ func WithTelemetry(recorder *telemetry.Recorder, store *telemetry.SQLStore) Opti
 	}
 }
 
-// WithRetentionReporter enables tangent.retention_status.
+// WithRetentionReporter enables tangent_retention_get.
 func WithRetentionReporter(reporter *retention.Reporter) Option {
 	return func(server *Server) error {
 		if reporter == nil {
@@ -185,7 +189,7 @@ func WithRetentionReporter(reporter *retention.Reporter) Option {
 	}
 }
 
-// WithRelay enables the tangent.relay_* tools (CW-20260906-0066): the
+// WithRelay enables the tangent_relay_* tools (CW-20260906-0066): the
 // cooperative MCP inbox over channels, participants, bindings, and the
 // exchange journal. Both stores share whatever *sql.DB they were
 // constructed with; that handle is not taken here because unlike
@@ -249,7 +253,7 @@ func WithHITLService(service *hitl.Service) Option {
 	}
 }
 
-// WithDocsService enables the tangent.docs_enqueue tool backing the Docs
+// WithDocsService enables the tangent_docs_enqueue tool backing the Docs
 // inbox (CW-20260917-0009). Unlike HITL and Turns, Docs has no other MCP
 // tools — the operator acts on a doc through the browser API, never through
 // MCP.
@@ -263,8 +267,8 @@ func WithDocsService(service *docs.Service) Option {
 	}
 }
 
-// WithTurnsService enables the agent-turn tools — tangent.turns_enqueue,
-// tangent.turn_await and tangent.turn_ack — backing the /turns inbox
+// WithTurnsService enables the agent-turn tools — tangent_turns_enqueue,
+// tangent_turns_await and tangent_turns_ack — backing the /turns inbox
 // (CW-20260913-0019). They are the MCP form of the enqueue, replies and ack
 // routes an agent's runtime already had over HTTP. The operator's side, reading
 // the inbox and replying, stays in the browser API and is not a tool.
@@ -331,7 +335,7 @@ func New(
 	// AddReceivingMiddleware call executes its arguments left to right, so
 	// listing gatewayMetadataMiddleware first is what puts it first in
 	// execution order (see the official SDK's AddReceivingMiddleware doc).
-	mcpServer.SDKServer().AddReceivingMiddleware(gatewayMetadataMiddleware, s.inputSchemaValidationMiddleware)
+	mcpServer.SDKServer().AddReceivingMiddleware(gatewayMetadataMiddleware, s.inputSchemaValidationMiddleware, s.hideLegacyAliasesMiddleware)
 	for _, option := range options {
 		if option == nil {
 			continue
@@ -430,7 +434,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build list_workflows input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.list_workflows",
+		Name:        "tangent_workflow_list",
 		Description: "List the envelope-typed workflows Tangent currently exposes. Returns each registered handler's type, response kind, description, and (v0.4+) capabilities.",
 		InputSchema: listSchema,
 	}, s.handleListWorkflows)
@@ -440,7 +444,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build triage input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.triage",
+		Name:        "tangent_triage",
 		Description: "Dispatch a triage-kind envelope through Tangent. Public contract is unchanged from v0.1; internally this creates or reuses a room and advances the session.",
 		InputSchema: triageSchema,
 	}, s.handleTriage)
@@ -450,7 +454,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build feedback input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.feedback",
+		Name:        "tangent_feedback",
 		Description: "Dispatch a feedback-kind envelope through Tangent. Creates or reuses a room and waits for a structured questionnaire response.",
 		InputSchema: feedbackSchema,
 	}, s.handleFeedback)
@@ -460,7 +464,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build form-collect input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.form-collect",
+		Name:        "tangent_form_collect",
 		Description: "Dispatch a generalized schema-driven form through Tangent. Persists canonical form state on the room and waits for explicit submit/cancel.",
 		InputSchema: formCollectSchema,
 	}, s.packagedWorkflowHandler(formCollectEnvelopeType))
@@ -470,7 +474,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build design-iteration input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.design-iteration",
+		Name:        "tangent_design_iteration",
 		Description: "Dispatch a design-iteration envelope through Tangent. Renders sandboxed HTML and returns the user's selected action for each iteration.",
 		InputSchema: designIterationSchema,
 	}, s.handleDesignIteration)
@@ -480,7 +484,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build interview-question input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.interview_question",
+		Name:        "tangent_interview_question",
 		Description: "Dispatch an interview-question envelope through Tangent. Creates or reuses a room and waits for one long-form answer.",
 		InputSchema: interviewQuestionSchema,
 	}, s.handleInterviewQuestion)
@@ -490,7 +494,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build block-draft input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.block_draft",
+		Name:        "tangent_block_draft",
 		Description: "Dispatch a block-draft envelope through Tangent. Accepted responses append durable draft blocks on the room.",
 		InputSchema: blockDraftSchema,
 	}, s.handleBlockDraft)
@@ -500,7 +504,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build prose-revision input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.prose_revision",
+		Name:        "tangent_prose_revision",
 		Description: "Dispatch a prose-revision envelope through Tangent. Persists explicit accept/reject/comment outcomes per suggestion on the room.",
 		InputSchema: proseRevisionSchema,
 	}, s.handleProseRevision)
@@ -510,7 +514,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build output-render input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.output_render",
+		Name:        "tangent_output_render",
 		Description: "Dispatch an output-render envelope through Tangent. Persists the room's final markdown artifact and renders it with copy/export affordances.",
 		InputSchema: outputRenderSchema,
 	}, s.handleOutputRender)
@@ -520,7 +524,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build whiteboard input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.whiteboard",
+		Name:        "tangent_whiteboard",
 		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
 		InputSchema: whiteboardSchema,
 	}, s.handleWhiteboard)
@@ -530,14 +534,14 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build app-board input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name: "tangent.app-board",
+		Name: "tangent_app_board",
 		Description: "Dispatch an app-board envelope through Tangent: a board of the cards you supply, " +
 			"arranged in columns, with a filter bar and an optional detail pane. Domain-free — you " +
 			"supply the records and apply every consequence yourself; Tangent renders and records " +
 			"what the participant is looking at. Filters narrow the cards you sent and nothing else. " +
 			"Pass completion mode 'async' to keep the board open, update it with " +
-			"tangent.interaction_supersede, and read the participant's view state back with " +
-			"tangent.surface_get.",
+			"tangent_interaction_supersede, and read the participant's view state back with " +
+			"tangent_surface_get.",
 		InputSchema: appBoardSchema,
 	}, s.handleAppBoard)
 
@@ -546,7 +550,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build dashboard input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.dashboard",
+		Name:        "tangent_dashboard",
 		Description: "Dispatch a dashboard envelope through Tangent. Persists room-backed tiles, layouts, query state, and explicit refresh/update affordances.",
 		InputSchema: dashboardSchema,
 	}, s.handleDashboard)
@@ -556,7 +560,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build file-picker input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.file-picker",
+		Name:        "tangent_file_picker",
 		Description: "Dispatch a file-picker envelope through Tangent. Persists allowed roots, selected artifact refs, and canonical picker query state with explicit submit.",
 		InputSchema: filePickerSchema,
 	}, s.handleFilePicker)
@@ -566,7 +570,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build progress-panel input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.progress-panel",
+		Name:        "tangent_progress_panel",
 		Description: "Dispatch a progress-panel envelope through Tangent. Persists canonical progress items, summary state, and explicit operator updates.",
 		InputSchema: progressPanelSchema,
 	}, s.handleProgressPanel)
@@ -576,7 +580,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build wizard input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.wizard",
+		Name:        "tangent_wizard",
 		Description: "Dispatch a guided wizard envelope through Tangent. Persists room-backed step definitions, progress, branch selections, and explicit partial/final completion state.",
 		InputSchema: wizardSchema,
 	}, s.handleWizard)
@@ -586,7 +590,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build diff-review input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.diff-review",
+		Name:        "tangent_diff_review",
 		Description: "Dispatch a diff-review envelope through Tangent. Persists file and hunk decisions, filter state, comments, artifact refs, and exportable review summaries.",
 		InputSchema: diffReviewSchema,
 	}, s.handleDiffReview)
@@ -596,7 +600,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build spreadsheet-review input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.spreadsheet-review",
+		Name:        "tangent_spreadsheet_review",
 		Description: "Dispatch a spreadsheet-review envelope through Tangent. Persists canonical table state and renders a room-backed table host with explicit submit/cancel.",
 		InputSchema: spreadsheetReviewSchema,
 	}, s.handleSpreadsheetReview)
@@ -606,7 +610,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build approval-queue input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.approval-queue",
+		Name:        "tangent_approval_queue",
 		Description: "Dispatch an approval-queue envelope through Tangent. Persists queue decisions, evidence context, and audit export metadata with an explicit submit boundary.",
 		InputSchema: approvalQueueSchema,
 	}, s.handleApprovalQueue)
@@ -616,7 +620,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build synthesis-notes input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.synthesis_notes",
+		Name:        "tangent_synthesis_notes",
 		Description: "Dispatch a synthesis-notes envelope through Tangent. Persists private notes on the room and only exposes the phase-gated preview to the user.",
 		InputSchema: synthesisNotesSchema,
 	}, s.handleSynthesisNotes)
@@ -626,7 +630,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_create input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_create",
+		Name:        "tangent_session_create",
 		Description: "Create a Tangent room and return its room ID plus SPA URL. The room is owned by your caller scope. The URL is a locator, not a credential: opening it in a browser is what grants access, so sharing or logging it transfers nothing.",
 		InputSchema: sessionCreateSchema,
 	}, s.handleSessionCreate)
@@ -636,7 +640,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_advance input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_advance",
+		Name:        "tangent_session_advance",
 		Description: "Push an envelope onto an existing Tangent room and wait for the user to resolve it. Only rooms in your own caller partition accept an advance.",
 		InputSchema: sessionAdvanceSchema,
 	}, s.handleSessionAdvance)
@@ -650,7 +654,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_get output schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:         "tangent.session_get",
+		Name:         "tangent_session_get",
 		Description:  "Read the current room state and persisted envelope history for a Tangent room. Reads span every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema:  sessionGetSchema,
 		OutputSchema: sessionGetOutput,
@@ -661,7 +665,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_advance_phase input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_advance_phase",
+		Name:        "tangent_session_phase_advance",
 		Description: "Set the current workflow phase for a Tangent room and append it to the room's visited phase history.",
 		InputSchema: sessionAdvancePhaseSchema,
 	}, s.handleSessionAdvancePhase)
@@ -671,7 +675,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_set_phase_output input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_set_phase_output",
+		Name:        "tangent_session_phase_output_set",
 		Description: "Write a top-level key into a room's versioned JSON output blob for a workflow phase.",
 		InputSchema: sessionSetPhaseOutputSchema,
 	}, s.handleSessionSetPhaseOutput)
@@ -681,7 +685,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_close input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_close",
+		Name:        "tangent_session_close",
 		Description: "Close a Tangent room explicitly and remove its live UI tab. Only rooms in your own caller partition can be closed, because closing dispositions another caller's outstanding human work.",
 		InputSchema: sessionCloseSchema,
 	}, s.handleSessionClose)
@@ -691,7 +695,7 @@ func (s *Server) registerTools() error {
 		return fmt.Errorf("build session_list input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.session_list",
+		Name:        "tangent_session_list",
 		Description: "List Tangent rooms with title, timestamps, and the current pending envelope type when present. The listing spans every local caller partition, not just your own; standalone-local partitions are advisory and are not a security boundary.",
 		InputSchema: sessionListSchema,
 	}, s.handleSessionList)
@@ -817,7 +821,7 @@ func buildSynthesisNotesInputSchema() (*jsonschema.Schema, error) {
 
 // buildRoomWorkflowSchema parses a room-backed tool's input schema and adds
 // the shared completion selector. Every named room workflow and
-// tangent.session_advance goes through it, so a workflow cannot ship without
+// tangent_session_advance goes through it, so a workflow cannot ship without
 // advertising the async mode its callers need.
 func buildRoomWorkflowSchema(raw []byte, name string) (*jsonschema.Schema, error) {
 	schema, err := buildSchema(raw, name)

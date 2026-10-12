@@ -103,11 +103,11 @@ async function callDesignIteration(envelopeID, variantID, roomID = null, actionI
     },
     ...(roomID ? { meta: { roomID } } : {}),
   };
-  return callTool("tangent.design-iteration", { envelope });
+  return callTool("tangent_design_iteration", { envelope });
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

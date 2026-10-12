@@ -94,9 +94,9 @@ func TestTurnsToolsAreListedWithTheirContract(t *testing.T) {
 	}
 
 	wantHints := map[string]struct{ readOnly, idempotent bool }{
-		"tangent.turns_enqueue": {readOnly: false, idempotent: true},
-		"tangent.turn_await":    {readOnly: true, idempotent: false},
-		"tangent.turn_ack":      {readOnly: false, idempotent: true},
+		"tangent_turns_enqueue": {readOnly: false, idempotent: true},
+		"tangent_turns_await":   {readOnly: true, idempotent: false},
+		"tangent_turns_ack":     {readOnly: false, idempotent: true},
 	}
 	for name, want := range wantHints {
 		tool := byName[name]
@@ -123,7 +123,7 @@ func TestTurnsToolsAreListedWithTheirContract(t *testing.T) {
 		AdditionalProperties any                       `json:"additionalProperties"`
 		Properties           map[string]map[string]any `json:"properties"`
 	}
-	raw, _ := json.Marshal(byName["tangent.turn_await"].InputSchema)
+	raw, _ := json.Marshal(byName["tangent_turns_await"].InputSchema)
 	if err := json.Unmarshal(raw, &awaitSchema); err != nil {
 		t.Fatalf("decode turn_await schema: %v", err)
 	}
@@ -146,18 +146,18 @@ func TestTurnsToolsCarryAnAgentThroughAnswerAndAcknowledgement(t *testing.T) {
 	ctx := context.Background()
 	request := turnRequest("sess-loop", "t1")
 
-	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", request)
+	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", request)
 	if handle.ItemID == "" || handle.SessionID != "sess-loop" || handle.TurnID != "t1" ||
 		handle.QueueSequence != 1 || handle.State != interaction.InteractionStatePresented {
 		t.Fatalf("turns_enqueue = %#v", handle)
 	}
-	retry := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", request)
+	retry := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", request)
 	if retry.ItemID != handle.ItemID || retry.QueueSequence != handle.QueueSequence {
 		t.Fatalf("repeating the idempotency_key made a second item: %#v vs %#v", retry, handle)
 	}
 
 	// Nobody has answered yet: a look-once await reports a timeout and nothing else.
-	none := callInteractionTool[turns.AwaitResult](t, client, "tangent.turn_await",
+	none := callInteractionTool[turns.AwaitResult](t, client, "tangent_turns_await",
 		map[string]any{"session_id": "sess-loop", "wait_ms": 0})
 	if none.WaitStatus != turns.AwaitStatusTimeout || none.Replies == nil || len(none.Replies) != 0 {
 		t.Fatalf("await before any answer = %#v", none)
@@ -171,7 +171,7 @@ func TestTurnsToolsCarryAnAgentThroughAnswerAndAcknowledgement(t *testing.T) {
 		t.Fatalf("operator Reply: %v", err)
 	}
 
-	got := callInteractionTool[turns.AwaitResult](t, client, "tangent.turn_await",
+	got := callInteractionTool[turns.AwaitResult](t, client, "tangent_turns_await",
 		map[string]any{"session_id": "sess-loop", "wait_ms": 5000})
 	if got.WaitStatus != turns.AwaitStatusReplies || len(got.Replies) != 1 {
 		t.Fatalf("await after answer = %#v", got)
@@ -183,20 +183,20 @@ func TestTurnsToolsCarryAnAgentThroughAnswerAndAcknowledgement(t *testing.T) {
 	}
 
 	// Unacknowledged replies come back: a crash between receive and ack loses nothing.
-	again := callInteractionTool[turns.AwaitResult](t, client, "tangent.turn_await",
+	again := callInteractionTool[turns.AwaitResult](t, client, "tangent_turns_await",
 		map[string]any{"session_id": "sess-loop", "wait_ms": 0})
 	if len(again.Replies) != 1 {
 		t.Fatalf("an unacknowledged reply was not offered again: %#v", again)
 	}
 
 	ack := map[string]any{"item_id": handle.ItemID, "reply_id": reply.Resolution.ResolutionID}
-	acked := callInteractionTool[map[string]any](t, client, "tangent.turn_ack", ack)
+	acked := callInteractionTool[map[string]any](t, client, "tangent_turns_ack", ack)
 	if acked["status"] != "acknowledged" || acked["item_id"] != handle.ItemID {
 		t.Fatalf("turn_ack = %#v", acked)
 	}
-	callInteractionTool[map[string]any](t, client, "tangent.turn_ack", ack) // idempotent
+	callInteractionTool[map[string]any](t, client, "tangent_turns_ack", ack) // idempotent
 
-	done := callInteractionTool[turns.AwaitResult](t, client, "tangent.turn_await",
+	done := callInteractionTool[turns.AwaitResult](t, client, "tangent_turns_await",
 		map[string]any{"session_id": "sess-loop", "wait_ms": 0})
 	if done.WaitStatus != turns.AwaitStatusTimeout || len(done.Replies) != 0 {
 		t.Fatalf("an acknowledged reply was returned again: %#v", done)
@@ -214,7 +214,7 @@ func TestTurnAwaitWakesWhenTheOperatorAnswersMidWait(t *testing.T) {
 	server, operator := newTurnsRig(t)
 	client, closeClient := connectInteractionClient(t, server)
 	defer closeClient()
-	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", turnRequest("sess-wake", "t1"))
+	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", turnRequest("sess-wake", "t1"))
 
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -224,7 +224,7 @@ func TestTurnAwaitWakesWhenTheOperatorAnswersMidWait(t *testing.T) {
 	}()
 
 	start := time.Now()
-	got := callInteractionTool[turns.AwaitResult](t, client, "tangent.turn_await",
+	got := callInteractionTool[turns.AwaitResult](t, client, "tangent_turns_await",
 		map[string]any{"session_id": "sess-wake", "wait_ms": 10000})
 	if got.WaitStatus != turns.AwaitStatusReplies || len(got.Replies) != 1 {
 		t.Fatalf("await = %#v, want the reply that arrived while it waited", got)
@@ -238,8 +238,8 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 	server, operator := newTurnsRig(t)
 	client, closeClient := connectInteractionClient(t, server)
 	defer closeClient()
-	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", turnRequest("sess-err", "t1"))
-	answeredItem := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", turnRequest("sess-err", "t2"))
+	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", turnRequest("sess-err", "t1"))
+	answeredItem := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", turnRequest("sess-err", "t2"))
 	if _, err := operator.Reply(context.Background(), turns.ReplyInput{
 		ItemID: answeredItem.ItemID, ExpectedRevision: answeredItem.Revision, Action: "respond", ResponseText: "ok",
 	}); err != nil {
@@ -252,10 +252,10 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 		args map[string]any
 		code string
 	}{
-		"await with an empty session":   {"tangent.turn_await", map[string]any{"session_id": ""}, "validation_failed"},
-		"ack of an unanswered turn":     {"tangent.turn_ack", map[string]any{"item_id": handle.ItemID}, "validation_failed"},
-		"ack naming the wrong reply":    {"tangent.turn_ack", map[string]any{"item_id": answeredItem.ItemID, "reply_id": "nope"}, "validation_failed"},
-		"ack of an item that is absent": {"tangent.turn_ack", map[string]any{"item_id": "does-not-exist"}, "not_found"},
+		"await with an empty session":   {"tangent_turns_await", map[string]any{"session_id": ""}, "validation_failed"},
+		"ack of an unanswered turn":     {"tangent_turns_ack", map[string]any{"item_id": handle.ItemID}, "validation_failed"},
+		"ack naming the wrong reply":    {"tangent_turns_ack", map[string]any{"item_id": answeredItem.ItemID, "reply_id": "nope"}, "validation_failed"},
+		"ack of an item that is absent": {"tangent_turns_ack", map[string]any{"item_id": "does-not-exist"}, "not_found"},
 	} {
 		result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: tc.tool, Arguments: tc.args})
 		if err != nil {
@@ -284,7 +284,7 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 		"negative wait":         {"session_id": "s", "wait_ms": -1},
 		"unknown field":         {"session_id": "s", "surprise": true},
 	} {
-		result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: "tangent.turn_await", Arguments: args})
+		result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: "tangent_turns_await", Arguments: args})
 		if err == nil && (result == nil || !result.IsError) {
 			t.Errorf("turn_await accepted %s", name)
 		}
@@ -293,7 +293,7 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 	// A malformed turn is refused and creates nothing.
 	bad := turnRequest("sess-err", "t3")
 	delete(bad, "title")
-	result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: "tangent.turns_enqueue", Arguments: bad})
+	result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: "tangent_turns_enqueue", Arguments: bad})
 	if err == nil && (result == nil || !result.IsError) {
 		t.Errorf("turns_enqueue accepted a turn with no title")
 	}
@@ -311,7 +311,7 @@ func TestTurnsToolsRefuseWithStableCodes(t *testing.T) {
 // another repository, so it cannot be tested against this tool in process; it
 // validates its payloads against plugin.TurnsEnqueueInputSchema instead, and
 // this test holds that published schema equal to what the host packages and
-// what tangent.turns_enqueue actually advertises.
+// what tangent_turns_enqueue actually advertises.
 func TestTurnsEnqueueAdvertisesThePublishedSchema(t *testing.T) {
 	server, _ := newTurnsRig(t)
 	client, closeClient := connectInteractionClient(t, server)
@@ -337,7 +337,7 @@ func TestTurnsEnqueueAdvertisesThePublishedSchema(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	for _, tool := range listed.Tools {
-		if tool.Name != "tangent.turns_enqueue" {
+		if tool.Name != "tangent_turns_enqueue" {
 			continue
 		}
 		raw, err := json.Marshal(tool.InputSchema)
@@ -345,9 +345,9 @@ func TestTurnsEnqueueAdvertisesThePublishedSchema(t *testing.T) {
 			t.Fatalf("encode advertised schema: %v", err)
 		}
 		if advertised := decode("the advertised schema", raw); !reflect.DeepEqual(advertised, published) {
-			t.Errorf("tangent.turns_enqueue advertises a schema other than plugin.TurnsEnqueueInputSchema:\n%s", raw)
+			t.Errorf("tangent_turns_enqueue advertises a schema other than plugin.TurnsEnqueueInputSchema:\n%s", raw)
 		}
 		return
 	}
-	t.Fatal("tangent.turns_enqueue is not on the surface")
+	t.Fatal("tangent_turns_enqueue is not on the surface")
 }

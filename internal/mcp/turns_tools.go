@@ -15,7 +15,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/turns"
 )
 
-// turnAwaitInput is tangent.turn_await's arguments. WaitMillis is a pointer
+// turnAwaitInput is tangent_turns_await's arguments. WaitMillis is a pointer
 // because absent and zero mean different things: absent takes the default wait,
 // zero looks once and returns.
 type turnAwaitInput struct {
@@ -23,7 +23,7 @@ type turnAwaitInput struct {
 	WaitMillis *int64 `json:"wait_ms,omitempty" jsonschema:"How long to wait for a reply, in milliseconds, from 0 to 50000. Omit for 30000. Zero looks once and returns."`
 }
 
-// turnAckInput is tangent.turn_ack's arguments.
+// turnAckInput is tangent_turns_ack's arguments.
 type turnAckInput struct {
 	ItemID  string `json:"item_id" jsonschema:"The item_id of the turn whose reply was delivered."`
 	ReplyID string `json:"reply_id,omitempty" jsonschema:"The reply's resolution_id, to assert which reply was delivered. Refused if it is not this turn's reply."`
@@ -32,34 +32,34 @@ type turnAckInput struct {
 func (s *Server) registerTurnsTools() error {
 	enqueueSchema, err := buildTurnsEnqueueSchema()
 	if err != nil {
-		return fmt.Errorf("build tangent.turns_enqueue input schema: %w", err)
+		return fmt.Errorf("build tangent_turns_enqueue input schema: %w", err)
 	}
 	awaitSchema, err := buildTurnAwaitSchema()
 	if err != nil {
-		return fmt.Errorf("build tangent.turn_await input schema: %w", err)
+		return fmt.Errorf("build tangent_turns_await input schema: %w", err)
 	}
 	ackSchema, err := jsonschema.For[turnAckInput](nil)
 	if err != nil {
-		return fmt.Errorf("build tangent.turn_ack input schema: %w", err)
+		return fmt.Errorf("build tangent_turns_ack input schema: %w", err)
 	}
 
 	addTool(s, gmcpserver.Tool{
-		Name: "tangent.turns_enqueue",
+		Name: "tangent_turns_enqueue",
 		Description: "Enqueue one agent turn — a question, approval, checkpoint, failure or terminal result — " +
 			"in the operator's /turns inbox, and return its durable item handle, including its FIFO queue_sequence. " +
 			"Repeating an idempotency_key returns the original item rather than creating a second.",
 		InputSchema: enqueueSchema,
 	}, s.handleTurnsEnqueue)
 	addTool(s, gmcpserver.Tool{
-		Name: "tangent.turn_await",
+		Name: "tangent_turns_await",
 		Description: "Wait up to 50 seconds for the operator to answer a turn in a session, and return the replies " +
 			"not yet acknowledged, oldest answer first. A timeout returns an empty list and changes nothing. " +
-			"Call tangent.turn_ack for each reply you have handled: an unacknowledged reply is returned again.",
+			"Call tangent_turns_ack for each reply you have handled: an unacknowledged reply is returned again.",
 		InputSchema: awaitSchema,
 	}, s.handleTurnAwait)
 	addTool(s, gmcpserver.Tool{
-		Name: "tangent.turn_ack",
-		Description: "Acknowledge that the operator's reply to one turn reached its agent, so tangent.turn_await " +
+		Name: "tangent_turns_ack",
+		Description: "Acknowledge that the operator's reply to one turn reached its agent, so tangent_turns_await " +
 			"stops returning it. Idempotent. Refused for a turn nobody has answered.",
 		InputSchema: ackSchema,
 	}, s.handleTurnAck)

@@ -20,7 +20,7 @@ type appBoardInput struct {
 //   - **No room phase state.** Compare dashboard_handler.go, which projects a
 //     snapshot into the room and merges the caller's envelope over it. The
 //     board's content is whatever the caller last sent; a new revision arrives
-//     through tangent.interaction_supersede, and the record of it is the
+//     through tangent_interaction_supersede, and the record of it is the
 //     interaction's own revision history rather than a second projection this
 //     handler would have to keep consistent with it.
 //   - **No submit normalization.** There is no normalizeAppBoardSubmitResponse
@@ -36,7 +36,7 @@ type appBoardInput struct {
 // whether the detail pane is open — is not this handler's business either. It
 // arrives as a draft frame on the WebSocket, goes through Room.HandleDraftFrom
 // to roomDisposition.Draft, and the caller reads it back through
-// tangent.surface_get. Nothing pushes it.
+// tangent_surface_get. Nothing pushes it.
 //
 // Callers who want the board to stay open pass completion mode "async": the
 // receipt returns immediately, nothing is cancelled, and the interaction stays

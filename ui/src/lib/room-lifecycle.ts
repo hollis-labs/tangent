@@ -18,7 +18,7 @@ export type RoomLifecycle = {
    * Records what the participant is looking at inside the pending
    * interaction, without settling it (ADR 0007 §5). Nothing about the
    * presentation changes: `pending` is untouched, no resolver lease is taken,
-   * and the caller reads the result by pulling `tangent.surface_get`.
+   * and the caller reads the result by pulling `tangent_surface_get`.
    *
    * Returns false when there is nothing pending — a draft for an envelope this
    * tab is not looking at has no interaction to belong to.

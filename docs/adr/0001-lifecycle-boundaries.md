@@ -21,8 +21,8 @@ between `f457ad1` and `a332e76`.
 
 Tangent currently uses a `Room` as the unit of persistence, browser attachment,
 pending work, workflow state, and MCP result delivery. Public tools reinforce
-that overlap through names such as `tangent.session_create`, a `roomID` input,
-and a blocking `tangent.session_advance` call. In the current implementation:
+that overlap through names such as `tangent_session_create`, a `roomID` input,
+and a blocking `tangent_session_advance` call. In the current implementation:
 
 - one `Room` contains the active WebSocket, pending response channels, phase
   state, and close state;
@@ -330,18 +330,18 @@ transition.
 
 ### 10. Compatibility vocabulary and public tools
 
-The public `tangent.session_*` tools, `roomID`, and `/r/<roomID>` URLs remain
+The public `tangent_session_*` tools, `roomID`, and `/r/<roomID>` URLs remain
 supported compatibility vocabulary. This ADR does not rename or remove them.
 
 | Existing surface | Compatibility mapping |
 |---|---|
-| `tangent.session_create` | Opens a caller-scoped surface. Existing `roomID` remains the alias of `surface_id`; a later additive response may also expose canonical handles. An additive optional idempotency key makes creation retry-safe within `caller_scope`; omission preserves today's create-every-call behavior and is explicitly not retry-deduplicated. |
-| `tangent.session_advance` | Blocking adapter over `SubmitInteraction` plus `AwaitResolution`. Its single-active-advance behavior may remain an adapter policy; it is not a storage-model limit. |
-| `tangent.session_get` | Compatibility projection over a surface and its interactions. Existing `status`, legacy `phase`, histories, and workflow projections remain readable. Canonical surface and interaction states must be added without reinterpreting `status` as both. |
-| `tangent.session_advance_phase` | Compatibility operation for existing bundled flows. Phase names are presentation/package state or opaque external workflow correlation, not a generic Tangent business workflow lifecycle. |
-| `tangent.session_set_phase_output` | Compatibility storage/projection for shipped workflows. New generic application logic must not depend on arbitrary phase blobs as interaction authority. |
-| `tangent.session_close` | Maps to explicit `CloseSurface`. Its freeform `status` is preserved as a close reason/legacy value, not a downstream outcome or an implicit participant resolution. |
-| `tangent.session_list` | Lists surface compatibility projections. `active_only` filters surface lifecycle, never browser-connection presence. |
+| `tangent_session_create` | Opens a caller-scoped surface. Existing `roomID` remains the alias of `surface_id`; a later additive response may also expose canonical handles. An additive optional idempotency key makes creation retry-safe within `caller_scope`; omission preserves today's create-every-call behavior and is explicitly not retry-deduplicated. |
+| `tangent_session_advance` | Blocking adapter over `SubmitInteraction` plus `AwaitResolution`. Its single-active-advance behavior may remain an adapter policy; it is not a storage-model limit. |
+| `tangent_session_get` | Compatibility projection over a surface and its interactions. Existing `status`, legacy `phase`, histories, and workflow projections remain readable. Canonical surface and interaction states must be added without reinterpreting `status` as both. |
+| `tangent_session_phase_advance` | Compatibility operation for existing bundled flows. Phase names are presentation/package state or opaque external workflow correlation, not a generic Tangent business workflow lifecycle. |
+| `tangent_session_phase_output_set` | Compatibility storage/projection for shipped workflows. New generic application logic must not depend on arbitrary phase blobs as interaction authority. |
+| `tangent_session_close` | Maps to explicit `CloseSurface`. Its freeform `status` is preserved as a close reason/legacy value, not a downstream outcome or an implicit participant resolution. |
+| `tangent_session_list` | Lists surface compatibility projections. `active_only` filters surface lifecycle, never browser-connection presence. |
 
 Workflow-named tools such as `tangent.triage`, `tangent.form-collect`, the
 writing tools, and `tangent.approval-queue` remain ergonomic adapters with
@@ -494,7 +494,7 @@ return a separate outcome receipt.
 Chrispian accepted this ADR as drafted on 2026-09-03. Dependent tasks may treat
 the following material choices as locked:
 
-1. `roomID`, `/r/<roomID>`, and `tangent.session_*` remain compatibility
+1. `roomID`, `/r/<roomID>`, and `tangent_session_*` remain compatibility
    vocabulary through an additive migration rather than being renamed now.
 2. Direct loopback MCP identity remains explicitly asserted; idempotency uses
    an explicit caller application scope, with `standalone-local` only as the

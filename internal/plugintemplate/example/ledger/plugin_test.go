@@ -293,7 +293,7 @@ func records(count int) []Record {
 func TestOpenQueriesThenCreatesARoomThenPresents(t *testing.T) {
 	fake := startFakeLedger(t, records(3))
 	board, tools := wired(t, fake)
-	tools.answer("tangent.session_create", `{"roomID":"room-1","url":"http://127.0.0.1:7842/r/room-1"}`)
+	tools.answer("tangent_session_create", `{"roomID":"room-1","url":"http://127.0.0.1:7842/r/room-1"}`)
 
 	result, err := board.Open(context.Background(), OpenInput{Tags: []string{"alpha"}})
 	if err != nil {
@@ -303,14 +303,14 @@ func TestOpenQueriesThenCreatesARoomThenPresents(t *testing.T) {
 		t.Fatalf("Open = %+v, want the created room and one card per record", result)
 	}
 	if got := tools.names(); len(got) != 2 ||
-		got[0] != "tangent.session_create" || got[1] != "tangent.session_advance" {
+		got[0] != "tangent_session_create" || got[1] != "tangent_session_advance" {
 		t.Fatalf("tool calls = %v, want create then advance", got)
 	}
 	if !strings.Contains(fake.lastListQuery, "tags=alpha") {
 		t.Errorf("Ledger query = %q, want the caller's filters passed through", fake.lastListQuery)
 	}
 
-	advance, _ := tools.called("tangent.session_advance")
+	advance, _ := tools.called("tangent_session_advance")
 	completion, _ := advance.Arguments["completion"].(map[string]any)
 	if completion["mode"] != "async" {
 		t.Errorf("completion = %v; a board must not block the call across a human decision", completion)
@@ -360,7 +360,7 @@ func TestOpenReportsAnOutageAndCreatesNothing(t *testing.T) {
 func TestTheListAsksForOneMoreRecordThanItWillShow(t *testing.T) {
 	fake := startFakeLedger(t, records(5))
 	board, tools := wired(t, fake)
-	tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+	tools.answer("tangent_session_create", `{"roomID":"room-1","url":"u"}`)
 
 	if _, err := board.Open(context.Background(), OpenInput{Limit: 3}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -376,7 +376,7 @@ func TestTheListAsksForOneMoreRecordThanItWillShow(t *testing.T) {
 func TestABoundedCardSetSaysItWasBounded(t *testing.T) {
 	fake := startFakeLedger(t, records(10))
 	board, tools := wired(t, fake)
-	tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+	tools.answer("tangent_session_create", `{"roomID":"room-1","url":"u"}`)
 
 	cut, err := board.Open(context.Background(), OpenInput{Limit: 4})
 	if err != nil {
@@ -481,14 +481,14 @@ func TestSyncPushesThenPullsThenReplacesTheBoard(t *testing.T) {
 	seed := records(3)
 	fake := startFakeLedger(t, seed)
 	board, tools := wired(t, fake)
-	tools.answer("tangent.surface_get",
+	tools.answer("tangent_surface_get",
 		surfaceWithBoard(t, map[string]string{"REC-000": "review"}, seed))
 
 	result, err := board.Sync(context.Background(), SyncInput{RoomID: "room-1"})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	want := []string{"tangent.surface_get", "tangent.interaction_cancel", "tangent.session_advance"}
+	want := []string{"tangent_surface_get", "tangent_interaction_cancel", "tangent_session_advance"}
 	got := tools.names()
 	if len(got) != len(want) {
 		t.Fatalf("tool calls = %v, want %v", got, want)
@@ -498,7 +498,7 @@ func TestSyncPushesThenPullsThenReplacesTheBoard(t *testing.T) {
 			t.Fatalf("tool calls = %v, want %v", got, want)
 		}
 	}
-	cancel, _ := tools.called("tangent.interaction_cancel")
+	cancel, _ := tools.called("tangent_interaction_cancel")
 	if cancel.Arguments["cause"] != "caller_withdrawn" {
 		t.Errorf("cancel cause = %v; the participant did not cancel anything",
 			cancel.Arguments["cause"])
@@ -520,7 +520,7 @@ func TestABoardLeftStagedAndNeverSyncedChangesNothing(t *testing.T) {
 	seed := records(3)
 	fake := startFakeLedger(t, seed)
 	board, tools := wired(t, fake)
-	tools.answer("tangent.session_create", `{"roomID":"room-1","url":"u"}`)
+	tools.answer("tangent_session_create", `{"roomID":"room-1","url":"u"}`)
 
 	if _, err := board.Open(context.Background(), OpenInput{}); err != nil {
 		t.Fatalf("Open: %v", err)
@@ -540,7 +540,7 @@ func TestABoardLeftStagedAndNeverSyncedChangesNothing(t *testing.T) {
 func TestSyncRefusesABoardThisPluginDidNotOpen(t *testing.T) {
 	fake := startFakeLedger(t, nil)
 	board, tools := wired(t, fake)
-	tools.answer("tangent.surface_get", `{
+	tools.answer("tangent_surface_get", `{
 		"interactions": [{
 			"interaction_id": "int-1", "state": "presented", "revision": 1,
 			"request_snapshot": {"board_id": "other"},

@@ -85,7 +85,7 @@ type Descriptor struct {
 	// calls LoadState or SaveState on its behalf.
 	StatePhaseID string
 	// ProjectionKey is the JSON field name the package's state appears under
-	// in the tangent.session_get result. It is authored by the package rather
+	// in the tangent_session_get result. It is authored by the package rather
 	// than derived from Kind because the shipped kinds' field names predate
 	// this boundary and ADR 0003 §8 C6 freezes them.
 	ProjectionKey string
@@ -130,7 +130,7 @@ type Package interface {
 		resp *envelopes.Response,
 	) (*envelopes.Response, error)
 
-	// ProjectState renders the package's persisted blob for tangent.session_get.
+	// ProjectState renders the package's persisted blob for tangent_session_get.
 	// A nil result omits the field, which is the shipped `omitempty` behavior.
 	ProjectState(state map[string]any) any
 

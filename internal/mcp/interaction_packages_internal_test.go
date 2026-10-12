@@ -10,12 +10,12 @@ import (
 )
 
 // prePackageSessionGetOutputSchemaDigest is sha256 over the canonicalized
-// tangent.session_get output schema the MCP SDK inferred at e122b23 — before
+// tangent_session_get output schema the MCP SDK inferred at e122b23 — before
 // tangent.form-collect's projection type moved out of internal/room and into
 // its interaction package.
 //
 // It is the whole wire-compatibility claim for ADR 0003 §8 C6's freeze on
-// tangent.session_*, reduced to one value. The SDK derives a tool's output
+// tangent_session_*, reduced to one value. The SDK derives a tool's output
 // schema from its Go return type by reflection, so deleting
 // `FormCollect *room.FormStateView` from sessionGetResult silently deleted
 // `form_collect` from what tools/list advertises. sessionGetOutputSchema

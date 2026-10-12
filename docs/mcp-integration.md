@@ -28,6 +28,11 @@ for the wizard flow see
 [`manual-tests/wizard-e2e.md`](./manual-tests/wizard-e2e.md);
 for raw curl probes see [`mcp-smoketest.md`](./mcp-smoketest.md).
 
+Tool names follow `tangent_<noun>_<verb>` and match `[a-z0-9_]`; the earlier
+dotted and hyphenated names remain callable as deprecated aliases. The full
+old-to-new table and the compatibility rules are in
+[mcp-tool-names.md](mcp-tool-names.md).
+
 ## Operator Inbox
 
 The default browser view is a unified FIFO Inbox. Approvals, documents, agent
@@ -40,11 +45,14 @@ WebSocket bridge to respond. See [the operator guide](inbox.md).
 
 ## Agent inbox reads
 
-`tangent.inbox_list`, `tangent.inbox_search`, and `tangent.inbox_get` are pure
+`tangent_inbox_list`, `tangent_inbox_search`, and `tangent_inbox_get` are pure
 reads through the interaction service. They do not present an item, record a
 terminal retrieval, deliver a response, or acknowledge an outcome.
 
-All three require `requester_scope`, a declared application partition. The MCP
+All three require `requester_scope`, a declared application partition. Pass a
+stable string that names you, the calling agent or application (for example
+your own agent name or `my-chat-app`), identical on every call; it selects which
+items you can see. The MCP
 adapter always derives `standalone-local` authority; spelling `gateway:*` or
 `operator:*`, adding a capability, or supplying context metadata cannot grant
 another authority or participant access. **Local partitions remain advisory,
@@ -56,9 +64,9 @@ search omit inaccessible rows entirely, without a global count.
 
 | Tool | Arguments and result |
 |---|---|
-| `tangent.inbox_list` | Optional `kind` (exact definition kind), `status` (canonical interaction state), `created_from` (inclusive RFC3339), `created_before` (exclusive RFC3339), `limit` (default 20, 1–100), and `cursor`. Returns `items` metadata in global arrival order, without exposing global sequence numbers or bodies. |
-| `tangent.inbox_search` | Required `query` (1–1024 UTF-8 bytes after trimming), plus the same filters/pagination. Literal case-insensitive substring search across **JSON string values** in retained caller requests and confirmed responses, including nested values. No SQL wildcard/operator syntax, stemming, ranking, key names, private drafts, external refs or delivery metadata. Returns metadata. |
-| `tangent.inbox_get` | Required `item_id`. Returns metadata plus the retained `request` and `response_history`. The canonical interaction seals at most one terminal resolution, so history is empty or contains that confirmed response; unsubmitted drafts and other interactions in a legacy room are not response history for this item. |
+| `tangent_inbox_list` | Optional `kind` (exact definition kind), `status` (canonical interaction state), `created_from` (inclusive RFC3339), `created_before` (exclusive RFC3339), `limit` (default 20, 1–100), and `cursor`. Returns `items` metadata in global arrival order, without exposing global sequence numbers or bodies. |
+| `tangent_inbox_search` | Required `query` (1–1024 UTF-8 bytes after trimming), plus the same filters/pagination. Literal case-insensitive substring search across **JSON string values** in retained caller requests and confirmed responses, including nested values. No SQL wildcard/operator syntax, stemming, ranking, key names, private drafts, external refs or delivery metadata. Returns metadata. |
+| `tangent_inbox_get` | Required `item_id`. Returns metadata plus the retained `request` and `response_history`. The canonical interaction seals at most one terminal resolution, so history is empty or contains that confirmed response; unsubmitted drafts and other interactions in a legacy room are not response history for this item. |
 
 Metadata contains `item_id`, `surface_id`, `kind`, `definition_version`, `status`,
 creation/update times and `request_redacted`. Get's responses include the sealed
@@ -87,7 +95,7 @@ For example, discover your pending turns, then inspect a selected item:
 ```
 
 Use the returned item's exact `kind`, status and `item_id` rather than guessing
-a definition name. `tangent.inbox_search` also accepts a request such as
+a definition name. `tangent_inbox_search` also accepts a request such as
 `{"requester_scope":"my-chat-app","query":"deployment question","limit":10}`.
 
 ## Install
@@ -259,7 +267,7 @@ is: it checks the database, the schema version against the version the
 running binary embeds, the definition registry, the renderer host, and the
 delivery worker, and returns 503 with a per-check `operator_action` when any
 of them fails. Per-kind answers are at `/healthz/capability/{kind}`, and the
-same three reports are available over MCP as `tangent.health_report` for a
+same three reports are available over MCP as `tangent_health_get` for a
 client that has no HTTP path to the host. The MCP report additionally carries
 the plugin inventory — which plugins loaded, which refused and why — so that is
 read rather than inferred from a tool list, which cannot see a plugin that
@@ -278,7 +286,7 @@ of mistake, which is why the launch-authority check above comes first.
 
 Every non-passing check in a readiness or capability report carries a
 `correlation` block: a `trace_id` and the tool that reads it. Passing it to
-`tangent.telemetry_query` returns that check's or that kind's history —
+`tangent_telemetry_query` returns that check's or that kind's history —
 when it started failing, how often, and what callers saw while it was failing —
 from the durable `telemetry_events` table rather than from stderr, so the
 answer survives a restart and a log rotation. The same tool takes an
@@ -323,14 +331,14 @@ claude mcp list
 ```
 
 Then in any Claude Code session, ask Claude to use one of the bundled
-tools: `tangent.triage`, `tangent.feedback`, `tangent.form-collect`,
-`tangent.design-iteration`, `tangent.whiteboard`,
-`tangent.spreadsheet-review`, `tangent.approval-queue`,
-`tangent.diff-review`, `tangent.file-picker`,
-`tangent.progress-panel`, `tangent.dashboard`, or the writing
-sequence via `tangent.session_*`, `tangent.interview_question`,
-`tangent.synthesis_notes`, `tangent.block_draft`,
-`tangent.prose_revision`, and `tangent.output_render`. Tangent prints a
+tools: `tangent_triage`, `tangent_feedback`, `tangent_form_collect`,
+`tangent_design_iteration`, `tangent_whiteboard`,
+`tangent_spreadsheet_review`, `tangent_approval_queue`,
+`tangent_diff_review`, `tangent_file_picker`,
+`tangent_progress_panel`, `tangent_dashboard`, or the writing
+sequence via `tangent_session_*`, `tangent_interview_question`,
+`tangent_synthesis_notes`, `tangent_block_draft`,
+`tangent_prose_revision`, and `tangent_output_render`. Tangent prints a
 room URL, the browser resolves the workflow, and Claude receives the
 structured response back. Full walkthroughs live in the manual recipes
 under [`docs/manual-tests/`](./manual-tests/).
@@ -365,17 +373,17 @@ render them through the shared component rather than a second markdown path.
 ## Durable HITL inbox
 
 The HITL inbox is a persistent asynchronous operation surface, separate from
-the room-backed `tangent.approval-queue` batch workflow. It exposes four MCP
+the room-backed `tangent_approval_queue` batch workflow. It exposes four MCP
 tools:
 
-- `tangent.hitl_enqueue` stores one approval or persistent-attention item and
+- `tangent_hitl_enqueue` stores one approval or persistent-attention item and
   immediately returns its durable `item_id`, global FIFO `queue_sequence`,
   current `queue_position`, `/inbox`, and an item deep link.
-- `tangent.hitl_get` retrieves the current item projection or its immutable
+- `tangent_hitl_get` retrieves the current item projection or its immutable
   terminal outcome.
-- `tangent.hitl_await` waits 0–50,000 ms (30,000 ms by default). A timeout is a
+- `tangent_hitl_await` waits 0–50,000 ms (30,000 ms by default). A timeout is a
   successful `await/timeout` projection and never changes item lifecycle.
-- `tangent.hitl_withdraw` compare-and-sets one caller-owned item to
+- `tangent_hitl_withdraw` compare-and-sets one caller-owned item to
   `canceled/caller_withdrawn`; repeating the same withdrawal returns the
   original immutable outcome.
 
@@ -443,19 +451,19 @@ structured interactions, at `http://127.0.0.1:7842/inbox`. The agent's side is t
 operator's side (reading the inbox, replying, dismissing) is the browser API and
 is deliberately not a tool.
 
-- `tangent.turns_enqueue` takes one turn and returns its handle: the durable
+- `tangent_turns_enqueue` takes one turn and returns its handle: the durable
   `item_id`, the global FIFO `queue_sequence`, and the turn's `state`. The
   arguments are the turn itself — `contract_version`, `session_id`, `turn_id`,
   `idempotency_key`, `kind`, `source.agent_id`, `title` and `content`, plus
   optional `options`, `correlations` and `expires_at` — exactly what
   `POST /api/turns/enqueue` accepts. Repeating an `idempotency_key` returns the
   original item rather than creating a second.
-- `tangent.turn_await` takes a `session_id` and waits 0–50,000 ms (30,000 ms by
+- `tangent_turns_await` takes a `session_id` and waits 0–50,000 ms (30,000 ms by
   default) for the operator to answer a turn in that session. It returns the
   replies not yet acknowledged, oldest answer first, with `wait_status` of
   `replies` or `timeout`. A timeout returns an empty list, is not an error, and
   never changes a turn.
-- `tangent.turn_ack` takes an `item_id` and tells Tangent the reply reached its
+- `tangent_turns_ack` takes an `item_id` and tells Tangent the reply reached its
   agent. It is idempotent. Pass the reply's `resolution_id` as `reply_id` to
   assert which reply you delivered; a `reply_id` that is not that turn's reply is
   refused. A turn nobody has answered has nothing to acknowledge and is refused.
@@ -607,7 +615,7 @@ Both requests come back in `tangent.tesseract_review_sync`'s `requests` field,
 each naming the revision to supersede, its memory, namespace, key, and current
 status. They are also durable in the board's draft, so an agent that was not in
 the room when the button was pressed can still collect them with
-`tangent.surface_get`. **Nothing pokes the agent either way** — a request waits
+`tangent_surface_get`. **Nothing pokes the agent either way** — a request waits
 until an agent asks. The board keeps it visible in the meantime: the card wears
 a badge until the revision it names stops coming back from recall, which is
 exactly when the work has been done.
@@ -645,13 +653,13 @@ outside Tangent core using `plugin-sdk`. It supervises agent subprocesses
 (Claude streaming stdio, Codex jsonrpc stdio, PTY, ACP) and extracts clean human
 conversational turns at `LiveStateIdle` (suppressing internal thinking and tool
 calls), enqueuing them into Tangent's agent-turn FIFO inbox (`/inbox`) through
-`tangent.turns_enqueue`. It also supports direct delegation through Tether
+`tangent_turns_enqueue`. It also supports direct delegation through Tether
 (`go-tether-client`).
 
 The operator's answer comes back the way the turn went out. While a supervised
-subprocess session runs, the runner polls `tangent.turn_await` for that session
+subprocess session runs, the runner polls `tangent_turns_await` for that session
 on a short interval, writes each answer to the agent's stdin, and acknowledges it
-with `tangent.turn_ack`, so the turn's `delivery_state` reaches `acknowledged`
+with `tangent_turns_ack`, so the turn's `delivery_state` reaches `acknowledged`
 once the agent has been told. The agent reads one line: the operator's typed
 reply, or else the option they picked, or else the action itself (`approve`,
 `reject`), with any note appended after a colon. For a JSON-RPC or ACP agent the
@@ -712,7 +720,7 @@ url = "http://127.0.0.1:7842/mcp"
 Per-tool approval is optional; without it Codex prompts on each call:
 
 ```toml
-[mcp_servers.Tangent.tools."tangent.triage"]
+[mcp_servers.Tangent.tools."tangent_triage"]
 approval_mode = "auto"
 ```
 
@@ -747,11 +755,11 @@ four failure modes and the operator recipe.
 
 The names group into room/workflow and session compatibility tools, generic
 durable surface/interaction tools, the 4 HITL inbox operations
-(`tangent.hitl_enqueue`, `_get`, `_await`, `_withdraw`), the definition-registry
-diagnostics (`tangent.definition_registry_list`, `tangent.definition_get`,
-`tangent.definition_registry_diagnostics`), and the operability probes
-(`tangent.health_report`, `tangent.telemetry_query`,
-`tangent.retention_status`). To list them from the artifact you are about to
+(`tangent_hitl_enqueue`, `_get`, `_await`, `_withdraw`), the definition-registry
+diagnostics (`tangent_definition_list`, `tangent_definition_get`,
+`tangent_definition_diagnostics_get`), and the operability probes
+(`tangent_health_get`, `tangent_telemetry_query`,
+`tangent_retention_get`). To list them from the artifact you are about to
 deploy, boot it on a scratch database and port:
 
 ```bash
@@ -762,7 +770,7 @@ curl -fsS -X POST http://127.0.0.1:17842/mcp \
   | jq -r '.result.tools[].name' | sort
 ```
 
-`tangent.list_workflows` returns the dispatcher-backed room workflow
+`tangent_workflow_list` returns the dispatcher-backed room workflow
 definitions. It intentionally excludes the non-renderer `tangent.hitl-item`
 interaction definition; clients discover the four HITL operations in the MCP
 tool catalog and their named request/result/evidence definitions in the strict
@@ -775,22 +783,22 @@ One-shot probes for the new surfaces:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"doc-smoke"}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"doc-smoke"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_session_list","arguments":{"active_only":true}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.session_advance_phase","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent_session_phase_advance","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent.session_set_phase_output","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent_session_phase_output_set","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
 ```
 
-`tangent.session_get` now returns both room lifecycle status and the
+`tangent_session_get` now returns both room lifecycle status and the
 workflow-neutral phase substrate:
 
 - `status` / legacy `phase`: `active` while a room is live in memory,
@@ -801,7 +809,7 @@ workflow-neutral phase substrate:
   `client_kind`, `role`, `attached_at`), and `resolver_lease` names the single
   connection whose submission may become terminal. Reported separately from
   interaction state on purpose: a room can be busy with nobody attached, and
-  attached with nothing to answer. `tangent.session_list` carries the same fact
+  attached with nothing to answer. `tangent_session_list` carries the same fact
   compactly as `connection_count` and `resolver_lease`.
 - `current_phase`: the room's current workflow phase ID.
 - `phases_visited`: append-only ordered phase history. Jumping back to a
@@ -846,7 +854,7 @@ workflow-neutral phase substrate:
   `answers`, room-backed `saved_drafts`, `templates`, lightweight
   `attachment_refs`, and a durable `submission_summary`.
 - `final_output`: the persisted final markdown artifact once
-  `tangent.output_render` runs.
+  `tangent_output_render` runs.
 
 For persisted spreadsheet review, Tangent treats agent-provided rows as
 canonical table content and keeps `session_get` lightweight by
@@ -871,8 +879,8 @@ The bundled writing workflow's canonical phase sequence is:
 5. `output`
 
 Jump-backs are explicit. If a revision pass uncovers a drafting issue,
-call `tangent.session_advance_phase` back to `drafting`, resolve the new
-`tangent.block_draft` envelope, then advance forward again.
+call `tangent_session_phase_advance` back to `drafting`, resolve the new
+`tangent_block_draft` envelope, then advance forward again.
 
 For deeper probes (calling a workflow, expected error frames) see
 [`mcp-smoketest.md`](./mcp-smoketest.md) and
@@ -933,11 +941,11 @@ value naming a foreign authority becomes a partition of the local one.
 > so two agents can keep secrets from each other on the same machine. Do not
 > build a trust assumption on one.
 
-**What that changes for tools.** `tangent.session_list` and
-`tangent.session_get` stay authority-wide — "show me all my rooms" is
-unchanged. `tangent.session_close` and `tangent.surface_close` are now
+**What that changes for tools.** `tangent_session_list` and
+`tangent_session_get` stay authority-wide — "show me all my rooms" is
+unchanged. `tangent_session_close` and `tangent_surface_close` are now
 partition-scoped, because closing dispositions another caller's pending human
-work. The seventeen workflow tools and `tangent.session_advance` can no longer
+work. The seventeen workflow tools and `tangent_session_advance` can no longer
 push into a room another partition owns. Refusals are **403-shaped
 (`ROOM_FORBIDDEN`) within an authority** and **404-shaped (`ROOM_NOT_FOUND`)
 across authorities**; adapters must not collapse the two.
@@ -986,7 +994,7 @@ lifetime; every browser mints a fresh one on its next page load.
   room with no active envelope idles at that message until one is advanced into
   it — that is the room waiting, not a hang and not a lost call. If you were
   expecting an answer, the interaction is still durable: retrieve it with
-  `tangent.interaction_get` or wait again with `tangent.interaction_await`.
+  `tangent_interaction_get` or wait again with `tangent_interaction_await`.
 - **A tool returned `"status":"pending"` instead of an answer.** That is a
   success, not a failure. The inline wait window elapsed with nobody at the
   browser, so the call returned a durable handle rather than erroring. Resolve
@@ -1005,6 +1013,6 @@ For more, see the manual e2e recipe's troubleshooting section.
 ### PR reviews through an installed plugin
 
 An installed GitHub adapter fetches a PR and maps it to the domain-free external
-review kind, submitted through `tangent.session_advance`. The room appears in the
+review kind, submitted through `tangent_session_advance`. The room appears in the
 same Inbox as other requests. See [GitHub PR reviews](github-pr-review.md) for
 installation, the plugin tool, authentication and operator actions.

@@ -14,7 +14,7 @@ rather than fabricating an ID, revision, digest, label, or content.
 Copy this prompt and replace the bracketed values:
 
 ```text
-Use `tangent.hitl_enqueue` to place one durable [approval|attention] item in
+Use `tangent_hitl_enqueue` to place one durable [approval|attention] item in
 Tangent's `/inbox` inbox. Use a stable idempotency key for this logical request.
 Title: [short operator label]
 Summary: [what happened and why it matters]
@@ -27,7 +27,7 @@ Correlations: project [authority/ID], task [authority/ID/revision], session [aut
 Evidence: [only bounded markdown, text, unified diff, Tangent reference, or artifact metadata]
 
 Return immediately after enqueue with the durable item ID and item URL. Retain
-the handle and use `tangent.hitl_get` or a bounded `tangent.hitl_await` later.
+the handle and use `tangent_hitl_get` or a bounded `tangent_hitl_await` later.
 Do not claim that source/correlation values are authenticated, do not wait on
 the enqueue call for a human response, and do not perform any downstream action
 until the calling workflow interprets the retrieved outcome.
@@ -40,7 +40,7 @@ uses it to derive caller scope, and Get/Await/Withdraw must repeat it under
 
 ## Direct Tangent MCP
 
-Call `tangent.hitl_enqueue` directly with this complete approval request:
+Call `tangent_hitl_enqueue` directly with this complete approval request:
 
 ```json
 {
@@ -130,10 +130,10 @@ Use these later-operation shapes with the returned item ID:
 }
 ```
 
-The shape above is valid for `tangent.hitl_get`. It is also valid for
-`tangent.hitl_await`; add `"wait_ms": 30000` when a bounded wait is useful. A
+The shape above is valid for `tangent_hitl_get`. It is also valid for
+`tangent_hitl_await`; add `"wait_ms": 30000` when a bounded wait is useful. A
 timeout still returns the latest pending projection. For
-`tangent.hitl_withdraw`, the same shape is sufficient; optionally add the last
+`tangent_hitl_withdraw`, the same shape is sufficient; optionally add the last
 observed `expected_revision` and a non-empty `reason`. Never withdraw merely
 because an Await request timed out.
 
@@ -144,7 +144,7 @@ Either Tether mode reaches Tangent. On the default proxy (`mux mcp --proxy
 `mux_call`:
 
 ```text
-Call mux_call with tool_name "tangent.hitl_enqueue" and these arguments:
+Call mux_call with tool_name "tangent_hitl_enqueue" and these arguments:
 {"contract_version":"1.0","kind":"attention","idempotency_key":"tether:tangent:CW-20260904-0016:docs-attention-v1","title":"Review HITL documentation result","summary":"The direct and gateway examples use the same strict v1 schema.","request":"Acknowledge the documentation result, optionally leaving a note or reply.","source":{"application_id":"tether-docs-smoke","application_label":"Tether","agent_id":"hitl-docs-gateway"}}
 ```
 
@@ -165,13 +165,13 @@ mux mcp --proxy --only tangent
 Then copy this request into the MCP client connected to that proxy:
 
 ```text
-Call the native-flat tool `tangent.hitl_enqueue` through Tether with exactly
+Call the native-flat tool `tangent_hitl_enqueue` through Tether with exactly
 these arguments, without wrapping them in `mux_call`:
 {"contract_version":"1.0","kind":"attention","idempotency_key":"tether:tangent:CW-20260904-0016:docs-attention-v1","title":"Review HITL documentation result","summary":"The direct and gateway examples use the same strict v1 schema.","request":"Acknowledge the documentation result, optionally leaving a note or reply.","source":{"application_id":"tether-docs-smoke","application_label":"Tether","agent_id":"hitl-docs-gateway"},"correlations":{"project":{"authority":"torque","id":"PRJ-20260825-0002"},"task":{"authority":"torque","id":"CW-20260904-0016"},"session":{"authority":"tether","id":"session-hitl-docs-gateway"}},"evidence":[{"type":"text","label":"Gateway mode","content":"Native-flat discovery preserves the object-root HITL tool schema."}]}
 Return immediately with the durable handle. Later use native-flat
-`tangent.hitl_get` or `tangent.hitl_await` with the returned item ID and
+`tangent_hitl_get` or `tangent_hitl_await` with the returned item ID and
 `{"application_id":"tether-docs-smoke"}` as `caller`. Use
-`tangent.hitl_withdraw` only if this application no longer needs the pending
+`tangent_hitl_withdraw` only if this application no longer needs the pending
 item.
 ```
 

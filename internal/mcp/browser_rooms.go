@@ -54,7 +54,7 @@ func (s *Server) ListBrowserRooms(ctx context.Context, activeOnly bool) ([]room.
 
 // InspectBrowserRoom implements server.RoomService.
 //
-// The payload is the `tangent.session_get` result unchanged, so the SPA's
+// The payload is the `tangent_session_get` result unchanged, so the SPA's
 // decode path is identical either side of the migration and the browser API is
 // a transport change rather than a contract change.
 func (s *Server) InspectBrowserRoom(ctx context.Context, roomID string) (any, error) {

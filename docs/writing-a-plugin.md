@@ -401,7 +401,7 @@ intentional disable does not restart the child.
 
 ### Being legible
 
-`tangent.health_report` and the lifecycle management API report desired enable
+`tangent_health_get` and the lifecycle management API report desired enable
 intent separately from actual loaded/failed state. Failed startup and quarantined
 owners remain visible. Contributed surfaces are attributed to their load owner;
 direct host registrations remain host-owned.

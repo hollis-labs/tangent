@@ -53,11 +53,11 @@ workflow starts.
 | `fast_triage.triage` | `tangent.triage` |
 | `fast_triage.feedback` | `tangent.feedback` |
 | _(none)_ | `tangent.design-iteration` |
-| _(none)_ | `tangent.session_create` |
-| _(none)_ | `tangent.session_advance` |
-| _(none)_ | `tangent.session_get` |
-| _(none)_ | `tangent.session_list` |
-| _(none)_ | `tangent.session_close` |
+| _(none)_ | `tangent_session_create` |
+| _(none)_ | `tangent_session_advance` |
+| _(none)_ | `tangent_session_get` |
+| _(none)_ | `tangent_session_list` |
+| _(none)_ | `tangent_session_close` |
 
 Tangent's surface has grown well past this table — bundled workflows, the
 durable HITL inbox, the generic interaction substrate, definition-registry
@@ -100,7 +100,7 @@ workflow live under [`.agents/skills/`](../.agents/skills/):
 - `tangent.triage`
 - `tangent.feedback`
 - `tangent.design-iteration`
-- `tangent.session_*`
+- `tangent_session_*`
 
 The canonical room URL form is `http://127.0.0.1:7842/r/<roomID>`.
 

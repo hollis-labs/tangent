@@ -32,7 +32,7 @@ async function main() {
     const roomID = await createRoom("spreadsheet-review-mock");
     const ws = await openRoomSocket(roomID);
 
-    const firstCall = callTool("tangent.spreadsheet-review", {
+    const firstCall = callTool("tangent_spreadsheet_review", {
       envelope: {
         v: 1,
         id: "spreadsheet-1",
@@ -95,7 +95,7 @@ async function main() {
       throw new Error(`first result missing action_id: ${JSON.stringify(firstResult)}`);
     }
 
-    const secondCall = callTool("tangent.spreadsheet-review", {
+    const secondCall = callTool("tangent_spreadsheet_review", {
       envelope: {
         v: 1,
         id: "spreadsheet-2",
@@ -197,13 +197,13 @@ async function respondToSpreadsheetReview(ws, payload) {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   const payload = JSON.parse(result.result.content[0].text);
   return payload.roomID;
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

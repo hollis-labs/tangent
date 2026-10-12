@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // triage-mock-call.mjs — outside-the-process round-trip smoke for
-// tangent.triage. Starts ./tangent as a subprocess, fires a
-// tangent.triage MCP call over the Streamable-HTTP transport, then
+// tangent_triage. Starts ./tangent as a subprocess, fires a
+// tangent_triage MCP call over the Streamable-HTTP transport, then
 // connects to the WS bridge for the assigned room and submits a
 // canned response. Verifies the MCP call returns kind=data,
 // status=submitted with the expected payload.
@@ -144,7 +144,7 @@ async function callTriage(envelope) {
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name: "tangent.triage", arguments: { envelope } },
+    params: { name: "tangent_triage", arguments: { envelope } },
   };
   const r = await fetch(MCP_URL, {
     method: "POST",

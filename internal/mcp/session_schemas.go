@@ -2,7 +2,7 @@ package mcp
 
 var sessionCreateInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_create input",
+  "title": "tangent_session_create input",
   "properties": {
     "title": {"type": "string"},
     "meta": {"type": "object"}
@@ -11,7 +11,7 @@ var sessionCreateInputSchemaJSON = []byte(`{
 
 var sessionAdvanceInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_advance input",
+  "title": "tangent_session_advance input",
   "properties": {
     "roomID": {"type": "string", "minLength": 1},
     "envelope": {
@@ -36,7 +36,7 @@ var sessionAdvanceInputSchemaJSON = []byte(`{
 
 var sessionGetInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_get input",
+  "title": "tangent_session_get input",
   "properties": {
     "roomID": {"type": "string", "minLength": 1}
   },
@@ -45,7 +45,7 @@ var sessionGetInputSchemaJSON = []byte(`{
 
 var sessionAdvancePhaseInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_advance_phase input",
+  "title": "tangent_session_phase_advance input",
   "properties": {
     "roomID": {"type": "string", "minLength": 1},
     "to_phase": {"type": "string", "minLength": 1},
@@ -56,7 +56,7 @@ var sessionAdvancePhaseInputSchemaJSON = []byte(`{
 
 var sessionSetPhaseOutputInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_set_phase_output input",
+  "title": "tangent_session_phase_output_set input",
   "properties": {
     "roomID": {"type": "string", "minLength": 1},
     "phase": {"type": "string", "minLength": 1},
@@ -68,7 +68,7 @@ var sessionSetPhaseOutputInputSchemaJSON = []byte(`{
 
 var sessionCloseInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_close input",
+  "title": "tangent_session_close input",
   "properties": {
     "roomID": {"type": "string", "minLength": 1},
     "status": {"type": "string"}
@@ -78,7 +78,7 @@ var sessionCloseInputSchemaJSON = []byte(`{
 
 var sessionListInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.session_list input",
+  "title": "tangent_session_list input",
   "properties": {
     "active_only": {"type": "boolean"}
   }

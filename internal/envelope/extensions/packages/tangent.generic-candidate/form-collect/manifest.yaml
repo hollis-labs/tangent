@@ -26,7 +26,7 @@
 #     exact versions with "no wire breakage, in either direction"; and leaving
 #     both unchanged would republish different content under one identity,
 #     which §3 calls a publisher error. Every option violates one of the ADR's
-#     own rules. `version` is on the wire (tangent.list_workflows, the
+#     own rules. `version` is on the wire (tangent_workflow_list, the
 #     generated TypeScript, every pinned binding) and `revision` is not, so
 #     `version` holds at 0.6 and `revision` advances to 2. ADR 0003 needs an
 #     amendment naming the C4-to-present transition as a defined move; see the

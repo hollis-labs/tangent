@@ -1,4 +1,4 @@
-// Package retention is the service layer behind tangent.retention_status.
+// Package retention is the service layer behind tangent_retention_get.
 //
 // It exists so the MCP transport reports the custody posture without holding a
 // database handle or importing internal/db (the transport-boundary rule in

@@ -92,7 +92,7 @@ func TestDefinitionRegistryListIsPagedAndCarriesTheSourceDigest(t *testing.T) {
 		SourceDigest string `json:"definition_source_digest"`
 		HostVersion  string `json:"host_version"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_registry_list", map[string]any{"limit": 5}, &page)
+	callDefinitionTool(t, client, "tangent_definition_list", map[string]any{"limit": 5}, &page)
 
 	if page.Total != len(extensions.RegisteredTypes()) {
 		t.Fatalf("total = %d, want %d", page.Total, len(extensions.RegisteredTypes()))
@@ -121,7 +121,7 @@ func TestDefinitionRegistryListIsPagedAndCarriesTheSourceDigest(t *testing.T) {
 			Kind string `json:"kind"`
 		} `json:"definitions"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_registry_list",
+	callDefinitionTool(t, client, "tangent_definition_list",
 		map[string]any{"limit": 5, "cursor": page.NextCursor}, &second)
 	if len(second.Definitions) == 0 {
 		t.Fatal("the cursor returned an empty page")
@@ -138,7 +138,7 @@ func TestDefinitionRegistryListIsPagedAndCarriesTheSourceDigest(t *testing.T) {
 		} `json:"definitions"`
 		Total int `json:"total"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_registry_list",
+	callDefinitionTool(t, client, "tangent_definition_list",
 		map[string]any{"package_id": "tangent.review"}, &review)
 	if review.Total != 4 {
 		t.Fatalf("tangent.review holds %d definitions, want 4", review.Total)
@@ -193,7 +193,7 @@ func TestDefinitionGetProjectsTheWholeManifestAndBoundsSchemas(t *testing.T) {
 			Body    json.RawMessage `json:"body"`
 		} `json:"response_schema"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_get", map[string]any{
+	callDefinitionTool(t, client, "tangent_definition_get", map[string]any{
 		"kind": extensions.HITLItemEnvelopeType, "include_schemas": true,
 	}, &detail)
 
@@ -269,7 +269,7 @@ func TestDefinitionGetWithholdsSchemasByDefault(t *testing.T) {
 			OmittedReason string `json:"omitted_reason"`
 		} `json:"response_schema"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_get",
+	callDefinitionTool(t, client, "tangent_definition_get",
 		map[string]any{"kind": extensions.TriageEnvelopeType}, &detail)
 
 	if !detail.RequestSchema.Present || len(detail.RequestSchema.Body) != 0 {
@@ -307,7 +307,7 @@ func TestDefinitionRegistryDiagnosticsReportsStateAndCoverage(t *testing.T) {
 		PackageCounts       map[string]int `json:"package_counts"`
 		CapabilityRequests  []string       `json:"renderer_effect_capability_requests"`
 	}
-	callDefinitionTool(t, client, "tangent.definition_registry_diagnostics", map[string]any{}, &diagnostics)
+	callDefinitionTool(t, client, "tangent_definition_diagnostics_get", map[string]any{}, &diagnostics)
 
 	managed := len(extensions.RegisteredTypes())
 	if diagnostics.ManagedDefinitions != managed {

@@ -24,12 +24,12 @@ import (
 // over a REST API calling relay.Provider (or the stores directly) — this
 // file's gap is that boundary, not an omission.
 //
-// contractVersion is repeated on every input/output the way tangent.hitl_*
+// contractVersion is repeated on every input/output the way tangent_hitl_*
 // repeats "1.0": "versioned contracts" per this task's acceptance item 1.
 const relayContractVersion = "1.0"
 
 // relaySourceInput is the caller's self-asserted identity, reusing
-// tangent.hitl_*'s exact vocabulary (source.application_id / agent_id)
+// tangent_hitl_*'s exact vocabulary (source.application_id / agent_id)
 // rather than inventing a second shape. Both fields are required, unlike
 // HITL's: an agent participant's whole point is resolving to the same
 // stable identity across attach/send/receive/ack calls
@@ -58,7 +58,7 @@ func relayRefFor(p channel.Participant) relayParticipantRef {
 }
 
 func (s *Server) registerRelayTools() error {
-	if err := addInteractionTool(s, "tangent.relay_open_channel",
+	if err := addInteractionTool(s, "tangent_relay_channel_open",
 		"Create a new channel and add the canonical operator participant as its first member. "+
 			"Channel creation is deliberately its own tool, separate from attach: an agent that mistypes "+
 			"or omits a channel id at attach must get a loud error, never a silently created channel that "+
@@ -66,14 +66,14 @@ func (s *Server) registerRelayTools() error {
 		s.handleRelayOpenChannel); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_attach",
+	if err := addInteractionTool(s, "tangent_relay_attach",
 		"Attach an agent participant to an existing channel and bind its current runtime session as the "+
 			"live destination, advancing the binding generation. channel_id must already exist (see "+
-			"tangent.relay_open_channel); this call never creates one.",
+			"tangent_relay_channel_open); this call never creates one.",
 		s.handleRelayAttach); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_detach",
+	if err := addInteractionTool(s, "tangent_relay_detach",
 		"End an agent participant's membership in a channel and supersede its current runtime binding in "+
 			"the same transaction, so no destination is ever trusted for a participant who has left. Covers "+
 			"only a clean exit; a session that simply exits without calling this is read through presence, "+
@@ -81,28 +81,28 @@ func (s *Server) registerRelayTools() error {
 		s.handleRelayDetach); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_send",
+	if err := addInteractionTool(s, "tangent_relay_send",
 		"Accept one message into the relay journal, atomically queuing its delivery work. recipient may be "+
 			"omitted only when the channel has exactly one live operator participant to default to; "+
 			"otherwise it is required and this refuses rather than guessing.",
 		s.handleRelaySend); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_receive",
+	if err := addInteractionTool(s, "tangent_relay_receive",
 		"Receive new messages addressed to this participant in this channel since cursor, optionally "+
 			"waiting up to 50000 ms for one to arrive. A timeout returns status \"ok\" is not implied: it "+
 			"returns status \"timeout\" with the same cursor, never an error, and cancels no outstanding work.",
 		s.handleRelayReceive); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_ack",
+	if err := addInteractionTool(s, "tangent_relay_ack",
 		"Acknowledge that this participant consumed one exchange. Separate from receive: retrieving a "+
 			"message is not the same fact as having read it. Refuses if the caller is not the exchange's "+
 			"recipient.",
 		s.handleRelayAck); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.relay_capabilities",
+	if err := addInteractionTool(s, "tangent_relay_capabilities_get",
 		"Report what this relay adapter actually supports, with unsupported operations named explicitly "+
 			"rather than simulated. source is required only when channel_id is given (validated here, not "+
 			"encoded as a schema conditional, because a conditional on a field a model fills is exactly "+
@@ -113,7 +113,7 @@ func (s *Server) registerRelayTools() error {
 	return nil
 }
 
-// ── tangent.relay_open_channel ──────────────────────────────────────────
+// ── tangent_relay_channel_open ──────────────────────────────────────────
 
 type relayOpenChannelInput struct {
 	Title      string `json:"title,omitempty"`
@@ -143,7 +143,7 @@ func (s *Server) handleRelayOpenChannel(
 	}, nil
 }
 
-// ── tangent.relay_attach ────────────────────────────────────────────────
+// ── tangent_relay_attach ────────────────────────────────────────────────
 
 // relayRuntimeInput carries no adapter_capabilities field. A []string is
 // unconditionally schema'd as `"type": ["null", "array"]` by jsonschema-go —
@@ -195,7 +195,7 @@ func (s *Server) handleRelayAttach(
 	}, nil
 }
 
-// ── tangent.relay_detach ────────────────────────────────────────────────
+// ── tangent_relay_detach ────────────────────────────────────────────────
 
 type relayDetachInput struct {
 	ChannelID string           `json:"channel_id"`
@@ -225,7 +225,7 @@ func (s *Server) handleRelayDetach(
 	}, nil
 }
 
-// ── tangent.relay_send ──────────────────────────────────────────────────
+// ── tangent_relay_send ──────────────────────────────────────────────────
 
 type relaySendInput struct {
 	ChannelID      string           `json:"channel_id"`
@@ -280,7 +280,7 @@ func (s *Server) handleRelaySend(
 	}, nil
 }
 
-// ── tangent.relay_receive ───────────────────────────────────────────────
+// ── tangent_relay_receive ───────────────────────────────────────────────
 
 type relayReceiveInput struct {
 	ChannelID string           `json:"channel_id"`
@@ -293,10 +293,10 @@ type relayReceiveInput struct {
 	// unacked_only true is the durable-check-in shape: "everything that
 	// still needs handling", regardless of how much acked history exists.
 	// The corollary: anything received but never acked via
-	// tangent.relay_ack keeps reappearing on every subsequent check-in,
+	// tangent_relay_ack keeps reappearing on every subsequent check-in,
 	// forever — ack what you actually handle, including a message that
 	// needs no reply, or it is re-delivered for the life of the channel.
-	UnackedOnly bool `json:"unacked_only,omitempty" jsonschema:"Exclude anything already acknowledged via tangent.relay_ack, regardless of cursor. With cursor 0 this is the durable check-in shape for a freshly launched session: everything still unhandled. Anything received but not acked is re-delivered on every future call, forever, including a message you decided needed no reply — ack it anyway, or it never stops coming back."`
+	UnackedOnly bool `json:"unacked_only,omitempty" jsonschema:"Exclude anything already acknowledged via tangent_relay_ack, regardless of cursor. With cursor 0 this is the durable check-in shape for a freshly launched session: everything still unhandled. Anything received but not acked is re-delivered on every future call, forever, including a message you decided needed no reply — ack it anyway, or it never stops coming back."`
 }
 
 type relayExchangeView struct {
@@ -356,7 +356,7 @@ func (s *Server) handleRelayReceive(
 	}, nil
 }
 
-// ── tangent.relay_ack ───────────────────────────────────────────────────
+// ── tangent_relay_ack ───────────────────────────────────────────────────
 
 type relayAckInput struct {
 	Source     relaySourceInput `json:"source"`
@@ -387,7 +387,7 @@ func (s *Server) handleRelayAck(
 	}, nil
 }
 
-// ── tangent.relay_capabilities ──────────────────────────────────────────
+// ── tangent_relay_capabilities_get ──────────────────────────────────────────
 
 type relayCapabilitiesInput struct {
 	ChannelID string `json:"channel_id,omitempty"`

@@ -100,7 +100,7 @@ func TestSessionCloseIsPartitionEnforcingWhileReadsStayAuthorityWide(t *testing.
 }
 
 // TestWorkflowToolsCannotPushIntoAnotherCallersRoom covers the seventeen
-// workflow tools and tangent.session_advance, which all funnel through
+// workflow tools and tangent_session_advance, which all funnel through
 // advanceRoomEnvelope. Before this, any caller could reuse any room through
 // env.Meta["roomID"] and receive that room's human response.
 func TestWorkflowToolsCannotPushIntoAnotherCallersRoom(t *testing.T) {

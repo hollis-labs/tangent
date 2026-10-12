@@ -1,6 +1,6 @@
 # Diff Review E2E
 
-Manual room-backed smoke test for `tangent.diff-review`.
+Manual room-backed smoke test for `tangent_diff_review`.
 
 ## Setup
 
@@ -17,7 +17,7 @@ Create a room and invoke the workflow:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"diff-review-manual"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"diff-review-manual"}}}'
 ```
 
 Copy the `roomID`, then send:
@@ -25,7 +25,7 @@ Copy the `roomID`, then send:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.diff-review","arguments":{"envelope":{"v":1,"id":"diff-manual-1","type":"tangent.diff-review","title":"Diff review","data":{"review_id":"review-manual-1","files":[{"id":"file-1","path":"pkg/app.go","summary":"Tighten validation","hunks":[{"id":"hunk-1","header":"@@ -1,3 +1,4 @@","before":"return nil","after":"return validate()"}]},{"id":"file-2","path":"ui/view.tsx","summary":"Polish spacing","hunks":[{"id":"hunk-2","header":"@@ -2,3 +2,4 @@","before":"gap-2","after":"gap-3"}]}],"before_ref":{"artifact_id":"artifact-before","name":"before.patch"},"after_ref":{"artifact_id":"artifact-after","name":"after.patch"}},"meta":{"roomID":"<room-id>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_diff_review","arguments":{"envelope":{"v":1,"id":"diff-manual-1","type":"tangent.diff-review","title":"Diff review","data":{"review_id":"review-manual-1","files":[{"id":"file-1","path":"pkg/app.go","summary":"Tighten validation","hunks":[{"id":"hunk-1","header":"@@ -1,3 +1,4 @@","before":"return nil","after":"return validate()"}]},{"id":"file-2","path":"ui/view.tsx","summary":"Polish spacing","hunks":[{"id":"hunk-2","header":"@@ -2,3 +2,4 @@","before":"gap-2","after":"gap-3"}]}],"before_ref":{"artifact_id":"artifact-before","name":"before.patch"},"after_ref":{"artifact_id":"artifact-after","name":"after.patch"}},"meta":{"roomID":"<room-id>"}}}}}'
 ```
 
 Open `http://127.0.0.1:7842/r/<room-id>`.
@@ -45,11 +45,11 @@ After submit, re-run the workflow with the same `review_id` and `roomID` but sta
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.diff-review","arguments":{"envelope":{"v":1,"id":"diff-manual-2","type":"tangent.diff-review","data":{"review_id":"review-manual-1","files":[{"id":"file-1","path":"stale"}]},"meta":{"roomID":"<room-id>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_diff_review","arguments":{"envelope":{"v":1,"id":"diff-manual-2","type":"tangent.diff-review","data":{"review_id":"review-manual-1","files":[{"id":"file-1","path":"stale"}]},"meta":{"roomID":"<room-id>"}}}}}'
 ```
 
 Expected:
 
 - The room reopens with the persisted canonical files rather than the stale seed.
 - Prior decisions, comments, `current_file`, and export refs are visible again.
-- `tangent.session_get` returns a `diff_review` projection with the same persisted review state.
+- `tangent_session_get` returns a `diff_review` projection with the same persisted review state.

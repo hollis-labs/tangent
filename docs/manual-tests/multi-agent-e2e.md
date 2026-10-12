@@ -35,8 +35,8 @@ Fallback for older clients: use `--transport sse` with `/sse`.
 
 ## 3. Open two concurrent rooms
 
-- In session A, ask Claude to run `tangent.triage`.
-- In session B, ask Claude to run `tangent.feedback`.
+- In session A, ask Claude to run `tangent_triage`.
+- In session B, ask Claude to run `tangent_feedback`.
 - Open `http://127.0.0.1:7842/` in the browser. The tab strip should
   show both active rooms.
 - Click each tab and resolve the envelopes independently.
@@ -75,15 +75,15 @@ Expected:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"room-A"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"room-A"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"room-B"}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"room-B"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_list","arguments":{"active_only":true}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_session_list","arguments":{"active_only":true}}}'
 ```
 
 The final call should return both active rooms.

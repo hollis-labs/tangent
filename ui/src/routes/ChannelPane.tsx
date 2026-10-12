@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
 // notification — see the task description for the full out-list.
 //
 // There is no "create channel" action here, on purpose: 0066 shipped only
-// the agent-facing tangent.relay_open_channel; an operator's channel list
+// the agent-facing tangent_relay_channel_open; an operator's channel list
 // is exactly the channels an agent has already opened. The primary flow
 // runs agent-first — an agent needing input opens a channel and messages
 // the operator, who replies here — not operator-first. If daily use shows
@@ -219,7 +219,7 @@ export default function ChannelPaneRoute() {
             <li className="px-4 py-6 text-xs text-zinc-500">Loading…</li>
           ) : channels.length === 0 ? (
             <li className="px-4 py-6 text-xs text-zinc-500">
-              No channels yet. An agent opens one with tangent.relay_open_channel.
+              No channels yet. An agent opens one with tangent_relay_channel_open.
             </li>
           ) : (
             channels.map((channel) => (

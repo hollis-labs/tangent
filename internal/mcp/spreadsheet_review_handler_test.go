@@ -178,7 +178,7 @@ func TestSpreadsheetReview_SubmitReopenAndPersistState(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -234,7 +234,7 @@ func callSpreadsheetReview(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.spreadsheet-review",
+		Name: "tangent_spreadsheet_review",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

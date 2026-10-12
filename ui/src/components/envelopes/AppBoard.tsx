@@ -20,7 +20,7 @@
 //
 //   - `onDraft` — filters, selection, whether the detail pane is open. Not a
 //     decision, does not settle the interaction, does not take the resolver
-//     lease. The caller reads it by pulling `tangent.surface_get`.
+//     lease. The caller reads it by pulling `tangent_surface_get`.
 //   - `onSubmit` — the participant pressed one of the caller's actions. That
 //     settles the interaction, and the caller applies whatever the action means
 //     using its own tools.

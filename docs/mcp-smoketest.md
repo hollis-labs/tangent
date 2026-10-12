@@ -19,7 +19,7 @@ checks:
   registry behind two handlers, so a difference means one of them is serving
   something else, and `/sse` is the one the gateway dials and nobody probes by
   hand;
-- one read-only tool call, `tangent.health_report`, over both transports, whose
+- one read-only tool call, `tangent_health_get`, over both transports, whose
   readiness must agree with `/readyz`.
 
 It touches no live instance, no Cerberus resource, and no Tether catalog, so it
@@ -70,7 +70,7 @@ the working tree:
 ```
 FAIL [CATALOG_STALE] deployed /mcp tool surface: shipped build advertises N tools
   (digest <a>), deployed /mcp advertises M tools (digest <b>);
-  absent there: tangent.retention_status, tangent.telemetry_query
+  absent there: tangent_retention_get, tangent_telemetry_query
   operator action: Redeploy Tangent so the serving process is the build on disk
   (`tangent --migrate-only` first when the schema moved), then refresh the
   gateway's catalog so it re-lists tools.
@@ -111,7 +111,7 @@ That adds two checks to the same command:
 1. **`TestDeployedTangentMatchesShippedBuild`** — supervisor status vs. an
    actual listener, liveness/readiness/capability on the live instance, its
    `/mcp` and `/sse` surfaces compared against the build this checkout
-   produces, one read-only `tangent.health_report` call, and the Tether catalog
+   produces, one read-only `tangent_health_get` call, and the Tether catalog
    entry checked against the address that is actually serving.
 2. **`TestTetherGatewayStillPublishesTangent`** — runs the real `mux` gateway
    in `mcp --proxy --only tangent` mode, confirms Tangent is still discoverable
@@ -208,18 +208,18 @@ A difference between the two is `CATALOG_STALE`: the deployment is behind the
 artifact. The name list groups into room/workflow and session compatibility
 tools, generic durable surface/interaction tools, the 4 HITL inbox operations,
 the definition-registry diagnostics, and the operability probes
-(`tangent.health_report`, `tangent.telemetry_query`, `tangent.retention_status`).
+(`tangent_health_get`, `tangent_telemetry_query`, `tangent_retention_get`).
 
 ### Probe 2 — the read-only tool call
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.health_report","arguments":{}}}' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_health_get","arguments":{}}}' \
   | jq '.result.structuredContent.readiness.status'
 ```
 
-`tangent.health_report` is the smoke check's one read-only call, and the choice
+`tangent_health_get` is the smoke check's one read-only call, and the choice
 is deliberate: every candidate proves the transport carried a call, and only
 this one also answers whether the host can do the work. It writes nothing,
 creates no room, and returns the same pass/warn/fail vocabulary `/readyz` and
@@ -232,7 +232,7 @@ HTTP client for `/readyz`.
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.triage","arguments":{"envelope":{"v":1,"id":"smoke-1","type":"triage","data":{}}}}}' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_triage","arguments":{"envelope":{"v":1,"id":"smoke-1","type":"triage","data":{}}}}}' \
   | jq '.result'
 ```
 

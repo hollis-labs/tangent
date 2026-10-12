@@ -68,7 +68,7 @@ func newFastPathRig(t *testing.T) *sessionRig {
 }
 
 // TestRoomWorkflows_FastPathMatchesLegacyResponse runs every shipped room
-// workflow and tangent.session_advance through both topologies and asserts the
+// workflow and tangent_session_advance through both topologies and asserts the
 // public success response is the same.
 //
 // Values Tangent itself stamps at submission time — server-injected instants
@@ -114,8 +114,8 @@ func TestRoomWorkflows_WaitReturnsPendingReceiptWithoutTerminalizing(t *testing.
 			if receipt.Handle.RoomID != roomID || receipt.Handle.EnvelopeID != envelopeID {
 				t.Fatalf("receipt handle = %+v, want room %q envelope %q", receipt.Handle, roomID, envelopeID)
 			}
-			if receipt.Resume.GetTool != "tangent.interaction_get" ||
-				receipt.Resume.AwaitTool != "tangent.interaction_await" || !receipt.Resume.RetryOriginal {
+			if receipt.Resume.GetTool != "tangent_interaction_get" ||
+				receipt.Resume.AwaitTool != "tangent_interaction_await" || !receipt.Resume.RetryOriginal {
 				t.Fatalf("receipt resume = %+v", receipt.Resume)
 			}
 			if receipt.Handle.URL == "" || !strings.Contains(receipt.Handle.URL, roomID) {
@@ -176,7 +176,7 @@ func TestRoomWorkflows_AsyncReturnsReceiptImmediately(t *testing.T) {
 func TestRoomWorkflow_HandleRecoversResultAfterTransportExpiry(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.approval-queue")
+	fixture := fixtureByTool(t, "tangent_approval_queue")
 	roomID, _ := createSession(t, rg, "approval-queue")
 
 	const envelopeID = "approval-recovery-1"
@@ -200,12 +200,12 @@ func TestRoomWorkflow_HandleRecoversResultAfterTransportExpiry(t *testing.T) {
 	awaitInteractionState(t, rg, receipt.Handle.InteractionID, "resolved", 3*time.Second)
 
 	// Route 1: a fresh interaction_get by handle.
-	viaGet := interactionResolutionPayload(t, rg, "tangent.interaction_get", map[string]any{
+	viaGet := interactionResolutionPayload(t, rg, "tangent_interaction_get", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
 	// Route 2: a bounded interaction_await by handle.
-	viaAwait := interactionResolutionPayload(t, rg, "tangent.interaction_await", map[string]any{
+	viaAwait := interactionResolutionPayload(t, rg, "tangent_interaction_await", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 		"maximum_wait_ms": 2000,
@@ -237,7 +237,7 @@ func TestRoomWorkflow_HandleRecoversResultAfterTransportExpiry(t *testing.T) {
 func TestRoomWorkflow_ChangedPayloadIsADeterministicConflict(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "conflict")
 
 	const envelopeID = "conflict-1"
@@ -272,7 +272,7 @@ func TestRoomWorkflow_ChangedPayloadIsADeterministicConflict(t *testing.T) {
 // topology is thrown away and the room comes back from durable records alone.
 func TestRoomWorkflow_RestartRebuildsPresentationFromCanonicalRecords(t *testing.T) {
 	rg := newDurableRig(t)
-	fixture := fixtureByTool(t, "tangent.diff-review")
+	fixture := fixtureByTool(t, "tangent_diff_review")
 	roomID, _ := createSession(t, rg, "restart")
 
 	const envelopeID = "restart-1"
@@ -319,7 +319,7 @@ func TestRoomWorkflow_RestartRebuildsPresentationFromCanonicalRecords(t *testing
 	if retry.err != nil || retry.result.IsError {
 		t.Fatalf("post-restart retry failed: err=%v body=%s", retry.err, extractText(t, retry.result))
 	}
-	stored := interactionResolutionPayload(t, restarted, "tangent.interaction_get", map[string]any{
+	stored := interactionResolutionPayload(t, restarted, "tangent_interaction_get", map[string]any{
 		"interaction_id":  receipt.Handle.InteractionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
@@ -334,7 +334,7 @@ func TestRoomWorkflow_RestartRebuildsPresentationFromCanonicalRecords(t *testing
 func TestRoomWorkflow_BrowserDisconnectDoesNotTerminalize(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.feedback")
+	fixture := fixtureByTool(t, "tangent_feedback")
 	roomID, _ := createSession(t, rg, "disconnect")
 
 	const envelopeID = "disconnect-1"
@@ -379,7 +379,7 @@ func TestRoomWorkflow_BrowserDisconnectDoesNotTerminalize(t *testing.T) {
 func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
 	rg := newFastPathRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "cancel")
 
 	const envelopeID = "cancel-1"
@@ -435,7 +435,7 @@ func TestRoomWorkflow_ParticipantCancelIsTheOnlyRoomTerminalizer(t *testing.T) {
 func TestRoomWorkflow_AcknowledgementIsIdempotentAndSeparateFromRetrieval(t *testing.T) {
 	rg := newFastPathRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "ack")
 
 	const envelopeID = "ack-1"
@@ -465,7 +465,7 @@ WHERE r.interaction_id = ? AND a.status = 'delivered'`, interactionID)
 	assertRowCount(t, rg, 0, `SELECT COUNT(*) FROM terminal_outcome_acknowledgements WHERE interaction_id = ?`, interactionID)
 
 	// Reading the result again still does not acknowledge it.
-	_ = interactionResolutionPayload(t, rg, "tangent.interaction_get", map[string]any{
+	_ = interactionResolutionPayload(t, rg, "tangent_interaction_get", map[string]any{
 		"interaction_id":  interactionID,
 		"requester_scope": roomflow.DefaultCaller.Scope,
 	})
@@ -474,7 +474,7 @@ WHERE r.interaction_id = ? AND a.status = 'delivered'`, interactionID)
 	var firstAck string
 	for attempt := range 3 {
 		ackRes, callErr := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-			Name: "tangent.interaction_acknowledge",
+			Name: "tangent_interaction_ack",
 			Arguments: map[string]any{
 				"interaction_id":  interactionID,
 				"requester_scope": roomflow.DefaultCaller.Scope,
@@ -525,7 +525,7 @@ WHERE r.interaction_id = ? AND e.event_type = 'delivery.acknowledged'`, interact
 func TestRoomWorkflow_ConcurrentRetriesShareOneOutcome(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "concurrent")
 
 	const envelopeID = "concurrent-1"
@@ -580,7 +580,7 @@ WHERE r.interaction_id = ?`, receipt.Handle.InteractionID)
 func TestRoomWorkflow_LegacyProjectionIsNotTerminalAuthority(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
-	fixture := fixtureByTool(t, "tangent.triage")
+	fixture := fixtureByTool(t, "tangent_triage")
 	roomID, _ := createSession(t, rg, "projection")
 
 	const envelopeID = "projection-1"
@@ -864,7 +864,7 @@ func cancelInteractionForTest(t *testing.T, rg *sessionRig, roomID, interactionI
 		t.Fatalf("read interaction revision: %v", err)
 	}
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interaction_cancel",
+		Name: "tangent_interaction_cancel",
 		Arguments: map[string]any{
 			"interaction_id":    interactionID,
 			"expected_revision": revision,

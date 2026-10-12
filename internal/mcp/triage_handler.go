@@ -36,10 +36,10 @@ const defaultTriageTimeout = 5 * time.Minute
 // "roomID" key on env.Meta allows reuse of an existing room. Unknown
 // room ids fail fast rather than implicitly creating on demand.
 //
-// Registration is what makes a workflow visible to tangent.list_workflows;
+// Registration is what makes a workflow visible to tangent_workflow_list;
 // no production code path calls Dispatcher.Dispatch, so this handler's
 // blocking Push is not the route a caller's tool invocation takes. Every
-// named room workflow tool and tangent.session_advance go through
+// named room workflow tool and tangent_session_advance go through
 // Server.advanceRoomEnvelope, which routes onto the durable completion
 // adapter in internal/roomflow.
 type TriageHandler struct {

@@ -11,7 +11,7 @@ import (
 )
 
 type inboxListInput struct {
-	RequesterScope string                       `json:"requester_scope"`
+	RequesterScope string                       `json:"requester_scope" jsonschema:"A stable string naming you, the calling agent or application (for example your own agent name), the same value on every call and the same one you use as your caller scope elsewhere. It selects which items you may read; it is an advisory partition, not a credential or security boundary."`
 	Kind           string                       `json:"kind,omitempty"`
 	Status         interaction.InteractionState `json:"status,omitempty"`
 	CreatedFrom    string                       `json:"created_from,omitempty"`
@@ -21,7 +21,7 @@ type inboxListInput struct {
 }
 
 type inboxSearchInput struct {
-	RequesterScope string                       `json:"requester_scope"`
+	RequesterScope string                       `json:"requester_scope" jsonschema:"A stable string naming you, the calling agent or application (for example your own agent name), the same value on every call and the same one you use as your caller scope elsewhere. It selects which items you may read; it is an advisory partition, not a credential or security boundary."`
 	Query          string                       `json:"query"`
 	Kind           string                       `json:"kind,omitempty"`
 	Status         interaction.InteractionState `json:"status,omitempty"`
@@ -32,19 +32,19 @@ type inboxSearchInput struct {
 }
 
 type inboxGetInput struct {
-	RequesterScope string `json:"requester_scope"`
+	RequesterScope string `json:"requester_scope" jsonschema:"A stable string naming you, the calling agent or application (for example your own agent name), the same value on every call and the same one you use as your caller scope elsewhere. It selects which items you may read; it is an advisory partition, not a credential or security boundary."`
 	ItemID         string `json:"item_id"`
 }
 
 func (s *Server) registerInboxReadTools() error {
-	description := "Read only caller-owned or surface-owned inbox items. The host derives authority from admission; requester_scope is a declared local partition, never an operator or gateway grant. " + authz.AdvisoryPartitionNotice + " "
-	if err := addInteractionTool(s, "tangent.inbox_list", description+"List retained visible item metadata in arrival order with kind/status/creation-window filters and cursor pagination; no bodies or global counts.", s.handleInboxList); err != nil {
+	description := "Read only caller-owned or surface-owned inbox items. The host derives authority from admission; requester_scope is required: pass a stable string naming the calling agent or application (for example your own agent name), identical on every call; it selects which items you can see and is a declared local partition, never an operator or gateway grant. " + authz.AdvisoryPartitionNotice + " "
+	if err := addInteractionTool(s, "tangent_inbox_list", description+"List retained visible item metadata in arrival order with kind/status/creation-window filters and cursor pagination; no bodies or global counts.", s.handleInboxList); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.inbox_search", description+"Search retained request and confirmed response JSON text values by literal case-insensitive substring. Private drafts, delivery metadata and redaction tombstones are excluded. Returns metadata with the same bounded pagination.", s.handleInboxSearch); err != nil {
+	if err := addInteractionTool(s, "tangent_inbox_search", description+"Search retained request and confirmed response JSON text values by literal case-insensitive substring. Private drafts, delivery metadata and redaction tombstones are excluded. Returns metadata with the same bounded pagination.", s.handleInboxSearch); err != nil {
 		return err
 	}
-	return addInteractionTool(s, "tangent.inbox_get", description+"Read one item and its immutable confirmed response history. Erased content remains a tombstone; hidden/purged items are not found. Does not present, retrieve, deliver or acknowledge an outcome.", s.handleInboxGet)
+	return addInteractionTool(s, "tangent_inbox_get", description+"Read one item and its immutable confirmed response history. Erased content remains a tombstone; hidden/purged items are not found. Does not present, retrieve, deliver or acknowledge an outcome.", s.handleInboxGet)
 }
 
 func inboxReadArguments(input inboxListInput) (interaction.InboxReadInput, error) {

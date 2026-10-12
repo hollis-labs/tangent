@@ -13,7 +13,7 @@ import (
 // Both existed already, in one workflow each, and were absent from the others.
 // `tangent.file-picker` held its selection URIs to `artifact://` and
 // `tangent.whiteboard` held its asset URIs to the same rule, while
-// `tangent.diff-review`, `tangent.output_render`, and `tangent.form-collect`
+// `tangent.diff-review`, `tangent_output_render`, and `tangent.form-collect`
 // carried the same field shapes with no rule at all. A validation that one
 // workflow performs is a convention; the same validation in one function that
 // every workflow calls is a boundary.

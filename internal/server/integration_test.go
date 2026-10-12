@@ -251,7 +251,7 @@ func TestIntegration_TriageRoundTrip(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.triage",
+			Name:      "tangent_triage",
 			Arguments: map[string]any{"envelope": envelopeArg},
 		})
 	}()
@@ -349,7 +349,7 @@ func TestIntegration_DisconnectResumesCall(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.triage",
+			Name:      "tangent_triage",
 			Arguments: map[string]any{"envelope": envelopeArg},
 		})
 	}()
@@ -431,7 +431,7 @@ func TestIntegration_Cancel(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		mcpRes, mcpErr = rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.triage",
+			Name:      "tangent_triage",
 			Arguments: map[string]any{"envelope": envelopeArg},
 		})
 	}()
@@ -488,7 +488,7 @@ func TestIntegration_ParallelRooms(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
 		defer cancel()
 		res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.triage",
+			Name:      "tangent_triage",
 			Arguments: map[string]any{"envelope": triageEnvelopeArg(envID)},
 		})
 		oc := outcome{err: err}

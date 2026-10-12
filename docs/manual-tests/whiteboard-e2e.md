@@ -9,7 +9,7 @@ Manual smoke for the whiteboard submit loop. This validates:
 - server-issued `revision_id` on submit
 - same-room reopen from the latest persisted snapshot
 - artifact-backed reference-image refs surviving room reload
-- append-only whiteboard revision history in `tangent.session_get`
+- append-only whiteboard revision history in `tangent_session_get`
 - prior-revision reopen + explicit `Continue from here` lineage
 
 ## 1. Boot Tangent
@@ -44,11 +44,11 @@ claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 
 ## 3. Trigger the first whiteboard turn
 
-Ask Claude Code to call `tangent.whiteboard` with a small starter scene.
+Ask Claude Code to call `tangent_whiteboard` with a small starter scene.
 
 Example prompt:
 
-> Use `tangent.whiteboard` to open a board called `board-1` so I can sketch
+> Use `tangent_whiteboard` to open a board called `board-1` so I can sketch
 > a simple layout, then wait for my submit/cancel response.
 
 ## 4. Refresh recovery before submit
@@ -106,7 +106,7 @@ Claude should receive a response shaped like:
 
 ## 6. Reopen the same room
 
-Ask Claude Code to call `tangent.whiteboard` again with `meta.roomID`
+Ask Claude Code to call `tangent_whiteboard` again with `meta.roomID`
 pointing at the same room.
 
 Confirm the reopened board starts from the submitted snapshot, not the
@@ -140,7 +140,7 @@ Claude should now receive a payload that includes:
 
 ## 8. Verify persisted room state
 
-Have Claude call `tangent.session_get` for the room and confirm:
+Have Claude call `tangent_session_get` for the room and confirm:
 
 - `whiteboard.notes` matches the latest submit
 - `whiteboard.export_refs` contains the latest PNG export metadata
@@ -154,7 +154,7 @@ Have Claude call `tangent.session_get` for the room and confirm:
 
 ## Cancel check
 
-Trigger one more `tangent.whiteboard` turn in the same room and click
+Trigger one more `tangent_whiteboard` turn in the same room and click
 `Cancel`. Confirm Claude receives a cancelled response and
 `whiteboard.revision_history` does not grow.
 

@@ -25,6 +25,14 @@ import (
 // fastest-feedback coverage with no network flakiness.
 func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func()) {
 	t.Helper()
+	client, _, dispatcher, cleanup := connectServer(t)
+	return client, dispatcher, cleanup
+}
+
+// connectServer is connect that also returns the server, so a test can ask it
+// for its registry, and accepts options for the server under test.
+func connectServer(t *testing.T, options ...tangentmcp.Option) (*mcpsdk.ClientSession, *tangentmcp.Server, *envelope.Dispatcher, func()) {
+	t.Helper()
 	ctx := context.Background()
 
 	envSvc, err := envelope.New(ctx)
@@ -82,7 +90,7 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 	dispatcher := envelope.NewDispatcher(envSvc)
 	manager := room.NewManager(nil)
 
-	srv, err := tangentmcp.New(envSvc, dispatcher, manager, "")
+	srv, err := tangentmcp.New(envSvc, dispatcher, manager, "", options...)
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
 	}
@@ -104,13 +112,13 @@ func connect(t *testing.T) (*mcpsdk.ClientSession, *envelope.Dispatcher, func())
 		_ = clientSession.Close()
 		_ = serverSession.Close()
 	}
-	return clientSession, dispatcher, cleanup
+	return clientSession, srv, dispatcher, cleanup
 }
 
 // TestServer_ListsBaseToolSurface asserts the tool surface a server booted
 // without the durable interaction substrate exposes: the legacy and session
 // tools callers integrate against, plus the definition-registry diagnostics,
-// tangent.health_report, and tangent.telemetry_query, none of which depend on
+// tangent_health_get, and tangent_telemetry_query, none of which depend on
 // that substrate — an embedder without it still has to be able to ask why a
 // kind is not being served, whether this host is ready to serve at all, and
 // what happened to a request it already made. Treat this as a contract test:
@@ -138,50 +146,50 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	// either way: the door decides whether a KIND is served, not whether a tool
 	// exists.
 	want := map[string]bool{
-		"tangent.list_workflows":           false,
-		"tangent.telemetry_query":          false,
-		"tangent.triage":                   false,
-		"tangent.feedback":                 false,
-		"tangent.form-collect":             false,
-		"tangent.design-iteration":         false,
-		"tangent.interview_question":       false,
-		"tangent.block_draft":              false,
-		"tangent.prose_revision":           false,
-		"tangent.output_render":            false,
-		"tangent.whiteboard":               false,
-		"tangent.dashboard":                false,
-		"tangent.app-board":                false,
-		"tangent.file-picker":              false,
-		"tangent.progress-panel":           false,
-		"tangent.wizard":                   false,
-		"tangent.diff-review":              false,
-		"tangent.spreadsheet-review":       false,
-		"tangent.approval-queue":           false,
-		"tangent.synthesis_notes":          false,
-		"tangent.session_create":           false,
-		"tangent.session_advance":          false,
-		"tangent.session_get":              false,
-		"tangent.session_advance_phase":    false,
-		"tangent.session_set_phase_output": false,
-		"tangent.session_close":            false,
-		"tangent.session_list":             false,
+		"tangent_workflow_list":            false,
+		"tangent_telemetry_query":          false,
+		"tangent_triage":                   false,
+		"tangent_feedback":                 false,
+		"tangent_form_collect":             false,
+		"tangent_design_iteration":         false,
+		"tangent_interview_question":       false,
+		"tangent_block_draft":              false,
+		"tangent_prose_revision":           false,
+		"tangent_output_render":            false,
+		"tangent_whiteboard":               false,
+		"tangent_dashboard":                false,
+		"tangent_app_board":                false,
+		"tangent_file_picker":              false,
+		"tangent_progress_panel":           false,
+		"tangent_wizard":                   false,
+		"tangent_diff_review":              false,
+		"tangent_spreadsheet_review":       false,
+		"tangent_approval_queue":           false,
+		"tangent_synthesis_notes":          false,
+		"tangent_session_create":           false,
+		"tangent_session_advance":          false,
+		"tangent_session_get":              false,
+		"tangent_session_phase_advance":    false,
+		"tangent_session_phase_output_set": false,
+		"tangent_session_close":            false,
+		"tangent_session_list":             false,
 		// Definition-registry diagnostics (CW-20260825-0065, ADR 0003 §4.4
 		// and §8 C7): available whenever an envelope service is, independent
 		// of the durable interaction substrate.
-		"tangent.definition_registry_list":        false,
-		"tangent.definition_get":                  false,
-		"tangent.definition_registry_diagnostics": false,
+		"tangent_definition_list":            false,
+		"tangent_definition_get":             false,
+		"tangent_definition_diagnostics_get": false,
 		// Operability probes (CW-20260825-0066): registered unconditionally so
 		// a build without a health reporter answers `health_unavailable`
 		// rather than silently lacking the tool.
-		"tangent.health_report":   false,
-		"tangent.view_get":        false,
-		"tangent.ui_navigate":     false,
-		"tangent.ui_open_modal":   false,
-		"tangent.ui_close_modal":  false,
-		"tangent.ui_open_drawer":  false,
-		"tangent.ui_close_drawer": false,
-		"tangent.ui_focus_item":   false,
+		"tangent_health_get":      false,
+		"tangent_view_get":        false,
+		"tangent_ui_navigate":     false,
+		"tangent_ui_modal_open":   false,
+		"tangent_ui_modal_close":  false,
+		"tangent_ui_drawer_open":  false,
+		"tangent_ui_drawer_close": false,
+		"tangent_ui_item_focus":   false,
 	}
 	for _, tt := range res.Tools {
 		if _, ok := want[tt.Name]; !ok {
@@ -198,7 +206,7 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 }
 
 // TestListWorkflows_EmptyWhenNoHandlers asserts that
-// tangent.list_workflows returns the canonical {workflows: []} shape
+// tangent_workflow_list returns the canonical {workflows: []} shape
 // when no dispatcher handlers are registered. This is the v0.1 baseline:
 // PR 3 has no handlers so the array MUST be empty, but the field MUST
 // exist so downstream callers can key off len().
@@ -207,7 +215,7 @@ func TestListWorkflows_EmptyWhenNoHandlers(t *testing.T) {
 	defer done()
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.list_workflows",
+		Name: "tangent_workflow_list",
 	})
 	if err != nil {
 		t.Fatalf("CallTool list_workflows: %v", err)
@@ -253,7 +261,7 @@ func TestListWorkflows_IncludesRegisteredHandlers(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.list_workflows",
+		Name: "tangent_workflow_list",
 	})
 	if err != nil {
 		t.Fatalf("CallTool list_workflows: %v", err)
@@ -304,7 +312,7 @@ func TestTriage_UnknownRoomID(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.triage",
+		Name:      "tangent_triage",
 		Arguments: map[string]any{"envelope": envelopeArg},
 	})
 	if err != nil {
@@ -350,7 +358,7 @@ func TestTriage_RejectsInvalidInput(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.triage",
+		Name:      "tangent_triage",
 		Arguments: map[string]any{"envelope": envelopeArg},
 	})
 	// The SDK either returns a transport-level error here OR a
@@ -376,7 +384,7 @@ func TestTriage_RejectsMissingRequiredField(t *testing.T) {
 	}
 
 	res, err := cs.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.triage",
+		Name:      "tangent_triage",
 		Arguments: map[string]any{"envelope": envelopeArg},
 	})
 	if err == nil && (res == nil || !res.IsError) {

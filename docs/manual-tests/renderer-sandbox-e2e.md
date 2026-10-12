@@ -50,7 +50,7 @@ Confirm:
 
 Open `http://127.0.0.1:7842/`, open the browser console, and confirm there are
 **no CSP violation reports**. Then exercise one room workflow end to end (a
-`tangent.triage` push is enough) and confirm the WebSocket connects — that is
+`tangent_triage` push is enough) and confirm the WebSocket connects — that is
 the `connect-src` websocket clause working.
 
 A `Refused to connect to 'ws://…'` message here means the `connect-src` clause
@@ -67,7 +67,7 @@ falls back to its bundled English strings.
 
 ## 4. Drive a design iteration with hostile markup
 
-Ask an agent to call `tangent.design-iteration` with HTML that tries all five
+Ask an agent to call `tangent_design_iteration` with HTML that tries all five
 things, e.g.:
 
 ```html

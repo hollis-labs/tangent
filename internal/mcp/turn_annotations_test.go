@@ -30,11 +30,11 @@ func TestTurnsToolsPublicAnnotatedPublication(t *testing.T) {
 	if err = json.Unmarshal(raw, &arguments); err != nil {
 		t.Fatal(err)
 	}
-	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", arguments)
+	handle := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", arguments)
 	if handle.ContractVersion != plugin.AgentTurnContractVersion || handle.SessionID != "" || handle.TurnID != "" {
 		t.Fatalf("publication handle invented runtime identity: %#v", handle)
 	}
-	retry := callInteractionTool[turns.TurnHandle](t, client, "tangent.turns_enqueue", arguments)
+	retry := callInteractionTool[turns.TurnHandle](t, client, "tangent_turns_enqueue", arguments)
 	if retry.ItemID != handle.ItemID {
 		t.Fatal("replay produced another publication")
 	}
