@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Docs: a **Copy object id** icon in the document actions bar copies the
+  document's `item_id` (the id the docs and inbox MCP tools use) with a brief
+  "Object id copied" confirmation.
 - A **Chat** tab between Inbox and Channels: a chat-room view of Agent Turns
   per chat agent (both directions in one stream, a docked composer, no
   summary or header, trace/source behind an info icon). The Inbox is unchanged.

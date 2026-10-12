@@ -1,4 +1,4 @@
-import { Archive, Check, Copy, Download, MailCheck, Trash2 } from "lucide-react";
+import { Archive, Check, Copy, Download, Hash, MailCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { EvidenceDrawer } from "@/components/hitl-evidence";
@@ -228,12 +228,15 @@ function DocumentBody(props: Props) {
   const { item, error, busy, act } = useItem<DocItemView>(props, fetchDocItem);
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
   const [actionError, setActionError] = useState("");
   const navigate = useNavigate();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (idTimer.current) clearTimeout(idTimer.current);
     },
     [],
   );
@@ -255,6 +258,19 @@ function DocumentBody(props: Props) {
       copyTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       setActionError("Could not copy the document. Check your browser's clipboard permission.");
+    }
+  };
+  // The item_id is what the docs and inbox MCP tools return and accept, so it
+  // is what an operator pastes to an agent to reference this document.
+  const copyObjectID = async () => {
+    setActionError("");
+    try {
+      await navigator.clipboard.writeText(item.item_id);
+      setIdCopied(true);
+      if (idTimer.current) clearTimeout(idTimer.current);
+      idTimer.current = setTimeout(() => setIdCopied(false), 2000);
+    } catch {
+      setActionError("Could not copy the object id. Check your browser's clipboard permission.");
     }
   };
   const download = () => {
@@ -340,8 +356,17 @@ function DocumentBody(props: Props) {
         >
           {copied ? <Check size={18} /> : <Copy size={18} />}
         </button>
+        <button
+          type="button"
+          aria-label="Copy object id"
+          title={idCopied ? "Object id copied" : "Copy object id"}
+          className={iconClass}
+          onClick={() => void copyObjectID()}
+        >
+          {idCopied ? <Check size={18} /> : <Hash size={18} />}
+        </button>
         <span role="status" className="ml-2 text-xs text-fg-muted">
-          {copied ? "Copied" : ""}
+          {idCopied ? "Object id copied" : copied ? "Copied" : ""}
         </span>
       </div>
       <h2 className="text-xl font-semibold">{item.title}</h2>
