@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { turn } from "@/lib/chat-fixtures";
 import { savePrefs } from "@/lib/chat-model";
+import type { RosterAgent } from "@/lib/chat-roster-api";
 import type { TurnItemView } from "@/lib/turns-api";
 import Chat from "./Chat";
 
@@ -29,6 +30,49 @@ function inbox(pending: TurnItemView[], history: TurnItemView[] = []) {
     total_terminal: history.length,
   };
 }
+function entry(id: string, over: Partial<RosterAgent> = {}): RosterAgent {
+  return {
+    launch_id: id,
+    agent_id: id,
+    display_name: id === "pm" ? "Portfolio Manager" : id,
+    channel: "owner-inbox",
+    session: null,
+    ...over,
+  };
+}
+const running = (at_turn_boundary: boolean) => ({
+  id: "s1",
+  state: "running",
+  last_activity_at: "2026-10-12T10:00:00Z",
+  at_turn_boundary,
+});
+interface Backend {
+  turns: ReturnType<typeof inbox>;
+  roster: RosterAgent[] | "missing";
+  send?: (body: Record<string, string>) => Response;
+  calls: Array<{ url: string; body?: string }>;
+  reply?: Response;
+}
+function backend(b: Omit<Backend, "calls">): Backend {
+  const full: Backend = { ...b, calls: [] };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      full.calls.push({ url, body: init?.body as string | undefined });
+      if (url === "/api/plugins/messaging/chat/agents") {
+        return full.roster === "missing"
+          ? json({ code: "not_found" }, 404)
+          : json({ available: true, agents: full.roster });
+      }
+      if (url === "/api/plugins/messaging/chat/send") {
+        return full.send?.(JSON.parse(init?.body as string)) ?? json({ ok: true, mode: "turn" });
+      }
+      if (url.endsWith("/reply")) return full.reply ?? json({}, 200);
+      return json(full.turns);
+    }),
+  );
+  return full;
+}
 function mount(path = "/chat/pm") {
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -42,11 +86,11 @@ function mount(path = "/chat/pm") {
 beforeEach(() => {
   localStorage.clear();
   vi.stubGlobal("EventSource", FakeES);
-  savePrefs({ agents: ["pm"], pinned: [], lastSeen: {}, pageSize: 50 });
+  savePrefs({ pinned: [], lastSeen: {}, pageSize: 50 });
 });
 afterEach(() => vi.unstubAllGlobals());
 
-it("shows only chat agents and renders messages without header or summary", async () => {
+it("lists only the Tether roster and offers no add or remove controls", async () => {
   const withSummary = turn({
     item_id: "a",
     title: "SECRET TITLE",
@@ -55,22 +99,37 @@ it("shows only chat agents and renders messages without header or summary", asyn
     state: "resolved",
   });
   const other = turn({ item_id: "o", agent_id: "arch", agent_label: "Architect" });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => json(inbox([other], [withSummary]))),
-  );
+  backend({ turns: inbox([other], [withSummary]), roster: [entry("pm")] });
   mount();
   expect(await screen.findByText("the final")).toBeInTheDocument();
   expect(screen.queryByText("SECRET TITLE")).not.toBeInTheDocument();
   expect(screen.queryByText("AI SUMMARY")).not.toBeInTheDocument();
-  expect(within(screen.getByRole("list")).queryByText("Architect")).not.toBeInTheDocument();
+  const list = screen.getByRole("list");
+  expect(within(list).getByText("Portfolio Manager")).toBeInTheDocument();
+  expect(within(list).queryByText("Architect")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Add chat agent")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Remove from Chat/ })).not.toBeInTheDocument();
 });
 
-it("disables the composer while no pending final exists", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => json(inbox([], [turn({ item_id: "a", state: "resolved" })]))),
+it("ignores a roster saved in localStorage by the earlier version", async () => {
+  localStorage.setItem(
+    "tangent.chat.prefs.v1",
+    JSON.stringify({ agents: ["legacy"], pinned: [], lastSeen: {}, pageSize: 50 }),
   );
+  backend({
+    turns: inbox([], [turn({ item_id: "l", agent_id: "legacy" })]),
+    roster: [entry("pm")],
+  });
+  mount("/chat");
+  expect(await screen.findByText("Portfolio Manager")).toBeInTheDocument();
+  expect(screen.queryByText("legacy")).not.toBeInTheDocument();
+});
+
+it("disables the composer with 'is working' while the session is mid-turn", async () => {
+  backend({
+    turns: inbox([], [turn({ item_id: "a", state: "resolved" })]),
+    roster: [entry("pm", { session: running(false) })],
+  });
   mount();
   await screen.findByText("hello");
   expect(screen.getByLabelText("Message")).toBeDisabled();
@@ -78,32 +137,81 @@ it("disables the composer while no pending final exists", async () => {
 });
 
 it("replies with respond against the pending final and keeps the draft on 409", async () => {
-  const calls: Array<{ url: string; body?: string }> = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, body: init?.body as string | undefined });
-      if (url.endsWith("/reply")) return json({ code: "conflict", message: "stale revision" }, 409);
-      return json(inbox([turn({ item_id: "p", revision: 7 })]));
-    }),
-  );
+  const be = backend({
+    turns: inbox([turn({ item_id: "p", revision: 7 })]),
+    roster: [entry("pm", { session: running(false) })],
+    reply: json({ code: "conflict", message: "stale revision" }, 409),
+  });
   mount();
   const box = await screen.findByLabelText("Message");
   await waitFor(() => expect(box).toBeEnabled());
   fireEvent.change(box, { target: { value: "go ahead" } });
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByRole("alert");
-  const reply = calls.find((c) => c.url === "/api/turns/items/p/reply");
+  const reply = be.calls.find((c) => c.url === "/api/turns/items/p/reply");
   expect(JSON.parse(reply?.body ?? "{}")).toEqual({
     expected_revision: 7,
     action: "respond",
     response_text: "go ahead",
   });
+  expect(be.calls.some((c) => c.url.endsWith("/chat/send"))).toBe(false);
   expect(screen.getByLabelText("Message")).toHaveValue("go ahead");
 });
 
+it("initiates a chat through Tether when nothing is pending", async () => {
+  const be = backend({ turns: inbox([], []), roster: [entry("pm")] });
+  mount();
+  const box = await screen.findByLabelText("Message");
+  await waitFor(() => expect(box).toBeEnabled());
+  fireEvent.change(box, { target: { value: "start here" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
+  const sent = be.calls.find((c) => c.url === "/api/plugins/messaging/chat/send");
+  const body = JSON.parse(sent?.body ?? "{}");
+  expect(body).toMatchObject({ launch_id: "pm", text: "start here" });
+  expect(body.idempotency_key).toBeTruthy();
+  expect(be.calls.some((c) => c.url.endsWith("/reply"))).toBe(false);
+});
+
+it("keeps the draft on agent_working and retries with the same idempotency key", async () => {
+  let attempts = 0;
+  const be = backend({
+    turns: inbox([], []),
+    roster: [entry("pm", { session: running(true) })],
+    send: () =>
+      ++attempts === 1 ? json({ code: "agent_working" }, 409) : json({ ok: true, mode: "turn" }),
+  });
+  mount();
+  const box = await screen.findByLabelText("Message");
+  await waitFor(() => expect(box).toBeEnabled());
+  fireEvent.change(box, { target: { value: "ping" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/is working/);
+  expect(screen.getByLabelText("Message")).toHaveValue("ping");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
+  const keys = be.calls
+    .filter((c) => c.url.endsWith("/chat/send"))
+    .map((c) => JSON.parse(c.body ?? "{}").idempotency_key);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});
+
+it("says the roster is unavailable when the endpoint is absent", async () => {
+  backend({ turns: inbox([], []), roster: "missing" });
+  mount("/chat");
+  expect(await screen.findByText(/Chat roster unavailable/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
+it("says so when Tether has no chat agents", async () => {
+  backend({ turns: inbox([], []), roster: [] });
+  mount("/chat");
+  expect(await screen.findAllByText(/No chat agents are configured/)).not.toHaveLength(0);
+});
+
 it("pages older history on demand", async () => {
-  savePrefs({ agents: ["pm"], pinned: [], lastSeen: {}, pageSize: 5 });
+  savePrefs({ pinned: [], lastSeen: {}, pageSize: 5 });
   const history = Array.from({ length: 8 }, (_, i) =>
     turn({
       item_id: `h${i}`,
@@ -112,10 +220,7 @@ it("pages older history on demand", async () => {
       created_at: `2026-10-12T10:0${i}:00Z`,
     }),
   );
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => json(inbox([], history))),
-  );
+  backend({ turns: inbox([], history), roster: [entry("pm")] });
   mount();
   await screen.findByText("msg 7");
   expect(screen.queryByText("msg 2")).not.toBeInTheDocument();
@@ -131,10 +236,7 @@ it("puts trace and source behind the info modal", async () => {
       { stage_id: "summarize", stage_version: "1", outcome: "passed", duration_ms: 12 },
     ],
   });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => json(inbox([], [item]))),
-  );
+  backend({ turns: inbox([], [item]), roster: [entry("pm")] });
   mount();
   await screen.findByText("hello");
   expect(screen.queryByText("Stage trace")).not.toBeInTheDocument();
@@ -143,21 +245,16 @@ it("puts trace and source behind the info modal", async () => {
 });
 
 it("marks an unseen agent and clears it on open", async () => {
-  savePrefs({ agents: ["pm", "arch"], pinned: [], lastSeen: {}, pageSize: 50 });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () =>
-      json(
-        inbox(
-          [],
-          [
-            turn({ item_id: "a", state: "resolved" }),
-            turn({ item_id: "b", agent_id: "arch", state: "resolved" }),
-          ],
-        ),
-      ),
+  backend({
+    turns: inbox(
+      [],
+      [
+        turn({ item_id: "a", state: "resolved" }),
+        turn({ item_id: "b", agent_id: "arch", state: "resolved" }),
+      ],
     ),
-  );
+    roster: [entry("pm"), entry("arch")],
+  });
   mount("/chat/pm");
   await screen.findByText("hello");
   expect(screen.getAllByRole("img", { name: "New messages" })).toHaveLength(1);

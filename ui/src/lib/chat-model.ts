@@ -3,16 +3,23 @@
 // the conversation and its resolution's response_text is the operator's side.
 // Nothing here writes; sending goes through replyTurn like the Inbox does.
 
+import type { RosterAgent, RosterSession } from "@/lib/chat-roster-api";
 import { canReplyTurn, type TurnItemView, type TurnsInbox } from "@/lib/turns-api";
 
 export const DEFAULT_PAGE_SIZE = 50;
 
 export interface ChatAgent {
+  /** The Tether launch id: the roster key and the /chat/:agentID route param. */
   agentID: string;
+  /** The Tether agent id, matched against a turn's agent when it names no launch. */
+  tetherAgentID: string;
   name: string;
+  session: RosterSession | null;
   lastMessageAt?: string;
   lastAgentMessageAt?: string;
 }
+
+type ChatAgentRef = Pick<ChatAgent, "agentID" | "tetherAgentID">;
 
 export interface ChatMessage {
   key: string;
@@ -29,25 +36,39 @@ export function allItems(inbox: TurnsInbox | null): TurnItemView[] {
   return inbox ? [...inbox.pending, ...inbox.history] : [];
 }
 
-/** Every agent seen in the turns data, whether or not it is a chat agent. */
-export function knownAgents(items: TurnItemView[]): ChatAgent[] {
-  const byID = new Map<string, ChatAgent>();
-  for (const item of items) {
-    const agent = byID.get(item.agent_id) ?? { agentID: item.agent_id, name: item.agent_id };
-    if (item.agent_label) agent.name = item.agent_label;
-    for (const message of messagesOf(item)) {
-      if (!agent.lastMessageAt || message.at > agent.lastMessageAt)
-        agent.lastMessageAt = message.at;
-      if (
-        message.from === "agent" &&
-        (!agent.lastAgentMessageAt || message.at > agent.lastAgentMessageAt)
-      ) {
-        agent.lastAgentMessageAt = message.at;
+/**
+ * Whether a turn belongs to a roster agent: by the launch the publication was
+ * made from when it names one, otherwise by the agent identity.
+ */
+export function belongsTo(item: TurnItemView, agent: Pick<ChatAgent, "agentID" | "tetherAgentID">) {
+  const launch = item.source_message?.attribution?.launch_id;
+  return launch ? launch === agent.agentID : item.agent_id === agent.tetherAgentID;
+}
+
+/** The roster, as Tether reports it, with each agent's message times. */
+export function rosterAgents(roster: RosterAgent[], items: TurnItemView[]): ChatAgent[] {
+  return roster.map((entry) => {
+    const agent: ChatAgent = {
+      agentID: entry.launch_id,
+      tetherAgentID: entry.agent_id,
+      name: entry.display_name || entry.agent_id,
+      session: entry.session,
+    };
+    for (const item of items) {
+      if (!belongsTo(item, agent)) continue;
+      for (const message of messagesOf(item)) {
+        if (!agent.lastMessageAt || message.at > agent.lastMessageAt)
+          agent.lastMessageAt = message.at;
+        if (
+          message.from === "agent" &&
+          (!agent.lastAgentMessageAt || message.at > agent.lastAgentMessageAt)
+        ) {
+          agent.lastAgentMessageAt = message.at;
+        }
       }
     }
-    byID.set(item.agent_id, agent);
-  }
-  return [...byID.values()];
+    return agent;
+  });
 }
 
 function messagesOf(item: TurnItemView): ChatMessage[] {
@@ -72,11 +93,11 @@ function messagesOf(item: TurnItemView): ChatMessage[] {
  * De-duplicated by key (item id / resolution id) and ordered by time; an agent
  * message sorts before an operator reply stamped the same instant.
  */
-export function buildStream(items: TurnItemView[], agentID: string): ChatMessage[] {
+export function buildStream(items: TurnItemView[], agent: ChatAgentRef): ChatMessage[] {
   const seen = new Set<string>();
   const out: ChatMessage[] = [];
   for (const item of items) {
-    if (item.agent_id !== agentID) continue;
+    if (!belongsTo(item, agent)) continue;
     for (const message of messagesOf(item)) {
       if (seen.has(message.key)) continue;
       seen.add(message.key);
@@ -91,11 +112,11 @@ export function buildStream(items: TurnItemView[], agentID: string): ChatMessage
 }
 
 /** The newest pending item the composer can answer, if any. */
-export function pendingFinal(items: TurnItemView[], agentID: string): TurnItemView | undefined {
+export function pendingFinal(items: TurnItemView[], agent: ChatAgentRef): TurnItemView | undefined {
   return items
     .filter(
       (item) =>
-        item.agent_id === agentID &&
+        belongsTo(item, agent) &&
         !item.resolution &&
         ["presented", "staged", "validated", "submitted", "in_progress"].includes(item.state) &&
         RESPONDABLE.has(item.kind) &&
@@ -120,25 +141,24 @@ export function isUnseen(agent: ChatAgent, lastSeen: Record<string, string>): bo
 }
 
 export interface ChatPrefs {
-  agents: string[];
   pinned: string[];
   lastSeen: Record<string, string>;
   pageSize: number;
 }
 
-// Operator preferences are per-browser view state (ADR 0007); the chat-agent
-// roster in a plugin setting is a recorded follow-up, not part of this slice.
+// Pins, last-seen times and page size are per-browser view state (ADR 0007).
+// The roster itself is never stored here: it comes from Tether. A roster saved
+// by an earlier version (an `agents` list) is ignored and dropped on next save.
 const PREFS_KEY = "tangent.chat.prefs.v1";
 
 export function loadPrefs(storage: Storage = window.localStorage): ChatPrefs {
-  const empty: ChatPrefs = { agents: [], pinned: [], lastSeen: {}, pageSize: DEFAULT_PAGE_SIZE };
+  const empty: ChatPrefs = { pinned: [], lastSeen: {}, pageSize: DEFAULT_PAGE_SIZE };
   try {
     const raw = JSON.parse(storage.getItem(PREFS_KEY) ?? "{}") as Partial<ChatPrefs>;
     const strings = (v: unknown) =>
       Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
     const size = Number(raw.pageSize);
     return {
-      agents: strings(raw.agents),
       pinned: strings(raw.pinned),
       lastSeen: raw.lastSeen && typeof raw.lastSeen === "object" ? { ...raw.lastSeen } : {},
       pageSize: Number.isInteger(size) && size >= 5 && size <= 500 ? size : DEFAULT_PAGE_SIZE,
@@ -154,4 +174,24 @@ export function savePrefs(prefs: ChatPrefs, storage: Storage = window.localStora
   } catch {
     // Quota or private mode: preferences are a convenience, never a failure.
   }
+}
+
+/** How the composer sends right now. */
+export type ComposerMode =
+  | { kind: "reply"; item: TurnItemView }
+  | { kind: "send" }
+  | { kind: "working" };
+
+/**
+ * A pending replyable item keeps the existing reply path (and its delivery
+ * tracking). Otherwise a message initiates or continues the chat through
+ * Tether, unless the agent's running session is mid-turn.
+ */
+export function composerMode(agent: ChatAgent, pending: TurnItemView | undefined): ComposerMode {
+  if (pending) return { kind: "reply", item: pending };
+  const session = agent.session;
+  if (session && session.state === "running" && !session.at_turn_boundary) {
+    return { kind: "working" };
+  }
+  return { kind: "send" };
 }

@@ -2,14 +2,26 @@ import { describe, expect, it } from "vitest";
 import { turn } from "./chat-fixtures";
 import {
   buildStream,
+  composerMode,
   isUnseen,
-  knownAgents,
   loadPrefs,
   pendingFinal,
+  rosterAgents,
   savePrefs,
   sortAgents,
 } from "./chat-model";
+import type { RosterAgent } from "./chat-roster-api";
 import type { TurnItemView } from "./turns-api";
+
+const PM = { agentID: "pm", tetherAgentID: "pm" };
+const entry = (id: string, over: Partial<RosterAgent> = {}): RosterAgent => ({
+  launch_id: id,
+  agent_id: id,
+  display_name: id.toUpperCase(),
+  channel: "owner-inbox",
+  session: null,
+  ...over,
+});
 
 const resolved = (id: string, at: string, text: string): Partial<TurnItemView> => ({
   state: "resolved",
@@ -30,7 +42,7 @@ describe("chat model", () => {
       ...resolved("a", "2026-10-12T10:05:00Z", "do it"),
     });
     const b = turn({ item_id: "b", created_at: "2026-10-12T10:10:00Z", content: "done" });
-    const stream = buildStream([b, a, a], "pm");
+    const stream = buildStream([b, a, a], PM);
     expect(stream.map((m) => [m.from, m.body])).toEqual([
       ["agent", "hello"],
       ["operator", "do it"],
@@ -49,28 +61,85 @@ describe("chat model", () => {
         resolved_by: "operator",
       },
     });
-    expect(buildStream([other, dismissed], "pm")).toHaveLength(1);
+    expect(buildStream([other, dismissed], PM)).toHaveLength(1);
   });
   it("offers a composer target only for a pending replyable final", () => {
-    expect(pendingFinal([turn({ item_id: "a" })], "pm")?.item_id).toBe("a");
-    expect(pendingFinal([turn({ item_id: "a", state: "resolved" })], "pm")).toBeUndefined();
-    expect(pendingFinal([turn({ item_id: "a", kind: "approval" })], "pm")).toBeUndefined();
-    expect(pendingFinal([turn({ item_id: "a", replyable: false })], "pm")).toBeUndefined();
+    expect(pendingFinal([turn({ item_id: "a" })], PM)?.item_id).toBe("a");
+    expect(pendingFinal([turn({ item_id: "a", state: "resolved" })], PM)).toBeUndefined();
+    expect(pendingFinal([turn({ item_id: "a", kind: "approval" })], PM)).toBeUndefined();
+    expect(pendingFinal([turn({ item_id: "a", replyable: false })], PM)).toBeUndefined();
   });
-  it("sorts pinned first then newest, and tracks unseen agent messages", () => {
-    const agents = knownAgents([
-      turn({ item_id: "1", agent_id: "a", created_at: "2026-10-12T09:00:00Z" }),
-      turn({ item_id: "2", agent_id: "b", created_at: "2026-10-12T10:00:00Z" }),
+  it("builds the roster from Tether only, with message times from the turns", () => {
+    const agents = rosterAgents(
+      [entry("a"), entry("b"), entry("idle")],
+      [
+        turn({ item_id: "1", agent_id: "a", created_at: "2026-10-12T09:00:00Z" }),
+        turn({ item_id: "2", agent_id: "b", created_at: "2026-10-12T10:00:00Z" }),
+        turn({ item_id: "3", agent_id: "not-on-roster" }),
+      ],
+    );
+    expect(agents.map((x) => [x.agentID, x.name, x.lastMessageAt])).toEqual([
+      ["a", "A", "2026-10-12T09:00:00Z"],
+      ["b", "B", "2026-10-12T10:00:00Z"],
+      ["idle", "IDLE", undefined],
     ]);
-    expect(sortAgents(agents, []).map((x) => x.agentID)).toEqual(["b", "a"]);
-    expect(sortAgents(agents, ["a"]).map((x) => x.agentID)).toEqual(["a", "b"]);
+    expect(sortAgents(agents, []).map((x) => x.agentID)).toEqual(["b", "a", "idle"]);
+    expect(sortAgents(agents, ["a"]).map((x) => x.agentID)).toEqual(["a", "b", "idle"]);
     expect(isUnseen(agents[0], {})).toBe(true);
     expect(isUnseen(agents[0], { a: "2026-10-12T09:00:00Z" })).toBe(false);
+    expect(isUnseen(agents[2], {})).toBe(false);
   });
-  it("round-trips preferences and clamps a bad page size", () => {
-    savePrefs({ agents: ["pm"], pinned: ["pm"], lastSeen: {}, pageSize: 3 });
-    expect(loadPrefs().agents).toEqual(["pm"]);
+  it("matches a turn to its launch before its agent id", () => {
+    const viaLaunch = turn({
+      item_id: "l",
+      agent_id: "logical-7",
+      source_message: {
+        channel: "c",
+        message_id: "m",
+        sequence: 1,
+        attribution: { launch_id: "pm-launch" },
+      },
+    } as Partial<TurnItemView> & { item_id: string });
+    const ref = { agentID: "pm-launch", tetherAgentID: "pm" };
+    // A turn naming no launch falls back to the agent id.
+    expect(buildStream([viaLaunch, turn({ item_id: "x", agent_id: "pm" })], ref)).toHaveLength(2);
+    expect(buildStream([viaLaunch, turn({ item_id: "y", agent_id: "arch" })], ref)).toHaveLength(1);
+    // A turn from a different launch of the same agent is not this chat.
+    expect(buildStream([viaLaunch], { agentID: "other-launch", tetherAgentID: "pm" })).toHaveLength(
+      0,
+    );
+  });
+  it("replies to a pending item, else sends, else waits while mid-turn", () => {
+    const base = { agentID: "pm", tetherAgentID: "pm", name: "PM" };
+    const item = turn({ item_id: "p" });
+    const session = (over: object) => ({
+      id: "s",
+      state: "running",
+      last_activity_at: "",
+      at_turn_boundary: false,
+      ...over,
+    });
+    expect(composerMode({ ...base, session: session({}) }, item).kind).toBe("reply");
+    expect(composerMode({ ...base, session: null }, undefined).kind).toBe("send");
+    expect(
+      composerMode({ ...base, session: session({ state: "completed" }) }, undefined).kind,
+    ).toBe("send");
+    expect(
+      composerMode({ ...base, session: session({ at_turn_boundary: true }) }, undefined).kind,
+    ).toBe("send");
+    expect(composerMode({ ...base, session: session({}) }, undefined).kind).toBe("working");
+  });
+  it("round-trips preferences, clamps a bad page size and drops a stored roster", () => {
+    savePrefs({ pinned: ["pm"], lastSeen: {}, pageSize: 3 });
+    expect(loadPrefs().pinned).toEqual(["pm"]);
     expect(loadPrefs().pageSize).toBe(50);
+    localStorage.setItem(
+      "tangent.chat.prefs.v1",
+      JSON.stringify({ agents: ["old"], pinned: ["x"], lastSeen: {}, pageSize: 25 }),
+    );
+    const loaded = loadPrefs();
+    expect(loaded).toEqual({ pinned: ["x"], lastSeen: {}, pageSize: 25 });
+    expect("agents" in loaded).toBe(false);
     localStorage.clear();
   });
 });
