@@ -30,6 +30,9 @@ export function TabStrip() {
       >
         Inbox
       </NavLink>
+      <NavLink to="/chat" className={linkClass}>
+        Chat
+      </NavLink>
       <NavLink to="/channels" className={linkClass}>
         Channels
       </NavLink>

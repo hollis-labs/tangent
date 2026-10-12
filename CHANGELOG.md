@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- A **Chat** tab between Inbox and Channels: a chat-room view of Agent Turns
+  per chat agent (both directions in one stream, a docked composer, no
+  summary or header, trace/source behind an info icon). The Inbox is unchanged.
+  See [docs/chat.md](docs/chat.md).
+
 ## [v0.19.0] - 2026-10-09
 
 ### Added
