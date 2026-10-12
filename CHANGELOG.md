@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   per chat agent (both directions in one stream, a docked composer, no
   summary or header, trace/source behind an info icon). The Inbox is unchanged.
   See [docs/chat.md](docs/chat.md).
+- Chat's sidebar is now the roster Tether reports (via the messaging plugin's
+  `/api/plugins/messaging/chat/agents`), replacing the add/remove-agent controls
+  and the locally stored roster. The composer can start or continue a chat when
+  nothing is pending (`/api/plugins/messaging/chat/send`), is disabled while the
+  agent is mid-turn, and shows "Chat roster unavailable" when the plugin or
+  Tether does not offer a roster. Replying to a pending item is unchanged.
 
 ## [v0.19.0] - 2026-10-09
 

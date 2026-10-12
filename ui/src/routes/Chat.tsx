@@ -1,4 +1,4 @@
-import { Info, Pin, PinOff, Plus, Send, X } from "lucide-react";
+import { Info, Pin, PinOff, Send } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -8,17 +8,27 @@ import {
   allItems,
   buildStream,
   type ChatMessage,
+  composerMode,
   isUnseen,
-  knownAgents,
   loadPrefs,
   pendingFinal,
+  rosterAgents,
   savePrefs,
   sortAgents,
 } from "@/lib/chat-model";
+import {
+  ChatSendError,
+  describeUnavailable,
+  fetchChatRoster,
+  ROSTER_UNAVAILABLE,
+  type Roster,
+  sendChat,
+} from "@/lib/chat-roster-api";
 import { fetchTurnsInbox, replyTurn, TurnsAPIError, type TurnsInbox } from "@/lib/turns-api";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [25, 50, 100, 200];
+const ROSTER_POLL_MS = 15000;
 
 function stamp(value?: string): string {
   if (!value) return "";
@@ -35,6 +45,7 @@ export default function Chat() {
   const { agentID } = useParams<{ agentID?: string }>();
   const navigate = useNavigate();
   const [inbox, setInbox] = useState<TurnsInbox | null>(null);
+  const [roster, setRoster] = useState<Roster | null>(null);
   const [loadError, setLoadError] = useState("");
   const [prefs, setPrefs] = useState(() => loadPrefs());
   const [visible, setVisible] = useState(prefs.pageSize);
@@ -43,6 +54,10 @@ export default function Chat() {
   const [sendError, setSendError] = useState("");
   const [info, setInfo] = useState<ChatMessage | null>(null);
   const syncSeq = useRef(0);
+  const rosterSeq = useRef(0);
+  // One idempotency key per distinct message text, so a retry after a lost
+  // response cannot deliver the same message twice.
+  const sendKey = useRef<{ text: string; key: string } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -66,32 +81,40 @@ export default function Chat() {
     }
   }, []);
 
+  const syncRoster = useCallback(async () => {
+    const seq = ++rosterSeq.current;
+    const next = await fetchChatRoster();
+    if (seq === rosterSeq.current) setRoster(next);
+  }, []);
+
   useEffect(() => {
     void sync();
+    void syncRoster();
     const events = new EventSource("/api/turns/events");
-    const onRevision = () => void sync();
+    const onRevision = () => {
+      void sync();
+      void syncRoster();
+    };
     events.addEventListener("revision", onRevision);
+    const poll = window.setInterval(() => void syncRoster(), ROSTER_POLL_MS);
     return () => {
       events.removeEventListener("revision", onRevision);
       events.close();
+      window.clearInterval(poll);
     };
-  }, [sync]);
+  }, [sync, syncRoster]);
 
   const items = useMemo(() => allItems(inbox), [inbox]);
-  const known = useMemo(() => knownAgents(items), [items]);
+  const rosterState = roster ?? ROSTER_UNAVAILABLE;
   const chatAgents = useMemo(
-    () =>
-      sortAgents(
-        prefs.agents.map((id) => known.find((a) => a.agentID === id) ?? { agentID: id, name: id }),
-        prefs.pinned,
-      ),
-    [known, prefs.agents, prefs.pinned],
+    () => sortAgents(rosterAgents(rosterState.agents, items), prefs.pinned),
+    [rosterState.agents, items, prefs.pinned],
   );
-  const addable = known.filter((a) => !prefs.agents.includes(a.agentID));
   const active = chatAgents.find((a) => a.agentID === agentID);
-  const stream = useMemo(() => (active ? buildStream(items, active.agentID) : []), [items, active]);
+  const stream = useMemo(() => (active ? buildStream(items, active) : []), [items, active]);
   const shown = stream.slice(Math.max(0, stream.length - visible));
-  const pending = active ? pendingFinal(items, active.agentID) : undefined;
+  const pending = active ? pendingFinal(items, active) : undefined;
+  const mode = active ? composerMode(active, pending) : ({ kind: "working" } as const);
 
   // Opening an agent is what marks its messages seen.
   const newest = active?.lastAgentMessageAt;
@@ -137,26 +160,32 @@ export default function Chat() {
 
   const send = async () => {
     const text = draft.trim();
-    if (!pending || !text || sending) return;
+    if (!active || mode.kind === "working" || !text || sending) return;
     setSending(true);
     setSendError("");
     try {
-      await replyTurn(pending.item_id, {
-        expected_revision: pending.revision,
-        action: "respond",
-        response_text: text,
-      });
+      if (mode.kind === "reply") {
+        const target = mode.item;
+        await replyTurn(target.item_id, {
+          expected_revision: target.revision,
+          action: "respond",
+          response_text: text,
+        });
+      } else {
+        if (sendKey.current?.text !== text) {
+          sendKey.current = { text, key: crypto.randomUUID() };
+        }
+        await sendChat(active.agentID, text, sendKey.current.key);
+        sendKey.current = null;
+      }
       setDraft("");
       stickToBottom.current = true;
     } catch (reason) {
-      setSendError(
-        reason instanceof TurnsAPIError && reason.status === 409
-          ? "The agent moved on before this was sent (it is working or the turn changed). Your text is kept; send again when it replies."
-          : (reason as Error).message,
-      );
+      setSendError(sendFailure(reason, active.name));
     } finally {
       setSending(false);
       void sync();
+      void syncRoster();
     }
   };
 
@@ -223,37 +252,15 @@ export default function Chat() {
               </li>
             );
           })}
+          {roster && chatAgents.length === 0 ? (
+            <li className="px-3 py-3 text-xs text-fg-muted">
+              {rosterState.available
+                ? "No chat agents are configured on Tether."
+                : "Roster unavailable."}
+            </li>
+          ) : null}
         </ul>
         <div className="space-y-2 border-t border-border p-2 text-xs">
-          <label className="flex items-center gap-1">
-            <Plus size={14} aria-hidden />
-            <select
-              aria-label="Add chat agent"
-              value=""
-              onChange={(e) => {
-                const id = e.target.value;
-                if (!id) return;
-                // A newly added agent starts with its backlog already seen.
-                const added = known.find((a) => a.agentID === id);
-                updatePrefs((p) => ({
-                  ...p,
-                  agents: [...p.agents, id],
-                  lastSeen: added?.lastAgentMessageAt
-                    ? { ...p.lastSeen, [id]: added.lastAgentMessageAt }
-                    : p.lastSeen,
-                }));
-                navigate(`/chat/${encodeURIComponent(id)}`);
-              }}
-              className="min-w-0 flex-1 rounded border border-border bg-bg px-1 py-1"
-            >
-              <option value="">Add agent…</option>
-              {addable.map((a) => (
-                <option key={a.agentID} value={a.agentID}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="flex items-center justify-between gap-2 text-fg-muted">
             Messages per page
             <select
@@ -285,29 +292,32 @@ export default function Chat() {
           </p>
         ) : null}
         {!active ? (
-          <p className="m-auto text-sm text-fg-muted">
-            {chatAgents.length
-              ? "Select an agent to chat with."
-              : "Add an agent to start chatting."}
-          </p>
+          <div className="m-auto max-w-sm space-y-2 px-4 text-center text-sm text-fg-muted">
+            {!roster ? (
+              <p>Loading agents…</p>
+            ) : !rosterState.available ? (
+              <>
+                <p role="status">
+                  Chat roster unavailable. {describeUnavailable(rosterState.reason)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void syncRoster()}
+                  className="rounded border border-border px-3 py-1 text-fg"
+                >
+                  Retry
+                </button>
+              </>
+            ) : chatAgents.length ? (
+              <p>Select an agent to chat with.</p>
+            ) : (
+              <p>No chat agents are configured on Tether.</p>
+            )}
+          </div>
         ) : (
           <>
-            <header className="flex items-center justify-between border-b border-border px-4 py-2">
+            <header className="flex items-center border-b border-border px-4 py-2">
               <h1 className="text-sm font-semibold">{active.name}</h1>
-              <button
-                type="button"
-                onClick={() => {
-                  updatePrefs((p) => ({
-                    ...p,
-                    agents: p.agents.filter((id) => id !== active.agentID),
-                    pinned: p.pinned.filter((id) => id !== active.agentID),
-                  }));
-                  navigate("/chat");
-                }}
-                className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
-              >
-                <X size={12} aria-hidden /> Remove from Chat
-              </button>
             </header>
             <div
               ref={scroller}
@@ -338,7 +348,7 @@ export default function Chat() {
               ))}
             </div>
             <form
-              aria-label="Reply"
+              aria-label="Message form"
               onSubmit={(e) => {
                 e.preventDefault();
                 void send();
@@ -355,8 +365,12 @@ export default function Chat() {
                   aria-label="Message"
                   value={draft}
                   rows={2}
-                  disabled={!pending || sending}
-                  placeholder={pending ? `Message ${active.name}` : `${active.name} is working…`}
+                  disabled={mode.kind === "working" || sending}
+                  placeholder={
+                    mode.kind === "working"
+                      ? `${active.name} is working…`
+                      : `Message ${active.name}`
+                  }
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -369,15 +383,15 @@ export default function Chat() {
                 <button
                   type="submit"
                   aria-label="Send"
-                  disabled={!pending || sending || !draft.trim()}
+                  disabled={mode.kind === "working" || sending || !draft.trim()}
                   className="rounded bg-primary p-2 text-primary-fg disabled:opacity-50"
                 >
                   <Send size={16} />
                 </button>
               </div>
-              {!pending ? (
+              {mode.kind === "working" ? (
                 <p role="status" className="mt-1 text-xs text-fg-muted">
-                  Replies open when {active.name} finishes a turn.
+                  {active.name} is working… You can message again when it finishes the turn.
                 </p>
               ) : null}
             </form>
@@ -402,6 +416,23 @@ export default function Chat() {
       </Dialog.Root>
     </PageShell>
   );
+}
+
+function sendFailure(reason: unknown, name: string): string {
+  if (reason instanceof ChatSendError) {
+    if (reason.code === "agent_working") {
+      return `${name} is working. Your text is kept; send again when it finishes the turn.`;
+    }
+    if (reason.code === "tether_forbidden") {
+      return "Tether refused this send (the plugin's token may lack the operate scope). Your text is kept.";
+    }
+    if (reason.status === 404) return "Sending is not available on this Tether. Your text is kept.";
+    return `Could not send (${reason.code}). Your text is kept.`;
+  }
+  if (reason instanceof TurnsAPIError && reason.status === 409) {
+    return "The agent moved on before this was sent (it is working or the turn changed). Your text is kept; send again when it replies.";
+  }
+  return (reason as Error).message;
 }
 
 function MessageRow({
