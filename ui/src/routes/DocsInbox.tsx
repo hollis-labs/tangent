@@ -3,7 +3,6 @@ import { Archive, BookOpen, Check, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { CopyObjectIdButton } from "@/components/CopyObjectIdButton";
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
 import { UiControl, useUiCommands, useViewDescriptor } from "@/hooks/useUiCommands";
@@ -474,7 +473,6 @@ export default function DocsInboxRoute() {
                       Acknowledge
                     </Button>
                   )}
-                  <CopyObjectIdButton objectId={activeItem.item_id} />
                   {!isTerminal(activeItem) && (
                     <Button
                       variant="ghost"
