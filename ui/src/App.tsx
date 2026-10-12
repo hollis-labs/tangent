@@ -4,6 +4,7 @@ import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { TabStrip } from "./components/TabStrip";
 import { UiChannelProvider } from "./hooks/useUiCommands";
 import ChannelPane from "./routes/ChannelPane";
+import Chat from "./routes/Chat";
 import Inbox from "./routes/Inbox";
 import Settings from "./routes/Settings";
 
@@ -36,6 +37,8 @@ function App() {
             <Route path="/" element={<Inbox />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/inbox/items/:itemID" element={<Inbox />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/chat/:agentID" element={<Chat />} />
             <Route path="/channels" element={<ChannelPane />} />
             <Route path="/channels/:channelID" element={<ChannelPane />} />
             <Route path="/settings" element={<Settings />} />
