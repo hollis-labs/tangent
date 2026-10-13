@@ -331,6 +331,50 @@ func (s *Service) Inbox(ctx context.Context) (DocsInbox, error) {
 	return result, nil
 }
 
+// Revision returns exactly Inbox(ctx).Revision without building any views.
+//
+// Inbox decodes every document's request snapshot and hydrates the whole
+// surface, which is far too expensive to run on every event-stream poll tick
+// just to compare a digest. This computes the same digest from the narrow
+// identity rows (id, sequence, state, revision), the read receipts and the
+// hidden set, so the event streams stay cheap however large the documents are.
+// TestRevisionMatchesInbox pins the equivalence.
+func (s *Service) Revision(ctx context.Context) (string, error) {
+	digestInput, err := s.interactions.SurfaceDigest(ctx, interaction.GetSurfaceInput{
+		SurfaceID:      DefaultSurfaceID,
+		RequesterScope: OperatorParticipant.Scope,
+		Capability:     ReservedSurfaceCapability,
+	}, extensions.DocItemEnvelopeType)
+	if errors.Is(err, interaction.ErrNotFound) {
+		return "empty", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	ids := make([]string, 0, len(digestInput.Rows))
+	for _, row := range digestInput.Rows {
+		ids = append(ids, row.ID)
+	}
+	readAt, err := s.reads.ReadAtBulk(ctx, ids)
+	if err != nil {
+		return "", err
+	}
+	hidden, err := s.interactions.HiddenInboxItems(ctx)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.New()
+	_, _ = fmt.Fprintf(digest, "%s:%d", digestInput.SurfaceID, digestInput.Revision)
+	for _, row := range digestInput.Rows {
+		if hidden[row.ID] {
+			continue
+		}
+		_, isRead := readAt[row.ID]
+		_, _ = fmt.Fprintf(digest, "|%s:%d:%s:%d:%v", row.ID, row.SurfaceSequence, row.State, row.Revision, isRead)
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
 func (s *Service) InspectDoc(ctx context.Context, itemID string) (DocItemView, error) {
 	record, err := s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
 		InteractionID:  itemID,

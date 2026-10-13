@@ -32,6 +32,22 @@ type DocsService interface {
 	Delete(context.Context, docs.ArchiveInput) (docs.DocItemView, error)
 }
 
+// docsRevisioner is implemented by services that can report the inbox revision
+// without building the full inbox view. The event streams poll on a short tick
+// and only need the revision, so they use it when available.
+type docsRevisioner interface {
+	Revision(context.Context) (string, error)
+}
+
+// revision returns the inbox revision, cheaply when the service supports it.
+func (h *docsHTTPHandler) revision(ctx context.Context) (string, error) {
+	if r, ok := h.service.(docsRevisioner); ok {
+		return r.Revision(ctx)
+	}
+	inbox, err := h.service.Inbox(ctx)
+	return inbox.Revision, err
+}
+
 type docsHTTPHandler struct {
 	service       DocsService
 	eventPoll     time.Duration
@@ -143,7 +159,7 @@ func (h *docsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	inbox, err := h.service.Inbox(r.Context())
+	initialRevision, err := h.revision(r.Context())
 	if err != nil {
 		writeDocsError(w, err)
 		return
@@ -152,12 +168,12 @@ func (h *docsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
-	if err := writeDocsRevisionEvent(w, inbox.Revision); err != nil {
+	if err := writeDocsRevisionEvent(w, initialRevision); err != nil {
 		return
 	}
 	flusher.Flush()
 
-	lastRevision := inbox.Revision
+	lastRevision := initialRevision
 	poll := time.NewTicker(h.eventPoll)
 	keepAlive := time.NewTicker(15 * time.Second)
 	lifetime := time.NewTimer(h.eventLifetime)
@@ -177,15 +193,15 @@ func (h *docsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case <-poll.C:
-			current, loadErr := h.service.Inbox(r.Context())
+			current, loadErr := h.revision(r.Context())
 			if loadErr != nil {
 				return
 			}
-			if current.Revision == lastRevision {
+			if current == lastRevision {
 				continue
 			}
-			lastRevision = current.Revision
-			if err := writeDocsRevisionEvent(w, current.Revision); err != nil {
+			lastRevision = current
+			if err := writeDocsRevisionEvent(w, current); err != nil {
 				return
 			}
 			flusher.Flush()
