@@ -1,7 +1,7 @@
 # Durable HITL inbox e2e
 
 Use this recipe to verify the persistent operator-owned `/inbox` surface. It is
-separate from the room-backed `tangent.approval-queue` workflow and does not
+separate from the room-backed `tangent_approval_queue` workflow and does not
 require an active room.
 
 ## Automated joined gate and browser limitation
@@ -52,12 +52,12 @@ Send two stateless MCP calls, changing the JSON-RPC `id`, source, and
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.hitl_enqueue","arguments":{"contract_version":"1.0","kind":"approval","idempotency_key":"hitl-e2e:deploy","title":"Approve production deployment","summary":"The supported build and restart suite passed.","request":"Approve or deny promoting release 1.4.0.","source":{"application_id":"codex","application_label":"Codex","agent_id":"release-worker","agent_label":"Release worker"},"recommendation":"Approve after checking the rollback window.","impact":{"approve":"The caller may promote the release.","deny":"Production remains unchanged."},"correlations":{"project":{"authority":"torque","id":"PRJ-1","label":"Tangent"},"task":{"authority":"torque","id":"CW-1","label":"Release"},"session":{"authority":"codex","id":"session-1"}},"evidence":[{"type":"markdown","label":"Release notes","content":"## Validation\\n\\n- 42 checks passed\\n- [Run deployment](javascript:alert(1)) must remain inert"},{"type":"text","label":"Operator note","content":"The rollback window remains open for 30 minutes."},{"type":"diff","label":"Version bump","format":"unified","base_label":"1.3.9","head_label":"1.4.0","content":"--- a/VERSION\\n+++ b/VERSION\\n@@ -1 +1 @@\\n-1.3.9\\n+1.4.0"},{"type":"tangent_reference","label":"Durable inbox surface","surface_id":"surface_hitl_default","description":"Read the retained surface record without opening a room connection."},{"type":"artifact_ref","label":"Signed test report","authority":"torque","artifact_id":"artifact-544","digest":"sha256:1df0a9","media_type":"application/pdf","logical_kind":"test-report","size_bytes":18342,"sensitivity":"internal","retrieval_capability_id":"pdf-preview-v1"}]}}}'
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_hitl_enqueue","arguments":{"contract_version":"1.0","kind":"approval","idempotency_key":"hitl-e2e:deploy","title":"Approve production deployment","summary":"The supported build and restart suite passed.","request":"Approve or deny promoting release 1.4.0.","source":{"application_id":"codex","application_label":"Codex","agent_id":"release-worker","agent_label":"Release worker"},"recommendation":"Approve after checking the rollback window.","impact":{"approve":"The caller may promote the release.","deny":"Production remains unchanged."},"correlations":{"project":{"authority":"torque","id":"PRJ-1","label":"Tangent"},"task":{"authority":"torque","id":"CW-1","label":"Release"},"session":{"authority":"codex","id":"session-1"}},"evidence":[{"type":"markdown","label":"Release notes","content":"## Validation\\n\\n- 42 checks passed\\n- [Run deployment](javascript:alert(1)) must remain inert"},{"type":"text","label":"Operator note","content":"The rollback window remains open for 30 minutes."},{"type":"diff","label":"Version bump","format":"unified","base_label":"1.3.9","head_label":"1.4.0","content":"--- a/VERSION\\n+++ b/VERSION\\n@@ -1 +1 @@\\n-1.3.9\\n+1.4.0"},{"type":"tangent_reference","label":"Durable inbox surface","surface_id":"surface_hitl_default","description":"Read the retained surface record without opening a room connection."},{"type":"artifact_ref","label":"Signed test report","authority":"torque","artifact_id":"artifact-544","digest":"sha256:1df0a9","media_type":"application/pdf","logical_kind":"test-report","size_bytes":18342,"sensitivity":"internal","retrieval_capability_id":"pdf-preview-v1"}]}}}'
 
 curl -sS http://127.0.0.1:7843/mcp \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.hitl_enqueue","arguments":{"contract_version":"1.0","kind":"attention","idempotency_key":"hitl-e2e:worker-warning","title":"Review worker recovery","summary":"A worker recovered after a transient fault.","request":"Acknowledge this durable warning after reviewing it.","source":{"application_id":"nanite","application_label":"Nanite","agent_id":"recovery-worker","agent_label":"Recovery worker"},"action_labels":{"acknowledge":"Mark seen","acknowledge_with_note":"Log context","reply":"Respond to worker"}}}}'
+  --data '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_hitl_enqueue","arguments":{"contract_version":"1.0","kind":"attention","idempotency_key":"hitl-e2e:worker-warning","title":"Review worker recovery","summary":"A worker recovered after a transient fault.","request":"Acknowledge this durable warning after reviewing it.","source":{"application_id":"nanite","application_label":"Nanite","agent_id":"recovery-worker","agent_label":"Recovery worker"},"action_labels":{"acknowledge":"Mark seen","acknowledge_with_note":"Log context","reply":"Respond to worker"}}}}'
 ```
 
 Verify the browser updates without a toast, OS notification, or new window.
@@ -122,7 +122,7 @@ authority and must never produce a preview.
    winner after resynchronizing. Repeat a pending-item restart and confirm the
    attention row remains pending until acknowledged or withdrawn.
 
-Use `tangent.hitl_get` and a zero-wait `tangent.hitl_await` from the originating
+Use `tangent_hitl_get` and a zero-wait `tangent_hitl_await` from the originating
 caller after acknowledgement. Both must return the exact durable attention
 response (including `note` or `reply`) while the browser history shows the same
 outcome.

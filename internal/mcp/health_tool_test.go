@@ -18,7 +18,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/room"
 )
 
-// tangent.health_report is how a Tether-connected agent asks the operability
+// tangent_health_get is how a Tether-connected agent asks the operability
 // questions. It reaches Tangent over MCP and has no reason to hold an HTTP
 // client, so a readiness answer that only exists on /readyz is an answer that
 // consumer never sees — and "the database is gone" becomes "the workflow is
@@ -138,7 +138,7 @@ func TestHealthReportAnswersAllThreeQuestions(t *testing.T) {
 		Capability map[string]any         `json:"capability"`
 		Plugins    health.PluginInventory `json:"plugins"`
 	}
-	callDefinitionTool(t, client, "tangent.health_report", map[string]any{}, &report)
+	callDefinitionTool(t, client, "tangent_health_get", map[string]any{}, &report)
 
 	if report.Liveness.Status != "ok" || report.Liveness.Probe != health.ProbeLiveness {
 		t.Fatalf("liveness = %+v, want the frozen ok token", report.Liveness)
@@ -189,7 +189,7 @@ func TestHealthReportNarrowsToOneRequestedKind(t *testing.T) {
 		} `json:"capability"`
 		CapabilitySummary map[string]any `json:"capability_summary"`
 	}
-	callDefinitionTool(t, client, "tangent.health_report",
+	callDefinitionTool(t, client, "tangent_health_get",
 		map[string]any{"kind": "tangent.triage"}, &report)
 
 	if report.Capability.Kind != "tangent.triage" {
@@ -213,7 +213,7 @@ func TestHealthReportNarrowsToOneRequestedKind(t *testing.T) {
 func TestHealthReportSaysSoWhenNoReporterIsWired(t *testing.T) {
 	client := connectWithHealth(t, nil)
 	result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.health_report",
+		Name: "tangent_health_get",
 	})
 	if err != nil {
 		t.Fatalf("CallTool health_report: %v", err)
@@ -248,7 +248,7 @@ func TestHealthReportRefusesToInventReadinessForAClosedDatabase(t *testing.T) {
 			} `json:"checks"`
 		} `json:"readiness"`
 	}
-	callDefinitionTool(t, client, "tangent.health_report", map[string]any{}, &report)
+	callDefinitionTool(t, client, "tangent_health_get", map[string]any{}, &report)
 
 	if report.Readiness.Status != string(health.SummaryUnavailable) {
 		t.Fatalf("readiness status = %q, want unavailable with the database closed",

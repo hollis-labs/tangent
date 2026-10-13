@@ -56,7 +56,7 @@
 # pane is open, which cards have been staged into another column, and what the
 # participant has written about a card — is a durable revisioned draft record
 # under ADR 0002 custody, written through Service.SaveDraft and read back by the
-# caller through tangent.surface_get.
+# caller through tangent_surface_get.
 #
 # A card is staged either by dragging it into a column or by choosing one from
 # the detail pane (CW-20260910-0135). Two gestures, one meaning: both write the

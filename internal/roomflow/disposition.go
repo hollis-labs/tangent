@@ -338,7 +338,7 @@ func (d *roomDisposition) ensurePresented(
 //
 // Nothing here settles. The interaction stays open, the presentation stays
 // live, and no caller waiting on a resolution is woken. A caller reads this by
-// pulling `tangent.surface_get`, which already projects the draft revisions;
+// pulling `tangent_surface_get`, which already projects the draft revisions;
 // Tangent never pushes a participant's in-progress state at a caller, and a
 // caller must not present a draft as a decision.
 func (d *roomDisposition) Draft(

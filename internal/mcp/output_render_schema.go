@@ -4,7 +4,7 @@ const outputRenderEnvelopeType = "tangent.output-render"
 
 var outputRenderInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.output_render input",
+  "title": "tangent_output_render input",
   "description": "An output-render envelope to dispatch through Tangent.",
   "properties": {
     "envelope": {

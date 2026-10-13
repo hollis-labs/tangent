@@ -25,7 +25,7 @@ const errorCodeNotWired = "NOT_WIRED"
 const errorCodeRoomDisconnected = "ROOM_DISCONNECTED"
 
 // workflowEntry is the per-workflow record returned from
-// tangent.list_workflows. Mirrors envelopes.TypeSpec but flattens
+// tangent_workflow_list. Mirrors envelopes.TypeSpec but flattens
 // schema/UI metadata that MCP clients don't need.
 type workflowEntry struct {
 	Type         string   `json:"type"`
@@ -36,7 +36,7 @@ type workflowEntry struct {
 }
 
 // listWorkflowsResult is the structured payload returned by
-// tangent.list_workflows.
+// tangent_workflow_list.
 type listWorkflowsResult struct {
 	Workflows []workflowEntry `json:"workflows"`
 }

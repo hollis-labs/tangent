@@ -67,7 +67,7 @@ async function main() {
 const roomSockets = new Map();
 
 async function seedDraft(roomID, ws) {
-  const synthCall = callTool("tangent.synthesis_notes", {
+  const synthCall = callTool("tangent_synthesis_notes", {
     envelope: {
       v: 1,
       id: `synth-${Date.now()}`,
@@ -88,9 +88,9 @@ async function seedDraft(roomID, ws) {
   await expectAckEnvelope(ws, "tangent.synthesis-notes");
   await verifyCall(synthCall, "seed synthesis");
 
-  await callTool("tangent.session_advance_phase", { roomID, to_phase: "drafting" });
+  await callTool("tangent_session_phase_advance", { roomID, to_phase: "drafting" });
 
-  const draftCall = callTool("tangent.block_draft", {
+  const draftCall = callTool("tangent_block_draft", {
     envelope: {
       v: 1,
       id: `draft-${Date.now()}`,
@@ -114,7 +114,7 @@ async function seedDraft(roomID, ws) {
 }
 
 async function runLens(ws, roomID, lens, outcomes) {
-  const call = callTool("tangent.prose_revision", {
+  const call = callTool("tangent_prose_revision", {
     envelope: {
       v: 1,
       id: `${lens}-${Date.now()}`,
@@ -153,13 +153,13 @@ async function runLens(ws, roomID, lens, outcomes) {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   const payload = JSON.parse(result.result.content[0].text);
   return payload.roomID;
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

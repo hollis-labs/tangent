@@ -110,7 +110,7 @@ func TestGatewayTraceMetadataIsStrippedBeforeStrictValidation(t *testing.T) {
 	// The exact failing shape from the spike: a valid v1 request plus the
 	// proxy's `_traceparent`. Before the fix this returned
 	//   validating "arguments": validating root: unexpected additional properties ["_traceparent"]
-	enqueue := callRaw(t, client, "tangent.hitl_enqueue", gatewayEnqueueRequest(map[string]any{
+	enqueue := callRaw(t, client, "tangent_hitl_enqueue", gatewayEnqueueRequest(map[string]any{
 		"_traceparent": gatewayTraceparent,
 		"_tracestate":  "congo=t61rcWkgMzE",
 	}))
@@ -124,12 +124,12 @@ func TestGatewayTraceMetadataIsStrippedBeforeStrictValidation(t *testing.T) {
 
 	// The remaining three strict tools take the same metadata.
 	caller := map[string]any{"application_id": "gateway-test"}
-	for _, name := range []string{"tangent.hitl_get", "tangent.hitl_await"} {
+	for _, name := range []string{"tangent_hitl_get", "tangent_hitl_await"} {
 		arguments := map[string]any{
 			"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 			"_traceparent": gatewayTraceparent,
 		}
-		if name == "tangent.hitl_await" {
+		if name == "tangent_hitl_await" {
 			arguments["wait_ms"] = 1
 		}
 		result := callRaw(t, client, name, arguments)
@@ -137,7 +137,7 @@ func TestGatewayTraceMetadataIsStrippedBeforeStrictValidation(t *testing.T) {
 			t.Fatalf("%s with gateway metadata was refused: %s", name, extractText(t, result))
 		}
 	}
-	withdraw := callRaw(t, client, "tangent.hitl_withdraw", map[string]any{
+	withdraw := callRaw(t, client, "tangent_hitl_withdraw", map[string]any{
 		"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 		"reason": "test complete", "_traceparent": gatewayTraceparent,
 	})
@@ -158,7 +158,7 @@ func TestUnknownUnderscoreKeysAreStillRejectedByTheStrictSchema(t *testing.T) {
 		"meta-shaped key in arguments": {"_meta": map[string]any{"traceparent": gatewayTraceparent}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			result := callRaw(t, client, "tangent.hitl_enqueue", gatewayEnqueueRequest(extra))
+			result := callRaw(t, client, "tangent_hitl_enqueue", gatewayEnqueueRequest(extra))
 			if !result.IsError {
 				t.Fatalf("%v must still be rejected; the schema stays strict", extra)
 			}

@@ -248,7 +248,7 @@ capability this ADR describes exists.** Specifically:
   a future task closes.
 - **Measured, 2026-09-07 (`CW-20260907-0016`).** With the shipped tools and
   five manually launched Claude Code sessions: an operator reply reached an
-  agent inside `tangent.hitl_await` in 40–300 ms; a reply that landed while no
+  agent inside `tangent_hitl_await` in 40–300 ms; a reply that landed while no
   wait was open was returned by the next await or get, so queued input is not
   lost; two concurrent sessions each received only their own reply, and a read
   from another caller scope was refused. What the operator could not do or

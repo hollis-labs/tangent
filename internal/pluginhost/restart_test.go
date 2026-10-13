@@ -319,7 +319,7 @@ func TestHealthGateCanBeDisabled(t *testing.T) {
 }
 
 // TestInventoryReportsRestartsAndHealth is the observability half of both
-// tickets: what tangent.health_report actually gets to show an operator.
+// tickets: what tangent_health_get actually gets to show an operator.
 func TestInventoryReportsRestartsAndHealth(t *testing.T) {
 	host, _ := newHost(t)
 	binary := buildEchoPlugin(t)

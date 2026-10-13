@@ -1,6 +1,6 @@
 # Design-iteration e2e
 
-Manual smoke for `tangent.design-iteration` with a real Claude Code
+Manual smoke for `tangent_design_iteration` with a real Claude Code
 session. This validates the sandboxed iframe workflow and the
 multi-envelope-per-room iteration loop.
 
@@ -36,12 +36,12 @@ claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 
 ## 3. Trigger an iteration
 
-Ask Claude Code to call `tangent.design-iteration` with a small HTML
+Ask Claude Code to call `tangent_design_iteration` with a small HTML
 preview that includes clickable regions identified by CSS selectors.
 
 Example prompt:
 
-> Use `tangent.design-iteration` to show me two hero-card concepts and
+> Use `tangent_design_iteration` to show me two hero-card concepts and
 > let me click the stronger one.
 
 ## 4. Interact in the browser

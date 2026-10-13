@@ -44,7 +44,7 @@ const Kind = "tangent.form-collect"
 const PhaseID = "form-collect"
 
 // ProjectionKey is the JSON field name this package's state appears under in
-// the tangent.session_get result. Frozen by ADR 0003 §8 C6.
+// the tangent_session_get result. Frozen by ADR 0003 §8 C6.
 const ProjectionKey = "form_collect"
 
 // Blob keys. These are the publisher's own vocabulary; the host stores them
@@ -145,7 +145,7 @@ type SubmissionSummary struct {
 // StateView is the package's session_get projection.
 //
 // The struct is field-for-field and tag-for-tag what room.FormStateView was.
-// That is deliberate and load-bearing: tangent.session_get's advertised output
+// That is deliberate and load-bearing: tangent_session_get's advertised output
 // schema is derived from this shape by reflection, and ADR 0003 §8 C6 freezes
 // that tool's contract. Moving the type without moving the schema would have
 // been a wire change dressed as a refactor.

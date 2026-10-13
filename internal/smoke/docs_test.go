@@ -54,34 +54,55 @@ var documentedToolFiles = []string{
 	"docs/database-operations.md",
 }
 
-// toolMention matches a `tangent.<name>` token as documents write it. Both the
-// dotted and underscored halves are permitted because the shipped surface uses
-// both (`tangent.file-picker`, `tangent.session_get`).
+// toolMention matches a `tangent_<name>` or `tangent.<name>` token as
+// documents write it. Tools are named tangent_<noun>_<verb>; a dotted token is
+// matched too so a stale pre-rename tool name (`tangent.session_get`) is
+// reported instead of passing unnoticed. Dotted names that are legitimately
+// not tools (envelope kinds, package ids) are listed in nonToolMentions.
 //
 // The leading group excludes a `/`, so a clone URL (`hollis-labs/tangent.git`)
 // and a file path (`projects/tangent.md`) are not mistaken for tools. Go's
 // regexp has no lookbehind, so the preceding byte is captured and discarded.
-var toolMention = regexp.MustCompile(`(^|[^/\w.])(tangent\.[a-z][a-z0-9_-]*)`)
+var toolMention = regexp.MustCompile(`(^|[^/\w.])(tangent[._][a-z][a-z0-9_-]*)`)
 
 // wildcardFamilies are the abbreviations documents legitimately use for a
-// family of tools (`tangent.session_*`). They are stripped before matching so
+// family of tools (`tangent_session_*`). They are stripped before matching so
 // they are not mistaken for a tool that does not exist.
 var wildcardFamilies = []string{
-	"tangent.session_*",
-	"tangent.hitl_*",
-	"tangent.interaction_*",
-	"tangent.surface_*",
+	"tangent_session_*",
+	"tangent_hitl_*",
+	"tangent_interaction_*",
+	"tangent_surface_*",
 }
 
 // nonToolMentions are `tangent.`-prefixed identifiers that are deliberately
 // not MCP tools: envelope kinds, definition ids, and package ids. Documents
 // name them for good reasons, so they are excluded rather than reported.
 var nonToolMentions = map[string]bool{
+	// Underscored tokens that are not tools: a participant cookie name and a
+	// reference field documented in mcp-integration.md.
+	"tangent_participant":     true,
+	"tangent_reference":       true,
 	"tangent.external-review": true,
 	"tangent.appboard":        true, // approved definition package id, not a tool
 	// Envelope kinds are hyphenated wire names, several of which collide
 	// with a tool name spelled the same way; the ones that do are real
 	// tools and stay out of this set.
+	// Envelope kinds whose wire name equals the pre-rename tool name. The tool
+	// is tangent_<kind with underscores>; the kind keeps its dotted wire name.
+	"tangent.triage":             true,
+	"tangent.feedback":           true,
+	"tangent.whiteboard":         true,
+	"tangent.dashboard":          true,
+	"tangent.wizard":             true,
+	"tangent.app-board":          true,
+	"tangent.design-iteration":   true,
+	"tangent.form-collect":       true,
+	"tangent.file-picker":        true,
+	"tangent.progress-panel":     true,
+	"tangent.diff-review":        true,
+	"tangent.spreadsheet-review": true,
+	"tangent.approval-queue":     true,
 	"tangent.hitl-item":          true,
 	"tangent.doc-item":           true,
 	"tangent.interview-question": true,
@@ -133,7 +154,7 @@ func documentsForSurface(t *testing.T, shipped map[string]bool) []string {
 			t.Fatal(err)
 		}
 		body := readDoc(t, rel)
-		header := regexp.MustCompile(`(?m)^<!-- requires-tool: (tangent\.[a-z][a-z0-9_-]*) -->$`).FindStringSubmatch(body)
+		header := regexp.MustCompile(`(?m)^<!-- requires-tool: (tangent[._][a-z][a-z0-9_-]*) -->$`).FindStringSubmatch(body)
 		if len(header) != 2 {
 			t.Fatalf("%s needs an installed-tool declaration", rel)
 		}
@@ -199,10 +220,10 @@ func TestEveryShippedToolIsDocumented(t *testing.T) {
 	// The wildcard families stand in for their members.
 	documented := corpus.String()
 	families := map[string]string{
-		"tangent.session_":     "tangent.session_*",
-		"tangent.hitl_":        "tangent.hitl_*",
-		"tangent.interaction_": "tangent.interaction_*",
-		"tangent.surface_":     "tangent.surface_*",
+		"tangent.session_":     "tangent_session_*",
+		"tangent_hitl_":        "tangent_hitl_*",
+		"tangent.interaction_": "tangent_interaction_*",
+		"tangent.surface_":     "tangent_surface_*",
 	}
 
 	var undocumented []string
@@ -240,10 +261,10 @@ func TestDocumentedWorkflowTableMatchesListWorkflows(t *testing.T) {
 
 	kinds, err := listWorkflowKinds(ctx, endpoint.BaseURL)
 	if err != nil {
-		t.Fatalf("call tangent.list_workflows: %v", err)
+		t.Fatalf("call tangent_workflow_list: %v", err)
 	}
 	if len(kinds) == 0 {
-		t.Fatal("tangent.list_workflows returned no workflows")
+		t.Fatal("tangent_workflow_list returned no workflows")
 	}
 
 	body := readDoc(t, "docs/manual-tests/workflow-smoke-tests.md")
@@ -269,7 +290,7 @@ func TestDocumentedWorkflowTableMatchesListWorkflows(t *testing.T) {
 	sort.Strings(missing)
 	if len(missing) > 0 {
 		t.Errorf("docs/manual-tests/workflow-smoke-tests.md has no row for %s; "+
-			"tangent.list_workflows reports %d workflows",
+			"tangent_workflow_list reports %d workflows",
 			strings.Join(missing, ", "), len(kinds))
 	}
 }
@@ -321,7 +342,7 @@ func TestNoDocumentPinsTheToolCount(t *testing.T) {
 	}
 }
 
-// listWorkflowKinds calls tangent.list_workflows over the stateless
+// listWorkflowKinds calls tangent_workflow_list over the stateless
 // Streamable HTTP endpoint and returns the wire kinds it reports.
 //
 // It posts directly rather than reaching for a helper in the smoke package,
@@ -329,7 +350,7 @@ func TestNoDocumentPinsTheToolCount(t *testing.T) {
 // surface to run.
 func listWorkflowKinds(ctx context.Context, baseURL string) ([]string, error) {
 	payload := `{"jsonrpc":"2.0","id":1,"method":"tools/call",` +
-		`"params":{"name":"tangent.list_workflows","arguments":{}}}`
+		`"params":{"name":"tangent_workflow_list","arguments":{}}}`
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		strings.TrimSuffix(baseURL, "/")+"/mcp", bytes.NewBufferString(payload))
 	if err != nil {

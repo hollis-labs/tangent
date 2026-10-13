@@ -68,7 +68,7 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 
 	// The surface has to actually contain the tools this check reasons about,
 	// or a future refactor could satisfy parity with an empty registry.
-	for _, required := range []string{smoke.ReadOnlyProbeTool, "tangent.list_workflows"} {
+	for _, required := range []string{smoke.ReadOnlyProbeTool, "tangent_workflow_list"} {
 		if !contains(direct.Names, required) {
 			t.Errorf("shipped build does not advertise %s; the smoke check cannot probe what it cannot call", required)
 		}
@@ -81,7 +81,7 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 // TestReadOnlyToolCallAnswersOnBothTransports drives the one read-only tool
 // call over each transport.
 //
-// It is `tangent.health_report` for the reason smoke.ReadOnlyProbeTool gives:
+// It is `tangent_health_get` for the reason smoke.ReadOnlyProbeTool gives:
 // it is the only candidate whose answer distinguishes CAPABILITY_UNHEALTHY
 // from a transport that merely carried bytes. Calling it over `/sse` as well
 // as `/mcp` covers the path a gateway-fronted agent actually takes, which has

@@ -1,5 +1,5 @@
 // Package mcp wires Tangent's HTTP-mounted MCP server. It registers two
-// tools — tangent.list_workflows (catalog) and tangent.triage (envelope
+// tools — tangent_workflow_list (catalog) and tangent.triage (envelope
 // dispatch) — over the official modelcontextprotocol/go-sdk transports.
 //
 // PR 3 establishes the layer; PR 4 will register a real triage handler on

@@ -19,7 +19,7 @@ import (
 // The MCP SDK's tool registry is a map keyed by name. A second AddTool on a
 // name that is already registered replaces the first handler and says nothing —
 // no error, no log line, no panic. That is the worst shape a collision can
-// take: an agent calling `tangent.session_create` and reaching something else
+// take: an agent calling `tangent_session_create` and reaching something else
 // entirely would look exactly like it working.
 //
 // Nothing about the host surface needed this while every tool was written in
@@ -84,95 +84,95 @@ var toolAnnotationTable = map[string]toolHints{
 	// Named room workflows: create-or-advance a room and wait for a human.
 	// Idempotent by construction — see advanceRoomEnvelope's envelope-id
 	// identity and IDEMPOTENCY_CONFLICT handling.
-	"tangent.triage":             {Idempotent: true},
-	"tangent.feedback":           {Idempotent: true},
-	"tangent.form-collect":       {Idempotent: true},
-	"tangent.design-iteration":   {Idempotent: true},
-	"tangent.interview_question": {Idempotent: true},
-	"tangent.block_draft":        {Idempotent: true},
-	"tangent.prose_revision":     {Idempotent: true},
-	"tangent.output_render":      {Idempotent: true},
-	"tangent.whiteboard":         {Idempotent: true},
-	"tangent.app-board":          {Idempotent: true},
-	"tangent.dashboard":          {Idempotent: true},
-	"tangent.file-picker":        {Idempotent: true},
-	"tangent.progress-panel":     {Idempotent: true},
-	"tangent.wizard":             {Idempotent: true},
-	"tangent.diff-review":        {Idempotent: true},
-	"tangent.spreadsheet-review": {Idempotent: true},
-	"tangent.approval-queue":     {Idempotent: true},
-	"tangent.synthesis_notes":    {Idempotent: true},
+	"tangent_triage":             {Idempotent: true},
+	"tangent_feedback":           {Idempotent: true},
+	"tangent_form_collect":       {Idempotent: true},
+	"tangent_design_iteration":   {Idempotent: true},
+	"tangent_interview_question": {Idempotent: true},
+	"tangent_block_draft":        {Idempotent: true},
+	"tangent_prose_revision":     {Idempotent: true},
+	"tangent_output_render":      {Idempotent: true},
+	"tangent_whiteboard":         {Idempotent: true},
+	"tangent_app_board":          {Idempotent: true},
+	"tangent_dashboard":          {Idempotent: true},
+	"tangent_file_picker":        {Idempotent: true},
+	"tangent_progress_panel":     {Idempotent: true},
+	"tangent_wizard":             {Idempotent: true},
+	"tangent_diff_review":        {Idempotent: true},
+	"tangent_spreadsheet_review": {Idempotent: true},
+	"tangent_approval_queue":     {Idempotent: true},
+	"tangent_synthesis_notes":    {Idempotent: true},
 
 	// Session/room lifecycle.
-	"tangent.session_create":           {},
-	"tangent.session_advance":          {Idempotent: true},
-	"tangent.session_get":              {ReadOnly: true},
-	"tangent.session_advance_phase":    {},
-	"tangent.session_set_phase_output": {},
-	"tangent.session_close":            {Destructive: true, Idempotent: true},
-	"tangent.session_list":             {ReadOnly: true},
+	"tangent_session_create":           {},
+	"tangent_session_advance":          {Idempotent: true},
+	"tangent_session_get":              {ReadOnly: true},
+	"tangent_session_phase_advance":    {},
+	"tangent_session_phase_output_set": {},
+	"tangent_session_close":            {Destructive: true, Idempotent: true},
+	"tangent_session_list":             {ReadOnly: true},
 
-	"tangent.view_get":        {ReadOnly: true},
-	"tangent.ui_navigate":     {},
-	"tangent.ui_open_modal":   {},
-	"tangent.ui_close_modal":  {},
-	"tangent.ui_open_drawer":  {},
-	"tangent.ui_close_drawer": {},
-	"tangent.ui_focus_item":   {},
+	"tangent_view_get":        {ReadOnly: true},
+	"tangent_ui_navigate":     {},
+	"tangent_ui_modal_open":   {},
+	"tangent_ui_modal_close":  {},
+	"tangent_ui_drawer_open":  {},
+	"tangent_ui_drawer_close": {},
+	"tangent_ui_item_focus":   {},
 
 	// Catalog and registry diagnostics.
-	"tangent.list_workflows":                  {ReadOnly: true},
-	"tangent.definition_registry_list":        {ReadOnly: true},
-	"tangent.definition_get":                  {ReadOnly: true},
-	"tangent.definition_registry_diagnostics": {ReadOnly: true},
+	"tangent_workflow_list":              {ReadOnly: true},
+	"tangent_definition_list":            {ReadOnly: true},
+	"tangent_definition_get":             {ReadOnly: true},
+	"tangent_definition_diagnostics_get": {ReadOnly: true},
 
 	// Operability.
-	"tangent.health_report":    {ReadOnly: true},
-	"tangent.telemetry_query":  {ReadOnly: true},
-	"tangent.retention_status": {ReadOnly: true},
+	"tangent_health_get":      {ReadOnly: true},
+	"tangent_telemetry_query": {ReadOnly: true},
+	"tangent_retention_get":   {ReadOnly: true},
 
 	// Pure caller inbox reads: no retrieval, presentation, delivery or ACK writes.
-	"tangent.inbox_list":   {ReadOnly: true, Idempotent: true},
-	"tangent.inbox_search": {ReadOnly: true, Idempotent: true},
-	"tangent.inbox_get":    {ReadOnly: true, Idempotent: true},
+	"tangent_inbox_list":   {ReadOnly: true, Idempotent: true},
+	"tangent_inbox_search": {ReadOnly: true, Idempotent: true},
+	"tangent_inbox_get":    {ReadOnly: true, Idempotent: true},
 
 	// Generic durable interaction surface.
-	"tangent.interaction_list_kinds":         {ReadOnly: true},
-	"tangent.interaction_resolve_definition": {ReadOnly: true},
-	"tangent.surface_open":                   {Idempotent: true},
-	"tangent.surface_get":                    {ReadOnly: true},
-	"tangent.surface_close":                  {Destructive: true},
-	"tangent.interaction_submit":             {Idempotent: true},
-	"tangent.interaction_get":                {ReadOnly: true},
-	"tangent.interaction_await":              {ReadOnly: true},
-	"tangent.interaction_cancel":             {Destructive: true},
-	"tangent.interaction_supersede":          {Destructive: true},
-	"tangent.interaction_acknowledge":        {Idempotent: true},
+	"tangent_interaction_kind_list":          {ReadOnly: true},
+	"tangent_interaction_definition_resolve": {ReadOnly: true},
+	"tangent_surface_open":                   {Idempotent: true},
+	"tangent_surface_get":                    {ReadOnly: true},
+	"tangent_surface_close":                  {Destructive: true},
+	"tangent_interaction_submit":             {Idempotent: true},
+	"tangent_interaction_get":                {ReadOnly: true},
+	"tangent_interaction_await":              {ReadOnly: true},
+	"tangent_interaction_cancel":             {Destructive: true},
+	"tangent_interaction_supersede":          {Destructive: true},
+	"tangent_interaction_ack":                {Idempotent: true},
 
 	// Durable HITL inbox.
-	"tangent.hitl_enqueue":  {Idempotent: true},
-	"tangent.hitl_get":      {ReadOnly: true},
-	"tangent.hitl_await":    {ReadOnly: true},
-	"tangent.hitl_withdraw": {Destructive: true},
+	"tangent_hitl_enqueue":  {Idempotent: true},
+	"tangent_hitl_get":      {ReadOnly: true},
+	"tangent_hitl_await":    {ReadOnly: true},
+	"tangent_hitl_withdraw": {Destructive: true},
 
 	// Docs inbox.
-	"tangent.docs_enqueue": {Idempotent: true},
+	"tangent_docs_enqueue": {Idempotent: true},
 
 	// Agent turns inbox. turns_enqueue is idempotent by its idempotency_key,
 	// turn_await only reads, and turn_ack converges: acknowledging twice leaves
 	// the same state as acknowledging once.
-	"tangent.turns_enqueue": {Idempotent: true},
-	"tangent.turn_await":    {ReadOnly: true},
-	"tangent.turn_ack":      {Idempotent: true},
+	"tangent_turns_enqueue": {Idempotent: true},
+	"tangent_turns_await":   {ReadOnly: true},
+	"tangent_turns_ack":     {Idempotent: true},
 
 	// Cooperative relay inbox.
-	"tangent.relay_open_channel": {},
-	"tangent.relay_attach":       {},
-	"tangent.relay_detach":       {Destructive: true},
-	"tangent.relay_send":         {Idempotent: true},
-	"tangent.relay_receive":      {ReadOnly: true},
-	"tangent.relay_ack":          {Idempotent: true},
-	"tangent.relay_capabilities": {ReadOnly: true},
+	"tangent_relay_channel_open":     {},
+	"tangent_relay_attach":           {},
+	"tangent_relay_detach":           {Destructive: true},
+	"tangent_relay_send":             {Idempotent: true},
+	"tangent_relay_receive":          {ReadOnly: true},
+	"tangent_relay_ack":              {Idempotent: true},
+	"tangent_relay_capabilities_get": {ReadOnly: true},
 }
 
 // annotationsFor returns the declared hints for a tool, panicking if none are
@@ -214,6 +214,7 @@ func addTool[In any](
 		return handler(ctx, args)
 	}
 	server.mcp.RegisterTool(tool)
+	server.registerLegacyAlias(tool)
 }
 
 // addInteractionTool registers a tool whose input schema is derived by
@@ -268,7 +269,10 @@ func (s *Server) claimToolName(name string) {
 // isToolNameClaimed reports whether a name is already on the surface. It is
 // what lets plugin registration refuse a collision *before* making it, with a
 // message about the plugin rather than about the surface.
-func (s *Server) isToolNameClaimed(name string) bool { return s.claimedTools[name] }
+func (s *Server) isToolNameClaimed(name string) bool {
+	_, alias := s.legacyAliases[name]
+	return s.claimedTools[name] || alias
+}
 
 // ToolNames returns every tool name this server serves, sorted.
 //

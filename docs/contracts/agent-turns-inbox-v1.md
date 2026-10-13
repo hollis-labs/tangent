@@ -48,7 +48,7 @@ the original item; it is not evidence that a changed request replaced it.
 
 The public `pkg/plugin.AgentTurnRequest` describes the payload.
 `plugin.TurnsEnqueueInputSchema()` is the schema advertised by
-`tangent.turns_enqueue`; HTTP `POST /api/turns/enqueue` uses the same service.
+`tangent_turns_enqueue`; HTTP `POST /api/turns/enqueue` uses the same service.
 JSON Schema validates the shape; the service additionally checks encoded size,
 summary agreement, unique stage IDs, timeout/code agreement, and routed identity
 before any persistence. Unknown fields in the new typed objects are refused.
@@ -147,7 +147,7 @@ without annotations remain readable in their usual presentation.
 ## 4. Operator replies and actual delivery
 
 An explicit operator reply saves an immutable resolution in Tangent. A saved
-resolution is not runtime delivery. `tangent.turn_await` returns unacknowledged
+resolution is not runtime delivery. `tangent_turns_await` returns unacknowledged
 session replies with `wait_status: replies|timeout`; the wait is 30 seconds by
 default, bounded to 50 seconds, and zero means a single read. Repeated reads do
 not acknowledge or consume them. `GET /api/turns/sessions/{session_id}/replies`
@@ -155,7 +155,7 @@ reads history, including acknowledged replies. Dismissal creates no reply.
 
 The optional response `interrupt` is a strict boolean; absence means false.
 `plugin.AgentTurnResponse` exposes that response shape. The flag is saved with
-its immutable resolution and returned by `tangent.turn_await`. A later inbox
+its immutable resolution and returned by `tangent_turns_await`. A later inbox
 refresh cannot change it. This is explicit operator intent, not a grant or proof
 of human identity; a consumer must check the actual target's routing and interrupt
 capabilities before calling its dedicated reply endpoint.
@@ -181,7 +181,7 @@ re-resolution of Tangent's immutable answer or effectful GET is involved.
 This single-owner MVP does not claim Tether per-message reply authorization or a
 verified human principal; those remain before-1.0 work.
 Tether queue acceptance, binding handoff, runtime delivery, and Tangent's
-acknowledgement are distinct. An adapter calls `tangent.turn_ack` (or the HTTP ack
+acknowledgement are distinct. An adapter calls `tangent_turns_ack` (or the HTTP ack
 route) only after actual delivery, with the item ID and optional resolution ID.
 A wrong resolution or unanswered item is refused; repeat acknowledgement is
 idempotent. An undeliverable reply stays preserved and unacknowledged. There is

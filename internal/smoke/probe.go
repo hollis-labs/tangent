@@ -19,21 +19,21 @@ import (
 
 // ReadOnlyProbeTool is the single tool this check calls.
 //
-// It is `tangent.health_report` and the choice is deliberate. Every candidate
+// It is `tangent_health_get` and the choice is deliberate. Every candidate
 // proves the transport carried a call; only this one also answers the question
-// the check exists to ask. `tangent.list_workflows` proves dispatch and
+// the check exists to ask. `tangent_workflow_list` proves dispatch and
 // nothing about whether the host can serve. `definition_registry_list` proves
 // the registry materialized but not that the database behind it answers.
-// `tangent.retention_status` reads custody posture, which is a different
+// `tangent_retention_get` reads custody posture, which is a different
 // question and a larger surface than a smoke check needs.
 //
-// `tangent.health_report` writes nothing, creates no room, touches no
+// `tangent_health_get` writes nothing, creates no room, touches no
 // participant state, and returns the same readiness and capability vocabulary
 // `/readyz` and `cerberus resource doctor` already print — so a finding
 // derived from it reads in the words the operator is already holding. It is
 // also the only probe that reaches an agent behind the Tether gateway, which
 // speaks JSON-RPC and holds no HTTP client for `/readyz`.
-const ReadOnlyProbeTool = "tangent.health_report"
+const ReadOnlyProbeTool = "tangent_health_get"
 
 // probeTimeout bounds one HTTP probe. A smoke check that can hang is a smoke
 // check an operator stops running.
@@ -196,7 +196,7 @@ func (e Endpoint) CallHealthReport(ctx context.Context) (HealthReport, *Finding)
 	return decodeHealthReport("direct /mcp", response.Result)
 }
 
-// HealthReport mirrors the fields of tangent.health_report's result this check
+// HealthReport mirrors the fields of tangent_health_get's result this check
 // reads. It is a separate declaration rather than an import because the tool's
 // result type is unexported; keeping the mirror narrow means a field added
 // there does not silently change what the smoke check asserts.

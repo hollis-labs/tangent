@@ -90,37 +90,37 @@ type interactionSupersedeInput struct {
 }
 
 func (s *Server) registerInteractionTools() error {
-	if err := addInteractionTool(s, "tangent.interaction_list_kinds", "List immutable interaction definitions available to the generic asynchronous service.", s.handleInteractionListKinds); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_kind_list", "List immutable interaction definitions available to the generic asynchronous service.", s.handleInteractionListKinds); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_resolve_definition", "Resolve a kind and optional version to the exact immutable definition binding Tangent will persist.", s.handleInteractionResolveDefinition); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_definition_resolve", "Resolve a kind and optional version to the exact immutable definition binding Tangent will persist.", s.handleInteractionResolveDefinition); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.surface_open", "Open and activate a durable surface, returning its stable handle immediately. Retries are scoped by caller and idempotency key.", s.handleSurfaceOpen); err != nil {
+	if err := addInteractionTool(s, "tangent_surface_open", "Open and activate a durable surface, returning its stable handle immediately. Retries are scoped by caller and idempotency key.", s.handleSurfaceOpen); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.surface_get", "Hydrate one durable surface and all of its canonical interaction records by handle.", s.handleSurfaceGet); err != nil {
+	if err := addInteractionTool(s, "tangent_surface_get", "Hydrate one durable surface and all of its canonical interaction records by handle.", s.handleSurfaceGet); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.surface_close", "Close a durable surface and atomically disposition all outstanding interactions under the named surface policy.", s.handleSurfaceClose); err != nil {
+	if err := addInteractionTool(s, "tangent_surface_close", "Close a durable surface and atomically disposition all outstanding interactions under the named surface policy.", s.handleSurfaceClose); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_submit", "Submit a validated immutable interaction and return its stable handle immediately.", s.handleInteractionSubmit); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_submit", "Submit a validated immutable interaction and return its stable handle immediately.", s.handleInteractionSubmit); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_get", "Get current or terminal interaction state by durable handle and record terminal retrieval separately from delivery.", s.handleInteractionGet); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_get", "Get current or terminal interaction state by durable handle and record terminal retrieval separately from delivery.", s.handleInteractionGet); err != nil {
 		return err
 	}
 	if err := s.addInteractionAwaitTool(); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_cancel", "Withdraw or cancel a caller-owned interaction using its durable revision.", s.handleInteractionCancel); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_cancel", "Withdraw or cancel a caller-owned interaction using its durable revision.", s.handleInteractionCancel); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_supersede", "Supersede a caller-owned interaction with another durable interaction on the same surface.", s.handleInteractionSupersede); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_supersede", "Supersede a caller-owned interaction with another durable interaction on the same surface.", s.handleInteractionSupersede); err != nil {
 		return err
 	}
-	if err := addInteractionTool(s, "tangent.interaction_acknowledge", "Acknowledge an immutable terminal outcome exactly once. Idempotent, and deliberately separate from retrieval and delivery: reading a result or receiving it over HTTP does not acknowledge it.", s.handleInteractionAcknowledge); err != nil {
+	if err := addInteractionTool(s, "tangent_interaction_ack", "Acknowledge an immutable terminal outcome exactly once. Idempotent, and deliberately separate from retrieval and delivery: reading a result or receiving it over HTTP does not acknowledge it.", s.handleInteractionAcknowledge); err != nil {
 		return err
 	}
 	return nil
@@ -129,16 +129,16 @@ func (s *Server) registerInteractionTools() error {
 func (s *Server) addInteractionAwaitTool() error {
 	schema, err := jsonschema.For[interactionAwaitInput](nil)
 	if err != nil {
-		return fmt.Errorf("build tangent.interaction_await input schema: %w", err)
+		return fmt.Errorf("build tangent_interaction_await input schema: %w", err)
 	}
 	waitSchema := schema.Properties["maximum_wait_ms"]
 	if waitSchema == nil {
-		return errors.New("build tangent.interaction_await input schema: maximum_wait_ms is missing")
+		return errors.New("build tangent_interaction_await input schema: maximum_wait_ms is missing")
 	}
 	waitSchema.Minimum = jsonschema.Ptr(1.0)
 	waitSchema.Maximum = jsonschema.Ptr(50_000.0)
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.interaction_await",
+		Name:        "tangent_interaction_await",
 		Description: "Wait up to 50 seconds for a durable interaction terminal outcome; timeout never changes interaction lifecycle.",
 		InputSchema: schema,
 	}, s.handleInteractionAwait)

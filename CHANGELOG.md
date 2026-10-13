@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Every MCP tool is renamed to `tangent_<noun>_<verb>`**, matching
+  `^[a-z][a-z0-9_]*$` (no dots, no hyphens). OpenAI-style clients such as Codex
+  could not call `tangent.docs_enqueue`, and the tether gateway lints and never
+  normalizes upstream names. Examples: `tangent.docs_enqueue` is now
+  `tangent_docs_enqueue`, `tangent.list_workflows` is `tangent_workflow_list`,
+  `tangent.app-board` is `tangent_app_board`, `tangent.ui_open_modal` is
+  `tangent_ui_modal_open`. Arguments, results and behavior are unchanged, and so
+  are envelope kinds (`tangent.app-board`, `tangent.triage`, ...). The old names
+  stay callable as deprecated aliases but are not listed by default; set
+  `TANGENT_MCP_LEGACY_TOOL_NAMES=1` to list them. The full table is in
+  [docs/mcp-tool-names.md](docs/mcp-tool-names.md).
+- The `requester_scope` argument of the inbox tools is documented for agents in
+  the tool descriptions and schemas: pass a stable string naming the calling
+  agent or application; it is an advisory partition, not a security boundary.
+
 ### Added
 
 - Docs: a **Copy object id** icon in the document actions bar copies the

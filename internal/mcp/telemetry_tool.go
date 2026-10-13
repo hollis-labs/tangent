@@ -7,11 +7,11 @@ import (
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
-// tangent.telemetry_query is the query surface criterion 4 asks for: audit
+// tangent_telemetry_query is the query surface criterion 4 asks for: audit
 // records readable without touching a process log.
 //
 // It is an MCP tool rather than an HTTP route for the same reason
-// tangent.health_report is. Tether publishes Tangent as an MCP upstream and
+// tangent_health_get is. Tether publishes Tangent as an MCP upstream and
 // Cerberus owns the process; an agent reaching Tangent that way speaks
 // JSON-RPC over /sse and has no reason to hold an HTTP client. Making it grep
 // stderr — which it cannot reach either — is how "the delivery is lagging"
@@ -73,10 +73,10 @@ type telemetryQueryResult struct {
 }
 
 func (s *Server) registerTelemetryTool() error {
-	return addInteractionTool(s, "tangent.telemetry_query",
+	return addInteractionTool(s, "tangent_telemetry_query",
 		"Read Tangent's durable interaction telemetry: every observation filed under one "+
 			"correlation trace, or under one interaction, room, event name, or outcome. A "+
-			"non-passing tangent.health_report carries the trace id to pass here. Optionally "+
+			"non-passing tangent_health_get carries the trace id to pass here. Optionally "+
 			"returns the durable per-event aggregate and this process's metric snapshot "+
 			"(presentation and resolution latency, reconnects, stale clients, delivery lag and "+
 			"retries, draft conflicts, renderer failures, capability denials). Carries no "+
@@ -91,7 +91,7 @@ func (s *Server) handleTelemetryQuery(
 ) (any, error) {
 	if s.telemetry == nil {
 		// An error result rather than an empty one, for the reason
-		// tangent.health_report gives: a caller that receives a telemetry
+		// tangent_health_get gives: a caller that receives a telemetry
 		// document assumes something recorded it, and answering with one that
 		// recorded nothing is the same class of lie as a 200 from a process
 		// whose database is gone.

@@ -30,7 +30,7 @@ async function main() {
     const roomID = await createRoom("approval-queue-mock");
     const ws = await openRoomSocket(roomID);
 
-    const firstCall = callTool("tangent.approval-queue", {
+    const firstCall = callTool("tangent_approval_queue", {
       envelope: {
         v: 1,
         id: "approval-1",
@@ -57,7 +57,7 @@ async function main() {
     });
     await verifyCall(firstCall);
 
-    const secondCall = callTool("tangent.approval-queue", {
+    const secondCall = callTool("tangent_approval_queue", {
       envelope: {
         v: 1,
         id: "approval-2",
@@ -118,12 +118,12 @@ async function waitForServer() {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   return JSON.parse(result.result.content[0].text).roomID;
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

@@ -4,7 +4,7 @@ const blockDraftEnvelopeType = "tangent.block-draft"
 
 var blockDraftInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.block_draft input",
+  "title": "tangent_block_draft input",
   "description": "A block-draft envelope to dispatch through Tangent and persist accepted blocks on the room.",
   "properties": {
     "envelope": {

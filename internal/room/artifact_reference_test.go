@@ -48,7 +48,7 @@ func TestNormalizeArtifactURIRefusesEveryUnmediatedScheme(t *testing.T) {
 }
 
 // TestSafeExportFilenameStripsWhatACallerShouldNotChoose is the compatibility
-// adapter for `tangent.output_render`, whose `filename` reaches
+// adapter for `tangent_output_render`, whose `filename` reaches
 // `link.download` in the SPA and was carried through with TrimSpace alone — so
 // a caller chose the name a file landed under in the operator's Downloads
 // folder, separators included.

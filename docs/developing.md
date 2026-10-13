@@ -388,15 +388,15 @@ question, not something this gate decided.
 ## Adding a new workflow
 
 A workflow is one envelope kind plus an MCP tool that creates a room
-and dispatches it. Follow the steps above; `tangent.triage`,
-`tangent.feedback`, `tangent.form-collect`, `tangent.design-iteration`,
-`tangent.whiteboard`, `tangent.spreadsheet-review`,
-`tangent.approval-queue`, `tangent.wizard`, and the writing
+and dispatches it. Follow the steps above; `tangent_triage`,
+`tangent_feedback`, `tangent_form_collect`, `tangent_design_iteration`,
+`tangent_whiteboard`, `tangent_spreadsheet_review`,
+`tangent_approval_queue`, `tangent_wizard`, and the writing
 workflow kinds are the worked examples. Every named room workflow routes
 through the shared completion adapter in `internal/roomflow`; do not add a
 parallel wait path. If the workflow
 is multi-step,
-prefer reusing the `tangent.session_*` substrate and the room phase
+prefer reusing the `tangent_session_*` substrate and the room phase
 state rather than inventing a parallel room lifecycle.
 
 Before writing the SPA component, read

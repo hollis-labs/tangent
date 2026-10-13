@@ -118,7 +118,7 @@ func TestWithdrawingAnInteractionInNoRoomIsHarmless(t *testing.T) {
 // room, which is exactly what a sync does after withdrawing the current one.
 func advanceSecondBoard(t *testing.T, rg *sessionRig, roomID, envelopeID string) *mcpsdk.CallToolResult {
 	t.Helper()
-	fixture := fixtureByTool(t, "tangent.app-board")
+	fixture := fixtureByTool(t, "tangent_app_board")
 	result := callWorkflow(t, rg, fixture, roomID, envelopeID, map[string]any{"mode": "async"}, nil)
 	if result.err != nil {
 		t.Fatalf("second app-board transport: %v", result.err)
@@ -153,7 +153,7 @@ func withdrawInteraction(t *testing.T, rg *sessionRig, surfaceID, interactionID 
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		result, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name: "tangent.interaction_cancel",
+			Name: "tangent_interaction_cancel",
 			Arguments: map[string]any{
 				"interaction_id":    interactionID,
 				"expected_revision": revision,

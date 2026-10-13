@@ -380,7 +380,7 @@ retrofitted.
   `revision` and holds `version`. It is the only `contract_digest` change
   permitted without a `version` bump, it is available **once per kind**, and the
   manifest must say so at the field. The reasoning is that `version` is on the
-  wire — `tangent.list_workflows`, the generated TypeScript, every pinned
+  wire — `tangent_workflow_list`, the generated TypeScript, every pinned
   binding — and `revision` is not. `tangent.form-collect` is at
   `version: "0.6"`, `revision: 2` on that reading.
 - Interactions pinned to an older `revision` are never re-pinned. The registry
@@ -420,7 +420,7 @@ drift is *detected* rather than inferred from a successful build.
    the registration list into a single `extensions.RegisterAll(svc)` used by
    both binaries is the mechanical prerequisite. Its sequencing is fixed in §9.
 4. **Runtime.** The manifest digests the running host resolved are exposed by
-   `tangent.interaction_list_kinds` and `tangent.interaction_resolve_definition`.
+   `tangent_interaction_kind_list` and `tangent_interaction_definition_resolve`.
    A client holding generated types can compare its stamp against the live
    digest and refuse to submit against a definition it was not generated for.
 5. **Renderer.** The renderer registry keys on `kind@version` and asserts the
@@ -675,13 +675,13 @@ remains reachable only because it executes no publisher code. A
 could act on; the generated renderer table omits it for that reason.
 
 **C6 — Frozen contracts.** `tangent.hitl-item` v1.0, the `/api/hitl` surface,
-and the four `tangent.hitl_*` tools are frozen at their contract version.
-`tangent.session_*`, the workflow-named tools, and `tangent.approval-queue`
+and the four `tangent_hitl_*` tools are frozen at their contract version.
+`tangent_session_*`, the workflow-named tools, and `tangent.approval-queue`
 keep their current shapes. Any removal requires a separate accepted ADR, per
 ADR 0001 §11.7.
 
 *(Amended 2026-09-04, A4.)* C6 as written freezes a **core Go struct's field
-list** by accident. `tangent.session_get` advertises an output schema the MCP
+list** by accident. `tangent_session_get` advertises an output schema the MCP
 SDK derives by reflection from `sessionGetResult`, a struct in `internal/mcp`
 naming fourteen workflows as typed fields; under C6 that tool's shape is frozen,
 so moving any projection type into its package would delete a property from a
@@ -694,7 +694,7 @@ sat, and no conforming client can observe the difference.
 
 **C7 — Unavailable is a state, not an error to paper over.** `incompatible`,
 `quarantined`, and `unavailable` are distinguishable in the registry projection
-and in `tangent.interaction_resolve_definition`. Failing closed —
+and in `tangent_interaction_definition_resolve`. Failing closed —
 `ErrDefinitionUnavailable`, as already implemented — is the required behaviour.
 The existing upstream error vocabulary is sufficient and is reused rather than
 extended: `unsupported-type`, `unsupported-version`, `validation-failed`,
@@ -965,7 +965,7 @@ options violate one of this ADR's own rules.
 the shipped handler's actual behaviour, advances `revision` and holds `version`.
 It is the only `contract_digest` change permitted without a `version` bump, it
 is available once per kind, and the manifest must say so at the field. The
-reasoning is that `version` is on the wire — `tangent.list_workflows`, the
+reasoning is that `version` is on the wire — `tangent_workflow_list`, the
 generated TypeScript, every pinned binding — and `revision` is not.
 
 `tangent.form-collect` is at `version: "0.6"`, `revision: 2` on that reading.
@@ -1015,7 +1015,7 @@ an opaque `map[string]any` state store.
 
 ### A4 — §8 C6's freeze silently extends to core Go struct layout
 
-`tangent.session_get` advertises an output schema the MCP SDK derives by
+`tangent_session_get` advertises an output schema the MCP SDK derives by
 reflection from `sessionGetResult`, a struct in `internal/mcp` that names
 fourteen workflows as typed fields. Under C6 that tool's shape is frozen, so
 C6 transitively freezes a core struct's field list — moving any projection type

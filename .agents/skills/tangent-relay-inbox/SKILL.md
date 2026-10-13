@@ -9,7 +9,7 @@ Use the relay when this session's work depends on exchanging messages with
 another Claude Code session or the human operator, and that exchange must
 survive either side relaunching. This is the CLI relay provider
 (CW-20260906-0072): a pull-only, request/response surface over seven
-`tangent.relay_*` MCP tools. There is no push — nothing arrives unprompted —
+`tangent_relay_*` MCP tools. There is no push — nothing arrives unprompted —
 so this skill's shape is "check in periodically," never "stay connected."
 
 ## Why durable check-in, not continuous standby
@@ -26,25 +26,25 @@ operator.
 ## Default flow
 
 1. **Get a channel.** If you are starting the collaboration, call
-   `tangent.relay_open_channel` once and record `channel_id`. If you are
+   `tangent_relay_channel_open` once and record `channel_id`. If you are
    joining one another session or the operator already opened, get
    `channel_id` from them — never call `relay_open_channel` speculatively
    to "see if it exists"; it always creates a new channel.
-2. **Attach.** Call `tangent.relay_attach` with your `source`
+2. **Attach.** Call `tangent_relay_attach` with your `source`
    (`application_id` + `agent_id` — pick stable values and reuse them for
    the life of this collaboration, since `channel.Store.UpsertParticipant`
    resolves identity by that pair) and `runtime` (`authority` plus an
    `endpoint_ref` you control, such as a session id). Attach again after
    every relaunch — generation advances, and the previous binding is
    automatically superseded, not left dangling.
-3. **Send.** Call `tangent.relay_send` with a constructed `idempotency_key`
+3. **Send.** Call `tangent_relay_send` with a constructed `idempotency_key`
    (see below — never shell out to build one). Name an explicit recipient
    (`recipient_application_id` + `recipient_agent_id` together) unless the
    channel has exactly one live operator to default to; a default send to
    an ambiguous channel is refused, not guessed. Read
    `recipient_presence` in the result for a signal about the OTHER side —
    see the presence caveat below before you act on it.
-4. **Check in.** Call `tangent.relay_receive` with `cursor: 0` and
+4. **Check in.** Call `tangent_relay_receive` with `cursor: 0` and
    `unacked_only: true` on your own schedule (a fixed interval, a
    milestone in your own work, or a bounded `wait_ms` up to
    `wait_ms_max` if you want one call to also wait briefly). This is the
@@ -52,14 +52,14 @@ operator.
    immediately after a relaunch with zero prior state. A `status: "timeout"`
    is not an error and not "nothing exists" — it means nothing new arrived
    in this call's window; check in again later.
-5. **Ack everything you handle.** Call `tangent.relay_ack` for every
+5. **Ack everything you handle.** Call `tangent_relay_ack` for every
    exchange you have finished with — including one you read and decided
    needs no reply. `unacked_only` means the server's only record of "this
    session is done with this message" is the ack. Anything received but
    never acked is returned again on every future check-in, forever. Do not
    ack something you have not actually processed just to silence it.
 6. **Detach on a clean exit, but never rely on it firing.** Call
-   `tangent.relay_detach` when you know you are ending the collaboration.
+   `tangent_relay_detach` when you know you are ending the collaboration.
    Treat it as best-effort: a killed process, a crash, or a lost connection
    means detach never runs, and that is an expected, ordinary outcome, not
    a bug to route around. The channel's membership and binding history are
@@ -109,8 +109,8 @@ soon a reply might arrive.
 ## Check-in loop shape
 
 - Bound every wait: `wait_ms` is capped at `wait_ms_max`
-  (`tangent.relay_capabilities`'s `wait_ms_max`, currently the same 50000 ms
-  ceiling `tangent.hitl_await` uses) so no single call can block
+  (`tangent_relay_capabilities_get`'s `wait_ms_max`, currently the same 50000 ms
+  ceiling `tangent_hitl_await` uses) so no single call can block
   indefinitely.
 - Treat a timeout and a genuine tool error as the same "no progress this
   attempt" signal for one shared retry counter or backoff — do not give
@@ -127,7 +127,7 @@ soon a reply might arrive.
 ## Diagnostics
 
 There is no separate relay diagnostics tool. Call
-`tangent.relay_capabilities` — with `channel_id` + `source` to scope the
+`tangent_relay_capabilities_get` — with `channel_id` + `source` to scope the
 answer to your current binding, or with neither for the adapter's generic
 answer — and read `capabilities` and `wait_ms_max` directly; unsupported
 operations are named `false` rather than simulated.
@@ -143,7 +143,7 @@ operations are named `false` rather than simulated.
 - Every relay tool input is flat at the top level by construction — no
   `allOf`/`if`/`then`/`oneOf`, no optional nested object outside `source`
   (and `runtime` on attach). Do not build a client that assumes a richer
-  shape than what `tangent.relay_capabilities` and the tool schemas
+  shape than what `tangent_relay_capabilities_get` and the tool schemas
   actually advertise.
 - The operator's own send/read path has no MCP tool; it is a REST surface
   over the same two stores (CW-20260906-0017), not this skill's concern.

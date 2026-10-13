@@ -15,7 +15,7 @@ import (
 //	                                      \-> unavailable
 //
 // `registered` never implies `available`. The three terminal projections are
-// distinguishable in the registry and in tangent.interaction_resolve_definition
+// distinguishable in the registry and in tangent_interaction_definition_resolve
 // because "unavailable is a state, not an error to paper over" (§8 C7).
 type State string
 

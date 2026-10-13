@@ -126,7 +126,7 @@ func TestDiffReview_SubmitReopenAndPersistState(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -185,7 +185,7 @@ func callDiffReview(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.diff-review",
+		Name: "tangent_diff_review",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

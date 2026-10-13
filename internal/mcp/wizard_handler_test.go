@@ -29,7 +29,7 @@ func TestWizardHandlerPersistsPartialAndReopens(t *testing.T) {
 	done := make(chan wizardCallToolResult, 1)
 	go func() {
 		res, callErr := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-			Name: "tangent.wizard",
+			Name: "tangent_wizard",
 			Arguments: map[string]any{
 				"envelope": map[string]any{
 					"v":    1,
@@ -123,7 +123,7 @@ func TestWizardHandlerPersistsPartialAndReopens(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {

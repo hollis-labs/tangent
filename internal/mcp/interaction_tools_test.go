@@ -62,16 +62,16 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 		t.Fatalf("ListTools: %v", err)
 	}
 	wantTools := map[string]bool{
-		"tangent.interaction_list_kinds":         false,
-		"tangent.interaction_resolve_definition": false,
-		"tangent.surface_open":                   false,
-		"tangent.surface_get":                    false,
-		"tangent.surface_close":                  false,
-		"tangent.interaction_submit":             false,
-		"tangent.interaction_get":                false,
-		"tangent.interaction_await":              false,
-		"tangent.interaction_cancel":             false,
-		"tangent.interaction_supersede":          false,
+		"tangent_interaction_kind_list":          false,
+		"tangent_interaction_definition_resolve": false,
+		"tangent_surface_open":                   false,
+		"tangent_surface_get":                    false,
+		"tangent_surface_close":                  false,
+		"tangent_interaction_submit":             false,
+		"tangent_interaction_get":                false,
+		"tangent_interaction_await":              false,
+		"tangent_interaction_cancel":             false,
+		"tangent_interaction_supersede":          false,
 	}
 	for _, tool := range tools.Tools {
 		if _, ok := wantTools[tool.Name]; ok {
@@ -95,16 +95,16 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 		"metadata": map[string]any{"title": "MCP async surface"},
 		"policy":   map[string]any{"close": "cancel-outstanding"},
 	}
-	opened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent.surface_open", openArguments)
+	opened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent_surface_open", openArguments)
 	if opened.SurfaceID == "" || opened.State != interaction.SurfaceStateActive || !opened.Created {
 		t.Fatalf("surface_open = %#v", opened)
 	}
-	reopened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent.surface_open", openArguments)
+	reopened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent_surface_open", openArguments)
 	if reopened.SurfaceID != opened.SurfaceID || reopened.Created {
 		t.Fatalf("idempotent surface_open = %#v, want original", reopened)
 	}
 
-	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent.interaction_submit", map[string]any{
+	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent_interaction_submit", map[string]any{
 		"surface_id": opened.SurfaceID, "caller": caller, "idempotency_key": "interaction-1",
 		"definition": map[string]any{"kind": "tangent.triage", "version": "0.2"},
 		"request":    map[string]any{"prompt": "Choose", "items": []any{"a", "b"}},
@@ -114,7 +114,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 		t.Fatalf("interaction_submit did not return immediate stable handle: %#v", submitted)
 	}
 	overBound, overBoundErr := firstClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interaction_await",
+		Name: "tangent_interaction_await",
 		Arguments: map[string]any{
 			"interaction_id":  submitted.InteractionID,
 			"requester_scope": "application:mcp-test",
@@ -126,7 +126,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 	}
 
 	timedOut, err := firstClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interaction_await",
+		Name: "tangent_interaction_await",
 		Arguments: map[string]any{
 			"interaction_id":  submitted.InteractionID,
 			"requester_scope": "application:mcp-test",
@@ -145,7 +145,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 	// session or original HTTP request identity participates in the lookup.
 	secondClient, closeSecond := connectInteractionClient(t, server)
 	defer closeSecond()
-	current := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent.interaction_get", map[string]any{
+	current := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent_interaction_get", map[string]any{
 		"interaction_id":        submitted.InteractionID,
 		"requester_scope":       "application:mcp-test",
 		"transport_correlation": map[string]any{"session": "second"},
@@ -154,7 +154,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 		t.Fatalf("nonterminal interaction_get = %#v", current)
 	}
 	forbidden, err := secondClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interaction_cancel",
+		Name: "tangent_interaction_cancel",
 		Arguments: map[string]any{
 			"interaction_id": submitted.InteractionID, "expected_revision": submitted.Revision,
 			"requester": caller, "cause": "administrator_canceled",
@@ -166,7 +166,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 	if !forbidden.IsError || !strings.Contains(extractText(t, forbidden), "unauthorized") {
 		t.Fatalf("direct MCP accepted administrator cancellation: %s", extractText(t, forbidden))
 	}
-	canceled := callInteractionTool[interaction.TerminalizeInteractionResult](t, secondClient, "tangent.interaction_cancel", map[string]any{
+	canceled := callInteractionTool[interaction.TerminalizeInteractionResult](t, secondClient, "tangent_interaction_cancel", map[string]any{
 		"interaction_id": submitted.InteractionID, "expected_revision": submitted.Revision,
 		"requester": caller, "cause": "caller_withdrawn", "reason": "caller no longer waiting",
 	})
@@ -174,7 +174,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 		canceled.Interaction.TerminalCause != interaction.TerminalCauseCallerWithdrawn {
 		t.Fatalf("interaction_cancel = %#v", canceled)
 	}
-	terminal := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent.interaction_get", map[string]any{
+	terminal := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent_interaction_get", map[string]any{
 		"interaction_id":        submitted.InteractionID,
 		"requester_scope":       "application:mcp-test",
 		"transport_correlation": map[string]any{"session": "second", "operation": "get"},
@@ -226,10 +226,10 @@ func TestResolvedInteractionSurvivesMCPDisconnectAndProcessRestart(t *testing.T)
 		"scope": "application:mcp-restart", "principal_ref": "agent:mcp-restart",
 	}
 	firstClient, closeFirst := connectInteractionClient(t, server)
-	opened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent.surface_open", map[string]any{
+	opened := callInteractionTool[interaction.SurfaceHandle](t, firstClient, "tangent_surface_open", map[string]any{
 		"caller": caller, "idempotency_key": "restart-open", "owner_scope": "operator:local",
 	})
-	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent.interaction_submit", map[string]any{
+	submitted := callInteractionTool[interaction.InteractionHandle](t, firstClient, "tangent_interaction_submit", map[string]any{
 		"surface_id": opened.SurfaceID, "caller": caller, "idempotency_key": "restart-submit",
 		"definition": map[string]any{"kind": "tangent.triage", "version": "0.2"},
 		"request":    map[string]any{"prompt": "Preserve this", "items": []any{"yes"}},
@@ -296,7 +296,7 @@ func TestResolvedInteractionSurvivesMCPDisconnectAndProcessRestart(t *testing.T)
 	}
 	secondClient, closeSecond := connectInteractionClient(t, restartedServer)
 	defer closeSecond()
-	outcome := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent.interaction_await", map[string]any{
+	outcome := callInteractionTool[interaction.TerminalOutcome](t, secondClient, "tangent_interaction_await", map[string]any{
 		"interaction_id": submitted.InteractionID, "requester_scope": "application:mcp-restart",
 		"maximum_wait_ms": 100, "transport_correlation": map[string]any{"session": "after-restart"},
 	})

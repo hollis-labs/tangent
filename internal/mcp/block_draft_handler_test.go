@@ -71,7 +71,7 @@ func TestBlockDraft_AcceptedBlocksPersistAndCurrentDraftReconstructs(t *testing.
 	runDraft("draft-4", "ending", "Closing section.", "accept", "", "")
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestBlockDraft_InputValidation(t *testing.T) {
 	defer rg.cleanup()
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.block_draft",
+		Name: "tangent_block_draft",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,
@@ -154,7 +154,7 @@ func callBlockDraft(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.block_draft",
+		Name: "tangent_block_draft",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

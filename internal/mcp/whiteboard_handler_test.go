@@ -114,7 +114,7 @@ func TestWhiteboard_PersistsSeedStateAndRendersEnvelope(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -304,7 +304,7 @@ func TestWhiteboard_SubmitReopenAndHistoryStayRevisionAware(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -373,7 +373,7 @@ func TestWhiteboard_InputValidation(t *testing.T) {
 	defer rg.cleanup()
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.whiteboard",
+		Name: "tangent_whiteboard",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,
@@ -444,7 +444,7 @@ func TestWhiteboard_SubmitContractRejectsMissingScene(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -488,7 +488,7 @@ func callWhiteboard(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.whiteboard",
+		Name: "tangent_whiteboard",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

@@ -101,7 +101,7 @@ func TestInterviewQuestion_ThreeQuestionsSameRoom(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ func TestInterviewQuestion_InputValidation(t *testing.T) {
 	defer rg.cleanup()
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interview_question",
+		Name: "tangent_interview_question",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,
@@ -195,7 +195,7 @@ func callInterviewQuestion(
 	defer cancel()
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.interview_question",
+		Name: "tangent_interview_question",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,

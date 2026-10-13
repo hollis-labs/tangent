@@ -44,7 +44,7 @@ TANGENT_SMOKE_ENV=1 make smoke   # …plus the live deployment, Cerberus, and Te
    carries the room URL, or construct `http://127.0.0.1:7842/r/<roomID>`.
 
 The durable HITL inbox is the exception: open `/inbox` directly and retain the
-handle returned by `tangent.hitl_enqueue`; it does not create a room.
+handle returned by `tangent_hitl_enqueue`; it does not create a room.
 
 ## Operator rules
 
@@ -102,7 +102,7 @@ outcome) — have no blocked state to check. That is correct, not a gap.
 `tangent.app-board` is the one workflow whose interesting behaviour happens
 **before** any terminal action, so smoke it with `completion: async` and check
 the pending state rather than the resolution. What you are looking for is that
-filtering and selecting change what `tangent.surface_get` reports in `Drafts[]`
+filtering and selecting change what `tangent_surface_get` reports in `Drafts[]`
 while `status` stays pending and no resolution is recorded. If a filter settles
 the envelope, the board has been wired through the response path instead of the
 draft path, and opening it in a second tab will silently steal the right to
@@ -171,10 +171,10 @@ workflow with the full seeded example from the linked doc.
 | `tangent.progress-panel` | [`progress-panel-e2e.md`](./progress-panel-e2e.md) | Add one update, checkpoint, or log entry, then submit. | Agent receives the appended progress state and reopening shows the accepted timeline. |
 | `tangent.dashboard` | [`dashboard-e2e.md`](./dashboard-e2e.md) | Open the dashboard, trigger one refresh or update action, then submit. | Agent receives the updated dashboard payload and reopening shows the accepted layout/state. |
 | `tangent.wizard` | [`wizard-e2e.md`](./wizard-e2e.md) | Fill the first step, choose any branch if present, save once, then complete the final step. | Agent sees partial progress first, then a submitted completion response; reopening shows accepted wizard progress. |
-| `tangent.app-board` | *(no deep recipe yet)* | Open the board with `completion: async`, toggle one filter, click one card to open the detail pane, then press one action. | Agent's `tangent.surface_get` shows the filter and selection in `Drafts[]` **while the envelope is still pending**; the action arrives as a `data` response. |
+| `tangent.app-board` | *(no deep recipe yet)* | Open the board with `completion: async`, toggle one filter, click one card to open the detail pane, then press one action. | Agent's `tangent_surface_get` shows the filter and selection in `Drafts[]` **while the envelope is still pending**; the action arrives as a `data` response. |
 
 This table lists the bundled room workflows. It is a runbook, not the registry:
-ask `tangent.list_workflows` for what the build actually dispatches, and
+ask `tangent_workflow_list` for what the build actually dispatches, and
 `make smoke` for the whole tool surface. `internal/smoke/docs_test.go` fails if
 this table and the shipped build disagree.
 
@@ -200,7 +200,7 @@ through a later Get or Await call.
 
 | Surface | Minimal interaction | Pass if |
 | --- | --- | --- |
-| `tangent.hitl_*` + `/inbox` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
+| `tangent_hitl_*` + `/inbox` | Enqueue approval and attention items from different applications, inspect evidence, resolve one, restart, retrieve it by handle, and withdraw the other. | FIFO and deep links survive reconnect/restart; all five evidence families remain readable; no room, toast, new window, OS notification, or downstream business transition is created. |
 
 ## Writing flow
 
@@ -211,18 +211,18 @@ with their own fresh-room setup.
 
 | Phase tool | Launch reference | Minimal interaction | Pass if |
 | --- | --- | --- | --- |
-| `tangent.session_create` | [`writing-flow-e2e.md`](./writing-flow-e2e.md) | Create one room for the writing flow. | Tangent returns a room ID and the room URL opens. |
-| `tangent.interview_question` | [`interview-question-e2e.md`](./interview-question-e2e.md) | Answer one long-form prompt and submit. | Agent receives the answer payload and the room advances cleanly. |
-| `tangent.synthesis_notes` | [`synthesis-notes-e2e.md`](./synthesis-notes-e2e.md) | Review the synthesis handoff and click `Continue`. | Agent receives the continue response and the room remains usable. |
-| `tangent.block_draft` | [`block-draft-e2e.md`](./block-draft-e2e.md) | Accept one draft block or make one inline edit, then submit. | Agent receives the accepted block response and the room stores the accepted draft block. |
-| `tangent.prose_revision` | [`prose-revision-e2e.md`](./prose-revision-e2e.md) | Accept or reject one suggestion and submit. | Agent receives the per-suggestion decision payload. |
-| `tangent.output_render` | [`writing-flow-e2e.md`](./writing-flow-e2e.md) | Verify the final output renders, then click `Done`. | Agent receives the final output response and the room retains final output metadata. |
+| `tangent_session_create` | [`writing-flow-e2e.md`](./writing-flow-e2e.md) | Create one room for the writing flow. | Tangent returns a room ID and the room URL opens. |
+| `tangent_interview_question` | [`interview-question-e2e.md`](./interview-question-e2e.md) | Answer one long-form prompt and submit. | Agent receives the answer payload and the room advances cleanly. |
+| `tangent_synthesis_notes` | [`synthesis-notes-e2e.md`](./synthesis-notes-e2e.md) | Review the synthesis handoff and click `Continue`. | Agent receives the continue response and the room remains usable. |
+| `tangent_block_draft` | [`block-draft-e2e.md`](./block-draft-e2e.md) | Accept one draft block or make one inline edit, then submit. | Agent receives the accepted block response and the room stores the accepted draft block. |
+| `tangent_prose_revision` | [`prose-revision-e2e.md`](./prose-revision-e2e.md) | Accept or reject one suggestion and submit. | Agent receives the per-suggestion decision payload. |
+| `tangent_output_render` | [`writing-flow-e2e.md`](./writing-flow-e2e.md) | Verify the final output renders, then click `Done`. | Agent receives the final output response and the room retains final output metadata. |
 
 ## Close-out
 
 After finishing the smoke pass:
 
-1. Run one `tangent.session_get` on any room-backed workflow you
+1. Run one `tangent_session_get` on any room-backed workflow you
    exercised heavily.
 2. Confirm the persisted projection for that workflow is populated.
 3. Close any rooms you created if you do not want them left in the local

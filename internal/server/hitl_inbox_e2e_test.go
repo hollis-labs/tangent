@@ -62,7 +62,7 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 		go func() {
 			<-start
 			var handle hitl.ItemHandle
-			call, err := joinedMCPCall(app.baseURL, "tangent.hitl_enqueue", request)
+			call, err := joinedMCPCall(app.baseURL, "tangent_hitl_enqueue", request)
 			if err == nil {
 				err = call.decode(&handle)
 			}
@@ -85,13 +85,13 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 
 	approval := handleForSource(t, app.baseURL, handles, "codex")
 	attention := handleForSource(t, app.baseURL, handles, "nanite")
-	retryCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", approvalRequest)
+	retryCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", approvalRequest)
 	var retry hitl.ItemHandle
 	mustDecodeJoinedCall(t, retryCall, &retry)
 	if retry.ItemID != approval.ItemID || retry.QueueSequence != approval.QueueSequence {
 		t.Fatalf("idempotent retry = %#v, want %#v", retry, approval)
 	}
-	unauthorized, err := joinedMCPCall(app.baseURL, "tangent.hitl_get", map[string]any{
+	unauthorized, err := joinedMCPCall(app.baseURL, "tangent_hitl_get", map[string]any{
 		"contract_version": "1.0", "item_id": approval.ItemID,
 		"caller": map[string]any{"application_id": "wrong-application", "principal_ref": "intruder"},
 	})
@@ -138,24 +138,24 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 		t.Fatalf("reconnect SSE revision = %q, want %q", revision, inbox.Revision)
 	}
 	raceRequest := joinedApprovalRequestFor("cursor", "race-worker", "joined-race", "Race operator and caller")
-	raceCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", raceRequest)
+	raceCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", raceRequest)
 	var raced hitl.ItemHandle
 	mustDecodeJoinedCall(t, raceCall, &raced)
 	if revision := reconnected.next(t); revision == inbox.Revision || revision == "" {
 		t.Fatalf("live SSE did not advance from %q: %q", inbox.Revision, revision)
 	}
 	reconnected.close()
-	denyCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", joinedApprovalRequestFor(
+	denyCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", joinedApprovalRequestFor(
 		"copilot", "deny-worker", "joined-deny", "Deny joined release",
 	))
 	var denied hitl.ItemHandle
 	mustDecodeJoinedCall(t, denyCall, &denied)
-	attentionNoteCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", joinedAttentionRequestFor(
+	attentionNoteCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", joinedAttentionRequestFor(
 		"opencode", "note-worker", "joined-attention-note", "Log joined warning",
 	))
 	var attentionNote hitl.ItemHandle
 	mustDecodeJoinedCall(t, attentionNoteCall, &attentionNote)
-	attentionPlainCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", joinedAttentionRequestFor(
+	attentionPlainCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", joinedAttentionRequestFor(
 		"aider", "plain-worker", "joined-attention-plain", "Acknowledge joined notice",
 	))
 	var attentionPlain hitl.ItemHandle
@@ -210,7 +210,7 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 	}()
 	go func() {
 		<-raceStart
-		call, err := joinedMCPCall(app.baseURL, "tangent.hitl_withdraw", map[string]any{
+		call, err := joinedMCPCall(app.baseURL, "tangent_hitl_withdraw", map[string]any{
 			"contract_version": "1.0", "item_id": raced.ItemID,
 			"caller":            map[string]any{"application_id": "cursor", "principal_ref": "race-worker"},
 			"expected_revision": racePresented.Revision, "reason": "caller no longer needs a decision",
@@ -294,12 +294,12 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 
 	// An explicit withdrawal is different from browser/SSE detachment. A second
 	// pending item remains staged across detachment and process shutdown.
-	withdrawCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", joinedApprovalRequestFor(
+	withdrawCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", joinedApprovalRequestFor(
 		"claude", "withdraw-worker", "joined-withdraw", "Withdraw explicitly",
 	))
 	var withdrawHandle hitl.ItemHandle
 	mustDecodeJoinedCall(t, withdrawCall, &withdrawHandle)
-	withdrawnCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_withdraw", map[string]any{
+	withdrawnCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_withdraw", map[string]any{
 		"contract_version": "1.0", "item_id": withdrawHandle.ItemID,
 		"caller":            map[string]any{"application_id": "claude", "principal_ref": "withdraw-worker"},
 		"expected_revision": withdrawHandle.Revision, "reason": "explicit caller withdrawal",
@@ -309,7 +309,7 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 	if withdrawn.State != interaction.InteractionStateCanceled || withdrawn.Cause != interaction.TerminalCauseCallerWithdrawn {
 		t.Fatalf("explicit withdrawal = %#v", withdrawn)
 	}
-	pendingCall := mustJoinedMCPCall(t, app.baseURL, "tangent.hitl_enqueue", joinedAttentionRequestFor(
+	pendingCall := mustJoinedMCPCall(t, app.baseURL, "tangent_hitl_enqueue", joinedAttentionRequestFor(
 		"gemini", "restart-worker", "joined-restart-pending", "Remain pending across restart",
 	))
 	var pending hitl.ItemHandle
@@ -347,8 +347,8 @@ func TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart(t *testing.T) {
 			"contract_version": "1.0", "item_id": expected.handle.ItemID,
 			"caller": map[string]any{"application_id": expected.caller, "principal_ref": "fresh-client"},
 		}
-		for _, operation := range []string{"tangent.hitl_get", "tangent.hitl_await"} {
-			if operation == "tangent.hitl_await" {
+		for _, operation := range []string{"tangent_hitl_get", "tangent_hitl_await"} {
+			if operation == "tangent_hitl_await" {
 				arguments["wait_ms"] = 0
 			}
 			call := mustJoinedMCPCall(t, app.baseURL, operation, arguments)

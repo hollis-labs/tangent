@@ -18,7 +18,7 @@ func TestExternalReviewCreatesADurableAsyncRequest(t *testing.T) {
 		"actions": []any{map[string]any{"id": "approve", "label": "Approve"}},
 	}
 	result, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance", Arguments: map[string]any{
+		Name: "tangent_session_advance", Arguments: map[string]any{
 			"roomID": roomID, "completion": map[string]any{"mode": "async"},
 			"envelope": map[string]any{"v": 1, "id": "external-review-1", "type": "tangent.external-review", "data": data},
 		},
@@ -37,7 +37,7 @@ func TestExternalReviewCreatesADurableAsyncRequest(t *testing.T) {
 	// External URLs are resource links, never routes the renderer may execute.
 	data["action_url"] = "https://example.com/action"
 	refused, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance", Arguments: map[string]any{
+		Name: "tangent_session_advance", Arguments: map[string]any{
 			"roomID": roomID, "completion": map[string]any{"mode": "async"},
 			"envelope": map[string]any{"v": 1, "id": "external-review-invalid", "type": "tangent.external-review", "data": data},
 		},

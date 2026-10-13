@@ -1,6 +1,6 @@
 # Block-draft e2e
 
-Manual recipe for exercising `tangent.block_draft` through both the
+Manual recipe for exercising `tangent_block_draft` through both the
 outline-first and skip-outline drafting paths, while confirming accepted
 blocks persist and `session_get` reconstructs the current draft.
 
@@ -22,7 +22,7 @@ cd tangent  # your clone of the repo
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"Block draft outline path"}}}' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"Block draft outline path"}}}' \
   | jq -r '.result.content[0].text | fromjson'
 ```
 
@@ -35,7 +35,7 @@ Send either the outline-first synthesis payload:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.synthesis_notes","arguments":{"envelope":{"v":1,"id":"synth-1","type":"tangent.synthesis-notes","title":"Synthesis handoff","data":{"private_notes":"Keep the draft grounded in constraints before examples.","summary":"Start with constraints, then add one concrete example.","outline_state":"present","outline":{"title":"Draft outline","items":[{"label":"Goal","description":"Frame the writing target."},{"label":"Constraints","description":"Name the limits first."}]}},"meta":{"roomID":"<roomID>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_synthesis_notes","arguments":{"envelope":{"v":1,"id":"synth-1","type":"tangent.synthesis-notes","title":"Synthesis handoff","data":{"private_notes":"Keep the draft grounded in constraints before examples.","summary":"Start with constraints, then add one concrete example.","outline_state":"present","outline":{"title":"Draft outline","items":[{"label":"Goal","description":"Frame the writing target."},{"label":"Constraints","description":"Name the limits first."}]}},"meta":{"roomID":"<roomID>"}}}}}'
 ```
 
 or the skip-outline payload:
@@ -53,7 +53,7 @@ Then advance the room:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_advance_phase","arguments":{"roomID":"<roomID>","to_phase":"drafting","reason":"move into drafting"}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_session_phase_advance","arguments":{"roomID":"<roomID>","to_phase":"drafting","reason":"move into drafting"}}}'
 ```
 
 ## 4. Send a draft block
@@ -61,7 +61,7 @@ curl -fsS -X POST http://127.0.0.1:7842/mcp \
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.block_draft","arguments":{"envelope":{"v":1,"id":"draft-1","type":"tangent.block-draft","title":"Intro block","data":{"block_id":"intro","mode":"section","label":"Intro","content":"First candidate section.","rationale":"Lead with the strongest point.","outline_hint":"Draft toward the active section."},"meta":{"roomID":"<roomID>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent_block_draft","arguments":{"envelope":{"v":1,"id":"draft-1","type":"tangent.block-draft","title":"Intro block","data":{"block_id":"intro","mode":"section","label":"Intro","content":"First candidate section.","rationale":"Lead with the strongest point.","outline_hint":"Draft toward the active section."},"meta":{"roomID":"<roomID>"}}}}}'
 ```
 
 Expect the room UI to show:
@@ -75,7 +75,7 @@ Expect the room UI to show:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent.session_get","arguments":{"roomID":"<roomID>"}}}' \
+  -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent_session_get","arguments":{"roomID":"<roomID>"}}}' \
   | jq -r '.result.content[0].text | fromjson'
 ```
 

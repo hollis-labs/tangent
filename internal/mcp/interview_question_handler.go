@@ -20,7 +20,7 @@ func (s *Server) handleInterviewQuestion(
 		return nil, toolErrorResult(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf(
-				"tangent.interview_question rejects envelope type %q; want %q",
+				"tangent_interview_question rejects envelope type %q; want %q",
 				args.Envelope.Type,
 				interviewQuestionEnvelopeType,
 			),

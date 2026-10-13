@@ -71,7 +71,7 @@ records that agreement is intended.
 | Calling application | The purpose of an interaction and the business object it refers to | `InteractionRecord` stores caller correlation opaquely; ADR 0001 §3 |
 | Envelope publisher | The interaction type, schemas, semantic meaning, presentation contract, and interpretation of responses | 18 `manifest.yaml` under `internal/envelope/extensions/packages/`; `definition_manifests` (migration 0007), immutable and trigger-guarded (`2e2c48a`) |
 | Participant | The meaning of the input or decision they provide | ADR 0001 §9 |
-| Business system | Whether that input constitutes approval, acceptance, publication, or completion | `tangent.interaction_acknowledge` (`internal/mcp/interaction_tools.go:123`), whose own description states that reading a result does not acknowledge it |
+| Business system | Whether that input constitutes approval, acceptance, publication, or completion | `tangent_interaction_ack` (`internal/mcp/interaction_tools.go:123`), whose own description states that reading a result does not acknowledge it |
 | `go-envelopes` | The portable protocol vocabulary and common interaction contracts — not any application's business workflow | ADR 0003 §5; the generic-catalog column in §6 |
 | Credential authorities | Secrets and their lifecycle | **Intended.** See §3.1; ADR 0004 §12 defers credential custody |
 | **Tangent** | The operational interaction record: definition resolution, validation, presentation, surface and connection state, drafts under its custody, typed resolution capture, delivery attempts, and audit | ADRs 0001-0004 in full |
@@ -296,7 +296,7 @@ approval queues, forms, or exception handling. Tangent returns authenticated,
 typed participant evidence; Torque checks the task revision and acceptance
 policy and performs the work transition. **Tangent does not mark a task complete
 or equate a renderer's `approve` button with Torque acceptance.** **Stamp:**
-`tangent.interaction_acknowledge` makes this a contract
+`tangent_interaction_ack` makes this a contract
 (`internal/mcp/interaction_tools.go:123`, migration 0006). The residue is
 cosmetic and known: the approve and complete renderers still present an
 accept-shaped button, which `CW-20260825-0079` folds into the documentation

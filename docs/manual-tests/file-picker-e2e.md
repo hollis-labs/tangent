@@ -1,6 +1,6 @@
 # File Picker E2E
 
-Manual room-backed smoke test for `tangent.file-picker`.
+Manual room-backed smoke test for `tangent_file_picker`.
 
 ## Goal
 
@@ -9,7 +9,7 @@ Verify that Tangent can:
 - open a room-backed file-picker workflow
 - preserve the latest accepted selection on reopen
 - keep unsent browser-local draft state separate from canonical submitted room state
-- expose artifact-ref handoff metadata through `tangent.session_get`
+- expose artifact-ref handoff metadata through `tangent_session_get`
 
 ## Setup
 
@@ -25,7 +25,7 @@ Create a room:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"file-picker-manual"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"file-picker-manual"}}}'
 ```
 
 Copy the returned `roomID`.
@@ -37,7 +37,7 @@ Dispatch a file-picker envelope:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.file-picker","arguments":{"envelope":{"v":1,"id":"picker-manual-1","type":"tangent.file-picker","title":"File picker","data":{"picker_id":"picker-manual-1","browse_roots":[{"root_id":"workspace","label":"Workspace","path":"/tmp/workspace"}],"files":[{"artifact_id":"artifact-spec","name":"spec.md","uri":"artifact://artifact-spec","mime_type":"text/markdown","root_id":"workspace","relative_path":"docs/spec.md"},{"artifact_id":"artifact-readme","name":"README.md","uri":"artifact://artifact-readme","mime_type":"text/markdown","root_id":"workspace","relative_path":"README.md"}]},"meta":{"roomID":"<room-id>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_file_picker","arguments":{"envelope":{"v":1,"id":"picker-manual-1","type":"tangent.file-picker","title":"File picker","data":{"picker_id":"picker-manual-1","browse_roots":[{"root_id":"workspace","label":"Workspace","path":"/tmp/workspace"}],"files":[{"artifact_id":"artifact-spec","name":"spec.md","uri":"artifact://artifact-spec","mime_type":"text/markdown","root_id":"workspace","relative_path":"docs/spec.md"},{"artifact_id":"artifact-readme","name":"README.md","uri":"artifact://artifact-readme","mime_type":"text/markdown","root_id":"workspace","relative_path":"README.md"}]},"meta":{"roomID":"<room-id>"}}}}}'
 ```
 
 Open `http://127.0.0.1:7842/r/<room-id>` in a browser.
@@ -61,7 +61,7 @@ Dispatch a reopen turn:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.file-picker","arguments":{"envelope":{"v":1,"id":"picker-manual-2","type":"tangent.file-picker","data":{"picker_id":"picker-manual-1","browse_roots":[{"root_id":"workspace","label":"Workspace","path":"/tmp/workspace"}]},"meta":{"roomID":"<room-id>"}}}}}'
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_file_picker","arguments":{"envelope":{"v":1,"id":"picker-manual-2","type":"tangent.file-picker","data":{"picker_id":"picker-manual-1","browse_roots":[{"root_id":"workspace","label":"Workspace","path":"/tmp/workspace"}]},"meta":{"roomID":"<room-id>"}}}}}'
 ```
 
 In the reopened browser UI:
@@ -80,7 +80,7 @@ Inspect room state:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent.session_get","arguments":{"roomID":"<room-id>"}}}' | jq -r '.result.content[0].text' | jq '.file_picker'
+  -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent_session_get","arguments":{"roomID":"<room-id>"}}}' | jq -r '.result.content[0].text' | jq '.file_picker'
 ```
 
 Confirm the projection includes:

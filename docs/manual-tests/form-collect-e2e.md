@@ -1,6 +1,6 @@
 # Form Collect e2e
 
-End-to-end smoke for `tangent.form-collect`.
+End-to-end smoke for `tangent_form_collect`.
 
 ## Prerequisites
 
@@ -16,7 +16,7 @@ cd tangent  # your clone of the repo
 
 ## 2. Trigger a form-collect call
 
-Ask Claude Code to call `tangent.form-collect` with:
+Ask Claude Code to call `tangent_form_collect` with:
 
 - one required text field
 - one conditional checkbox/section pair

@@ -67,7 +67,7 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"tangent.inbox_list", "tangent.inbox_search", "tangent.inbox_get"} {
+	for _, name := range []string{"tangent_inbox_list", "tangent_inbox_search", "tangent_inbox_get"} {
 		found := false
 		for _, tool := range tools.Tools {
 			if tool.Name == name {
@@ -81,11 +81,11 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 			t.Fatalf("tool %s not registered", name)
 		}
 	}
-	page := callInteractionTool[interaction.InboxReadPage](t, client, "tangent.inbox_list", map[string]any{"requester_scope": "reader", "limit": 1})
+	page := callInteractionTool[interaction.InboxReadPage](t, client, "tangent_inbox_list", map[string]any{"requester_scope": "reader", "limit": 1})
 	if len(page.Items) != 1 || page.Items[0].ItemID != own.ID || page.NextCursor != "" {
 		t.Fatalf("listing: %#v", page)
 	}
-	item := callInteractionTool[interaction.InboxReadItem](t, client, "tangent.inbox_get", map[string]any{"requester_scope": "reader", "item_id": own.ID})
+	item := callInteractionTool[interaction.InboxReadItem](t, client, "tangent_inbox_get", map[string]any{"requester_scope": "reader", "item_id": own.ID})
 	encoded, err := json.Marshal(item)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 	if !strings.Contains(string(encoded), "synthetic inbox message") || strings.Contains(string(encoded), "do-not-project") {
 		t.Fatalf("unsafe projection: %s", encoded)
 	}
-	searched := callInteractionTool[interaction.InboxReadPage](t, client, "tangent.inbox_search", map[string]any{"requester_scope": "reader", "query": "INBOX MESSAGE"})
+	searched := callInteractionTool[interaction.InboxReadPage](t, client, "tangent_inbox_search", map[string]any{"requester_scope": "reader", "query": "INBOX MESSAGE"})
 	if len(searched.Items) != 1 || searched.Items[0].ItemID != own.ID {
 		t.Fatal("search failed")
 	}
@@ -102,13 +102,13 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 		args map[string]any
 		code string
 	}{
-		{"tangent.inbox_get", map[string]any{"requester_scope": "nonsubscriber", "item_id": own.ID}, "unauthorized"},
-		{"tangent.inbox_get", map[string]any{"requester_scope": "gateway:verified:reader", "item_id": foreign.ID}, "not_found"},
-		{"tangent.inbox_get", map[string]any{"requester_scope": "operator:local", "item_id": foreign.ID}, "not_found"},
-		{"tangent.inbox_list", map[string]any{"requester_scope": "reader", "limit": 101}, "invalid_request"},
-		{"tangent.inbox_search", map[string]any{"requester_scope": "reader", "query": " "}, "invalid_request"},
-		{"tangent.inbox_list", map[string]any{"requester_scope": "reader", "created_from": "not-a-time"}, "invalid_request"},
-		{"tangent.surface_close", map[string]any{"surface_id": surface.ID, "expected_revision": surface.Revision, "requester": map[string]any{"scope": "reader", "principal_ref": "synthetic-agent"}, "policy_ref": "test"}, "unauthorized"},
+		{"tangent_inbox_get", map[string]any{"requester_scope": "nonsubscriber", "item_id": own.ID}, "unauthorized"},
+		{"tangent_inbox_get", map[string]any{"requester_scope": "gateway:verified:reader", "item_id": foreign.ID}, "not_found"},
+		{"tangent_inbox_get", map[string]any{"requester_scope": "operator:local", "item_id": foreign.ID}, "not_found"},
+		{"tangent_inbox_list", map[string]any{"requester_scope": "reader", "limit": 101}, "invalid_request"},
+		{"tangent_inbox_search", map[string]any{"requester_scope": "reader", "query": " "}, "invalid_request"},
+		{"tangent_inbox_list", map[string]any{"requester_scope": "reader", "created_from": "not-a-time"}, "invalid_request"},
+		{"tangent_surface_close", map[string]any{"surface_id": surface.ID, "expected_revision": surface.Revision, "requester": map[string]any{"scope": "reader", "principal_ref": "synthetic-agent"}, "policy_ref": "test"}, "unauthorized"},
 	} {
 		result, callErr := client.CallTool(ctx, &mcpsdk.CallToolParams{Name: test.name, Arguments: test.args})
 		if callErr != nil {
@@ -126,7 +126,7 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 		{"operator:local", own.ID, "unauthorized"},
 	} {
 		result, callErr := client.CallTool(ctx, &mcpsdk.CallToolParams{
-			Name:      "tangent.inbox_get",
+			Name:      "tangent_inbox_get",
 			Arguments: map[string]any{"requester_scope": refusal.scope, "item_id": refusal.item},
 			Meta:      map[string]any{"authority": "operator", "participant_scope": "operator:local", "capability": "tangent:inbox-read:v1"},
 		})
@@ -137,7 +137,7 @@ func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 			t.Fatal("context metadata widened read authority")
 		}
 	}
-	for _, name := range []string{"tangent.inbox_get", "tangent.inbox_list"} {
+	for _, name := range []string{"tangent_inbox_get", "tangent_inbox_list"} {
 		args := map[string]any{"requester_scope": "reader", "item_id": foreign.ID, "authority": "gateway:verified", "capability": "tangent:inbox-read:v1"}
 		result, callErr := client.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args, Meta: map[string]any{"authority": "operator"}})
 		if callErr == nil && !result.IsError {

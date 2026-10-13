@@ -2,7 +2,7 @@
 // minimal channel pane (CW-20260907-0017): it composes channel.Store,
 // relay.Store, and hitl.Service's already-public Inbox() into the
 // presentation shape internal/server's browser API exposes at
-// /api/channels. It is not part of the tangent.relay_* MCP surface — the
+// /api/channels. It is not part of the tangent_relay_* MCP surface — the
 // operator is not an MCP client (ADR 0006 §3; CW-20260906-0066's package
 // doc says the same for the same reason) — and it makes no change to
 // internal/hitl's own contract: HITL correlation is read-only, parsing the
@@ -393,7 +393,7 @@ func (s *Service) deliveryState(ctx context.Context, exchange relay.Exchange) (s
 
 // SendMessage accepts one operator-composed message into the relay
 // journal, over channel.Store and relay.Store directly — never the
-// tangent.relay_* MCP surface, which is agent-facing only (ADR 0006 §3;
+// tangent_relay_* MCP surface, which is agent-facing only (ADR 0006 §3;
 // CW-20260906-0066's package doc). The idempotency key is minted here,
 // server-side, on every call: a human clicking Send has no retry loop to
 // de-duplicate against, unlike an agent's skill-driven send.

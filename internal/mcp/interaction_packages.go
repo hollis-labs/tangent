@@ -134,7 +134,7 @@ func workflowLogLabel(kind string) string {
 	return kind
 }
 
-// sessionGetOutputSchema composes tangent.session_get's advertised output
+// sessionGetOutputSchema composes tangent_session_get's advertised output
 // schema: the reflected core projection plus one property per installed
 // package, contributed by that package.
 //

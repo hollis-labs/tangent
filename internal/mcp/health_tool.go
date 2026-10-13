@@ -7,7 +7,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/health"
 )
 
-// tangent.health_report is the MCP half of CW-20260825-0066's three probes.
+// tangent_health_get is the MCP half of CW-20260825-0066's three probes.
 //
 // It exists because the HTTP probes are not reachable by every consumer that
 // needs them. Tether publishes Tangent as an MCP upstream
@@ -50,7 +50,7 @@ type healthReportResult struct {
 }
 
 func (s *Server) registerHealthTool() error {
-	return addInteractionTool(s, "tangent.health_report",
+	return addInteractionTool(s, "tangent_health_get",
 		"Report this host's operability as three distinct answers: liveness (is the process "+
 			"responding), readiness (database, migrations, definition registry, renderer host, "+
 			"delivery worker), and capability health for one requested interaction kind or, with "+

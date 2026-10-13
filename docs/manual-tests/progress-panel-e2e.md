@@ -6,7 +6,7 @@ Manual verification recipe for Tangent progress-panel turns.
 
 Verify that Tangent can:
 
-1. open a `tangent.progress-panel` room,
+1. open a `tangent_progress_panel` room,
 2. accept an explicit update,
 3. reopen with the latest accepted progress state,
 4. recover browser-local operator context,
@@ -25,15 +25,15 @@ Create a room:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent.session_create","arguments":{"title":"progress-e2e"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"progress-e2e"}}}'
 ```
 
-Call `tangent.progress-panel` using the returned `roomID`:
+Call `tangent_progress_panel` using the returned `roomID`:
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent.progress-panel","arguments":{"envelope":{"v":1,"id":"progress-e2e-1","type":"tangent.progress-panel","meta":{"roomID":"<room-id>"},"data":{"panel_id":"panel-e2e","items":[{"item_id":"scan","label":"Scan repo","status":"running"},{"item_id":"summary","label":"Write summary","status":"queued"}],"summary":{"current_status":"running","headline":"1 running"}}}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_progress_panel","arguments":{"envelope":{"v":1,"id":"progress-e2e-1","type":"tangent.progress-panel","meta":{"roomID":"<room-id>"},"data":{"panel_id":"panel-e2e","items":[{"item_id":"scan","label":"Scan repo","status":"running"},{"item_id":"summary","label":"Write summary","status":"queued"}],"summary":{"current_status":"running","headline":"1 running"}}}}}'
 ```
 
 Open `http://127.0.0.1:7842/r/<room-id>` in the browser.
@@ -63,7 +63,7 @@ Expected result:
 
 ## Reopen behavior
 
-Trigger another `tangent.progress-panel` call for the same `roomID` and
+Trigger another `tangent_progress_panel` call for the same `roomID` and
 `panel_id`, then open the room again.
 
 Expected result:
@@ -108,7 +108,7 @@ Run:
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
   -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent.session_get","arguments":{"roomID":"<room-id>"}}}' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_session_get","arguments":{"roomID":"<room-id>"}}}' \
   | jq -r '.result.content[0].text' | jq '.progress_panel'
 ```
 

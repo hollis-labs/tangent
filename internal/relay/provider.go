@@ -36,7 +36,7 @@ type Provider interface {
 }
 
 // Source is a caller's self-asserted identity: an external authority and a
-// reference within it. It reuses tangent.hitl_*'s exact vocabulary at the
+// reference within it. It reuses tangent_hitl_*'s exact vocabulary at the
 // transport layer (source.application_id / agent_id); here it is the same
 // shape with the JSON tags stripped, since a Go caller of Provider has no
 // wire format to satisfy.
@@ -46,7 +46,7 @@ type Source struct {
 }
 
 // CLIProvider is the first-party relay Provider (CW-20260906-0072): the
-// seven tangent.relay_* tools' orchestration, backed directly by a
+// seven tangent_relay_* tools' orchestration, backed directly by a
 // channel.Store and a Store. "CLI" names what attaches to it today — a
 // Claude Code session's cooperative-loop skill — not a constraint on what
 // could attach through the same seven methods later.
@@ -405,7 +405,7 @@ type CapabilitiesParams struct {
 
 // Capabilities is what one Provider actually supports, with unsupported
 // operations named explicitly rather than simulated — the same discipline
-// tangent.relay_capabilities documents at the wire layer.
+// tangent_relay_capabilities_get documents at the wire layer.
 type Capabilities struct {
 	Receive             bool
 	Ack                 bool

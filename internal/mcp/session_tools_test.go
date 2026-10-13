@@ -468,7 +468,7 @@ func TestSession_Create_Advance_Get_Close(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -513,7 +513,7 @@ func TestSession_Create_Advance_Get_Close(t *testing.T) {
 	}
 
 	closeRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_close",
+		Name: "tangent_session_close",
 		Arguments: map[string]any{
 			"roomID": roomID,
 			"status": "done",
@@ -539,7 +539,7 @@ func TestSession_List(t *testing.T) {
 	_, _ = createSession(t, rg, "room-B")
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_list",
+		Name:      "tangent_session_list",
 		Arguments: map[string]any{"active_only": true},
 	})
 	if err != nil {
@@ -584,7 +584,7 @@ func TestSession_Advance_Busy(t *testing.T) {
 	awaitPendingRoom(t, rg.mgr, roomID, 2*time.Second)
 
 	secondRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance",
+		Name: "tangent_session_advance",
 		Arguments: map[string]any{
 			"roomID": roomID,
 			"envelope": map[string]any{
@@ -641,7 +641,7 @@ func TestSession_PhaseToolsAndGet(t *testing.T) {
 	roomID, _ := createSession(t, rg, "phases")
 
 	phaseRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance_phase",
+		Name: "tangent_session_phase_advance",
 		Arguments: map[string]any{
 			"roomID":   roomID,
 			"to_phase": "intake",
@@ -656,7 +656,7 @@ func TestSession_PhaseToolsAndGet(t *testing.T) {
 	}
 
 	outputRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_set_phase_output",
+		Name: "tangent_session_phase_output_set",
 		Arguments: map[string]any{
 			"roomID": roomID,
 			"phase":  "intake",
@@ -673,7 +673,7 @@ func TestSession_PhaseToolsAndGet(t *testing.T) {
 
 	for _, phaseID := range []string{"draft", "intake"} {
 		res, callErr := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-			Name: "tangent.session_advance_phase",
+			Name: "tangent_session_phase_advance",
 			Arguments: map[string]any{
 				"roomID":   roomID,
 				"to_phase": phaseID,
@@ -688,7 +688,7 @@ func TestSession_PhaseToolsAndGet(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -740,13 +740,13 @@ func TestSession_PhaseToolsRejectInvalidPhaseID(t *testing.T) {
 	}{
 		{
 			name:     "advance empty",
-			tool:     "tangent.session_advance_phase",
+			tool:     "tangent_session_phase_advance",
 			args:     map[string]any{"roomID": roomID, "to_phase": "   "},
 			wantCode: envelopes.ErrorCodeValidationFailed,
 		},
 		{
 			name:     "set output empty key",
-			tool:     "tangent.session_set_phase_output",
+			tool:     "tangent_session_phase_output_set",
 			args:     map[string]any{"roomID": roomID, "phase": "draft", "key": " ", "value": "x"},
 			wantCode: envelopes.ErrorCodeValidationFailed,
 		},
@@ -774,7 +774,7 @@ func TestSession_Advance_UnknownRoom(t *testing.T) {
 	defer rg.cleanup()
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance",
+		Name: "tangent_session_advance",
 		Arguments: map[string]any{
 			"roomID": "does-not-exist",
 			"envelope": map[string]any{
@@ -803,7 +803,7 @@ func TestSession_TriageRegression(t *testing.T) {
 	done := make(chan advanceResult, 1)
 	go func() {
 		res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-			Name: "tangent.triage",
+			Name: "tangent_triage",
 			Arguments: map[string]any{
 				"envelope": map[string]any{
 					"v":     1,
@@ -856,7 +856,7 @@ func TestSession_TriageRegression(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": rm.ID},
 	})
 	if err != nil {
@@ -924,7 +924,7 @@ func TestSession_GetIncludesWhiteboardProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1021,7 +1021,7 @@ func TestSession_GetIncludesFilePickerProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1112,7 +1112,7 @@ func TestSession_GetIncludesDashboardProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1192,7 +1192,7 @@ func TestSession_GetIncludesWizardProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1274,7 +1274,7 @@ func TestSession_GetIncludesProgressPanelProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1346,7 +1346,7 @@ func TestSession_GetIncludesSpreadsheetReviewProjection(t *testing.T) {
 	}
 
 	getRes, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name:      "tangent.session_get",
+		Name:      "tangent_session_get",
 		Arguments: map[string]any{"roomID": roomID},
 	})
 	if err != nil {
@@ -1387,7 +1387,7 @@ type advanceResult struct {
 func createSession(t *testing.T, rg *sessionRig, title string) (string, string) {
 	t.Helper()
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_create",
+		Name: "tangent_session_create",
 		Arguments: map[string]any{
 			"title": title,
 			"meta":  map[string]any{},
@@ -1417,7 +1417,7 @@ func callAdvance(t *testing.T, rg *sessionRig, roomID, envelopeID string) advanc
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance",
+		Name: "tangent_session_advance",
 		Arguments: map[string]any{
 			"roomID": roomID,
 			"envelope": map[string]any{

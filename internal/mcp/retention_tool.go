@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// tangent.retention_status is the read half of CW-20260825-0072, and it is
+// tangent_retention_get is the read half of CW-20260825-0072, and it is
 // deliberately the only half.
 //
 // The six retention operations — capability expiry, draft deletion, payload
@@ -33,7 +33,7 @@ type retentionStatusInput struct {
 }
 
 func (s *Server) registerRetentionTool() error {
-	return addInteractionTool(s, "tangent.retention_status",
+	return addInteractionTool(s, "tangent_retention_get",
 		"Report this host's data-custody posture: whether the database still enforces its "+
 			"immutability guards, the schema and storage state, whether a process holds the "+
 			"single-writer lock, the host retention windows, how many interactions and surfaces "+
@@ -49,7 +49,7 @@ func (s *Server) handleRetentionStatus(
 ) (any, error) {
 	if s.retention == nil {
 		// An error result rather than a synthesized empty one, for the reason
-		// tangent.health_report gives: a caller that receives a custody report
+		// tangent_health_get gives: a caller that receives a custody report
 		// assumes something measured it.
 		return nil, toolErrorResult("retention_unavailable",
 			"this build serves MCP without a retention reporter, so the "+

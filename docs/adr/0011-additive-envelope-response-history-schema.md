@@ -26,7 +26,7 @@ the historical record; this decision does not edit them.
 ## Context
 
 The MCP SDK reflects `sessionGetResult`, including historical go-envelopes
-`Response` values, into the advertised `tangent.session_get` output schema.
+`Response` values, into the advertised `tangent_session_get` output schema.
 Upgrading the dependency adds optional fields to that schema even though
 Tangent does not populate them. The freeze tests correctly reject the change.
 Their header requires a separately accepted ADR for any digest change.
@@ -44,7 +44,7 @@ reflection/composition behavior. Chrispian accepted this exact expansion on 2026
 remains its own commit; a passing test alone does not confer approval.
 
 ADR 0003's property-for-property comparison yields this complete difference.
-Paths are relative to the `tangent.session_get` output schema.
+Paths are relative to the `tangent_session_get` output schema.
 
 | Property | Before | After |
 | --- | --- | --- |

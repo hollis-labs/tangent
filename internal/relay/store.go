@@ -728,7 +728,7 @@ func (s *Store) GetRead(ctx context.Context, exchangeID, participantID string) (
 
 // ── presence ────────────────────────────────────────────────────────────
 
-// MaximumReceiveWait bounds Receive's wait the same way tangent.hitl_await
+// MaximumReceiveWait bounds Receive's wait the same way tangent_hitl_await
 // is bounded — under the 60s HTTP write timeout the transport itself
 // enforces (measured by the CW-20260907-0016 spike). This is a transport
 // constraint, not a schema one; Receive does not change it.

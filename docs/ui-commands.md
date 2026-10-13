@@ -34,9 +34,9 @@ this task does not add a global socket endpoint or create rooms on attachment.
 `mcp.WithUICommands` injects the same broker used by `ws.SetUICommands`,
 before serving. Omission returns `ui_unavailable`; a broker with absent or
 denied verified authority returns `ui_forbidden`. Production omits this option.
-The shipped tools are `tangent.view_get`, `tangent.ui_navigate`,
-`tangent.ui_open_modal`, `tangent.ui_close_modal`, `tangent.ui_open_drawer`,
-`tangent.ui_close_drawer` and `tangent.ui_focus_item`. Inputs are the core-owned
+The shipped tools are `tangent_view_get`, `tangent_ui_navigate`,
+`tangent_ui_modal_open`, `tangent_ui_modal_close`, `tangent_ui_drawer_open`,
+`tangent_ui_drawer_close` and `tangent_ui_item_focus`. Inputs are the core-owned
 closed argument objects, with no participant/session/conversation selectors.
 View reads return the fresh detached descriptor, revision and control setting,
 without binding or attachment identifiers. Reads remain allowed when control

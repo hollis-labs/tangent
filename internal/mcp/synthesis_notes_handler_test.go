@@ -95,7 +95,7 @@ func TestSynthesisNotes_InputValidation(t *testing.T) {
 	defer rg.cleanup()
 
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.synthesis_notes",
+		Name: "tangent_synthesis_notes",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":    1,
@@ -146,7 +146,7 @@ func callSynthesisNotes(
 	}
 
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.synthesis_notes",
+		Name: "tangent_synthesis_notes",
 		Arguments: map[string]any{
 			"envelope": map[string]any{
 				"v":     1,
@@ -227,7 +227,7 @@ func synthesisFrameData(t *testing.T, frame map[string]any) map[string]any {
 func advancePhase(t *testing.T, rg *sessionRig, roomID, phase string) {
 	t.Helper()
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_advance_phase",
+		Name: "tangent_session_phase_advance",
 		Arguments: map[string]any{
 			"roomID":   roomID,
 			"to_phase": phase,
@@ -249,7 +249,7 @@ type synthesisStatePayload struct {
 func getSynthesisState(t *testing.T, rg *sessionRig, roomID string) synthesisStatePayload {
 	t.Helper()
 	res, err := rg.mcpClient.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.session_get",
+		Name: "tangent_session_get",
 		Arguments: map[string]any{
 			"roomID": roomID,
 		},

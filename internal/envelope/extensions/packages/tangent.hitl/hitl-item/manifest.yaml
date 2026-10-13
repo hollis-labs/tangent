@@ -26,7 +26,7 @@
 #     module and the durable draft path has no production caller.
 #
 # ADR 0003 §8 C6 freezes tangent.hitl-item v1.0, the /api/hitl surface, and the
-# four tangent.hitl_* tools at their contract version. Nothing in this manifest
+# four tangent_hitl_* tools at their contract version. Nothing in this manifest
 # may change a wire shape; it describes what already ships.
 
 manifest_version: "1.0.0"

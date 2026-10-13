@@ -102,7 +102,7 @@ type sessionGetResult struct {
 	// package own its projection type without core declaring a field for it.
 	//
 	// It is unexported and has no tag on purpose: it must not be reflected
-	// into tangent.session_get's advertised output schema, because that schema
+	// into tangent_session_get's advertised output schema, because that schema
 	// is composed at registration from the same packages' own contributions
 	// (see sessionGetOutputSchema).
 	packageProjections map[string]any
@@ -111,7 +111,7 @@ type sessionGetResult struct {
 // MarshalJSON emits the core projection with every package's projection
 // spliced in as a sibling field.
 //
-// ADR 0003 §8 C6 freezes tangent.session_get's shape, and the SPA and every
+// ADR 0003 §8 C6 freezes tangent_session_get's shape, and the SPA and every
 // v0.12 client read `form_collect` at the top level of this object. Nesting
 // package state under a container would have been the cleaner design and is a
 // wire break; splicing preserves the exact bytes while letting the field's
@@ -224,7 +224,7 @@ func (s *Server) handleSessionGet(
 
 // roomProjection assembles one room's full projection.
 //
-// It is shared by tangent.session_get and the browser room API so the two
+// It is shared by tangent_session_get and the browser room API so the two
 // cannot drift: migrating the SPA off /mcp must not change what the SPA sees,
 // or the migration becomes a contract change instead of a transport one.
 func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetResult, bool, error) {
@@ -398,7 +398,7 @@ func (s *Server) visibleRooms(
 }
 
 // advanceRoomEnvelope is the single entry point every named room workflow and
-// tangent.session_advance funnels through.
+// tangent_session_advance funnels through.
 //
 // When the durable substrate is installed it routes to the canonical
 // compatibility adapter; the legacy blocking path below remains only for
@@ -427,7 +427,7 @@ func (s *Server) advanceRoomEnvelope(
 	if err := s.envSvc.Validate(presented); err != nil {
 		return nil, triageErrorResult(err)
 	}
-	// Every named workflow and tangent.session_advance passes through here, so
+	// Every named workflow and tangent_session_advance passes through here, so
 	// this is where the seventeen workflow tools stop being able to reuse an
 	// arbitrary caller-supplied room and receive that room's human response.
 	// A room the caller just created has no owner yet, which AuthorizeRoom
@@ -595,7 +595,7 @@ func emptySessionGetResult() sessionGetResult {
 // its own footing: a whole URL is an unbounded string that will carry a query
 // or a fragment as soon as scoped launch capabilities exist, and there is no
 // reason to pre-commit to that leak. The room id is the identifier a person
-// pastes into `tangent.session_get` or appends to /r/ themselves.
+// pastes into `tangent_session_get` or appends to /r/ themselves.
 func (s *Server) logWorkflowRoomCreated(workflow, roomID, envelopeID string) {
 	slog.Default().Info(workflow+" room created", "room", roomID, "envelope", envelopeID)
 }

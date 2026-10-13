@@ -163,8 +163,8 @@ catalog:
 	result, _ := listed["result"].(map[string]any)
 	tools, _ := result["tools"].([]any)
 	want := map[string]bool{
-		"tangent.hitl_enqueue": false, "tangent.hitl_get": false,
-		"tangent.hitl_await": false, "tangent.hitl_withdraw": false,
+		"tangent_hitl_enqueue": false, "tangent_hitl_get": false,
+		"tangent_hitl_await": false, "tangent_hitl_withdraw": false,
 	}
 	for _, rawTool := range tools {
 		tool, _ := rawTool.(map[string]any)
@@ -208,31 +208,31 @@ catalog:
 			"content": "Native-flat discovery preserves the object-root HITL tool schema.",
 		}},
 	}
-	enqueued := gateway.callTool(t, 3, "tangent.hitl_enqueue", request, false)
+	enqueued := gateway.callTool(t, 3, "tangent_hitl_enqueue", request, false)
 	itemID, _ := enqueued["item_id"].(string)
 	if itemID == "" {
 		t.Fatalf("Tether enqueue returned no item_id: %#v", enqueued)
 	}
 	caller := map[string]any{"application_id": "tether-docs-smoke"}
-	got := gateway.callTool(t, 4, "tangent.hitl_get", map[string]any{
+	got := gateway.callTool(t, 4, "tangent_hitl_get", map[string]any{
 		"contract_version": "1.0", "item_id": itemID, "caller": caller,
 	}, false)
 	if got["mode"] != "get" {
 		t.Fatalf("Tether get projection = %#v", got)
 	}
-	waited := gateway.callTool(t, 5, "tangent.hitl_await", map[string]any{
+	waited := gateway.callTool(t, 5, "tangent_hitl_await", map[string]any{
 		"contract_version": "1.0", "item_id": itemID, "caller": caller, "wait_ms": 0,
 	}, false)
 	if waited["wait_status"] != "timeout" {
 		t.Fatalf("Tether await projection = %#v", waited)
 	}
-	withdrawn := gateway.callTool(t, 6, "tangent.hitl_withdraw", map[string]any{
+	withdrawn := gateway.callTool(t, 6, "tangent_hitl_withdraw", map[string]any{
 		"contract_version": "1.0", "item_id": itemID, "caller": caller,
 	}, false)
 	if withdrawn["state"] != "canceled" || withdrawn["cause"] != "caller_withdrawn" {
 		t.Fatalf("Tether withdraw projection = %#v", withdrawn)
 	}
-	errorBody := gateway.callTool(t, 7, "tangent.hitl_get", map[string]any{
+	errorBody := gateway.callTool(t, 7, "tangent_hitl_get", map[string]any{
 		"contract_version": "1.0", "item_id": itemID,
 		"caller": map[string]any{"application_id": "wrong-caller"},
 	}, true)

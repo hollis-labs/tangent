@@ -25,25 +25,25 @@ func (s *Server) registerHITLTools() error {
 		handler     func(context.Context, map[string]any) (any, error)
 	}{
 		{
-			name: "tangent.hitl_enqueue", definition: extensions.HITLItemRequestDefinition,
+			name: "tangent_hitl_enqueue", definition: extensions.HITLItemRequestDefinition,
 			output:      extensions.HITLItemHandleDefinition,
 			description: "Enqueue one durable approval or persistent-attention item and immediately return its stable handle and FIFO position.",
 			handler:     s.handleHITLEnqueue,
 		},
 		{
-			name: "tangent.hitl_get", definition: extensions.HITLGetCommandDefinition,
+			name: "tangent_hitl_get", definition: extensions.HITLGetCommandDefinition,
 			output:      extensions.HITLRetrievalResultDefinition,
 			description: "Get the current durable HITL item or its immutable terminal outcome by stable item handle.",
 			handler:     s.handleHITLGet,
 		},
 		{
-			name: "tangent.hitl_await", definition: extensions.HITLAwaitCommandDefinition,
+			name: "tangent_hitl_await", definition: extensions.HITLAwaitCommandDefinition,
 			output:      extensions.HITLRetrievalResultDefinition,
 			description: "Wait at most 50 seconds for a durable HITL item to become terminal; timeout changes no lifecycle state.",
 			handler:     s.handleHITLAwait,
 		},
 		{
-			name: "tangent.hitl_withdraw", definition: extensions.HITLWithdrawCommandDefinition,
+			name: "tangent_hitl_withdraw", definition: extensions.HITLWithdrawCommandDefinition,
 			output:      extensions.HITLTerminalOutcomeDefinition,
 			description: "Withdraw one caller-owned HITL item with an immutable caller_withdrawn terminal outcome.",
 			handler:     s.handleHITLWithdraw,

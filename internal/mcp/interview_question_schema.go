@@ -4,7 +4,7 @@ const interviewQuestionEnvelopeType = "tangent.interview-question"
 
 var interviewQuestionInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.interview_question input",
+  "title": "tangent_interview_question input",
   "description": "An interview-question envelope to dispatch through Tangent.",
   "properties": {
     "envelope": {

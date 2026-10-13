@@ -4,7 +4,7 @@ const synthesisNotesEnvelopeType = "tangent.synthesis-notes"
 
 var synthesisNotesInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.synthesis_notes input",
+  "title": "tangent_synthesis_notes input",
   "description": "A synthesis-notes envelope to persist private notes and send a phase-gated preview through Tangent.",
   "properties": {
     "envelope": {

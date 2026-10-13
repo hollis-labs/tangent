@@ -4,7 +4,7 @@ const proseRevisionEnvelopeType = "tangent.prose-revision"
 
 var proseRevisionInputSchemaJSON = []byte(`{
   "type": "object",
-  "title": "tangent.prose_revision input",
+  "title": "tangent_prose_revision input",
   "description": "A prose-revision envelope to dispatch through Tangent and persist explicit per-suggestion revision outcomes on the room.",
   "properties": {
     "envelope": {

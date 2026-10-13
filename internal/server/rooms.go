@@ -12,8 +12,8 @@ import (
 // The browser room API replaces the SPA's direct `/mcp` POSTs.
 //
 // Until now `ui/src/routes/Room.tsx` and `ui/src/components/TabStrip.tsx`
-// reached `tangent.session_get`, `tangent.session_list`, and
-// `tangent.session_close` by posting JSON-RPC at `/mcp`, a route with no
+// reached `tangent_session_get`, `tangent_session_list`, and
+// `tangent_session_close` by posting JSON-RPC at `/mcp`, a route with no
 // origin, same-site, or CSRF middleware at all. The browser was therefore both
 // participant and caller, through a route any origin could reach — and once
 // `session_close` became partition-enforcing, that same route was the one the
@@ -35,7 +35,7 @@ type RoomService interface {
 	// ListBrowserRooms returns the rooms visible to the browser caller.
 	ListBrowserRooms(ctx context.Context, activeOnly bool) ([]room.RoomSummary, error)
 	// InspectBrowserRoom returns one room's projection. The payload shape is
-	// the `tangent.session_get` result, unchanged.
+	// the `tangent_session_get` result, unchanged.
 	InspectBrowserRoom(ctx context.Context, roomID string) (any, error)
 	// CloseBrowserRoom closes one room under the browser caller's identity.
 	CloseBrowserRoom(ctx context.Context, roomID, status string) error

@@ -28,14 +28,14 @@ import (
 // That is the specific gap here. These tests drive the whole chain the way a
 // browser does — MCP call → pending envelope → WebSocket `draft` frame →
 // `Room.HandleDraftFrom` → `roomDisposition.Draft` → `interaction.SaveDraft` →
-// `tangent.surface_get` — and assert what a caller can actually observe. A test
+// `tangent_surface_get` — and assert what a caller can actually observe. A test
 // that called SaveDraft directly would have passed against the broken client.
 //
 // The board is the consumer, so it is what drives them. Nothing here is
 // board-specific: the chain is the same for any kind whose manifest declares
 // `draft_custody: tangent-custodied`.
 
-// surfaceSnapshot is the part of tangent.surface_get these tests read.
+// surfaceSnapshot is the part of tangent_surface_get these tests read.
 type surfaceSnapshot struct {
 	Surface struct {
 		SurfaceID string `json:"surface_id"`
@@ -60,7 +60,7 @@ func getSurface(t *testing.T, rg *sessionRig, surfaceID string) surfaceSnapshot 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	res, err := rg.mcpClient.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: "tangent.surface_get",
+		Name: "tangent_surface_get",
 		// The room workflow's own caller scope. roomflow.DefaultCaller owns the
 		// surface, so this is the caller reading back what it opened — which is
 		// the pull ADR 0007 §5 describes, not a third party reading someone
@@ -86,7 +86,7 @@ func getSurface(t *testing.T, rg *sessionRig, surfaceID string) surfaceSnapshot 
 // pending receipt plus a live browser socket that has seen the envelope.
 func openAsyncBoard(t *testing.T, rg *sessionRig, envelopeID string) (pendingReceipt, *websocket.Conn) {
 	t.Helper()
-	fixture := fixtureByTool(t, "tangent.app-board")
+	fixture := fixtureByTool(t, "tangent_app_board")
 	roomID, _ := createSession(t, rg, "app-board")
 
 	conn, _, err := websocket.Dial(context.Background(), rg.wsURL(roomID), nil)

@@ -17,10 +17,10 @@ import (
 func (s *Server) registerDocsTools() error {
 	schema, err := buildDocsInputSchema()
 	if err != nil {
-		return fmt.Errorf("build tangent.docs_enqueue input schema: %w", err)
+		return fmt.Errorf("build tangent_docs_enqueue input schema: %w", err)
 	}
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent.docs_enqueue",
+		Name:        "tangent_docs_enqueue",
 		Description: "Enqueue one durable document in the operator's Docs inbox for reading at their own pace, with an optional acknowledgment request.",
 		InputSchema: schema,
 	}, s.handleDocsEnqueue)

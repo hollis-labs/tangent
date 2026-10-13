@@ -620,7 +620,7 @@ type ResolveInteractionInput struct {
 	Participant                 ActorBinding `json:"participant"`
 	ResponseKind                string       `json:"response_kind"`
 	// ResponsePayload is what the durable resolution record stores and what
-	// tangent.interaction_get and tangent.interaction_await hand back. Its
+	// tangent_interaction_get and tangent_interaction_await hand back. Its
 	// shape is the caller's: the room path stores the whole envelopes.Response
 	// so a resolution replays as the frame the participant sent, while the
 	// HITL path stores the bare typed response body.

@@ -188,7 +188,7 @@ func createRoom(
 	tools tangentplugin.ToolCaller,
 	title string,
 ) (roomID string, url string, err error) {
-	result, err := tools.CallTool(ctx, "tangent.session_create", map[string]any{
+	result, err := tools.CallTool(ctx, "tangent_session_create", map[string]any{
 		"title": title,
 		"meta":  map[string]any{"app": "ledger", "surface": "board"},
 	})
@@ -203,7 +203,7 @@ func createRoom(
 		return "", "", fmt.Errorf("ledger: create room: %w", err)
 	}
 	if created.RoomID == "" {
-		return "", "", fmt.Errorf("ledger: tangent.session_create returned no room id")
+		return "", "", fmt.Errorf("ledger: tangent_session_create returned no room id")
 	}
 	return created.RoomID, created.URL, nil
 }
@@ -216,7 +216,7 @@ func advance(
 	roomID string,
 	envelope map[string]any,
 ) error {
-	result, err := tools.CallTool(ctx, "tangent.session_advance", map[string]any{
+	result, err := tools.CallTool(ctx, "tangent_session_advance", map[string]any{
 		"roomID":     roomID,
 		"envelope":   envelope,
 		"completion": map[string]any{"mode": "async"},

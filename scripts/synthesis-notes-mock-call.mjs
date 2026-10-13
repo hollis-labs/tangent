@@ -121,7 +121,7 @@ async function runSkipPath() {
 }
 
 async function createRoom(title) {
-  const result = await callTool("tangent.session_create", { title });
+  const result = await callTool("tangent_session_create", { title });
   const payload = JSON.parse(result.result.content[0].text);
   if (!payload.roomID) {
     throw new Error(`missing roomID in session_create: ${JSON.stringify(payload)}`);
@@ -150,7 +150,7 @@ function callSynthesisNotes(roomID, envelopeID, outlineState) {
       ],
     };
   }
-  return callTool("tangent.synthesis_notes", {
+  return callTool("tangent_synthesis_notes", {
     envelope: {
       v: 1,
       id: envelopeID,
@@ -163,11 +163,11 @@ function callSynthesisNotes(roomID, envelopeID, outlineState) {
 }
 
 async function callSessionAdvancePhase(roomID, toPhase) {
-  await callTool("tangent.session_advance_phase", { roomID, to_phase: toPhase });
+  await callTool("tangent_session_phase_advance", { roomID, to_phase: toPhase });
 }
 
 async function callSessionGet(roomID) {
-  const result = await callTool("tangent.session_get", { roomID });
+  const result = await callTool("tangent_session_get", { roomID });
   return JSON.parse(result.result.content[0].text);
 }
 

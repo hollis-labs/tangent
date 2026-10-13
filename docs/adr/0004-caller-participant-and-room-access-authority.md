@@ -87,8 +87,8 @@ not wired in `cmd/tangent/main.go`, so no administrator or delivery-worker
 authority exists in the shipped process.
 
 **The SPA is itself an unauthenticated MCP caller.** `ui/src/routes/Room.tsx:233`
-POSTs `tangent.session_get` to `/mcp`, and `ui/src/components/TabStrip.tsx:58`,
-`:182` POST `tangent.session_close` and `tangent.session_list`. `/mcp` and `/sse`
+POSTs `tangent_session_get` to `/mcp`, and `ui/src/components/TabStrip.tsx:58`,
+`:182` POST `tangent_session_close` and `tangent_session_list`. `/mcp` and `/sse`
 carry no origin, same-site, or CSRF middleware — only `/api/hitl/*` does, via
 `hitlSameOrigin` (`internal/server/hitl.go:208`). The browser is therefore both
 participant and caller today, through a route that any origin can reach.
@@ -165,7 +165,7 @@ powers.
 
 | Capability | Grants | Shipped operations it gates |
 |---|---|---|
-| `view` | Read a surface or interaction projection, its definition binding, its state, and its terminal outcome. Reading a terminal outcome writes a `TerminalOutcomeRetrievalRecord`. | `tangent.inbox_list`, `tangent.inbox_search`, `tangent.inbox_get` (pure caller/surface-owner reads; no retrieval write), `surface_get`, `interaction_get`, `interaction_await`, `session_get`, `session_list`, `hitl_get`, `hitl_await`, `GET /api/hitl`, `GET /api/hitl/items/{id}`, `GET /api/hitl/events`, evidence reference and preview reads, the WebSocket projection stream. |
+| `view` | Read a surface or interaction projection, its definition binding, its state, and its terminal outcome. Reading a terminal outcome writes a `TerminalOutcomeRetrievalRecord`. | `tangent_inbox_list`, `tangent_inbox_search`, `tangent_inbox_get` (pure caller/surface-owner reads; no retrieval write), `surface_get`, `interaction_get`, `interaction_await`, `session_get`, `session_list`, `hitl_get`, `hitl_await`, `GET /api/hitl`, `GET /api/hitl/items/{id}`, `GET /api/hitl/events`, evidence reference and preview reads, the WebSocket projection stream. |
 | `submit` | Create an interaction on a surface, mutate caller-owned surface workflow state, and open a surface under a given owner scope. | `interaction_submit`, `session_advance`, `session_advance_phase`, `session_set_phase_output`, `surface_open`, `hitl_enqueue`, the 17 workflow tools. |
 | `draft` | Write an immutable `DraftRevision` and acknowledge a presented projection revision. Never terminal. | `SaveDraft`, `POST /api/hitl/items/{id}/present`, the SPA's per-workflow draft persistence when it becomes server-custodied. |
 | `resolve` | Submit a terminal response to a presented interaction at its exact pinned revisions. Sealed as an immutable `ResolutionRecord`. | `POST /api/hitl/items/{id}/resolve`, the WebSocket `response` frame. |
@@ -452,29 +452,29 @@ the operation is bounded by any caller identity at all in the shipped process.
 
 | Tool | Scoped today | Target capability | Target object |
 |---|---|---|---|
-| `tangent.list_workflows` | N/A — no object | none | Definition catalog; publisher attribution only |
+| `tangent_workflow_list` | N/A — no object | none | Definition catalog; publisher attribution only |
 | The 17 workflow tools: `triage`, `feedback`, `form-collect`, `design-iteration`, `interview_question`, `block_draft`, `prose_revision`, `output_render`, `whiteboard`, `dashboard`, `file-picker`, `progress-panel`, `wizard`, `diff-review`, `spreadsheet-review`, `approval-queue`, `synthesis_notes` | **No.** Any caller may reuse any room via `env.Meta["roomID"]` and receive that room's human response | `submit` | Named surface when reused; a new caller-owned surface otherwise |
-| `tangent.session_create` | **No** | `submit` | New surface, `owner_scope` = resolved caller scope |
-| `tangent.session_advance` | **No.** Any caller may push into any room | `submit` | Named surface |
-| `tangent.session_get` | **No.** Returns full envelope history and phase outputs for any room | `view` | Named surface |
-| `tangent.session_advance_phase` | **No** | `submit` | Named surface |
-| `tangent.session_set_phase_output` | **No** | `submit` | Named surface |
-| `tangent.session_close` | **No.** Any caller may close any room | `close` | Named surface |
-| `tangent.session_list` | **No.** Returns every room in the process | `view`, filtered (§9) | Surface set |
-| `tangent.surface_open` | Partially — records `caller.scope`, but accepts an unchecked wire `owner_scope` | `submit`; `owner_scope` host-derived | New or named surface |
-| `tangent.surface_get` | Asserted string only | `view` | Named surface |
-| `tangent.surface_close` | Asserted string only (`Requester.Scope == OwnerScope`) | `close` | Named surface |
-| `tangent.interaction_submit` | **No cross-surface check.** Only `SurfaceAccessPolicy` gates the target surface | `submit` | Named surface |
-| `tangent.interaction_get` | Asserted `requester_scope` | `view` | Named interaction |
-| `tangent.interaction_await` | Asserted `requester_scope` | `view` | Named interaction |
-| `tangent.interaction_cancel` | Asserted string; adapter already restricts causes to the two caller causes | `cancel` | Named interaction |
-| `tangent.interaction_supersede` | Asserted string; already requires same caller scope and same surface for the replacement | `cancel` + `submit` | Both interactions |
-| `tangent.interaction_list_kinds` | N/A — no object | none | Definition catalog |
-| `tangent.interaction_resolve_definition` | N/A — no object | none | Definition catalog |
-| `tangent.hitl_enqueue` | Records `direct-loopback:<application_id>`; enqueue itself is open by design | `submit` on the operator surface, granted to every admitted caller | `surface_hitl_default` |
-| `tangent.hitl_get` | Asserted `caller.application_id` | `view`, own items only | Named item |
-| `tangent.hitl_await` | Asserted `caller.application_id` | `view`, own items only | Named item |
-| `tangent.hitl_withdraw` | Asserted `caller.application_id` | `cancel`, own items only, cause `caller_withdrawn` | Named item |
+| `tangent_session_create` | **No** | `submit` | New surface, `owner_scope` = resolved caller scope |
+| `tangent_session_advance` | **No.** Any caller may push into any room | `submit` | Named surface |
+| `tangent_session_get` | **No.** Returns full envelope history and phase outputs for any room | `view` | Named surface |
+| `tangent_session_phase_advance` | **No** | `submit` | Named surface |
+| `tangent_session_phase_output_set` | **No** | `submit` | Named surface |
+| `tangent_session_close` | **No.** Any caller may close any room | `close` | Named surface |
+| `tangent_session_list` | **No.** Returns every room in the process | `view`, filtered (§9) | Surface set |
+| `tangent_surface_open` | Partially — records `caller.scope`, but accepts an unchecked wire `owner_scope` | `submit`; `owner_scope` host-derived | New or named surface |
+| `tangent_surface_get` | Asserted string only | `view` | Named surface |
+| `tangent_surface_close` | Asserted string only (`Requester.Scope == OwnerScope`) | `close` | Named surface |
+| `tangent_interaction_submit` | **No cross-surface check.** Only `SurfaceAccessPolicy` gates the target surface | `submit` | Named surface |
+| `tangent_interaction_get` | Asserted `requester_scope` | `view` | Named interaction |
+| `tangent_interaction_await` | Asserted `requester_scope` | `view` | Named interaction |
+| `tangent_interaction_cancel` | Asserted string; adapter already restricts causes to the two caller causes | `cancel` | Named interaction |
+| `tangent_interaction_supersede` | Asserted string; already requires same caller scope and same surface for the replacement | `cancel` + `submit` | Both interactions |
+| `tangent_interaction_kind_list` | N/A — no object | none | Definition catalog |
+| `tangent_interaction_definition_resolve` | N/A — no object | none | Definition catalog |
+| `tangent_hitl_enqueue` | Records `direct-loopback:<application_id>`; enqueue itself is open by design | `submit` on the operator surface, granted to every admitted caller | `surface_hitl_default` |
+| `tangent_hitl_get` | Asserted `caller.application_id` | `view`, own items only | Named item |
+| `tangent_hitl_await` | Asserted `caller.application_id` | `view`, own items only | Named item |
+| `tangent_hitl_withdraw` | Asserted `caller.application_id` | `cancel`, own items only, cause `caller_withdrawn` | Named item |
 
 Non-MCP surfaces, for completeness: `/healthz` stays open, as do the readiness
 and capability probes added beside it (`/readyz`, `/healthz/capability`,

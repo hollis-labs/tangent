@@ -135,7 +135,7 @@ func TestMatchingCatalogEntryProducesNoFinding(t *testing.T) {
 // form of the same disappearance: the gateway answered, and has nothing from
 // this upstream.
 func TestGatewayAdvertisingNoTangentToolsIsUpstreamAbsent(t *testing.T) {
-	reference := smoke.NewSurface([]string{"tangent.health_report", "tangent.list_workflows"})
+	reference := smoke.NewSurface([]string{"tangent_health_get", "tangent_workflow_list"})
 	finding := smoke.ClassifyGatewayDiscovery(reference, smoke.NewSurface(nil), "tether gateway")
 	if finding == nil || finding.Mode != smoke.ModeUpstreamAbsent {
 		t.Fatalf("empty gateway surface classified as %v, want %s", finding, smoke.ModeUpstreamAbsent)
@@ -150,14 +150,14 @@ func TestGatewayAdvertisingNoTangentToolsIsUpstreamAbsent(t *testing.T) {
 // Tangent with a cached tool_count of 25 against a shipped build advertising a
 // surface twice that size.
 func TestGatewayAdvertisingAStaleSurfaceIsCatalogStale(t *testing.T) {
-	reference := smoke.NewSurface([]string{"tangent.health_report", "tangent.list_workflows", "tangent.hitl_get"})
-	observed := smoke.NewSurface([]string{"tangent.list_workflows"})
+	reference := smoke.NewSurface([]string{"tangent_health_get", "tangent_workflow_list", "tangent_hitl_get"})
+	observed := smoke.NewSurface([]string{"tangent_workflow_list"})
 	finding := smoke.ClassifyGatewayDiscovery(reference, observed, "tether gateway")
 	if finding == nil || finding.Mode != smoke.ModeCatalogStale {
 		t.Fatalf("stale gateway surface classified as %v, want %s", finding, smoke.ModeCatalogStale)
 	}
 	rendered := finding.String()
-	for _, want := range []string{"FAIL [CATALOG_STALE]", "tangent.health_report", "absent there"} {
+	for _, want := range []string{"FAIL [CATALOG_STALE]", "tangent_health_get", "absent there"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("finding does not say %q:\n%s", want, rendered)
 		}
@@ -167,7 +167,7 @@ func TestGatewayAdvertisingAStaleSurfaceIsCatalogStale(t *testing.T) {
 // TestIdenticalSurfacesProduceNoFinding — a matching surface is the pass case,
 // and the digest is what makes the comparison cheap to print.
 func TestIdenticalSurfacesProduceNoFinding(t *testing.T) {
-	names := []string{"tangent.health_report", "tangent.list_workflows"}
+	names := []string{"tangent_health_get", "tangent_workflow_list"}
 	first := smoke.NewSurface(names)
 	second := smoke.NewSurface([]string{names[1], names[0]})
 	if first.Digest != second.Digest {

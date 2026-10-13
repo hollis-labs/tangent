@@ -74,20 +74,20 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	// Verify the HITL contract and its pure inbox read companions directly.
 	// Unrelated additive tools must not mask or prevent these contract checks.
 	want := map[string]bool{
-		"tangent.hitl_enqueue":   false,
-		"tangent.hitl_get":       false,
-		"tangent.hitl_await":     false,
-		"tangent.hitl_withdraw":  false,
-		"tangent.approval-queue": false,
-		"tangent.inbox_list":     false,
-		"tangent.inbox_search":   false,
-		"tangent.inbox_get":      false,
+		"tangent_hitl_enqueue":   false,
+		"tangent_hitl_get":       false,
+		"tangent_hitl_await":     false,
+		"tangent_hitl_withdraw":  false,
+		"tangent_approval_queue": false,
+		"tangent_inbox_list":     false,
+		"tangent_inbox_search":   false,
+		"tangent_inbox_get":      false,
 	}
 	for _, tool := range listed.Tools {
 		if _, tracked := want[tool.Name]; tracked {
 			want[tool.Name] = true
 		}
-		if tool.Name[:min(len(tool.Name), len("tangent.hitl_"))] == "tangent.hitl_" {
+		if tool.Name[:min(len(tool.Name), len("tangent_hitl_"))] == "tangent_hitl_" {
 			schemaRaw, _ := json.Marshal(tool.InputSchema)
 			var schema map[string]any
 			_ = json.Unmarshal(schemaRaw, &schema)
@@ -109,7 +109,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	}
 
 	reservedOpen, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.surface_open",
+		Name: "tangent_surface_open",
 		Arguments: map[string]any{
 			"surface_id":      hitl.DefaultSurfaceID,
 			"caller":          map[string]any{"scope": "operator:local", "principal_ref": "forged-operator"},
@@ -132,37 +132,37 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 			"agent_id":       "worker-1",
 		},
 	}
-	handle := callInteractionTool[hitl.ItemHandle](t, client, "tangent.hitl_enqueue", request)
+	handle := callInteractionTool[hitl.ItemHandle](t, client, "tangent_hitl_enqueue", request)
 	if handle.ItemID == "" || handle.SurfaceID != hitl.DefaultSurfaceID ||
 		handle.QueueSequence != 1 || handle.QueuePosition == nil || *handle.QueuePosition != 1 {
 		t.Fatalf("hitl_enqueue = %#v", handle)
 	}
-	retry := callInteractionTool[hitl.ItemHandle](t, client, "tangent.hitl_enqueue", request)
+	retry := callInteractionTool[hitl.ItemHandle](t, client, "tangent_hitl_enqueue", request)
 	if retry.ItemID != handle.ItemID || retry.QueueSequence != handle.QueueSequence {
 		t.Fatalf("idempotent hitl_enqueue = %#v, want %#v", retry, handle)
 	}
 	replacementRequest := cloneMap(request)
 	replacementRequest["idempotency_key"] = "direct-mcp-2"
 	replacementRequest["title"] = "Replacement item"
-	replacement := callInteractionTool[hitl.ItemHandle](t, client, "tangent.hitl_enqueue", replacementRequest)
+	replacement := callInteractionTool[hitl.ItemHandle](t, client, "tangent_hitl_enqueue", replacementRequest)
 	genericCaller := map[string]any{
 		"scope": "direct-loopback:codex", "principal_ref": "worker-1",
 	}
 	for name, arguments := range map[string]map[string]any{
-		"tangent.surface_get": {
+		"tangent_surface_get": {
 			"surface_id": hitl.DefaultSurfaceID, "requester_scope": "operator:local",
 		},
-		"tangent.interaction_get": {
+		"tangent_interaction_get": {
 			"interaction_id": handle.ItemID, "requester_scope": "direct-loopback:codex",
 		},
-		"tangent.interaction_await": {
+		"tangent_interaction_await": {
 			"interaction_id": handle.ItemID, "requester_scope": "direct-loopback:codex", "maximum_wait_ms": 1,
 		},
-		"tangent.interaction_cancel": {
+		"tangent_interaction_cancel": {
 			"interaction_id": handle.ItemID, "expected_revision": handle.Revision,
 			"requester": genericCaller, "cause": "caller_withdrawn",
 		},
-		"tangent.interaction_supersede": {
+		"tangent_interaction_supersede": {
 			"interaction_id": handle.ItemID, "expected_revision": handle.Revision,
 			"replacement_interaction_id": replacement.ItemID, "requester": genericCaller,
 		},
@@ -175,7 +175,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		}
 	}
 	contamination, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.interaction_submit",
+		Name: "tangent_interaction_submit",
 		Arguments: map[string]any{
 			"surface_id":      hitl.DefaultSurfaceID,
 			"caller":          map[string]any{"scope": "generic-app", "principal_ref": "generic-agent"},
@@ -188,7 +188,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		t.Fatalf("generic interaction_submit contaminated HITL surface: %#v, %v", contamination, err)
 	}
 	reservedClose, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.surface_close",
+		Name: "tangent_surface_close",
 		Arguments: map[string]any{
 			"surface_id": hitl.DefaultSurfaceID, "expected_revision": 2,
 			"requester":  map[string]any{"scope": "operator:local", "principal_ref": "forged-operator"},
@@ -202,7 +202,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	changed := cloneMap(request)
 	changed["title"] = "Changed immutable request"
 	conflict, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.hitl_enqueue", Arguments: changed,
+		Name: "tangent_hitl_enqueue", Arguments: changed,
 	})
 	if err != nil {
 		t.Fatalf("conflicting enqueue transport error: %v", err)
@@ -215,7 +215,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 
 	caller := map[string]any{"application_id": "codex", "principal_ref": "worker-2"}
 	getCall, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.hitl_get", Arguments: map[string]any{
+		Name: "tangent_hitl_get", Arguments: map[string]any{
 			"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 		},
 	})
@@ -231,7 +231,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		get.Item.State != interaction.InteractionStateStaged {
 		t.Fatalf("hitl_get = %#v", get)
 	}
-	waited := callInteractionTool[hitl.RetrievalResult](t, client, "tangent.hitl_await", map[string]any{
+	waited := callInteractionTool[hitl.RetrievalResult](t, client, "tangent_hitl_await", map[string]any{
 		"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller, "wait_ms": 0,
 	})
 	if waited.Mode != "await" || waited.WaitStatus != "timeout" || waited.Item.State != interaction.InteractionStateStaged {
@@ -239,7 +239,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	}
 
 	unauthorized, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.hitl_get",
+		Name: "tangent_hitl_get",
 		Arguments: map[string]any{
 			"contract_version": "1.0", "item_id": handle.ItemID,
 			"caller": map[string]any{"application_id": "another-app"},
@@ -252,7 +252,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		t.Fatalf("unauthorized get unexpectedly succeeded: %s", extractText(t, unauthorized))
 	}
 
-	withdrawn := callInteractionTool[hitl.TerminalOutcome](t, client, "tangent.hitl_withdraw", map[string]any{
+	withdrawn := callInteractionTool[hitl.TerminalOutcome](t, client, "tangent_hitl_withdraw", map[string]any{
 		"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 		"expected_revision": handle.Revision, "reason": "No longer needed",
 	})
@@ -260,13 +260,13 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 		withdrawn.Cause != interaction.TerminalCauseCallerWithdrawn {
 		t.Fatalf("hitl_withdraw = %#v", withdrawn)
 	}
-	repeated := callInteractionTool[hitl.TerminalOutcome](t, client, "tangent.hitl_withdraw", map[string]any{
+	repeated := callInteractionTool[hitl.TerminalOutcome](t, client, "tangent_hitl_withdraw", map[string]any{
 		"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 	})
 	if repeated.InteractionRevision != withdrawn.InteractionRevision || repeated.Cause != withdrawn.Cause {
 		t.Fatalf("repeated hitl_withdraw = %#v, want %#v", repeated, withdrawn)
 	}
-	terminal := callInteractionTool[hitl.RetrievalResult](t, client, "tangent.hitl_get", map[string]any{
+	terminal := callInteractionTool[hitl.RetrievalResult](t, client, "tangent_hitl_get", map[string]any{
 		"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 	})
 	if terminal.Item.QueuePosition != nil || terminal.Item.TerminalOutcome == nil ||
@@ -282,7 +282,7 @@ func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
 	httpResult := callHTTPMCP(t, httpServer.URL, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{
-			"name": "tangent.hitl_get",
+			"name": "tangent_hitl_get",
 			"arguments": map[string]any{
 				"contract_version": "1.0", "item_id": handle.ItemID, "caller": caller,
 			},

@@ -6,7 +6,7 @@ import (
 )
 
 // AgentTurnContractVersion is the payload contract version of the
-// tangent.agent-turn kind a plugin enqueues through tangent.turns_enqueue
+// tangent.agent-turn kind a plugin enqueues through tangent_turns_enqueue
 // (docs/contracts/agent-turns-inbox-v1.md). The host owns the kind and aliases
 // this constant; it lives here so a plugin and the host agree by construction.
 const AgentTurnContractVersion = "1.2"
@@ -14,7 +14,7 @@ const AgentTurnContractVersion = "1.2"
 //go:embed turns_enqueue.schema.json
 var turnsEnqueueInputSchema []byte
 
-// TurnsEnqueueInputSchema returns the JSON Schema tangent.turns_enqueue
+// TurnsEnqueueInputSchema returns the JSON Schema tangent_turns_enqueue
 // accepts: the tangent.agent-turn request schema, which the host owns and
 // ships in its package tree. A plugin that enqueues turns validates what it
 // builds against this in its own tests, so the contract with the host is a

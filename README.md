@@ -129,7 +129,7 @@ claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
 
 For Cursor, Codex, curl verification, and troubleshooting, see
 [`docs/mcp-integration.md`](docs/mcp-integration.md). For durable
-asynchronous approvals, see the `tangent.hitl_*` tools and
+asynchronous approvals, see the `tangent_hitl_*` tools and
 [`.agents/skills/tangent-hitl-inbox/SKILL.md`](.agents/skills/tangent-hitl-inbox/SKILL.md).
 
 ## Development

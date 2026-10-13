@@ -116,65 +116,70 @@ below no longer match what the binary advertises.
 
 The compatibility surface contains these room/workflow and session tools:
 
-- `tangent.list_workflows` — discovery.
-- `tangent.triage` — the bundled triage workflow.
-- `tangent.feedback` — the bundled structured-form workflow.
-- `tangent.form-collect` — the bundled generalized schema-driven form workflow.
-- `tangent.design-iteration` — sandboxed HTML preview + click/input iteration.
-- `tangent.whiteboard` — room-backed freeform canvas with explicit submit.
-- `tangent.spreadsheet-review` — room-backed dense table review with explicit submit.
-- `tangent.dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
-- `tangent.diff-review` — room-backed diff review with explicit submit.
-- `tangent.file-picker` — room-backed file selection with explicit submit.
-- `tangent.progress-panel` — room-backed progress tracking with explicit submit.
-- `tangent.wizard` — room-backed step wizard with partial updates, navigation, and explicit final completion.
-- `tangent.approval-queue` — room-backed serialized approval review with explicit submit.
-- `tangent.interview_question` — one long-form question/answer turn inside a room.
-- `tangent.block_draft` — drafting-stage block review and accept/revise capture.
-- `tangent.prose_revision` — explicit per-suggestion review/copy/style outcomes.
-- `tangent.output_render` — final markdown renderer with copy/export affordances.
-- `tangent.synthesis_notes` — phase-gated synthesis handoff.
-- `tangent.session_create`
-- `tangent.session_advance`
-- `tangent.session_get`
-- `tangent.session_advance_phase`
-- `tangent.session_set_phase_output`
-- `tangent.session_close`
-- `tangent.session_list`
+- `tangent_workflow_list` — discovery.
+- `tangent_triage` — the bundled triage workflow.
+- `tangent_feedback` — the bundled structured-form workflow.
+- `tangent_form_collect` — the bundled generalized schema-driven form workflow.
+- `tangent_design_iteration` — sandboxed HTML preview + click/input iteration.
+- `tangent_whiteboard` — room-backed freeform canvas with explicit submit.
+- `tangent_spreadsheet_review` — room-backed dense table review with explicit submit.
+- `tangent_dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
+- `tangent_diff_review` — room-backed diff review with explicit submit.
+- `tangent_file_picker` — room-backed file selection with explicit submit.
+- `tangent_progress_panel` — room-backed progress tracking with explicit submit.
+- `tangent_wizard` — room-backed step wizard with partial updates, navigation, and explicit final completion.
+- `tangent_approval_queue` — room-backed serialized approval review with explicit submit.
+- `tangent_app_board` — room-backed board of caller-supplied cards with filters and a detail pane; domain-free, with view state read back through `tangent_surface_get`.
+
+Tool names follow `tangent_<noun>_<verb>` and contain only `[a-z0-9_]`; the old
+dotted and hyphenated names are deprecated aliases. See
+[mcp-tool-names.md](mcp-tool-names.md).
+- `tangent_interview_question` — one long-form question/answer turn inside a room.
+- `tangent_block_draft` — drafting-stage block review and accept/revise capture.
+- `tangent_prose_revision` — explicit per-suggestion review/copy/style outcomes.
+- `tangent_output_render` — final markdown renderer with copy/export affordances.
+- `tangent_synthesis_notes` — phase-gated synthesis handoff.
+- `tangent_session_create`
+- `tangent_session_advance`
+- `tangent_session_get`
+- `tangent_session_phase_advance`
+- `tangent_session_phase_output_set`
+- `tangent_session_close`
+- `tangent_session_list`
 
 The generic durable substrate adds these handle-based tools:
 
-- `tangent.interaction_list_kinds`
-- `tangent.interaction_resolve_definition`
-- `tangent.surface_open`
-- `tangent.surface_get`
-- `tangent.surface_close`
-- `tangent.interaction_submit`
-- `tangent.interaction_get`
-- `tangent.interaction_await`
-- `tangent.interaction_cancel`
-- `tangent.interaction_supersede`
-- `tangent.interaction_acknowledge`
+- `tangent_interaction_kind_list`
+- `tangent_interaction_definition_resolve`
+- `tangent_surface_open`
+- `tangent_surface_get`
+- `tangent_surface_close`
+- `tangent_interaction_submit`
+- `tangent_interaction_get`
+- `tangent_interaction_await`
+- `tangent_interaction_cancel`
+- `tangent_interaction_supersede`
+- `tangent_interaction_ack`
 
 The definition registry adds three payload-bounded diagnostics:
 
-- `tangent.definition_registry_list`
-- `tangent.definition_get`
-- `tangent.definition_registry_diagnostics`
+- `tangent_definition_list`
+- `tangent_definition_get`
+- `tangent_definition_diagnostics_get`
 
 And operability adds three read-only probes:
 
-- `tangent.health_report`
-- `tangent.telemetry_query`
-- `tangent.retention_status`
+- `tangent_health_get`
+- `tangent_telemetry_query`
+- `tangent_retention_get`
 
-Every tool in the first list except `tangent.list_workflows` and the phase,
+Every tool in the first list except `tangent_workflow_list` and the phase,
 close, create, get, and list session operations is room-backed, and each of
 those accepts the shared optional `completion` selector described next.
 
 ### Room workflow completion
 
-`internal/roomflow/` — every named room workflow and `tangent.session_advance`
+`internal/roomflow/` — every named room workflow and `tangent_session_advance`
 routes through one shared compatibility adapter onto the canonical durable
 substrate. The adapter separates three facts the pre-foundation blocking path conflated:
 that the request exists, that the human answered, and that the caller is still
@@ -185,8 +190,8 @@ scope + workflow kind + envelope id. Wait mode preserves the exact pre-foundatio
 response for interactions answered within 45 seconds; past that it returns a
 successful pending receipt carrying the durable handle and room URL, never an
 error and never a cancellation. `completion.mode: "async"` returns that receipt
-immediately. Callers recover through `tangent.interaction_get`,
-`tangent.interaction_await`, or by retrying the identical original invocation.
+immediately. Callers recover through `tangent_interaction_get`,
+`tangent_interaction_await`, or by retrying the identical original invocation.
 
 Transport loss, caller timeout, browser disconnect, and process restart stop
 only the active waiter. Only a participant submission, a participant
@@ -198,12 +203,12 @@ authority. See `docs/room-workflow-completion.md`.
 
 The reserved operator inbox adds four stricter adapters:
 
-- `tangent.hitl_enqueue`
-- `tangent.hitl_get`
-- `tangent.hitl_await`
-- `tangent.hitl_withdraw`
+- `tangent_hitl_enqueue`
+- `tangent_hitl_get`
+- `tangent_hitl_await`
+- `tangent_hitl_withdraw`
 
-The Docs inbox adds one caller-facing adapter, `tangent.docs_enqueue` — see
+The Docs inbox adds one caller-facing adapter, `tangent_docs_enqueue` — see
 "Durable Docs operator surface" below.
 
 ### WebSocket bridge with per-room state
@@ -222,9 +227,9 @@ CW-20261009-0086 adds a bounded descriptor store and command/ack broker over
 the existing room WebSocket. Production leaves the verified conversation and
 attachment authority seam unwired; agent reads and commands default to refusal.
 React adoption and the MCP source adapter are implemented. The MCP surface includes
-`tangent.view_get`, `tangent.ui_navigate`, `tangent.ui_open_modal`,
-`tangent.ui_close_modal`, `tangent.ui_open_drawer`, `tangent.ui_close_drawer`,
-and `tangent.ui_focus_item`. Only core-owned schemas install handlers; the
+`tangent_view_get`, `tangent_ui_navigate`, `tangent_ui_modal_open`,
+`tangent_ui_modal_close`, `tangent_ui_drawer_open`, `tangent_ui_drawer_close`,
+and `tangent_ui_item_focus`. Only core-owned schemas install handlers; the
 current view must still declare the command and participant control must be
 enabled. Missing production composition returns `ui_unavailable`; an injected
 broker without verified authority returns `ui_forbidden`. Browser acknowledgements
@@ -269,8 +274,8 @@ connections rather than one socket, each with a server-issued `connection_id`:
 - **Visible independently.** Connection state is its own wire frame
   (`{"type":"connection",...}`), its own SPA component
   (`ui/src/components/ConnectionStatus.tsx`), a `connections` block on
-  `tangent.session_get`, and `connection_count` / `resolver_lease` on
-  `tangent.session_list`. None of it is folded into interaction status.
+  `tangent_session_get`, and `connection_count` / `resolver_lease` on
+  `tangent_session_list`. None of it is folded into interaction status.
 
 Every connection carries a `ParticipantBinding`, established by the ws
 handler's `ParticipantResolver` before the upgrade is accepted. Today that is
@@ -303,7 +308,7 @@ stale tab receives an explicit conflict instead of overwriting the winning
 terminal outcome. A failed durable refresh closes the stream so the browser
 reports a degraded connection and retries. This channel is intentionally
 separate from both per-room `/ws` and the four caller-facing
-`tangent.hitl_*` MCP tools.
+`tangent_hitl_*` MCP tools.
 
 ### Durable Docs operator surface
 
@@ -313,7 +318,7 @@ Turns — its own surface (`surface_docs_default`) and kind
 (`tangent.doc-item`), not a new table — but answers a different need: a
 document an agent sends the operator to read at their own pace, not a
 decision that blocks anything. A caller enqueues one with
-`tangent.docs_enqueue`; the SPA reads and acts on it through `/api/docs`.
+`tangent_docs_enqueue`; the SPA reads and acts on it through `/api/docs`.
 
 Read/unread is deliberately not the interaction's own resolved/unresolved
 state — a document can be read without being acknowledged, and
@@ -335,9 +340,9 @@ archived further; it is already out of the active queue.
 implementing the collaboration-surface boundary of
 `docs/adr/0007-collaboration-surface-plugin-host-and-view-state.md`
 (which supersedes ADR 0006):
-`tangent.relay_open_channel`, `tangent.relay_attach`, `tangent.relay_detach`,
-`tangent.relay_send`, `tangent.relay_receive`, `tangent.relay_ack`, and
-`tangent.relay_capabilities`. Every input carries `contract_version` and
+`tangent_relay_channel_open`, `tangent_relay_attach`, `tangent_relay_detach`,
+`tangent_relay_send`, `tangent_relay_receive`, `tangent_relay_ack`, and
+`tangent_relay_capabilities_get`. Every input carries `contract_version` and
 stays flat at the top level — no `allOf`/`if`/`then` on a field a model
 fills — because a gateway's discovery schema has been observed to drop a
 conditional branch and leave the model sending an untyped value.
@@ -442,7 +447,7 @@ not a delivery outcome, and omitting it is the simplest way to guarantee
 this pane never paints a healthy relaunch as a wall of red.
 
 There is no create-channel action in the pane. `internal/channel` ships
-only the agent-facing `tangent.relay_open_channel`; the operator's channel
+only the agent-facing `tangent_relay_channel_open`; the operator's channel
 list is exactly the channels an agent has already opened, and the primary
 flow runs agent-first (an agent needing input opens a channel and messages
 the operator, who replies here). An operator cannot start a conversation
@@ -482,10 +487,10 @@ Rooms also carry first-class workflow phase state:
 This substrate is intentionally workflow-neutral. Built-in or external
 agents can move a room through arbitrary phase IDs without registering a
 global sequence, and phase outputs can be rehydrated cheaply through
-`tangent.session_get` after process restart.
+`tangent_session_get` after process restart.
 
 The same substrate now also carries form-collect room state under the
-`form-collect` phase projection. `tangent.session_get` surfaces a
+`form-collect` phase projection. `tangent_session_get` surfaces a
 dedicated `form_collect` view when present:
 
 - `form_id`
@@ -501,7 +506,7 @@ dedicated `form_collect` view when present:
 - durable `submission_summary`
 
 The same substrate also carries spreadsheet-review room state under
-the `spreadsheet-review` phase projection. `tangent.session_get`
+the `spreadsheet-review` phase projection. `tangent_session_get`
 surfaces a dedicated `spreadsheet_review` view when present:
 
 - `table_id`
@@ -521,7 +526,7 @@ other room-backed workflows instead of introducing a parallel store just
 for tabular review.
 
 The same substrate also carries dashboard room state under the
-`dashboard` phase projection. `tangent.session_get` surfaces a
+`dashboard` phase projection. `tangent_session_get` surfaces a
 dedicated `dashboard` view when present:
 
 - `dashboard_id`
@@ -539,7 +544,7 @@ room/workflow state rather than introducing a separate reporting store
 or external data sync path.
 
 The same substrate also carries wizard room state under the `wizard`
-phase projection. `tangent.session_get` surfaces a dedicated `wizard`
+phase projection. `tangent_session_get` surfaces a dedicated `wizard`
 view when present:
 
 - `wizard_id`
@@ -555,7 +560,7 @@ recovery, but the room-backed `wizard` projection remains the canonical
 reopen source.
 
 The shipped v0.4 whiteboard state is persisted on the same room
-state path rather than in a separate table. `tangent.session_get`
+state path rather than in a separate table. `tangent_session_get`
 projects a dedicated `whiteboard` payload when present:
 
 - `board_id`
@@ -575,7 +580,7 @@ This keeps restart hydration and room replay simple while still
 supporting reopen/continue-from-revision inside the room UI.
 
 The same substrate also carries approval-queue room state under
-the `approval-queue` phase projection. `tangent.session_get`
+the `approval-queue` phase projection. `tangent_session_get`
 surfaces a dedicated `approval_queue` view when present:
 
 - `queue_id`
@@ -596,7 +601,7 @@ The bundled v0.3 writing flow uses the canonical sequence:
 - `output`
 
 Jump-backs are explicit rather than implicit. If a revision pass uncovers a
-drafting problem, the agent calls `tangent.session_advance_phase` back to
+drafting problem, the agent calls `tangent_session_phase_advance` back to
 `drafting`, resolves the new block, and advances forward again. History remains
 append-only in `phases_visited`.
 
@@ -604,8 +609,8 @@ append-only in `phases_visited`.
 
 v0.2 turns a room from a one-shot handoff into a longer-lived session.
 One room can receive many envelopes across its lifetime, and the agent
-contract for that is the `tangent.session_*` MCP surface. Bundled tools
-like `tangent.triage` still work, but now route internally through
+contract for that is the `tangent_session_*` MCP surface. Bundled tools
+like `tangent_triage` still work, but now route internally through
 session creation plus session advance. Room reuse is driven by the
 `roomID` meta field on envelopes and by explicit room IDs in the session
 tools.
@@ -665,10 +670,10 @@ installed catalog changes, and after the current version moves on.
 
 A definition the host cannot serve is a *state*, not an error to paper over:
 `incompatible`, `quarantined`, and `unavailable` are distinguishable in
-`tangent.definition_registry_list` and in the typed resolution failure, each
+`tangent_definition_list` and in the typed resolution failure, each
 carrying a reused go-envelopes error code. A fallback renderer is used only
 when the manifest declares one whose `preserves_meaning` is true.
-`tangent.definition_get` and `tangent.definition_registry_diagnostics` complete
+`tangent_definition_get` and `tangent_definition_diagnostics_get` complete
 the payload-bounded diagnostics surface.
 
 ### Plugin host
@@ -819,7 +824,7 @@ was asserting survives it.
 ### Long-lived surfaces and `tangent-custodied` view state
 
 Some surfaces stay open while the participant works in them rather than
-settling in one act. `tangent.session_advance` with `completion: async` returns
+settling in one act. `tangent_session_advance` with `completion: async` returns
 a durable pending receipt and cancels nothing, so an interaction can stay
 pending indefinitely; what was missing was a way to record anything from such a
 surface short of resolving it.
@@ -829,7 +834,7 @@ selected, whether a detail pane is open — is recorded as a **draft revision**
 under host custody (ADR 0007 §5). The path is
 `ws-client.saveDraft` → a `draft` frame → `Room.HandleDraftFrom` →
 `roomDisposition.Draft` → `interaction.Service.SaveDraft`, and the caller reads
-it back by pulling `tangent.surface_get`, which projects `Drafts[]`.
+it back by pulling `tangent_surface_get`, which projects `Drafts[]`.
 
 Three properties hold it in place:
 
@@ -957,7 +962,7 @@ combination rather than trusting a reviewer to catch it.
 envelope catalog. Tangent loads the go-envelopes core definitions, then
 registers its own extensions—including the non-renderer `tangent.hitl-item`
 interaction definition. Extensions use the plugin API rather than forking the
-registry. Ask `tangent.definition_registry_list` how many there are; the number
+registry. Ask `tangent_definition_list` how many there are; the number
 is not written down here, for the same reason the tool count is not.
 
 `ui/src/generated/envelope-types.ts` and
@@ -976,7 +981,7 @@ Every generated artifact carries a `// @definition-source sha256:<hex>` stamp
 over the ordered `(kind, version, revision, manifest_digest)` set (ADR 0003
 §4). `make check-envelopes` compares that stamp first and reports *which kind*
 drifted, then compares bytes to catch a hand-edit; a Go test asserts the same
-stamp on every `go test ./...`. `tangent.definition_registry_list` reports the
+stamp on every `go test ./...`. `tangent_definition_list` reports the
 live digest, so a client can refuse to submit against a definition it was not
 generated for. `ui/src/lib/hitl-api.ts` is hand-written over the HITL `$defs`
 bundle and carries ADR 0003 §4.7’s accepted floor — a `@definition-source`
@@ -1147,8 +1152,8 @@ into a silent one; separating them is what closes that.
 | `GET /readyz` | Can it serve traffic right now? | Database ping + one statement, schema version against the version this binary embeds, definition registry, renderer host, delivery-worker authorization. |
 | `GET /healthz/capability` | Which kinds can it serve? | The materialized registry. Bounded listing of everything unservable. |
 | `GET /healthz/capability/{kind}` | Can it serve *this* kind? | One definition's materialization state and effect posture. |
-| `tangent.health_report` (MCP) | All three, over the channel the work arrives on. | The same reporter. |
-| `tangent.telemetry_query` (MCP) | What happened to this invocation, this kind, or this check? | The append-only `telemetry_events` table, plus the in-process metric snapshot. |
+| `tangent_health_get` (MCP) | All three, over the channel the work arrives on. | The same reporter. |
+| `tangent_telemetry_query` (MCP) | What happened to this invocation, this kind, or this check? | The append-only `telemetry_events` table, plus the in-process metric snapshot. |
 
 **Liveness deliberately touches nothing.** The managed-runtime health probe in
 the repo-root `tangent.cerberus.yaml` points at `/healthz`, and that
@@ -1223,7 +1228,7 @@ because neither is part of one request.
 
 **Audit records are a table, not a log.** `telemetry_events` (migration 0011)
 is append-only, indexed by trace, interaction, room, event, and time, and read
-through `tangent.telemetry_query`. It is separate from the existing
+through `tangent_telemetry_query`. It is separate from the existing
 `surface_events` / `interaction_events` / `delivery_events` journals for three
 reasons: a telemetry write must never be able to fail the operation it
 observes, half of what has to be counted (a lease refusal, a failed
@@ -1264,7 +1269,7 @@ the flag — no instrumentation changes.
 
 **Health links failures to safe correlation identifiers.** Every non-passing
 readiness check and every unusable kind carries a `correlation` block naming
-the trace its history is filed under and `tangent.telemetry_query` as the
+the trace its history is filed under and `tangent_telemetry_query` as the
 reader. Readiness observations are emitted on *transitions* only, so a
 supervisor polling on a timer does not bury the moment something changed.
 
@@ -1287,7 +1292,7 @@ trusting it.
   that.
 - **One active pending envelope per room.** History persists, but a room holds
   one envelope awaiting submission at a time. An overlapping
-  `tangent.session_advance` is refused with `SESSION_BUSY` rather than queued.
+  `tangent_session_advance` is refused with `SESSION_BUSY` rather than queued.
   This is a property of the compatibility room projection, not of the durable
   substrate beneath it.
 - **Whiteboard is single-user localhost first.** The board is shared between
@@ -1498,7 +1503,7 @@ Channels' relay semantics are unchanged. See [`inbox.md`](inbox.md).
 
 The domain-free `tangent.external-review` kind displays a retained resource
 snapshot, agent notes, source link and plugin-served actions. Clients submit it
-through `tangent.session_advance`. The renderer accepts only same-origin plugin
+through `tangent_session_advance`. The renderer accepts only same-origin plugin
 routes; the plugin owns application reads, writes, authority and revision checks.
 Opening a review never executes an action. Historical renderers run read-only
 and do not refresh or execute plugin commands. See [PR reviews](github-pr-review.md).

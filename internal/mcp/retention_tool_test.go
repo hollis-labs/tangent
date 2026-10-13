@@ -50,7 +50,7 @@ func TestRetentionStatusIsReadOnlyAndPayloadBounded(t *testing.T) {
 	}
 	registered := false
 	for _, tool := range listed.Tools {
-		if tool.Name == "tangent.retention_status" {
+		if tool.Name == "tangent_retention_get" {
 			registered = true
 		}
 		// The retention *operations* must never appear as tools. Erasure
@@ -65,11 +65,11 @@ func TestRetentionStatusIsReadOnlyAndPayloadBounded(t *testing.T) {
 		}
 	}
 	if !registered {
-		t.Fatal("tangent.retention_status was not registered")
+		t.Fatal("tangent_retention_get was not registered")
 	}
 
 	result, err := client.CallTool(context.Background(), &mcpsdk.CallToolParams{
-		Name: "tangent.retention_status", Arguments: map[string]any{},
+		Name: "tangent_retention_get", Arguments: map[string]any{},
 	})
 	if err != nil {
 		t.Fatalf("CallTool: %v", err)

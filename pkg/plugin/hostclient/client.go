@@ -8,8 +8,8 @@
 // the host for anything over that pipe.
 //
 // Both application plugins need to ask. Opening a board is
-// `tangent.session_create`; syncing one is `tangent.surface_get` and
-// `tangent.session_advance`. Those are the feature, not an edge.
+// `tangent_session_create`; syncing one is `tangent_surface_get` and
+// `tangent_session_advance`. Those are the feature, not an edge.
 //
 // # Why this is the front door rather than a workaround
 //

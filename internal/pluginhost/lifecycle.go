@@ -335,7 +335,7 @@ const attributionNote = "plugin Load receives an owner-scoped host; registration
 // Inventory reports which plugins loaded, which refused and why, and what they
 // contributed between them.
 //
-// It exists so `tangent.health_report` can answer that question directly rather
+// It exists so `tangent_health_get` can answer that question directly rather
 // than leaving an operator to infer it from a tool list — which is inference
 // from the wrong evidence: a plugin can load and contribute no tool at all,
 // which is exactly what the kind-contributing plugin in this build does.

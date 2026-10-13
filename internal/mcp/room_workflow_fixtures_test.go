@@ -19,13 +19,13 @@ const fixedCompletedAt = "2026-09-04T12:57:17Z"
 // it, and what the participant sends back.
 //
 // The table below is the enumeration of the completion contract's blast
-// radius. Every named room workflow plus tangent.session_advance appears here
+// radius. Every named room workflow plus tangent_session_advance appears here
 // exactly once, so a workflow cannot be migrated without acquiring regression
 // coverage, and a new one cannot be added without a fixture.
 type workflowFixture struct {
 	tool         string
 	envelopeType string
-	// roomArgument is true for tangent.session_advance, which names its room
+	// roomArgument is true for tangent_session_advance, which names its room
 	// as a top-level argument rather than through envelope meta.
 	roomArgument bool
 	data         map[string]any
@@ -37,7 +37,7 @@ type workflowFixture struct {
 func shippedRoomWorkflows() []workflowFixture {
 	return []workflowFixture{
 		{
-			tool: "tangent.triage", envelopeType: "tangent.triage",
+			tool: "tangent_triage", envelopeType: "tangent.triage",
 			data: map[string]any{"prompt": "triage the inbox", "items": []any{"item"}},
 			response: map[string]any{
 				"kind": "data", "status": "submitted",
@@ -45,7 +45,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.app-board", envelopeType: "tangent.app-board",
+			tool: "tangent_app_board", envelopeType: "tangent.app-board",
 			data: map[string]any{
 				"board_id": "board-1",
 				"title":    "Active work",
@@ -67,7 +67,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.session_advance", envelopeType: "tangent.triage", roomArgument: true,
+			tool: "tangent_session_advance", envelopeType: "tangent.triage", roomArgument: true,
 			data: map[string]any{"prompt": "advance the session", "items": []any{"item"}},
 			response: map[string]any{
 				"kind": "data", "status": "submitted",
@@ -75,7 +75,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.feedback", envelopeType: "tangent.feedback",
+			tool: "tangent_feedback", envelopeType: "tangent.feedback",
 			data: map[string]any{"questions": []any{
 				map[string]any{"id": "q1", "type": "text", "label": "What changed?", "required": true},
 			}},
@@ -87,7 +87,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.form-collect", envelopeType: "tangent.form-collect",
+			tool: "tangent_form_collect", envelopeType: "tangent.form-collect",
 			data: map[string]any{
 				"form_id": "form-1",
 				"schema": map[string]any{"fields": []any{
@@ -105,7 +105,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.design-iteration", envelopeType: "tangent.design-iteration",
+			tool: "tangent_design_iteration", envelopeType: "tangent.design-iteration",
 			data: map[string]any{
 				"variant_id": "variant-1",
 				"html":       `<button id="hero">Hero</button>`,
@@ -122,7 +122,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.interview_question", envelopeType: "tangent.interview-question",
+			tool: "tangent_interview_question", envelopeType: "tangent.interview-question",
 			data: map[string]any{
 				"prompt": "Tell me what matters most here.", "helper_text": "Be specific.",
 				"thread_id": "thread-1", "topic_label": "Priorities",
@@ -142,7 +142,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.block_draft", envelopeType: "tangent.block-draft",
+			tool: "tangent_block_draft", envelopeType: "tangent.block-draft",
 			data: map[string]any{
 				"block_id": "intro", "mode": "section", "label": "intro",
 				"content": "Original intro paragraph.", "rationale": "Lead with the clearest point.",
@@ -154,7 +154,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.prose_revision", envelopeType: "tangent.prose-revision",
+			tool: "tangent_prose_revision", envelopeType: "tangent.prose-revision",
 			data: map[string]any{
 				"lens": "review", "revision_id": "opening-pass", "block_id": "intro",
 				"source_text": "Original opening paragraph.",
@@ -176,7 +176,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.output_render", envelopeType: "tangent.output-render",
+			tool: "tangent_output_render", envelopeType: "tangent.output-render",
 			data: map[string]any{
 				"title": "Final draft", "markdown": "# Final draft\n\nBody copy.",
 				"filename": "final-draft.md", "format": "markdown", "summary": "Final polished copy.",
@@ -184,7 +184,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			response: map[string]any{"kind": "ack", "status": "submitted"},
 		},
 		{
-			tool: "tangent.whiteboard", envelopeType: "tangent.whiteboard",
+			tool: "tangent_whiteboard", envelopeType: "tangent.whiteboard",
 			data: map[string]any{
 				"board_id": "board-1", "title": "Whiteboard", "intent": "Map the layout",
 				"scene": map[string]any{
@@ -209,7 +209,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.dashboard", envelopeType: "tangent.dashboard",
+			tool: "tangent_dashboard", envelopeType: "tangent.dashboard",
 			data: map[string]any{
 				"dashboard_id": "dashboard-1", "title": "Ops dashboard",
 				"tiles": []any{
@@ -236,7 +236,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.file-picker", envelopeType: "tangent.file-picker",
+			tool: "tangent_file_picker", envelopeType: "tangent.file-picker",
 			data: map[string]any{
 				"picker_id": "picker-1",
 				"browse_roots": []any{
@@ -267,7 +267,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.progress-panel", envelopeType: "tangent.progress-panel",
+			tool: "tangent_progress_panel", envelopeType: "tangent.progress-panel",
 			data: map[string]any{
 				"panel_id": "panel-1",
 				"items": []any{
@@ -285,7 +285,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.wizard", envelopeType: "tangent.wizard",
+			tool: "tangent_wizard", envelopeType: "tangent.wizard",
 			data: map[string]any{
 				"wizard_id": "wizard-1", "title": "Release wizard",
 				"steps": []any{
@@ -323,7 +323,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.diff-review", envelopeType: "tangent.diff-review",
+			tool: "tangent_diff_review", envelopeType: "tangent.diff-review",
 			data: map[string]any{
 				"review_id": "review-1",
 				"files": []any{
@@ -349,7 +349,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.spreadsheet-review", envelopeType: "tangent.spreadsheet-review",
+			tool: "tangent_spreadsheet_review", envelopeType: "tangent.spreadsheet-review",
 			data: map[string]any{
 				"table_id": "table-1", "title": "Spreadsheet review",
 				"columns": []any{
@@ -372,7 +372,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.approval-queue", envelopeType: "tangent.approval-queue",
+			tool: "tangent_approval_queue", envelopeType: "tangent.approval-queue",
 			data: map[string]any{
 				"queue_id": "queue-1",
 				"items": []any{
@@ -396,7 +396,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			},
 		},
 		{
-			tool: "tangent.synthesis_notes", envelopeType: "tangent.synthesis-notes",
+			tool: "tangent_synthesis_notes", envelopeType: "tangent.synthesis-notes",
 			data: map[string]any{
 				"private_notes": "Anchor the draft in workflow constraints first.",
 				"summary":       "Lead with workflow constraints.",

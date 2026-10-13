@@ -58,7 +58,7 @@ import (
 // and run. An installed plugin is different: it can be stale, built for another
 // host, or half-copied, and none of those should stop Tangent from serving
 // every other surface it has. The refusals are reported through
-// `tangent.health_report`, which is where "which plugins loaded, which refused
+// `tangent_health_get`, which is where "which plugins loaded, which refused
 // and why" already lives.
 func LoadInstalled(
 	ctx context.Context,
@@ -212,8 +212,8 @@ const (
 // SDK's protocol is host-initiated and says so — "the subprocess does not
 // initiate requests" — and `subprocess/server.go` never constructs a request.
 // Both application plugins need to call back; opening a board is
-// `tangent.session_create` and syncing one is `tangent.surface_get` plus
-// `tangent.session_advance`.
+// `tangent_session_create` and syncing one is `tangent_surface_get` plus
+// `tangent_session_advance`.
 //
 // So a child reaches Tangent the way any other local process does: as an MCP
 // client against `/mcp`. That is not a workaround for a missing channel. It is

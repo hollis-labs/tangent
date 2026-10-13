@@ -240,7 +240,7 @@ func (s *Service) Lookup(name string) (envelopes.TypeSpec, bool) {
 }
 
 // All returns every registered type spec, sorted by name. Used by the
-// codegen dump tool today; will back tangent.list_workflows in PR 3.
+// codegen dump tool today; will back tangent_workflow_list in PR 3.
 func (s *Service) All() []envelopes.TypeSpec {
 	return s.registry.All()
 }
