@@ -23,20 +23,30 @@ it and is a new view with its own semantics.
   Tether predates the endpoint (404), the plugin's token is refused, or Tether
   cannot be reached, the view says "Chat roster unavailable", names the cause
   and offers Retry. An empty roster says no chat agents are configured on
-  Tether. The roster refreshes on every turns revision and every 15 seconds.
+  Tether. The roster refreshes on every turns revision and every 5 seconds.
 - **Stream.** An item is the agent's message; its resolution's `response_text`
   is the operator's. They are merged by timestamp and de-duplicated by item id
   and resolution id. Only the last N (default 50, configurable) are shown;
   scrolling to the top or "Load older messages" reveals more.
-- **Composer.** With a pending, replyable final/question/failure the existing
-  reply path is used unchanged (action `respond`, the item's revision), so
-  delivery tracking is kept. Otherwise the message goes through the plugin's
-  `/api/plugins/messaging/chat/send` to Tether, which delivers it as the next
-  turn of an idle running session or starts the launch with the text as its first
-  prompt, so a chat can be initiated with nothing pending. While the agent's
-  session is mid-turn the composer is disabled ("is working…"). A refusal (409
-  reply conflict or `agent_working`) keeps the draft. Each distinct message text
-  gets one idempotency key, reused on retry, so a lost response never sends it
-  twice.
+- **Composer.** The mode is decided by the Tether roster (`session.state`,
+  `session.id`, `at_turn_boundary`) together with the pending item's
+  `session_id`, never by "a pending item exists". A reply to an item of a dead
+  session returns 200 and delivers nowhere, so it is not offered.
+
+  | Roster session | Pending final | Composer |
+  | --- | --- | --- |
+  | running | belongs to that session | reply (`respond`, the item's revision) |
+  | running, mid-turn | none, or from another session | disabled, "is working…" |
+  | running, at turn boundary | none, or from another session | send |
+  | none / completed / stopped / failed | any (stale) | send (starts the launch) |
+
+  Send goes through the plugin's `/api/plugins/messaging/chat/send` to Tether,
+  which delivers it as the next turn of an idle running session or starts the
+  launch with the text as its first prompt. The roster is re-read when the
+  operator sends, on window focus, on every turns revision and every 5 seconds,
+  and the mode is recomputed from that fresh read. Pending finals of a session
+  that is not running stay in the stream, marked "Session ended" (the Inbox is
+  unchanged). A refusal (409 reply conflict or `agent_working`) keeps the draft.
+  Each distinct message text gets one idempotency key, reused on retry.
 - **Display.** No title header and no summary. Trace, delivery and source
   publication are in the (i) modal.

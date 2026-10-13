@@ -15,6 +15,7 @@ import {
   rosterAgents,
   savePrefs,
   sortAgents,
+  staleItemIds,
 } from "@/lib/chat-model";
 import {
   ChatSendError,
@@ -28,7 +29,7 @@ import { fetchTurnsInbox, replyTurn, TurnsAPIError, type TurnsInbox } from "@/li
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [25, 50, 100, 200];
-const ROSTER_POLL_MS = 15000;
+const ROSTER_POLL_MS = 5000;
 
 function stamp(value?: string): string {
   if (!value) return "";
@@ -97,7 +98,13 @@ export default function Chat() {
     };
     events.addEventListener("revision", onRevision);
     const poll = window.setInterval(() => void syncRoster(), ROSTER_POLL_MS);
+    // A session may have started or stopped while the tab was in the background.
+    const onFocus = () => void syncRoster();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
     return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
       events.removeEventListener("revision", onRevision);
       events.close();
       window.clearInterval(poll);
@@ -115,6 +122,10 @@ export default function Chat() {
   const shown = stream.slice(Math.max(0, stream.length - visible));
   const pending = active ? pendingFinal(items, active) : undefined;
   const mode = active ? composerMode(active, pending) : ({ kind: "working" } as const);
+  const stale = useMemo(
+    () => (active ? staleItemIds(items, active) : new Set<string>()),
+    [items, active],
+  );
 
   // Opening an agent is what marks its messages seen.
   const newest = active?.lastAgentMessageAt;
@@ -164,8 +175,23 @@ export default function Chat() {
     setSending(true);
     setSendError("");
     try {
-      if (mode.kind === "reply") {
-        const target = mode.item;
+      // The roster may have moved since the last poll; decide on a fresh one so
+      // a reply never goes to a session that has just ended.
+      const fresh = await fetchChatRoster();
+      let current = mode;
+      if (fresh.available) {
+        setRoster(fresh);
+        const entry = fresh.agents.find((a) => a.launch_id === active.agentID);
+        current = composerMode({ ...active, session: entry ? entry.session : null }, pending);
+      }
+      if (current.kind === "working") {
+        setSendError(
+          `${active.name} is working. Your text is kept; send again when it finishes the turn.`,
+        );
+        return;
+      }
+      if (current.kind === "reply") {
+        const target = current.item;
         await replyTurn(target.item_id, {
           expected_revision: target.revision,
           action: "respond",
@@ -343,6 +369,7 @@ export default function Chat() {
                   key={message.key}
                   message={message}
                   agentName={active.name}
+                  stale={stale.has(message.item.item_id)}
                   onInfo={() => setInfo(message)}
                 />
               ))}
@@ -438,10 +465,12 @@ function sendFailure(reason: unknown, name: string): string {
 function MessageRow({
   message,
   agentName,
+  stale,
   onInfo,
 }: {
   message: ChatMessage;
   agentName: string;
+  stale: boolean;
   onInfo: () => void;
 }) {
   const mine = message.from === "operator";
@@ -465,6 +494,11 @@ function MessageRow({
             <Info size={12} />
           </button>
         </div>
+        {stale && !mine ? (
+          <p className="mb-1 text-xs italic text-fg-muted">
+            Session ended; this message is no longer awaiting a reply.
+          </p>
+        ) : null}
         {mine ? (
           <p className="whitespace-pre-wrap break-words">{message.body}</p>
         ) : (

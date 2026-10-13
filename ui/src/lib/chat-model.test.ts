@@ -3,12 +3,14 @@ import { turn } from "./chat-fixtures";
 import {
   buildStream,
   composerMode,
+  isLivePending,
   isUnseen,
   loadPrefs,
   pendingFinal,
   rosterAgents,
   savePrefs,
   sortAgents,
+  staleItemIds,
 } from "./chat-model";
 import type { RosterAgent } from "./chat-roster-api";
 import type { TurnItemView } from "./turns-api";
@@ -109,9 +111,10 @@ describe("chat model", () => {
       0,
     );
   });
-  it("replies to a pending item, else sends, else waits while mid-turn", () => {
+  describe("composerMode decision table", () => {
     const base = { agentID: "pm", tetherAgentID: "pm", name: "PM" };
-    const item = turn({ item_id: "p" });
+    const live = turn({ item_id: "p", session_id: "s" });
+    const stale = turn({ item_id: "old", session_id: "dead" });
     const session = (over: object) => ({
       id: "s",
       state: "running",
@@ -119,15 +122,43 @@ describe("chat model", () => {
       at_turn_boundary: false,
       ...over,
     });
-    expect(composerMode({ ...base, session: session({}) }, item).kind).toBe("reply");
-    expect(composerMode({ ...base, session: null }, undefined).kind).toBe("send");
-    expect(
-      composerMode({ ...base, session: session({ state: "completed" }) }, undefined).kind,
-    ).toBe("send");
-    expect(
-      composerMode({ ...base, session: session({ at_turn_boundary: true }) }, undefined).kind,
-    ).toBe("send");
-    expect(composerMode({ ...base, session: session({}) }, undefined).kind).toBe("working");
+    const mode = (s: ReturnType<typeof session> | null, p?: TurnItemView) =>
+      composerMode({ ...base, session: s }, p).kind;
+    it("running + pending of the same session -> reply", () => {
+      expect(composerMode({ ...base, session: session({}) }, live)).toEqual({
+        kind: "reply",
+        item: live,
+      });
+    });
+    it("running mid-turn + no pending -> working", () => {
+      expect(mode(session({}))).toBe("working");
+    });
+    it("running at turn boundary + no pending -> send", () => {
+      expect(mode(session({ at_turn_boundary: true }))).toBe("send");
+    });
+    it("not running + stale pending -> send", () => {
+      for (const state of ["completed", "stopped", "failed"]) {
+        expect(mode(session({ state }), stale)).toBe("send");
+        expect(mode(session({ state }), live)).toBe("send");
+      }
+    });
+    it("no session + pending or none -> send", () => {
+      expect(mode(null, stale)).toBe("send");
+      expect(mode(null)).toBe("send");
+    });
+    it("running + pending from another session -> working mid-turn, send at boundary", () => {
+      expect(mode(session({}), stale)).toBe("working");
+      expect(mode(session({ at_turn_boundary: true }), stale)).toBe("send");
+    });
+    it("a pending item naming no session is never replied to", () => {
+      expect(mode(session({}), turn({ item_id: "n" }))).toBe("working");
+    });
+    it("isLivePending only for the running session", () => {
+      expect(isLivePending({ session: session({}) }, live)).toBe(true);
+      expect(isLivePending({ session: session({}) }, stale)).toBe(false);
+      expect(isLivePending({ session: session({ state: "completed" }) }, live)).toBe(false);
+      expect(isLivePending({ session: null }, live)).toBe(false);
+    });
   });
   it("round-trips preferences, clamps a bad page size and drops a stored roster", () => {
     savePrefs({ pinned: ["pm"], lastSeen: {}, pageSize: 3 });
@@ -141,5 +172,20 @@ describe("chat model", () => {
     expect(loaded).toEqual({ pinned: ["x"], lastSeen: {}, pageSize: 25 });
     expect("agents" in loaded).toBe(false);
     localStorage.clear();
+  });
+});
+
+describe("staleItemIds", () => {
+  const agent = {
+    agentID: "pm",
+    tetherAgentID: "pm",
+    name: "PM",
+    session: { id: "s", state: "running", last_activity_at: "", at_turn_boundary: true },
+  };
+  it("marks pending items of other sessions, and all of them when nothing runs", () => {
+    const live = turn({ item_id: "l", session_id: "s", queue_sequence: 2 });
+    const old = turn({ item_id: "o", session_id: "dead", queue_sequence: 1 });
+    expect([...staleItemIds([live, old], agent)]).toEqual(["o"]);
+    expect([...staleItemIds([live, old], { ...agent, session: null })].sort()).toEqual(["l", "o"]);
   });
 });

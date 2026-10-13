@@ -138,7 +138,7 @@ it("disables the composer with 'is working' while the session is mid-turn", asyn
 
 it("replies with respond against the pending final and keeps the draft on 409", async () => {
   const be = backend({
-    turns: inbox([turn({ item_id: "p", revision: 7 })]),
+    turns: inbox([turn({ item_id: "p", revision: 7, session_id: "s1" })]),
     roster: [entry("pm", { session: running(false) })],
     reply: json({ code: "conflict", message: "stale revision" }, 409),
   });
@@ -156,6 +156,40 @@ it("replies with respond against the pending final and keeps the draft on 409", 
   });
   expect(be.calls.some((c) => c.url.endsWith("/chat/send"))).toBe(false);
   expect(screen.getByLabelText("Message")).toHaveValue("go ahead");
+});
+
+it("sends instead of replying when the pending final belongs to an ended session", async () => {
+  const be = backend({
+    turns: inbox([turn({ item_id: "old", revision: 3, session_id: "dead" })]),
+    roster: [entry("pm", { session: { ...running(true), id: "dead", state: "completed" } })],
+  });
+  mount();
+  expect(
+    await screen.findByText("Session ended; this message is no longer awaiting a reply."),
+  ).toBeInTheDocument();
+  const box = screen.getByLabelText("Message");
+  await waitFor(() => expect(box).toBeEnabled());
+  fireEvent.change(box, { target: { value: "wake up" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
+  expect(be.calls.some((c) => c.url.endsWith("/reply"))).toBe(false);
+  const sent = be.calls.find((c) => c.url.endsWith("/chat/send"));
+  expect(JSON.parse(sent?.body ?? "{}")).toMatchObject({ launch_id: "pm", text: "wake up" });
+});
+
+it("re-reads the roster at send time and does not reply to a session that just ended", async () => {
+  const be = backend({
+    turns: inbox([turn({ item_id: "p", revision: 3, session_id: "s1" })]),
+    roster: [entry("pm", { session: running(true) })],
+  });
+  mount();
+  const box = await screen.findByLabelText("Message");
+  await waitFor(() => expect(box).toBeEnabled());
+  be.roster = [entry("pm", { session: { ...running(true), state: "stopped" } })];
+  fireEvent.change(box, { target: { value: "hi" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(be.calls.some((c) => c.url.endsWith("/chat/send"))).toBe(true));
+  expect(be.calls.some((c) => c.url.endsWith("/reply"))).toBe(false);
 });
 
 it("initiates a chat through Tether when nothing is pending", async () => {
