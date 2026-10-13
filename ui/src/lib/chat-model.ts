@@ -111,8 +111,8 @@ export function buildStream(items: TurnItemView[], agent: ChatAgentRef): ChatMes
   );
 }
 
-/** The newest pending item the composer can answer, if any. */
-export function pendingFinal(items: TurnItemView[], agent: ChatAgentRef): TurnItemView | undefined {
+/** Pending items of this agent that the reply path would accept, newest first. */
+export function pendingReplyable(items: TurnItemView[], agent: ChatAgentRef): TurnItemView[] {
   return items
     .filter(
       (item) =>
@@ -122,7 +122,25 @@ export function pendingFinal(items: TurnItemView[], agent: ChatAgentRef): TurnIt
         RESPONDABLE.has(item.kind) &&
         canReplyTurn(item),
     )
-    .sort((a, b) => b.queue_sequence - a.queue_sequence)[0];
+    .sort((a, b) => b.queue_sequence - a.queue_sequence);
+}
+
+/** The newest pending item the composer can answer, if any. */
+export function pendingFinal(items: TurnItemView[], agent: ChatAgentRef): TurnItemView | undefined {
+  return pendingReplyable(items, agent)[0];
+}
+
+/**
+ * Ids of pending items the agent can no longer receive a reply to, because the
+ * session that produced them is not the agent's running session. UI-only: the
+ * Inbox still lists them; the stream just stops presenting them as awaiting.
+ */
+export function staleItemIds(items: TurnItemView[], agent: ChatAgent): Set<string> {
+  return new Set(
+    pendingReplyable(items, agent)
+      .filter((item) => !isLivePending(agent, item))
+      .map((item) => item.item_id),
+  );
 }
 
 /** Pinned agents first, then newest message first, then name. */
@@ -182,16 +200,37 @@ export type ComposerMode =
   | { kind: "send" }
   | { kind: "working" };
 
+/** Whether Tether's roster says this agent has a live session. */
+export function runningSession(agent: Pick<ChatAgent, "session">): RosterSession | null {
+  const session = agent.session;
+  return session?.id && session.state === "running" ? session : null;
+}
+
 /**
- * A pending replyable item keeps the existing reply path (and its delivery
- * tracking). Otherwise a message initiates or continues the chat through
- * Tether, unless the agent's running session is mid-turn.
+ * A pending item is answerable only while the session that produced it is the
+ * agent's running session. A reply to a dead session is accepted by the server
+ * (HTTP 200) and delivered nowhere, so such an item is stale.
+ */
+export function isLivePending(agent: Pick<ChatAgent, "session">, pending?: TurnItemView): boolean {
+  const session = runningSession(agent);
+  return Boolean(session && pending && pending.session_id === session.id);
+}
+
+/**
+ * Decision table (roster state from Tether decides; the pending item only
+ * qualifies if it belongs to the running session):
+ *
+ *   running, pending of that session          -> reply
+ *   running, otherwise, mid-turn              -> working (disabled)
+ *   running, otherwise, at a turn boundary    -> send (Tether delivers the next turn)
+ *   no running session (none/completed/...)   -> send (starts the launch), any pending is stale
+ *
+ * A pending item from another session never makes the composer reply, and
+ * mid-turn it never makes the composer send either.
  */
 export function composerMode(agent: ChatAgent, pending: TurnItemView | undefined): ComposerMode {
-  if (pending) return { kind: "reply", item: pending };
-  const session = agent.session;
-  if (session && session.state === "running" && !session.at_turn_boundary) {
-    return { kind: "working" };
-  }
-  return { kind: "send" };
+  const session = runningSession(agent);
+  if (!session) return { kind: "send" };
+  if (pending && isLivePending(agent, pending)) return { kind: "reply", item: pending };
+  return session.at_turn_boundary ? { kind: "send" } : { kind: "working" };
 }
