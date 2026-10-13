@@ -8,6 +8,7 @@ import {
   allItems,
   buildStream,
   type ChatMessage,
+  type ComposerMode,
   composerMode,
   isUnseen,
   loadPrefs,
@@ -178,7 +179,7 @@ export default function Chat() {
       // The roster may have moved since the last poll; decide on a fresh one so
       // a reply never goes to a session that has just ended.
       const fresh = await fetchChatRoster();
-      let current = mode;
+      let current: ComposerMode = mode;
       if (fresh.available) {
         setRoster(fresh);
         const entry = fresh.agents.find((a) => a.launch_id === active.agentID);
