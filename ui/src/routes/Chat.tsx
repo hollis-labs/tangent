@@ -12,11 +12,15 @@ import {
   composerMode,
   isUnseen,
   loadPrefs,
+  loadSent,
   pendingFinal,
   rosterAgents,
+  type SentMessage,
   savePrefs,
+  saveSent,
   sortAgents,
   staleItemIds,
+  upsertSent,
 } from "@/lib/chat-model";
 import {
   ChatSendError,
@@ -54,6 +58,7 @@ export default function Chat() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  const [sent, setSent] = useState<SentMessage[]>(() => loadSent());
   const [info, setInfo] = useState<ChatMessage | null>(null);
   const syncSeq = useRef(0);
   const rosterSeq = useRef(0);
@@ -119,7 +124,10 @@ export default function Chat() {
     [rosterState.agents, items, prefs.pinned],
   );
   const active = chatAgents.find((a) => a.agentID === agentID);
-  const stream = useMemo(() => (active ? buildStream(items, active) : []), [items, active]);
+  const stream = useMemo(
+    () => (active ? buildStream(items, active, sent) : []),
+    [items, active, sent],
+  );
   const shown = stream.slice(Math.max(0, stream.length - visible));
   const pending = active ? pendingFinal(items, active) : undefined;
   const mode = active ? composerMode(active, pending) : ({ kind: "working" } as const);
@@ -170,6 +178,51 @@ export default function Chat() {
     }
   };
 
+  // Records the message before it travels, so it shows as the operator's at once
+  // and survives a reload; the record then follows the outcome. A failure is
+  // rethrown for the composer, and the record stays as a failed message to retry.
+  const deliver = async (agent: string, text: string, key: string) => {
+    const track = (record: SentMessage) =>
+      setSent((current) => {
+        const next = upsertSent(current, record);
+        saveSent(next);
+        return next;
+      });
+    const base: SentMessage = sent.find((r) => r.key === key) ?? {
+      key,
+      agentID: agent,
+      text,
+      at: new Date().toISOString(),
+      status: "sending",
+    };
+    track({ ...base, status: "sending", error: undefined });
+    stickToBottom.current = true;
+    try {
+      await sendChat(agent, text, key);
+      track({ ...base, status: "sent", error: undefined });
+    } catch (reason) {
+      track({ ...base, status: "failed", error: sendFailure(reason, active?.name ?? agent) });
+      throw reason;
+    }
+  };
+
+  const retry = async (record: SentMessage) => {
+    if (sending) return;
+    setSending(true);
+    setSendError("");
+    try {
+      await deliver(record.agentID, record.text, record.key);
+      if (sendKey.current?.key === record.key) sendKey.current = null;
+      if (draft.trim() === record.text.trim()) setDraft("");
+    } catch (reason) {
+      setSendError(sendFailure(reason, active?.name ?? record.agentID));
+    } finally {
+      setSending(false);
+      void sync();
+      void syncRoster();
+    }
+  };
+
   const send = async () => {
     const text = draft.trim();
     if (!active || mode.kind === "working" || !text || sending) return;
@@ -200,9 +253,14 @@ export default function Chat() {
         });
       } else {
         if (sendKey.current?.text !== text) {
-          sendKey.current = { text, key: crypto.randomUUID() };
+          // A failed send of the same text (even from before a reload) is
+          // retried under its own key, not shown a second time.
+          const failed = sent.find(
+            (r) => r.agentID === active.agentID && r.text === text && r.status === "failed",
+          );
+          sendKey.current = { text, key: failed?.key ?? crypto.randomUUID() };
         }
-        await sendChat(active.agentID, text, sendKey.current.key);
+        await deliver(active.agentID, text, sendKey.current.key);
         sendKey.current = null;
       }
       setDraft("");
@@ -370,7 +428,12 @@ export default function Chat() {
                   key={message.key}
                   message={message}
                   agentName={active.name}
-                  stale={stale.has(message.item.item_id)}
+                  stale={message.item ? stale.has(message.item.item_id) : false}
+                  retrying={sending}
+                  onRetry={() => {
+                    const record = sent.find((r) => r.key === message.sent?.key);
+                    if (record) void retry(record);
+                  }}
                   onInfo={() => setInfo(message)}
                 />
               ))}
@@ -467,11 +530,15 @@ function MessageRow({
   message,
   agentName,
   stale,
+  retrying,
+  onRetry,
   onInfo,
 }: {
   message: ChatMessage;
   agentName: string;
   stale: boolean;
+  retrying: boolean;
+  onRetry: () => void;
   onInfo: () => void;
 }) {
   const mine = message.from === "operator";
@@ -505,6 +572,24 @@ function MessageRow({
         ) : (
           <Markdown content={message.body} />
         )}
+        {message.sent?.status === "sending" ? (
+          <p role="status" className="mt-1 text-xs text-fg-muted">
+            Sending…
+          </p>
+        ) : null}
+        {message.sent?.status === "failed" ? (
+          <div className="mt-1 flex items-center gap-2 text-xs text-danger">
+            <span>Not sent. {message.sent.error}</span>
+            <button
+              type="button"
+              disabled={retrying}
+              onClick={onRetry}
+              className="rounded border border-border px-2 py-0.5 text-fg disabled:opacity-50"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -512,19 +597,26 @@ function MessageRow({
 
 function MessageInfo({ message }: { message: ChatMessage }) {
   const { item } = message;
-  const source = item.source_message;
-  const rows: Array<[string, string | undefined]> = [
-    ["Item", item.item_id],
-    ["Kind", item.kind],
-    ["Session", item.session_id],
-    ["Turn", item.turn_id],
-    ["Delivery", item.delivery_state],
-    ["Sender (unverified)", source?.sender_urn],
-    ["Channel", source?.channel],
-    ["Publication", source ? `${source.message_id} · sequence ${source.sequence}` : undefined],
-    ["Output", source?.output_id],
-    ["Runtime", source?.attribution?.runtime],
-  ];
+  const source = item?.source_message;
+  const rows: Array<[string, string | undefined]> = item
+    ? [
+        ["Item", item.item_id],
+        ["Kind", item.kind],
+        ["Session", item.session_id],
+        ["Turn", item.turn_id],
+        ["Delivery", item.delivery_state],
+        ["Sender (unverified)", source?.sender_urn],
+        ["Channel", source?.channel],
+        ["Publication", source ? `${source.message_id} · sequence ${source.sequence}` : undefined],
+        ["Output", source?.output_id],
+        ["Runtime", source?.attribution?.runtime],
+      ]
+    : [
+        ["Sent from", "the composer"],
+        ["Delivery", message.sent?.status],
+        ["Idempotency key", message.sent?.key],
+        ["Error", message.sent?.error],
+      ];
   return (
     <>
       <dl className="space-y-1 break-words">
@@ -537,7 +629,7 @@ function MessageInfo({ message }: { message: ChatMessage }) {
             </div>
           ))}
       </dl>
-      {item.stage_trace?.length ? (
+      {item?.stage_trace?.length ? (
         <>
           <h3 className="mt-3 font-semibold">Stage trace</h3>
           <ul className="mt-1 space-y-1">

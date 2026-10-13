@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chat: a message you send now appears in the conversation.** A message sent
+  from the composer (starting a chat with an idle agent, or the next turn of an
+  idle session) never showed in the stream, because the stream was built only
+  from inbox items. Each send is now recorded per browser (agent, text,
+  timestamp, idempotency key, delivery status) and merged into the stream in
+  time order, so it shows at once, stays after the agent replies and after a
+  reload, and is not doubled when it also arrives as a reply resolution. A
+  failed send stays in the stream as "Not sent" with a Retry that reuses the
+  same idempotency key. (CW-20261013-0021)
+
 ### Changed
 
 - **Every MCP tool is renamed to `tangent_<noun>_<verb>`**, matching

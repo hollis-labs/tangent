@@ -28,6 +28,19 @@ it and is a new view with its own semantics.
   is the operator's. They are merged by timestamp and de-duplicated by item id
   and resolution id. Only the last N (default 50, configurable) are shown;
   scrolling to the top or "Load older messages" reveals more.
+- **Sent messages.** A message sent from the composer (the send/initiate path)
+  leaves no item or resolution in the turns data, so Tangent records it itself:
+  agent, text, timestamp, idempotency key and delivery status (`sending`,
+  `sent`, `failed`), in `localStorage` (`tangent.chat.sent.v1`, newest 200 per
+  agent) beside the chat prefs. The record is written before the request, so
+  the message shows as "You" at once (optimistic echo), and it is merged into
+  the stream by time under the key `s:<idempotency key>`. A send that the turns
+  data also reports as a reply resolution of the same text, resolved at or
+  after the send, is one message: the resolution claims it. A failed send stays
+  in the stream as "Not sent" with a Retry that reuses its key, so it cannot
+  deliver twice; a send left unconfirmed by a reload is shown as failed. These
+  records are per browser, not shared between browsers. A reply through the
+  reply path is not recorded (its resolution is already the operator's message).
 - **Composer.** The mode is decided by the Tether roster (`session.state`,
   `session.id`, `at_turn_boundary`) together with the pending item's
   `session_id`, never by "a pending item exists". A reply to an item of a dead
