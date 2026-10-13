@@ -297,3 +297,119 @@ it("marks an unseen agent and clears it on open", async () => {
     expect(screen.queryByRole("img", { name: "New messages" })).not.toBeInTheDocument(),
   );
 });
+
+async function sendFrom(text: string) {
+  const box = await screen.findByLabelText("Message");
+  await waitFor(() => expect(box).toBeEnabled());
+  fireEvent.change(box, { target: { value: text } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+}
+
+it("shows a sent message as the operator's, and keeps it after the agent replies and a reload", async () => {
+  const be = backend({ turns: inbox([], []), roster: [entry("pm")] });
+  const first = render(
+    <MemoryRouter initialEntries={["/chat/pm"]}>
+      <Routes>
+        <Route path="/chat/:agentID" element={<Chat />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  await sendFrom("start here");
+  const log = await screen.findByRole("log");
+  expect(await within(log).findByText("start here")).toBeInTheDocument();
+  expect(within(log).getByText("You")).toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem("tangent.chat.sent.v1") ?? "[]")).toMatchObject([
+    { agentID: "pm", text: "start here", status: "sent" },
+  ]);
+  first.unmount();
+
+  // The agent answers, and the page is opened again.
+  be.turns = inbox(
+    [],
+    [turn({ item_id: "r", content: "READY", created_at: "2099-01-01T00:00:00Z" })],
+  );
+  mount();
+  const reloaded = await screen.findByRole("log");
+  expect(await within(reloaded).findByText("READY")).toBeInTheDocument();
+  const text = reloaded.textContent ?? "";
+  expect(text.indexOf("start here")).toBeGreaterThanOrEqual(0);
+  expect(text.indexOf("start here")).toBeLessThan(text.indexOf("READY"));
+});
+
+it("shows a failed send as failed, keeps the text, and retries it once under the same key", async () => {
+  let attempts = 0;
+  const be = backend({
+    turns: inbox([], []),
+    roster: [entry("pm")],
+    send: () => (++attempts === 1 ? json({ code: "tether_unreachable" }, 502) : json({ ok: true })),
+  });
+  mount();
+  await sendFrom("please");
+  const log = await screen.findByRole("log");
+  expect(await within(log).findByText(/Not sent/)).toBeInTheDocument();
+  expect(within(log).getByText("please")).toBeInTheDocument();
+  expect(screen.getByLabelText("Message")).toHaveValue("please");
+
+  fireEvent.click(within(log).getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(within(log).queryByText(/Not sent/)).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByLabelText("Message")).toHaveValue(""));
+  expect(within(log).getAllByText("please")).toHaveLength(1);
+  const keys = be.calls
+    .filter((c) => c.url.endsWith("/chat/send"))
+    .map((c) => JSON.parse(c.body ?? "{}").idempotency_key);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});
+
+it("shows a send left unconfirmed by a reload as failed with a retry", async () => {
+  localStorage.setItem(
+    "tangent.chat.sent.v1",
+    JSON.stringify([
+      {
+        key: "k1",
+        agentID: "pm",
+        text: "half sent",
+        at: "2026-10-12T10:00:00Z",
+        status: "sending",
+      },
+    ]),
+  );
+  backend({ turns: inbox([], []), roster: [entry("pm")] });
+  mount();
+  const log = await screen.findByRole("log");
+  expect(await within(log).findByText("half sent")).toBeInTheDocument();
+  expect(within(log).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+});
+
+it("does not show a sent message twice when it also arrives as a reply resolution", async () => {
+  localStorage.setItem(
+    "tangent.chat.sent.v1",
+    JSON.stringify([
+      { key: "k1", agentID: "pm", text: "do it", at: "2026-10-12T10:00:00Z", status: "sent" },
+    ]),
+  );
+  backend({
+    turns: inbox(
+      [],
+      [
+        turn({
+          item_id: "a",
+          state: "resolved",
+          created_at: "2026-10-12T09:00:00Z",
+          resolution: {
+            resolution_id: "res-a",
+            action: "respond",
+            response_text: "do it",
+            resolved_at: "2026-10-12T10:00:02Z",
+            resolved_by: "operator",
+          },
+        }),
+      ],
+    ),
+    roster: [entry("pm")],
+  });
+  mount();
+  const log = await screen.findByRole("log");
+  await within(log).findByText("hello");
+  expect(within(log).getAllByText("do it")).toHaveLength(1);
+});

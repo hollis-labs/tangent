@@ -6,11 +6,16 @@ import {
   isLivePending,
   isUnseen,
   loadPrefs,
+  loadSent,
   pendingFinal,
   rosterAgents,
+  SENT_PER_AGENT,
+  type SentMessage,
   savePrefs,
+  saveSent,
   sortAgents,
   staleItemIds,
+  upsertSent,
 } from "./chat-model";
 import type { RosterAgent } from "./chat-roster-api";
 import type { TurnItemView } from "./turns-api";
@@ -187,5 +192,126 @@ describe("staleItemIds", () => {
     const old = turn({ item_id: "o", session_id: "dead", queue_sequence: 1 });
     expect([...staleItemIds([live, old], agent)]).toEqual(["o"]);
     expect([...staleItemIds([live, old], { ...agent, session: null })].sort()).toEqual(["l", "o"]);
+  });
+});
+
+const sentMsg = (
+  key: string,
+  text: string,
+  at: string,
+  over: Partial<SentMessage> = {},
+): SentMessage => ({
+  key,
+  agentID: "pm",
+  text,
+  at,
+  status: "sent",
+  ...over,
+});
+
+describe("sent messages in the stream", () => {
+  it("merges a sent message in time order with both other directions", () => {
+    const a = turn({ item_id: "a", created_at: "2026-10-12T10:00:00Z", content: "first" });
+    const b = turn({ item_id: "b", created_at: "2026-10-12T10:10:00Z", content: "reply" });
+    const stream = buildStream([b, a], PM, [sentMsg("k1", "hi there", "2026-10-12T10:05:00Z")]);
+    expect(stream.map((m) => [m.from, m.body])).toEqual([
+      ["agent", "first"],
+      ["operator", "hi there"],
+      ["agent", "reply"],
+    ]);
+    expect(stream[1]?.item).toBeUndefined();
+  });
+
+  it("shows a sent message when there is no turn data at all", () => {
+    const stream = buildStream([], PM, [sentMsg("k1", "hello", "2026-10-12T10:00:00Z")]);
+    expect(stream.map((m) => m.body)).toEqual(["hello"]);
+  });
+
+  it("de-duplicates by send key and ignores other agents' sends", () => {
+    const stream = buildStream([], PM, [
+      sentMsg("k1", "once", "2026-10-12T10:00:00Z"),
+      sentMsg("k1", "once", "2026-10-12T10:00:00Z"),
+      sentMsg("k2", "elsewhere", "2026-10-12T10:00:00Z", { agentID: "arch" }),
+    ]);
+    expect(stream.map((m) => m.body)).toEqual(["once"]);
+  });
+
+  it("does not double up when the same text also arrives as a reply resolution", () => {
+    const item = turn({
+      item_id: "a",
+      created_at: "2026-10-12T10:00:00Z",
+      ...resolved("a", "2026-10-12T10:05:01Z", "do it"),
+    });
+    const stream = buildStream([item], PM, [sentMsg("k1", "do it", "2026-10-12T10:05:00Z")]);
+    expect(stream.filter((m) => m.from === "operator")).toHaveLength(1);
+    expect(stream.find((m) => m.from === "operator")?.key).toBe("o:res-a");
+  });
+
+  it("keeps two identical sends when only one resolution exists, and a send after the resolution", () => {
+    const item = turn({
+      item_id: "a",
+      created_at: "2026-10-12T10:00:00Z",
+      ...resolved("a", "2026-10-12T10:05:00Z", "ok"),
+    });
+    const stream = buildStream([item], PM, [
+      sentMsg("k1", "ok", "2026-10-12T10:04:00Z"),
+      sentMsg("k2", "ok", "2026-10-12T10:04:30Z"),
+      sentMsg("k3", "ok", "2026-10-12T10:09:00Z"),
+    ]);
+    expect(stream.filter((m) => m.from === "operator")).toHaveLength(3);
+  });
+
+  it("carries a failed send's status and error so the view can offer a retry", () => {
+    const [m] = buildStream([], PM, [
+      sentMsg("k1", "lost", "2026-10-12T10:00:00Z", { status: "failed", error: "nope" }),
+    ]);
+    expect(m?.sent).toEqual({ key: "k1", status: "failed", error: "nope" });
+    expect(m?.body).toBe("lost");
+  });
+});
+
+describe("sent message persistence", () => {
+  const storage = () => {
+    localStorage.clear();
+    return localStorage;
+  };
+
+  it("round-trips through storage", () => {
+    const s = storage();
+    const records = [sentMsg("k1", "hi", "2026-10-12T10:00:00Z")];
+    saveSent(records, s);
+    expect(loadSent(s)).toEqual(records);
+  });
+
+  it("loads an unconfirmed send as failed and drops malformed records", () => {
+    const s = storage();
+    s.setItem(
+      "tangent.chat.sent.v1",
+      JSON.stringify([
+        sentMsg("k1", "mid-flight", "2026-10-12T10:00:00Z", { status: "sending" }),
+        { key: 1 },
+        "junk",
+      ]),
+    );
+    const loaded = loadSent(s);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({ key: "k1", status: "failed" });
+    s.setItem("tangent.chat.sent.v1", "not json");
+    expect(loadSent(s)).toEqual([]);
+  });
+
+  it("upserts by key and caps the records kept per agent", () => {
+    let list: SentMessage[] = [];
+    list = upsertSent(list, sentMsg("k1", "a", "2026-10-12T10:00:00Z", { status: "sending" }));
+    list = upsertSent(list, sentMsg("k1", "a", "2026-10-12T10:00:00Z"));
+    expect(list).toHaveLength(1);
+    expect(list[0]?.status).toBe("sent");
+    for (let i = 0; i < SENT_PER_AGENT + 5; i++) {
+      const at = new Date(Date.UTC(2026, 9, 12, 11, 0, i)).toISOString();
+      list = upsertSent(list, sentMsg(`n${i}`, "x", at));
+    }
+    expect(list.filter((r) => r.agentID === "pm")).toHaveLength(SENT_PER_AGENT);
+    expect(list.some((r) => r.key === "k1")).toBe(false);
+    expect(list.some((r) => r.key === `n${SENT_PER_AGENT + 4}`)).toBe(true);
   });
 });

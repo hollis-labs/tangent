@@ -26,7 +26,26 @@ export interface ChatMessage {
   from: "agent" | "operator";
   body: string;
   at: string;
-  item: TurnItemView;
+  /** The inbox item behind the message; absent for a message sent from the composer. */
+  item?: TurnItemView;
+  /** Delivery status of a message sent from the composer (the send/initiate path). */
+  sent?: Pick<SentMessage, "key" | "status" | "error">;
+}
+
+export type SentStatus = "sending" | "sent" | "failed";
+
+/**
+ * A message the operator sent from the composer (the send/initiate path). The
+ * turns data holds nothing for it, so Tangent keeps its own record, keyed by the
+ * idempotency key the send travels with.
+ */
+export interface SentMessage {
+  key: string;
+  agentID: string;
+  text: string;
+  at: string;
+  status: SentStatus;
+  error?: string;
 }
 
 /** Kinds the composer may answer with the plain `respond` action. */
@@ -89,11 +108,20 @@ function messagesOf(item: TurnItemView): ChatMessage[] {
 }
 
 /**
- * The two directions of one agent's conversation in one ascending stream.
- * De-duplicated by key (item id / resolution id) and ordered by time; an agent
- * message sorts before an operator reply stamped the same instant.
+ * The directions of one agent's conversation in one ascending stream.
+ * De-duplicated by key (item id / resolution id / send key) and ordered by
+ * time; an agent message sorts before an operator message stamped the same
+ * instant.
+ *
+ * A sent message that the turns data later also reports as a reply resolution
+ * of the same text (resolved at or after the send) is the same message: the
+ * resolution claims it, one-to-one, and it is not shown twice.
  */
-export function buildStream(items: TurnItemView[], agent: ChatAgentRef): ChatMessage[] {
+export function buildStream(
+  items: TurnItemView[],
+  agent: ChatAgentRef,
+  sent: SentMessage[] = [],
+): ChatMessage[] {
   const seen = new Set<string>();
   const out: ChatMessage[] = [];
   for (const item of items) {
@@ -103,6 +131,31 @@ export function buildStream(items: TurnItemView[], agent: ChatAgentRef): ChatMes
       seen.add(message.key);
       out.push(message);
     }
+  }
+  const resolutions = out.filter((m) => m.from === "operator");
+  const claimed = new Set<string>();
+  for (const record of [...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+    if (record.agentID !== agent.agentID) continue;
+    const key = `s:${record.key}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const echo = resolutions.find(
+      (m) =>
+        !claimed.has(m.key) &&
+        m.body === record.text.trim() &&
+        Date.parse(m.at) >= Date.parse(record.at),
+    );
+    if (echo) {
+      claimed.add(echo.key);
+      continue;
+    }
+    out.push({
+      key,
+      from: "operator",
+      body: record.text,
+      at: record.at,
+      sent: { key: record.key, status: record.status, error: record.error },
+    });
   }
   return out.sort(
     (a, b) =>
@@ -233,4 +286,66 @@ export function composerMode(agent: ChatAgent, pending: TurnItemView | undefined
   if (!session) return { kind: "send" };
   if (pending && isLivePending(agent, pending)) return { kind: "reply", item: pending };
   return session.at_turn_boundary ? { kind: "send" } : { kind: "working" };
+}
+
+// Messages sent from the composer are kept per browser beside the chat prefs
+// (ADR 0007): the send route lives in the messaging plugin and Tangent's turns
+// data records nothing for it. Capped per agent.
+const SENT_KEY = "tangent.chat.sent.v1";
+export const SENT_PER_AGENT = 200;
+
+const STATUSES: SentStatus[] = ["sending", "sent", "failed"];
+
+function isSent(v: unknown): v is SentMessage {
+  const r = v as SentMessage | null;
+  return (
+    !!r &&
+    typeof r.key === "string" &&
+    typeof r.agentID === "string" &&
+    typeof r.text === "string" &&
+    typeof r.at === "string" &&
+    !Number.isNaN(Date.parse(r.at)) &&
+    STATUSES.includes(r.status)
+  );
+}
+
+/**
+ * A record still "sending" when it is loaded belongs to a page that went away
+ * mid-request. Its outcome is unknown, so it is shown as failed; a retry reuses
+ * the idempotency key and cannot deliver it twice.
+ */
+export function loadSent(storage: Storage = window.localStorage): SentMessage[] {
+  try {
+    const raw = JSON.parse(storage.getItem(SENT_KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(isSent)
+      .map((r) =>
+        r.status === "sending"
+          ? { ...r, status: "failed" as const, error: "Interrupted before it was confirmed." }
+          : r,
+      );
+  } catch {
+    return [];
+  }
+}
+
+export function saveSent(sent: SentMessage[], storage: Storage = window.localStorage): void {
+  try {
+    storage.setItem(SENT_KEY, JSON.stringify(sent));
+  } catch {
+    // Quota or private mode: the echo still shows for this page.
+  }
+}
+
+/** Inserts or replaces the record with this key, keeping the newest N per agent. */
+export function upsertSent(sent: SentMessage[], record: SentMessage): SentMessage[] {
+  const next = sent.some((r) => r.key === record.key)
+    ? sent.map((r) => (r.key === record.key ? record : r))
+    : [...sent, record];
+  const mine = next
+    .filter((r) => r.agentID === record.agentID)
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const drop = new Set(mine.slice(0, Math.max(0, mine.length - SENT_PER_AGENT)).map((r) => r.key));
+  return drop.size ? next.filter((r) => !drop.has(r.key)) : next;
 }
