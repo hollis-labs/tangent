@@ -33,7 +33,7 @@ export default function Inbox() {
   const [params, setParams] = useSearchParams();
   const view = params.get("view") || "pending";
   const category = params.get("type") || "all";
-  const sort = params.get("sort") || "oldest";
+  const sort = params.get("sort") || "newest";
   const search = params.get("q") || "";
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,8 +271,8 @@ export default function Inbox() {
               onChange={(event) => updateFilter("sort", event.target.value)}
               className="rounded border border-border bg-bg px-2 py-1"
             >
-              <option value="oldest">Oldest first (FIFO)</option>
               <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first (FIFO)</option>
             </select>
           </label>
         </div>

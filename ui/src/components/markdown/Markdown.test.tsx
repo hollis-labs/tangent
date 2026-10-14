@@ -103,4 +103,15 @@ describe("<Markdown>", () => {
     expect(screen.getByText("go")).toBeInTheDocument();
     expect(document.querySelector("pre")?.textContent).toBe("func main() {\n\treturn\n}\n");
   });
+
+  it("keeps its DOM nodes across a re-render with the same content", () => {
+    // A fresh components map per render makes react-markdown rebuild the whole
+    // document, which collapses the reader's text selection mid-drag.
+    const { rerender } = render(<Markdown content={"A **bold** line\n\n- one\n- two"} />);
+    const strong = screen.getByText("bold");
+    const item = screen.getByText("two");
+    rerender(<Markdown content={"A **bold** line\n\n- one\n- two"} className="other" />);
+    expect(screen.getByText("bold")).toBe(strong);
+    expect(screen.getByText("two")).toBe(item);
+  });
 });
