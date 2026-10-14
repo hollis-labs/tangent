@@ -249,7 +249,9 @@ async function run(command: DriverCommand) {
   transientSurfaceObserver.observe(document.body, { childList: true, subtree: true });
 
   const renderApprovalRoute = () => {
-    browserWindow.history.replaceState({}, "", `/inbox/items/${command.approvalID}`);
+    // This scenario exercises the stored FIFO, so it asks for oldest-first
+    // explicitly; the Inbox default is newest-first.
+    browserWindow.history.replaceState({}, "", `/inbox/items/${command.approvalID}?sort=oldest`);
     return render(React.createElement(App));
   };
   const joinedTitles = [

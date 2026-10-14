@@ -71,7 +71,7 @@ afterEach(() => {
 });
 
 describe("unified Inbox", () => {
-  it("interleaves all kinds in global FIFO order and filters without changing it", async () => {
+  it("interleaves all kinds newest first by default, filters without changing it, and can flip to FIFO", async () => {
     renderInbox();
     const queue = screen.getByRole("complementary", { name: "Inbox queue" });
     await screen.findByText("Request workflow");
@@ -79,13 +79,13 @@ describe("unified Inbox", () => {
       within(queue)
         .getAllByRole("button")
         .map((button) => button.querySelector(".font-medium")?.textContent),
-    ).toEqual(["Request approval", "Request doc", "Request turn", "Request workflow"]);
+    ).toEqual(["Request workflow", "Request turn", "Request doc", "Request approval"]);
     fireEvent.change(screen.getByLabelText("Interaction type"), { target: { value: "document" } });
     expect(within(queue).getAllByRole("button")).toHaveLength(1);
     expect(screen.getByText("Request doc")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Interaction type"), { target: { value: "all" } });
-    fireEvent.change(screen.getByLabelText("Inbox sort"), { target: { value: "newest" } });
-    expect(within(queue).getAllByRole("button")[0]).toHaveTextContent("Request workflow");
+    fireEvent.change(screen.getByLabelText("Inbox sort"), { target: { value: "oldest" } });
+    expect(within(queue).getAllByRole("button")[0]).toHaveTextContent("Request approval");
   });
   it("opens the actual structured body in a flexing pane and can expand it", async () => {
     renderInbox();

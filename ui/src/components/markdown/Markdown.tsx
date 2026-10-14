@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -54,7 +54,7 @@ interface MarkdownProps {
   "data-testid"?: string;
 }
 
-export function Markdown({
+function MarkdownView({
   content,
   maxLength = MARKDOWN_DISPLAY_LIMIT,
   linkPolicy = "reveal",
@@ -75,7 +75,7 @@ export function Markdown({
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkHTMLAsText]}
-        components={markdownComponents(tone, linkPolicy)}
+        components={componentsFor(tone, linkPolicy)}
       >
         {bounded.text}
       </ReactMarkdown>
@@ -87,6 +87,26 @@ export function Markdown({
     </div>
   );
 }
+
+// The components map must keep its identity between renders. react-markdown
+// treats each function in it as an element type, so a fresh map on every render
+// unmounts and rebuilds the whole rendered document: the reader loses their text
+// selection and scroll anchor, and every keystroke in a sibling input re-parses
+// and re-creates every message. One map per (tone, linkPolicy) is enough.
+const componentsCache = new Map<string, Components>();
+
+function componentsFor(tone: MarkdownTone, linkPolicy: MarkdownLinkPolicy): Components {
+  const key = `${tone}:${linkPolicy}`;
+  let components = componentsCache.get(key);
+  if (!components) {
+    components = markdownComponents(tone, linkPolicy);
+    componentsCache.set(key, components);
+  }
+  return components;
+}
+
+// Props are all primitives, so the default shallow comparison is a real memo.
+export const Markdown = memo(MarkdownView);
 
 // Headings are demoted three levels. Every surface that renders markdown here
 // sits under a real page heading, so an agent's `#` is a subsection of ours,

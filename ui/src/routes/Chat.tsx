@@ -1,6 +1,6 @@
-import { Info, Pin, PinOff, Send } from "lucide-react";
+import { Check, Copy, Download, Info, Pin, PinOff, Send } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
@@ -30,6 +30,7 @@ import {
   type Roster,
   sendChat,
 } from "@/lib/chat-roster-api";
+import { copyText, downloadMarkdown, safeFileName } from "@/lib/message-export";
 import { fetchTurnsInbox, replyTurn, TurnsAPIError, type TurnsInbox } from "@/lib/turns-api";
 import { cn } from "@/lib/utils";
 
@@ -55,13 +56,14 @@ export default function Chat() {
   const [loadError, setLoadError] = useState("");
   const [prefs, setPrefs] = useState(() => loadPrefs());
   const [visible, setVisible] = useState(prefs.pageSize);
-  const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
   const [sent, setSent] = useState<SentMessage[]>(() => loadSent());
   const [info, setInfo] = useState<ChatMessage | null>(null);
   const syncSeq = useRef(0);
   const rosterSeq = useRef(0);
+  const rosterFingerprint = useRef("");
+  const composerApi = useRef<{ clearIf: (text: string) => void } | null>(null);
   // One idempotency key per distinct message text, so a retry after a lost
   // response cannot deliver the same message twice.
   const sendKey = useRef<{ text: string; key: string } | null>(null);
@@ -91,7 +93,13 @@ export default function Chat() {
   const syncRoster = useCallback(async () => {
     const seq = ++rosterSeq.current;
     const next = await fetchChatRoster();
-    if (seq === rosterSeq.current) setRoster(next);
+    if (seq !== rosterSeq.current) return;
+    // The roster is polled; keep the old object when nothing changed so the
+    // page does not re-render for a poll that found nothing.
+    const fingerprint = JSON.stringify(next);
+    if (fingerprint === rosterFingerprint.current) return;
+    rosterFingerprint.current = fingerprint;
+    setRoster(next);
   }, []);
 
   useEffect(() => {
@@ -152,7 +160,6 @@ export default function Chat() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset keyed on the agent only
   useEffect(() => {
     setVisible(prefs.pageSize);
-    setDraft("");
     setSendError("");
     stickToBottom.current = true;
   }, [agentID]);
@@ -213,7 +220,7 @@ export default function Chat() {
     try {
       await deliver(record.agentID, record.text, record.key);
       if (sendKey.current?.key === record.key) sendKey.current = null;
-      if (draft.trim() === record.text.trim()) setDraft("");
+      composerApi.current?.clearIf(record.text);
     } catch (reason) {
       setSendError(sendFailure(reason, active?.name ?? record.agentID));
     } finally {
@@ -223,9 +230,10 @@ export default function Chat() {
     }
   };
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!active || mode.kind === "working" || !text || sending) return;
+  // Resolves true once the message went, so the composer knows to clear.
+  const send = async (raw: string): Promise<boolean> => {
+    const text = raw.trim();
+    if (!active || mode.kind === "working" || !text || sending) return false;
     setSending(true);
     setSendError("");
     try {
@@ -242,7 +250,7 @@ export default function Chat() {
         setSendError(
           `${active.name} is working. Your text is kept; send again when it finishes the turn.`,
         );
-        return;
+        return false;
       }
       if (current.kind === "reply") {
         const target = current.item;
@@ -263,16 +271,28 @@ export default function Chat() {
         await deliver(active.agentID, text, sendKey.current.key);
         sendKey.current = null;
       }
-      setDraft("");
       stickToBottom.current = true;
+      return true;
     } catch (reason) {
       setSendError(sendFailure(reason, active.name));
+      return false;
     } finally {
       setSending(false);
       void sync();
       void syncRoster();
     }
   };
+
+  // MessageRow is memoized; these keep its props from changing every render.
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
+  const sentRef = useRef(sent);
+  sentRef.current = sent;
+  const handleRetry = useCallback((message: ChatMessage) => {
+    const record = sentRef.current.find((r) => r.key === message.sent?.key);
+    if (record) void retryRef.current(record);
+  }, []);
+  const handleInfo = useCallback((message: ChatMessage) => setInfo(message), []);
 
   return (
     <PageShell as="main" className="flex">
@@ -430,62 +450,20 @@ export default function Chat() {
                   agentName={active.name}
                   stale={message.item ? stale.has(message.item.item_id) : false}
                   retrying={sending}
-                  onRetry={() => {
-                    const record = sent.find((r) => r.key === message.sent?.key);
-                    if (record) void retry(record);
-                  }}
-                  onInfo={() => setInfo(message)}
+                  onRetry={handleRetry}
+                  onInfo={handleInfo}
                 />
               ))}
             </div>
-            <form
-              aria-label="Message form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-              className="shrink-0 border-t border-border bg-bg p-3"
-            >
-              {sendError ? (
-                <p role="alert" className="mb-2 text-sm text-danger">
-                  {sendError}
-                </p>
-              ) : null}
-              <div className="flex items-end gap-2">
-                <textarea
-                  aria-label="Message"
-                  value={draft}
-                  rows={2}
-                  disabled={mode.kind === "working" || sending}
-                  placeholder={
-                    mode.kind === "working"
-                      ? `${active.name} is working…`
-                      : `Message ${active.name}`
-                  }
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  className="min-h-[3rem] flex-1 resize-none rounded border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
-                />
-                <button
-                  type="submit"
-                  aria-label="Send"
-                  disabled={mode.kind === "working" || sending || !draft.trim()}
-                  className="rounded bg-primary p-2 text-primary-fg disabled:opacity-50"
-                >
-                  <Send size={16} />
-                </button>
-              </div>
-              {mode.kind === "working" ? (
-                <p role="status" className="mt-1 text-xs text-fg-muted">
-                  {active.name} is working… You can message again when it finishes the turn.
-                </p>
-              ) : null}
-            </form>
+            <Composer
+              key={active.agentID}
+              apiRef={composerApi}
+              agentName={active.name}
+              working={mode.kind === "working"}
+              sending={sending}
+              sendError={sendError}
+              onSend={send}
+            />
           </>
         )}
       </section>
@@ -526,7 +504,147 @@ function sendFailure(reason: unknown, name: string): string {
   return (reason as Error).message;
 }
 
-function MessageRow({
+// The draft lives here, not in Chat: a keystroke re-renders only this form, not
+// the conversation above it.
+function Composer({
+  apiRef,
+  agentName,
+  working,
+  sending,
+  sendError,
+  onSend,
+}: {
+  apiRef: RefObject<{ clearIf: (text: string) => void } | null>;
+  agentName: string;
+  working: boolean;
+  sending: boolean;
+  sendError: string;
+  onSend: (text: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    apiRef.current = {
+      clearIf: (text) => {
+        if (draftRef.current.trim() === text.trim()) setDraft("");
+      },
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef]);
+  const submit = async () => {
+    if (await onSend(draftRef.current)) setDraft("");
+  };
+  return (
+    <form
+      aria-label="Message form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+      className="shrink-0 border-t border-border bg-bg p-3"
+    >
+      {sendError ? (
+        <p role="alert" className="mb-2 text-sm text-danger">
+          {sendError}
+        </p>
+      ) : null}
+      <div className="flex items-end gap-2">
+        <textarea
+          aria-label="Message"
+          value={draft}
+          rows={2}
+          disabled={working || sending}
+          placeholder={working ? `${agentName} is working…` : `Message ${agentName}`}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          className="min-h-[3rem] flex-1 resize-none rounded border border-border bg-surface px-3 py-2 text-sm disabled:opacity-60"
+        />
+        <button
+          type="submit"
+          aria-label="Send"
+          disabled={working || sending || !draft.trim()}
+          className="rounded bg-primary p-2 text-primary-fg disabled:opacity-50"
+        >
+          <Send size={16} />
+        </button>
+      </div>
+      {working ? (
+        <p role="status" className="mt-1 text-xs text-fg-muted">
+          {agentName} is working… You can message again when it finishes the turn.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  const copy = async () => {
+    try {
+      await copyText(text);
+      setState("copied");
+    } catch {
+      setState("failed");
+    }
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 2000);
+  };
+  return (
+    <button
+      type="button"
+      aria-label="Copy message"
+      title={
+        state === "copied"
+          ? "Copied"
+          : state === "failed"
+            ? "Could not copy; check the browser's clipboard permission"
+            : "Copy message"
+      }
+      onClick={() => void copy()}
+      className={cn("rounded p-0.5 hover:text-fg", state === "failed" && "text-danger")}
+    >
+      {state === "copied" ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
+function sameMessage(
+  a: { message: ChatMessage; agentName: string; stale: boolean; retrying: boolean },
+  b: { message: ChatMessage; agentName: string; stale: boolean; retrying: boolean },
+): boolean {
+  return (
+    a.agentName === b.agentName &&
+    a.stale === b.stale &&
+    a.retrying === b.retrying &&
+    a.message.key === b.message.key &&
+    a.message.body === b.message.body &&
+    a.message.at === b.message.at &&
+    a.message.from === b.message.from &&
+    a.message.sent?.status === b.message.sent?.status &&
+    a.message.sent?.error === b.message.sent?.error &&
+    a.message.item?.item_id === b.message.item?.item_id &&
+    a.message.item?.revision === b.message.item?.revision
+  );
+}
+
+// Memoized: the stream is rebuilt on every poll and event, and without this each
+// rebuild would re-render every message in the page.
+const MessageRow = memo(function MessageRow({
   message,
   agentName,
   stale,
@@ -538,10 +656,15 @@ function MessageRow({
   agentName: string;
   stale: boolean;
   retrying: boolean;
-  onRetry: () => void;
-  onInfo: () => void;
+  onRetry: (message: ChatMessage) => void;
+  onInfo: (message: ChatMessage) => void;
 }) {
   const mine = message.from === "operator";
+  const download = () =>
+    downloadMarkdown(
+      safeFileName(`${mine ? "you" : agentName} ${message.at.slice(0, 19)}`, "message"),
+      message.body,
+    );
   return (
     <div className={cn("flex", mine && "justify-end")}>
       <div
@@ -553,14 +676,26 @@ function MessageRow({
         <div className="mb-1 flex items-center gap-2 text-xs text-fg-muted">
           <span>{mine ? "You" : agentName}</span>
           <time dateTime={message.at}>{stamp(message.at)}</time>
-          <button
-            type="button"
-            aria-label="Message details"
-            onClick={onInfo}
-            className="ml-auto rounded p-0.5 hover:text-fg"
-          >
-            <Info size={12} />
-          </button>
+          <span className="ml-auto flex items-center gap-1">
+            <CopyButton text={message.body} />
+            <button
+              type="button"
+              aria-label="Download message"
+              title="Download Markdown"
+              onClick={download}
+              className="rounded p-0.5 hover:text-fg"
+            >
+              <Download size={12} />
+            </button>
+            <button
+              type="button"
+              aria-label="Message details"
+              onClick={() => onInfo(message)}
+              className="rounded p-0.5 hover:text-fg"
+            >
+              <Info size={12} />
+            </button>
+          </span>
         </div>
         {stale && !mine ? (
           <p className="mb-1 text-xs italic text-fg-muted">
@@ -583,7 +718,7 @@ function MessageRow({
             <button
               type="button"
               disabled={retrying}
-              onClick={onRetry}
+              onClick={() => onRetry(message)}
               className="rounded border border-border px-2 py-0.5 text-fg disabled:opacity-50"
             >
               Retry
@@ -593,7 +728,7 @@ function MessageRow({
       </div>
     </div>
   );
-}
+}, sameMessage);
 
 function MessageInfo({ message }: { message: ChatMessage }) {
   const { item } = message;
