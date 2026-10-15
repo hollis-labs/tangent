@@ -70,7 +70,7 @@ export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID, onDraft, 
     return (
       <Suspense
         fallback={
-          <p className="text-sm text-zinc-500" data-testid="envelope-router-loading">
+          <p className="text-sm text-fg-muted" data-testid="envelope-router-loading">
             Loading…
           </p>
         }
