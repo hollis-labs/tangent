@@ -6,12 +6,10 @@
  * filled by the same four rules @hollis-labs/design-tokens used to fill the 168
  * values nobody chose (its README, "The 168 values nobody chose").
  *
- * The package exports those values as data (DERIVED_TOKEN_VALUES) but does not
- * export the rules as functions, so they are re-implemented here. The
- * implementation is not trusted on the prose — `npm run theme:verify` replays it
- * against the package's own shipped `sysop-p4-white` palette and fails if it
- * stops reproducing it byte for byte. That is what makes these derivations
- * checkable instead of asserted.
+ * The package exports the rules as functions (deriveMuted, deriveHover, ...)
+ * from 0.2. They are kept re-implemented here so this script runs without a
+ * build step; `npm run theme:verify` compares this output against the package's
+ * exported functions and fails if they disagree.
  *
  * Run: node scripts/gen-tangent-theme.mjs > src/styles/tangent-theme.css
  */

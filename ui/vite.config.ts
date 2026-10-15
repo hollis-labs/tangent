@@ -36,5 +36,20 @@ export default defineConfig({
     // frontend hasn't been built yet.
     outDir: path.resolve(__dirname, "../internal/server/ui_dist"),
     emptyOutDir: true,
+    rolldownOptions: {
+      output: {
+        // React and the router change far less often than app code. Their own
+        // chunk keeps its content hash across app-only releases, so the
+        // immutable Cache-Control on /assets/* keeps serving it from cache.
+        codeSplitting: {
+          groups: [
+            {
+              name: "vendor-react",
+              test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/,
+            },
+          ],
+        },
+      },
+    },
   },
 });

@@ -30,7 +30,17 @@ pre-commit:
       skip_empty: true
       run: |
         if command -v golangci-lint >/dev/null 2>&1; then
-          golangci-lint run --new --timeout 30s
+          # cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config) on
+          # Linux; without pkg-config they cannot typecheck, so skip just those two (CI lints
+          # them). Capture `go list` first so its failure fails the hook instead of leaving a
+          # partial list.
+          if [ "$(uname -s)" = Linux ] && ! command -v pkg-config >/dev/null 2>&1; then
+            dirs=$(go list -f '{{.Dir}}' ./...) || exit 1
+            dirs=$(printf '%s\n' "$dirs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+            golangci-lint run --new --timeout 30s $dirs
+          else
+            golangci-lint run --new --timeout 30s
+          fi
         else
           echo "golangci-lint not installed — skipping"
         fi
@@ -38,7 +48,15 @@ pre-commit:
     go-vet:
       glob: "*.go"
       skip_empty: true
-      run: go vet ./...
+      # Same Linux/pkg-config exclusion as go-lint above; CI vets the full tree.
+      run: |
+        if [ "$(uname -s)" = Linux ] && ! command -v pkg-config >/dev/null 2>&1; then
+          pkgs=$(go list ./...) || exit 1
+          pkgs=$(printf '%s\n' "$pkgs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+          go vet $pkgs
+        else
+          go vet ./...
+        fi
 
     # ── Frontend ──────────────────────────────────────────────────────
 
@@ -55,4 +73,15 @@ pre-push:
     go-test:
       glob: "*.go"
       skip_empty: true
-      run: go test -race ./...
+      # cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config) on
+      # Linux. Without pkg-config they cannot build, so skip just those two packages; CI
+      # runs the full suite. Elsewhere, or with pkg-config present, test everything.
+      run: |
+        if [ "$(uname -s)" = Linux ] && ! command -v pkg-config >/dev/null 2>&1; then
+          echo "pkg-config not found: skipping cmd/tangent-app and internal/appshell (CI runs them)"
+          pkgs=$(go list ./...) || exit 1
+          pkgs=$(printf '%s\n' "$pkgs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+          go test -race $pkgs
+        else
+          go test -race ./...
+        fi
