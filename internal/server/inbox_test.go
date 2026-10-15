@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
-	"github.com/hollis-labs/tangent/internal/turns"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/hollis-labs/tangent/internal/turns"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
@@ -78,5 +80,8 @@ func TestTurnsInboxETagIgnoresReadTimestamp(t *testing.T) {
 	}
 	if a.Body.String() == b.Body.String() {
 		t.Fatal("the body still reports the read time")
+	}
+	if !strings.HasPrefix(a.Header().Get("ETag"), "W/") {
+		t.Fatalf("a tag over different bytes than the body must be weak, got %q", a.Header().Get("ETag"))
 	}
 }

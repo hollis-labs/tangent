@@ -55,9 +55,27 @@ describe("event hub", () => {
     vi.stubGlobal("EventSource", FakeSource);
     const status = vi.fn();
     const sub = subscribeRevision("/api/y/events", () => {}, status);
-    expect(status).not.toHaveBeenCalled();
+    expect(status).toHaveBeenLastCalledWith(false);
     FakeSource.instances[0].emit("open");
     expect(status).toHaveBeenLastCalledWith(true);
     sub.close();
+  });
+
+  it("tells a late subscriber the stream is down when it fails before ever opening", () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const first = vi.fn();
+    const one = subscribeRevision("/api/z/events", () => {}, first);
+    expect(first).toHaveBeenLastCalledWith(false);
+    FakeSource.instances[0].onerror?.();
+    const late = vi.fn();
+    const two = subscribeRevision("/api/z/events", () => {}, late);
+    expect(late).toHaveBeenLastCalledWith(false);
+    FakeSource.instances[0].emit("open");
+    expect(first).toHaveBeenLastCalledWith(true);
+    expect(late).toHaveBeenLastCalledWith(true);
+    FakeSource.instances[0].onerror?.();
+    expect(late).toHaveBeenLastCalledWith(false);
+    one.close();
+    two.close();
   });
 });
