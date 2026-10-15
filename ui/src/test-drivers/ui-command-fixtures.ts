@@ -53,7 +53,10 @@ export function fixtureFetch(input: RequestInfo | URL, init?: RequestInit): Prom
   if (init?.method && init.method !== "GET")
     return Promise.reject(new Error("fixture refuses writes"));
   const path = String(input);
-  if (path === "/api/inbox") return Promise.resolve(fixtureResponse({ items: [syntheticInbox] }));
+  if (path === "/api/inbox" || path === "/api/inbox?view=summary")
+    return Promise.resolve(fixtureResponse({ items: [syntheticInbox] }));
+  if (path.startsWith("/api/inbox/items/")) return Promise.resolve(fixtureResponse(syntheticInbox));
+  if (path.startsWith("/api/inbox/search")) return Promise.resolve(fixtureResponse({ ids: [] }));
   if (path === "/api/docs")
     return Promise.resolve(
       fixtureResponse({

@@ -14,9 +14,11 @@ import {
   entrySource,
   entryTitle,
   fetchInbox,
+  fetchInboxItem,
   type InboxCache,
   type InboxEntry,
   isTerminal,
+  searchInbox,
 } from "@/lib/inbox-api";
 import { idCommand, type UiHandler } from "@/lib/ui-channel";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,7 @@ const labels = {
 };
 
 // SSE is the signal; these are only safety nets.
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 const INBOX_FALLBACK_POLL_MS = 30_000;
 const INBOX_DEGRADED_POLL_MS = 3_000;
 
@@ -94,11 +97,82 @@ export default function Inbox() {
       refreshSequence.current++;
     };
   }, [sync]);
-  const selected = itemID
+  // `entries` are summaries; the open item is read in full on its own.
+  const selectedSummary = itemID
     ? entries.find((entry) => entry.interaction.interaction_id === itemID)
     : roomID
       ? entries.filter((entry) => entry.interaction.legacy_room_id === roomID).at(-1)
       : undefined;
+  const selectedID = selectedSummary?.interaction.interaction_id;
+  const selectedRevision = selectedSummary?.interaction.revision;
+  const [detail, setDetail] = useState<InboxEntry | null>(null);
+  const [detailError, setDetailError] = useState("");
+  useEffect(() => {
+    void selectedRevision; // a changed revision re-reads the item
+    if (!selectedID) {
+      setDetail(null);
+      return;
+    }
+    // A new selection starts clean: neither the previous item's error nor its body.
+    setDetailError("");
+    const controller = new AbortController();
+    fetchInboxItem(selectedID, controller.signal).then(
+      (full) => {
+        if (controller.signal.aborted) return;
+        setDetail(full);
+        setDetailError("");
+      },
+      (reason) => {
+        if (!controller.signal.aborted) setDetailError((reason as Error).message);
+      },
+    );
+    return () => controller.abort();
+  }, [selectedID, selectedRevision]);
+  // The header and list use the summary; the body needs the full entry, and must never be
+  // drawn from a different interaction's.
+  const selected = selectedSummary
+    ? detail && detail.interaction.interaction_id === selectedID
+      ? detail
+      : undefined
+    : undefined;
+  // Server-side content matches, scoped to the query they answered. A result for another
+  // query (or a failed one) is never used to filter the current one.
+  const [matches, setMatches] = useState<{
+    query: string;
+    ids: ReadonlySet<string>;
+    failed: boolean;
+  } | null>(null);
+  const trimmedSearch = search.trim();
+  useEffect(() => {
+    void entries; // a changed list re-runs the search
+    if (!trimmedSearch) {
+      setMatches(null);
+      return;
+    }
+    // Content search runs on the server: the list no longer carries full request text.
+    // It reruns when the list changes, so a new or updated item that matches appears
+    // without the query being retyped.
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      searchInbox(trimmedSearch, controller.signal).then(
+        (ids) => {
+          if (!controller.signal.aborted)
+            setMatches({ query: trimmedSearch, ids: new Set(ids), failed: false });
+        },
+        () => {
+          if (!controller.signal.aborted)
+            setMatches({ query: trimmedSearch, ids: new Set(), failed: true });
+        },
+      );
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [trimmedSearch, entries]);
+  const matchedIDs: ReadonlySet<string> =
+    matches && matches.query === trimmedSearch ? matches.ids : EMPTY_IDS;
+  const searchFailed = Boolean(matches && matches.query === trimmedSearch && matches.failed);
   const filtered = useMemo(() => {
     const query = search.toLowerCase().trim();
     return entries
@@ -107,12 +181,13 @@ export default function Inbox() {
           (view === "all" || (view === "history") === isTerminal(entry)) &&
           (category === "all" || categoryOf(entry) === category) &&
           (!query ||
-            `${entryTitle(entry)} ${entrySource(entry)} ${entry.interaction.definition_binding.kind} ${JSON.stringify(entry.interaction.request_snapshot)}`
+            matchedIDs.has(entry.interaction.interaction_id) ||
+            `${entryTitle(entry)} ${entrySource(entry)} ${entry.interaction.definition_binding.kind}`
               .toLowerCase()
               .includes(query)),
       )
       .sort((a, b) => (sort === "newest" ? b.sequence - a.sequence : a.sequence - b.sequence));
-  }, [entries, view, category, search, sort]);
+  }, [entries, view, category, search, sort, matchedIDs]);
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -251,7 +326,7 @@ export default function Inbox() {
         },
         { name: "sort", values: [["oldest", "newest"].includes(sort) ? sort : "unsupported"] },
       ],
-      selected_ids: selected ? [selected.interaction.interaction_id] : [],
+      selected_ids: selectedID ? [selectedID] : [],
       visible_rows: filtered.slice(0, 32).map((entry) => ({
         id: entry.interaction.interaction_id,
         summary: labels[categoryOf(entry)],
@@ -339,6 +414,11 @@ export default function Inbox() {
             {error}
           </p>
         ) : null}
+        {searchFailed ? (
+          <p role="alert" className="mt-2 text-sm text-danger">
+            Content search failed; results show title and source matches only.
+          </p>
+        ) : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside
@@ -374,9 +454,7 @@ export default function Inbox() {
                 <InboxRow
                   key={entry.interaction.interaction_id}
                   entry={entry}
-                  selected={
-                    selected?.interaction.interaction_id === entry.interaction.interaction_id
-                  }
+                  selected={selectedID === entry.interaction.interaction_id}
                   onSelect={selectEntry}
                   onNavigate={navigateRows}
                   registerTarget={registerTarget}
@@ -392,7 +470,7 @@ export default function Inbox() {
             hasSelection ? "flex" : "hidden md:flex",
           )}
         >
-          {selected ? (
+          {selectedSummary ? (
             <>
               <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2 text-xs">
                 <button
@@ -403,7 +481,7 @@ export default function Inbox() {
                   <ArrowLeft size={14} /> Back to inbox
                 </button>
                 <span className="ml-auto text-fg-muted">
-                  {labels[categoryOf(selected)]} · {selected.interaction.state}
+                  {labels[categoryOf(selectedSummary)]} · {selectedSummary.interaction.state}
                 </span>
                 <button
                   type="button"
@@ -415,7 +493,15 @@ export default function Inbox() {
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-body">
-                {categoryOf(selected) !== "workflow" ? (
+                {!selected ? (
+                  detailError ? (
+                    <p role="alert" className="p-6 text-danger">
+                      {detailError}
+                    </p>
+                  ) : (
+                    <p className="p-6 text-fg-muted">Loading interaction…</p>
+                  )
+                ) : categoryOf(selected) !== "workflow" ? (
                   <InboxItemBody
                     key={selected.interaction.interaction_id}
                     entry={selected}

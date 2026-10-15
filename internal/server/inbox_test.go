@@ -2,15 +2,16 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/turns"
-
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/turns"
 )
 
 type fakeInbox struct{ entries []interaction.InboxEntry }
@@ -83,5 +84,115 @@ func TestTurnsInboxETagIgnoresReadTimestamp(t *testing.T) {
 	}
 	if !strings.HasPrefix(a.Header().Get("ETag"), "W/") {
 		t.Fatalf("a tag over different bytes than the body must be weak, got %q", a.Header().Get("ETag"))
+	}
+}
+
+func richEntry(id, title, deep string) interaction.InboxEntry {
+	snapshot := `{"title":"` + title + `","body":"` + deep + `","source":{"agent_label":"Agent","secret":"x"}}`
+	return interaction.InboxEntry{
+		Sequence: 1,
+		Interaction: interaction.InteractionRecord{
+			ID:              id,
+			RequestSnapshot: json.RawMessage(snapshot),
+			ExternalRefs:    json.RawMessage(`{"a":1}`),
+			Policy:          json.RawMessage(`{"b":2}`),
+		},
+		Resolution: &interaction.ResolutionRecord{ID: "res", InteractionID: id, ResponsePayload: json.RawMessage(`{"reply":"saved text"}`)},
+	}
+}
+
+func TestInboxSummaryDropsHeavyFields(t *testing.T) {
+	svc := &fakeInbox{entries: []interaction.InboxEntry{richEntry("i1", "Title", strings.Repeat("deep ", 5000))}}
+	rec := httptest.NewRecorder()
+	inboxHandler(svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox?view=summary", nil))
+	var got struct {
+		Items []struct {
+			Interaction struct {
+				RequestSnapshot map[string]any `json:"request_snapshot"`
+				ExternalRefs    any            `json:"external_refs"`
+			} `json:"interaction"`
+			Resolution struct {
+				ResponsePayload any `json:"response_payload"`
+			} `json:"resolution"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	item := got.Items[0]
+	if item.Interaction.RequestSnapshot["title"] != "Title" || item.Interaction.RequestSnapshot["body"] != nil {
+		t.Fatalf("summary snapshot = %v", item.Interaction.RequestSnapshot)
+	}
+	if src := item.Interaction.RequestSnapshot["source"].(map[string]any); src["agent_label"] != "Agent" || src["secret"] != nil {
+		t.Fatalf("summary source = %v", src)
+	}
+	if item.Interaction.ExternalRefs != nil || item.Resolution.ResponsePayload != nil {
+		t.Fatal("external refs and resolution payload must be dropped")
+	}
+	if rec.Body.Len() > 1000 {
+		t.Fatalf("summary should be small, got %d bytes", rec.Body.Len())
+	}
+	full := httptest.NewRecorder()
+	inboxHandler(svc).ServeHTTP(full, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	if full.Body.Len() < 20000 {
+		t.Fatalf("the default read must stay full, got %d bytes", full.Body.Len())
+	}
+}
+
+func TestInboxItemAndSearch(t *testing.T) {
+	svc := &fakeInbox{entries: []interaction.InboxEntry{
+		richEntry("i1", "One", "needle in the body"),
+		richEntry("i2", "Two", "nothing"),
+	}}
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/inbox/items/{interactionID}", inboxItemHandler(svc))
+	mux.Handle("GET /api/inbox/search", inboxSearchHandler(svc))
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/items/i2", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"body":"nothing"`) {
+		t.Fatalf("item = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/items/missing", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing item = %d", rec.Code)
+	}
+	for q, want := range map[string]string{"NEEDLE": `["i1"]`, "saved text": `["i1","i2"]`, "absent": `[]`, "": `[]`} {
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/search?q="+url.QueryEscape(q), nil))
+		if !strings.Contains(rec.Body.String(), `"ids":`+want) {
+			t.Fatalf("search %q = %s, want ids %s", q, rec.Body.String(), want)
+		}
+	}
+}
+
+func TestInboxSummaryKeepsCallerPrincipalForSourceFallback(t *testing.T) {
+	entry := richEntry("i2", "Title", "x")
+	entry.Interaction.RequestSnapshot = json.RawMessage(`{"title":"Title"}`)
+	entry.Interaction.CallerPrincipalRef = "agent:worker-9"
+	entry.Interaction.CallerScope = "standalone-local:test"
+	svc := &fakeInbox{entries: []interaction.InboxEntry{entry}}
+
+	rec := httptest.NewRecorder()
+	inboxHandler(svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox?view=summary", nil))
+	var got struct {
+		Items []struct {
+			Interaction struct {
+				CallerPrincipalRef string `json:"caller_principal_ref"`
+			} `json:"interaction"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Items[0].Interaction.CallerPrincipalRef != "agent:worker-9" {
+		t.Fatalf("the row's source fallback was dropped: %q", got.Items[0].Interaction.CallerPrincipalRef)
+	}
+
+	search := httptest.NewRecorder()
+	inboxSearchHandler(svc).ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/inbox/search?q=worker-9", nil))
+	if !strings.Contains(search.Body.String(), `"i2"`) {
+		t.Fatalf("search must match the principal the row shows, got %s", search.Body.String())
 	}
 }

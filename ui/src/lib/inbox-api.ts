@@ -62,6 +62,12 @@ export function entrySource(entry: InboxEntry): string {
   return entry.interaction.caller_principal_ref || entry.interaction.caller_scope;
 }
 
+/**
+ * The list read is a SUMMARY: each entry carries only what a row renders (a bounded title
+ * and source in `request_snapshot`, no resolution payload). Open an item with
+ * `fetchInboxItem`, and search content with `searchInbox`.
+ */
+
 /** Remembers the last list and its ETag so an unchanged poll costs a 304, not a re-parse. */
 export interface InboxCache {
   etag?: string;
@@ -75,7 +81,11 @@ export interface InboxCache {
 export async function fetchInbox(signal?: AbortSignal, cache?: InboxCache): Promise<InboxEntry[]> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (cache?.etag && cache.items) headers["If-None-Match"] = cache.etag;
-  const response = await fetch("/api/inbox", { signal, credentials: "same-origin", headers });
+  const response = await fetch("/api/inbox?view=summary", {
+    signal,
+    credentials: "same-origin",
+    headers,
+  });
   if (response.status === 304 && cache?.items) return cache.items;
   if (!response.ok)
     throw new Error(
@@ -87,4 +97,26 @@ export async function fetchInbox(signal?: AbortSignal, cache?: InboxCache): Prom
     cache.etag = response.headers.get("ETag") ?? undefined;
   }
   return items;
+}
+
+/** The full entry (complete request snapshot and resolution) for one interaction. */
+export async function fetchInboxItem(id: string, signal?: AbortSignal): Promise<InboxEntry> {
+  const response = await fetch(`/api/inbox/items/${encodeURIComponent(id)}`, {
+    signal,
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`Interaction unavailable (HTTP ${response.status}).`);
+  return (await response.json()) as InboxEntry;
+}
+
+/** Ids of interactions whose full request or reply text contains `query`. */
+export async function searchInbox(query: string, signal?: AbortSignal): Promise<string[]> {
+  const response = await fetch(`/api/inbox/search?q=${encodeURIComponent(query)}`, {
+    signal,
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`Inbox search unavailable (HTTP ${response.status}).`);
+  return ((await response.json()) as { ids: string[] }).ids;
 }

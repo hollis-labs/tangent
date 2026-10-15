@@ -296,6 +296,8 @@ func New(cfg Config) (*Server, error) {
 
 	if cfg.Inbox != nil {
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
+		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
+		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/items/{interactionID}", authz.View, inboxItemHandler(cfg.Inbox))
 	}
 
 	if cfg.HITL != nil {
