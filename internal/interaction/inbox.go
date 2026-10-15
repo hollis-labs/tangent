@@ -190,7 +190,7 @@ WHERE i.id = ? AND NOT EXISTS (SELECT 1 FROM inbox_hidden_items h WHERE h.intera
 		return InboxEntry{}, err
 	}
 	entry := InboxEntry{Interaction: record}
-	if err := tx.QueryRowContext(ctx, `SELECT sequence FROM inbox_order WHERE interaction_id = ?`, id).Scan(&entry.Sequence); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT sequence FROM inbox_order WHERE interaction_id = ?`, id).Scan(&entry.Sequence); err != nil {
 		return InboxEntry{}, err
 	}
 	resolution, err := scanResolution(tx.QueryRowContext(ctx, `
@@ -207,7 +207,7 @@ FROM resolutions WHERE interaction_id = ?`, id))
 	default:
 		return InboxEntry{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err = tx.Commit(); err != nil {
 		return InboxEntry{}, err
 	}
 	return entry, nil
