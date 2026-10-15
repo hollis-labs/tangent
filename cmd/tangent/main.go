@@ -84,6 +84,25 @@ const (
 // below it. See run.
 func main() { os.Exit(run()) }
 
+// rejectPositional handles `tangent <word> ...` for a word that is not a
+// command. A help request among the arguments prints usage and succeeds, since
+// that is what a caller probing a CLI is asking for; anything else is an
+// unknown command and fails.
+func rejectPositional(flagSet *flag.FlagSet) int {
+	for _, arg := range flagSet.Args() {
+		switch arg {
+		case "-h", "-help", "--help", "help":
+			flagSet.SetOutput(os.Stdout)
+			flagSet.Usage()
+			return 0
+		}
+	}
+	fmt.Fprintf(os.Stderr, "tangent: unknown command %q\n", flagSet.Arg(0))
+	flagSet.SetOutput(os.Stderr)
+	flagSet.Usage()
+	return 2
+}
+
 // run is the real entry point, and it returns an exit code rather than calling
 // os.Exit, because os.Exit DOES NOT RUN DEFERRED FUNCTIONS.
 //
@@ -159,6 +178,14 @@ func run() int {
 	// refuse to run while Tangent is serving.
 	if flagSet.NArg() > 0 && flagSet.Arg(0) == "plugin" {
 		return runPluginCommand(flagSet.Args()[1:])
+	}
+
+	// Tangent has no subcommands besides `plugin`. A stray positional argument
+	// used to fall through and start a server, so `tangent docs --help` served
+	// for days and held the database owner lock. Resolve it before anything
+	// opens the database, takes the lock or binds a port.
+	if flagSet.NArg() > 0 {
+		return rejectPositional(flagSet)
 	}
 
 	maintenanceModes := maintenance.requested()
