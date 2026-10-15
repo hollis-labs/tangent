@@ -62,15 +62,29 @@ export function entrySource(entry: InboxEntry): string {
   return entry.interaction.caller_principal_ref || entry.interaction.caller_scope;
 }
 
-export async function fetchInbox(signal?: AbortSignal): Promise<InboxEntry[]> {
-  const response = await fetch("/api/inbox", {
-    signal,
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
+/** Remembers the last list and its ETag so an unchanged poll costs a 304, not a re-parse. */
+export interface InboxCache {
+  etag?: string;
+  items?: InboxEntry[];
+}
+
+/**
+ * With a cache, an unchanged Inbox returns the SAME array the cache already holds, so
+ * a React `setState` with it is a no-op and no row re-renders.
+ */
+export async function fetchInbox(signal?: AbortSignal, cache?: InboxCache): Promise<InboxEntry[]> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (cache?.etag && cache.items) headers["If-None-Match"] = cache.etag;
+  const response = await fetch("/api/inbox", { signal, credentials: "same-origin", headers });
+  if (response.status === 304 && cache?.items) return cache.items;
   if (!response.ok)
     throw new Error(
       `Inbox unavailable (HTTP ${response.status}). Reload to refresh your session or try again.`,
     );
-  return ((await response.json()) as { items: InboxEntry[] }).items;
+  const items = ((await response.json()) as { items: InboxEntry[] }).items;
+  if (cache) {
+    cache.items = items;
+    cache.etag = response.headers.get("ETag") ?? undefined;
+  }
+  return items;
 }

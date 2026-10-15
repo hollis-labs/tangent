@@ -1,5 +1,5 @@
 import { ArrowLeft, Expand, Minimize, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { EnvelopeRouter } from "@/components/envelopes/EnvelopeRouter";
@@ -7,11 +7,13 @@ import { PageShell } from "@/components/layout/PageShell";
 import { ResponseSummary } from "@/components/ResponseSummary";
 import { UiControl, useUiCommands, useViewDescriptor } from "@/hooks/useUiCommands";
 import { useViewPresentation } from "@/hooks/useViewPresentation";
+import { subscribeRevision, visiblePoll } from "@/lib/event-hub";
 import {
   categoryOf,
   entrySource,
   entryTitle,
   fetchInbox,
+  type InboxCache,
   type InboxEntry,
   isTerminal,
 } from "@/lib/inbox-api";
@@ -27,6 +29,10 @@ const labels = {
   workflow: "Interaction",
 };
 
+// SSE is the signal; these are only safety nets.
+const INBOX_FALLBACK_POLL_MS = 30_000;
+const INBOX_DEGRADED_POLL_MS = 3_000;
+
 export default function Inbox() {
   const { itemID, roomID } = useParams<{ itemID?: string; roomID?: string }>();
   const navigate = useNavigate();
@@ -40,30 +46,70 @@ export default function Inbox() {
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
   const refreshSequence = useRef(0);
-  const sync = useCallback(async () => {
-    const sequence = ++refreshSequence.current;
-    try {
-      const next = await fetchInbox();
-      if (sequence !== refreshSequence.current) return;
-      setEntries(next);
-      setError("");
-    } catch (reason) {
-      if (sequence === refreshSequence.current) setError((reason as Error).message);
-    } finally {
-      if (sequence === refreshSequence.current) setLoading(false);
+  const cache = useRef<InboxCache>({});
+  const inflight = useRef<Promise<void> | null>(null);
+  const dirty = useRef(false);
+  const sync = useCallback((): Promise<void> => {
+    // One request at a time. A call that lands mid-flight (the three event streams all
+    // announce on connect) is folded into a single follow-up, which is conditional by then
+    // and so costs a 304 instead of a second full list.
+    if (inflight.current) {
+      dirty.current = true;
+      return inflight.current;
     }
+    const run = async () => {
+      const sequence = ++refreshSequence.current;
+      try {
+        // An unchanged list comes back as the same array, so this setState is a no-op.
+        const next = await fetchInbox(undefined, cache.current);
+        if (sequence !== refreshSequence.current) return;
+        setEntries(next);
+        setError("");
+      } catch (reason) {
+        if (sequence === refreshSequence.current) setError((reason as Error).message);
+      } finally {
+        if (sequence === refreshSequence.current) setLoading(false);
+      }
+    };
+    const drain = async () => {
+      try {
+        do {
+          dirty.current = false;
+          await run();
+        } while (dirty.current);
+      } finally {
+        inflight.current = null;
+      }
+    };
+    inflight.current = drain();
+    return inflight.current;
   }, []);
   useEffect(() => {
+    // The three event streams all announce on connect and on every change; coalesce a
+    // burst into one conditional fetch. While every stream is up, polling is only a
+    // slow safety net; if one drops it tightens until the stream is back.
+    let pending: number | undefined;
+    const schedule = () => {
+      if (pending !== undefined) return;
+      pending = window.setTimeout(() => {
+        pending = undefined;
+        void sync();
+      }, 100);
+    };
+    const poll = visiblePoll(() => void sync(), INBOX_FALLBACK_POLL_MS);
+    const up = new Map<string, boolean>();
+    const subscriptions = ["hitl", "turns", "docs"].map((source) =>
+      subscribeRevision(`/api/${source}/events`, schedule, (connected) => {
+        up.set(source, connected);
+        const allUp = up.size === 3 && [...up.values()].every(Boolean);
+        poll.reset(allUp ? INBOX_FALLBACK_POLL_MS : INBOX_DEGRADED_POLL_MS);
+      }),
+    );
     void sync();
-    const timer = window.setInterval(() => void sync(), 2000);
-    const streams = ["hitl", "turns", "docs"].map((source) => {
-      const stream = new EventSource(`/api/${source}/events`);
-      stream.addEventListener("revision", () => void sync());
-      return stream;
-    });
     return () => {
-      window.clearInterval(timer);
-      for (const stream of streams) stream.close();
+      window.clearTimeout(pending);
+      poll.stop();
+      for (const subscription of subscriptions) subscription.close();
       refreshSequence.current++;
     };
   }, [sync]);
@@ -94,10 +140,32 @@ export default function Inbox() {
   };
   const hasSelection = Boolean(itemID || roomID);
   const listURL = `/${params.toString() ? `?${params}` : ""}`;
+  const paramsText = params.toString();
   const select = (entry: InboxEntry) =>
     navigate(
-      `/inbox/items/${entry.interaction.interaction_id}${params.toString() ? `?${params}` : ""}`,
+      `/inbox/items/${entry.interaction.interaction_id}${paramsText ? `?${paramsText}` : ""}`,
     );
+  // Rows are memoized, so what they call must keep its identity across the renders that
+  // do not change the list: the latest values ride in refs.
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const selectRef = useRef(select);
+  selectRef.current = select;
+  const selectEntry = useCallback((entry: InboxEntry) => selectRef.current(entry), []);
+  const navigateRows = useCallback((entry: InboxEntry, key: string, list: HTMLElement) => {
+    const rows = filteredRef.current;
+    const index = rows.indexOf(entry);
+    const nextIndex =
+      key === "Home"
+        ? 0
+        : key === "End"
+          ? rows.length - 1
+          : Math.max(0, Math.min(rows.length - 1, index + (key === "ArrowDown" ? 1 : -1)));
+    selectRef.current(rows[nextIndex]);
+    (
+      list.closest("ul")?.querySelectorAll("button")[nextIndex] as HTMLButtonElement | undefined
+    )?.focus();
+  }, []);
   const presentation = useViewPresentation(
     filtered.slice(0, 32).map((entry) => ({
       id: entry.interaction.interaction_id,
@@ -160,6 +228,17 @@ export default function Inbox() {
       return "applied";
     },
   };
+  const presentationRef = useRef(presentation);
+  presentationRef.current = presentation;
+  const registerTarget = useCallback(
+    (id: string, element: HTMLButtonElement | null) =>
+      presentationRef.current.targetRef(id)(element),
+    [],
+  );
+  const pendingCount = useMemo(
+    () => entries.filter((entry) => !isTerminal(entry)).length,
+    [entries],
+  );
   const commands = useUiCommands([
     ...presentation.handlers,
     filterCommand,
@@ -211,9 +290,7 @@ export default function Inbox() {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-lg font-semibold">Inbox</h1>
           <UiControl control={control} />
-          <span className="text-xs text-fg-muted">
-            {entries.filter((entry) => !isTerminal(entry)).length} pending
-          </span>
+          <span className="text-xs text-fg-muted">{pendingCount} pending</span>
           <label className="sr-only" htmlFor="inbox-search">
             Search inbox
           </label>
@@ -312,67 +389,18 @@ export default function Inbox() {
                   : `Pending requests, ${sort === "newest" ? "newest" : "oldest"} first`
               }
             >
-              {filtered.map((entry) => {
-                const record = entry.interaction;
-                return (
-                  <li key={record.interaction_id}>
-                    <button
-                      type="button"
-                      ref={presentation.targetRef(record.interaction_id)}
-                      aria-current={
-                        selected?.interaction.interaction_id === record.interaction_id
-                          ? "true"
-                          : undefined
-                      }
-                      onClick={() => select(entry)}
-                      onKeyDown={(event) => {
-                        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                        event.preventDefault();
-                        const index = filtered.indexOf(entry);
-                        const nextIndex =
-                          event.key === "Home"
-                            ? 0
-                            : event.key === "End"
-                              ? filtered.length - 1
-                              : Math.max(
-                                  0,
-                                  Math.min(
-                                    filtered.length - 1,
-                                    index + (event.key === "ArrowDown" ? 1 : -1),
-                                  ),
-                                );
-                        select(filtered[nextIndex]);
-                        const buttons = event.currentTarget
-                          .closest("ul")
-                          ?.querySelectorAll("button");
-                        (buttons?.[nextIndex] as HTMLButtonElement | undefined)?.focus();
-                      }}
-                      className={cn(
-                        "w-full border-b border-border px-4 py-4 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-primary",
-                        selected?.interaction.interaction_id === record.interaction_id &&
-                          "bg-surface",
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
-                        <span>{labels[categoryOf(entry)]}</span>
-                        <span>#{entry.sequence}</span>
-                      </div>
-                      <div className="mt-1 break-words text-sm font-medium">
-                        {entryTitle(entry)}
-                      </div>
-                      <div className="mt-2 truncate text-xs text-fg-muted">
-                        {entrySource(entry)} · {record.state}
-                      </div>
-                      <time
-                        className="mt-1 block text-xs text-fg-faint"
-                        dateTime={record.created_at}
-                      >
-                        {new Date(record.created_at).toLocaleString()}
-                      </time>
-                    </button>
-                  </li>
-                );
-              })}
+              {filtered.map((entry) => (
+                <InboxRow
+                  key={entry.interaction.interaction_id}
+                  entry={entry}
+                  selected={
+                    selected?.interaction.interaction_id === entry.interaction.interaction_id
+                  }
+                  onSelect={selectEntry}
+                  onNavigate={navigateRows}
+                  registerTarget={registerTarget}
+                />
+              ))}
             </ul>
           )}
         </aside>
@@ -446,6 +474,65 @@ export default function Inbox() {
     </PageShell>
   );
 }
+
+interface InboxRowProps {
+  entry: InboxEntry;
+  selected: boolean;
+  onSelect: (entry: InboxEntry) => void;
+  onNavigate: (entry: InboxEntry, key: string, element: HTMLElement) => void;
+  registerTarget: (id: string, element: HTMLButtonElement | null) => void;
+}
+
+// Memoized on the entry: the list poll hands back the same array when nothing changed,
+// and a changed list keeps the identity of every unchanged entry only if the server
+// payload does, so a 304 re-renders no row at all. `content-visibility` lets the browser
+// skip layout and paint for rows scrolled out of view.
+const InboxRow = memo(function InboxRow({
+  entry,
+  selected,
+  onSelect,
+  onNavigate,
+  registerTarget,
+}: InboxRowProps) {
+  const record = entry.interaction;
+  const id = record.interaction_id;
+  const ref = useCallback(
+    (element: HTMLButtonElement | null) => registerTarget(id, element),
+    [id, registerTarget],
+  );
+  const created = useMemo(() => new Date(record.created_at).toLocaleString(), [record.created_at]);
+  return (
+    <li className="[contain-intrinsic-size:auto_112px] [content-visibility:auto]">
+      <button
+        type="button"
+        ref={ref}
+        aria-current={selected ? "true" : undefined}
+        onClick={() => onSelect(entry)}
+        onKeyDown={(event) => {
+          if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          onNavigate(entry, event.key, event.currentTarget);
+        }}
+        className={cn(
+          "w-full border-b border-border px-4 py-4 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-primary",
+          selected && "bg-surface",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
+          <span>{labels[categoryOf(entry)]}</span>
+          <span>#{entry.sequence}</span>
+        </div>
+        <div className="mt-1 break-words text-sm font-medium">{entryTitle(entry)}</div>
+        <div className="mt-2 truncate text-xs text-fg-muted">
+          {entrySource(entry)} · {record.state}
+        </div>
+        <time className="mt-1 block text-xs text-fg-faint" dateTime={record.created_at}>
+          {created}
+        </time>
+      </button>
+    </li>
+  );
+});
 
 function WorkflowHistory({ entry }: { entry: InboxEntry }) {
   const record = entry.interaction;
