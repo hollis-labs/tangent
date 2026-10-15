@@ -167,6 +167,42 @@ func TestInboxItemAndSearch(t *testing.T) {
 	}
 }
 
+type keyedInbox struct {
+	fakeInbox
+	listed int
+}
+
+func (k *keyedInbox) BrowserInbox(ctx context.Context) ([]interaction.InboxEntry, error) {
+	k.listed++
+	return k.fakeInbox.BrowserInbox(ctx)
+}
+
+func (k *keyedInbox) BrowserInboxItem(_ context.Context, id string) (interaction.InboxEntry, error) {
+	for _, entry := range k.entries {
+		if entry.Interaction.ID == id {
+			return entry, nil
+		}
+	}
+	return interaction.InboxEntry{}, interaction.ErrNotFound
+}
+
+func TestInboxItemUsesTheKeyedReadWhenOffered(t *testing.T) {
+	svc := &keyedInbox{fakeInbox: fakeInbox{entries: []interaction.InboxEntry{richEntry("i1", "One", "x")}}}
+	h := inboxItemHandler(svc)
+	mux := http.NewServeMux()
+	mux.Handle("GET /api/inbox/items/{interactionID}", h)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/items/i1", nil))
+	if rec.Code != http.StatusOK || svc.listed != 0 {
+		t.Fatalf("code %d, list reads %d: the keyed read must not list", rec.Code, svc.listed)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/items/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown = %d", rec.Code)
+	}
+}
+
 func TestInboxSummaryKeepsCallerPrincipalForSourceFallback(t *testing.T) {
 	entry := richEntry("i2", "Title", "x")
 	entry.Interaction.RequestSnapshot = json.RawMessage(`{"title":"Title"}`)

@@ -2,6 +2,7 @@ package interaction
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hollis-labs/tangent/internal/authz"
@@ -153,4 +154,61 @@ func (s *Service) HiddenInboxItems(ctx context.Context) (map[string]bool, error)
 		hidden[id] = true
 	}
 	return hidden, rows.Err()
+}
+
+// BrowserInboxItem is the keyed read behind opening one Inbox row: the same entry
+// BrowserInbox would list for id (same visibility and authority rules), fetched by key
+// instead of by listing and filtering every interaction. It returns ErrNotFound for an
+// unknown, hidden or not-visible id.
+func (s *Service) BrowserInboxItem(ctx context.Context, id string) (InboxEntry, error) {
+	entry, err := s.store.getInboxEntry(ctx, id)
+	if err != nil {
+		return InboxEntry{}, err
+	}
+	if authz.Authorize(authz.Request{
+		Kind:       authz.KindCallerApplication,
+		Scope:      authz.CallerScope(""),
+		OwnerScope: entry.Interaction.CallerScope,
+		Capability: authz.View,
+		Isolation:  authz.AuthorityWide,
+	}) != nil {
+		return InboxEntry{}, ErrNotFound
+	}
+	return entry, nil
+}
+
+func (s *Store) getInboxEntry(ctx context.Context, id string) (InboxEntry, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return InboxEntry{}, fmt.Errorf("begin inbox item read: %w", err)
+	}
+	defer rollback(tx)
+	record, err := scanInteractionWithDefinition(tx.QueryRowContext(ctx, interactionSelect+`
+JOIN inbox_order o ON o.interaction_id = i.id
+WHERE i.id = ? AND NOT EXISTS (SELECT 1 FROM inbox_hidden_items h WHERE h.interaction_id = i.id)`, id))
+	if err != nil {
+		return InboxEntry{}, err
+	}
+	entry := InboxEntry{Interaction: record}
+	if err = tx.QueryRowContext(ctx, `SELECT sequence FROM inbox_order WHERE interaction_id = ?`, id).Scan(&entry.Sequence); err != nil {
+		return InboxEntry{}, err
+	}
+	resolution, err := scanResolution(tx.QueryRowContext(ctx, `
+SELECT id, interaction_id, expected_interaction_revision,
+       presented_projection_revision, participant_scope, participant_ref, participant_authority,
+       participant_assurance, response_kind, response_payload,
+       source_draft_revision, integrity_digest,
+       submitted_at, validated_at, recorded_at
+FROM resolutions WHERE interaction_id = ?`, id))
+	switch {
+	case err == nil:
+		entry.Resolution = &resolution
+	case errors.Is(err, ErrNotFound):
+	default:
+		return InboxEntry{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return InboxEntry{}, err
+	}
+	return entry, nil
 }
