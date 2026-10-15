@@ -14,7 +14,9 @@ class FakeSource {
   static OPEN = 1;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(public url: string) {
+  url: string;
+  constructor(url: string) {
+    this.url = url;
     FakeSource.instances.push(this);
   }
   addEventListener() {}
