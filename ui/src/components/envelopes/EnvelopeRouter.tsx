@@ -17,6 +17,7 @@
 // The Router itself remains imperative-state-free: callbacks flow
 // down from the owning Room, which owns the WSClient.
 
+import { Suspense } from "react";
 import { lookup } from "@/lib/envelope-registry";
 import { classifyRenderer, describeRendererRefusal } from "@/lib/renderer-trust";
 
@@ -65,15 +66,24 @@ export function EnvelopeRouter({ envelope, onSubmit, onCancel, roomID, onDraft, 
         </div>
       );
     }
+    // Renderers are code-split (see main.tsx); the chunk loads on first use.
     return (
-      <Component
-        envelope={envelope}
-        onSubmit={onSubmit}
-        onCancel={onCancel}
-        roomID={roomID}
-        readOnly={readOnly}
-        onDraft={onDraft}
-      />
+      <Suspense
+        fallback={
+          <p className="text-sm text-zinc-500" data-testid="envelope-router-loading">
+            Loading…
+          </p>
+        }
+      >
+        <Component
+          envelope={envelope}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+          roomID={roomID}
+          readOnly={readOnly}
+          onDraft={onDraft}
+        />
+      </Suspense>
     );
   }
 
