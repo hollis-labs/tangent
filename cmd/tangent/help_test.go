@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +33,8 @@ func runTangent(t *testing.T, binary string, args ...string) (stdout, stderr str
 		t.Fatalf("tangent %v did not exit within 15s (it started a server?); stderr:\n%s", args, errOut.String())
 	}
 	code = 0
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		code = exitErr.ExitCode()
 	} else if err != nil {
 		t.Fatalf("run tangent %v: %v", args, err)
