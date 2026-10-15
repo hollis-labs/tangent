@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"github.com/hollis-labs/tangent/internal/turns"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/turns"
 )
 
 type fakeInbox struct{ entries []interaction.InboxEntry }
@@ -81,6 +81,9 @@ func TestTurnsInboxETagIgnoresReadTimestamp(t *testing.T) {
 	}
 	if a.Body.String() == b.Body.String() {
 		t.Fatal("the body still reports the read time")
+	}
+	if !strings.HasPrefix(a.Header().Get("ETag"), "W/") {
+		t.Fatalf("a tag over different bytes than the body must be weak, got %q", a.Header().Get("ETag"))
 	}
 }
 
@@ -197,5 +200,35 @@ func TestInboxItemUsesTheKeyedReadWhenOffered(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox/items/nope", nil))
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown = %d", rec.Code)
+	}
+}
+
+func TestInboxSummaryKeepsCallerPrincipalForSourceFallback(t *testing.T) {
+	entry := richEntry("i2", "Title", "x")
+	entry.Interaction.RequestSnapshot = json.RawMessage(`{"title":"Title"}`)
+	entry.Interaction.CallerPrincipalRef = "agent:worker-9"
+	entry.Interaction.CallerScope = "standalone-local:test"
+	svc := &fakeInbox{entries: []interaction.InboxEntry{entry}}
+
+	rec := httptest.NewRecorder()
+	inboxHandler(svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox?view=summary", nil))
+	var got struct {
+		Items []struct {
+			Interaction struct {
+				CallerPrincipalRef string `json:"caller_principal_ref"`
+			} `json:"interaction"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Items[0].Interaction.CallerPrincipalRef != "agent:worker-9" {
+		t.Fatalf("the row's source fallback was dropped: %q", got.Items[0].Interaction.CallerPrincipalRef)
+	}
+
+	search := httptest.NewRecorder()
+	inboxSearchHandler(svc).ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/inbox/search?q=worker-9", nil))
+	if !strings.Contains(search.Body.String(), `"i2"`) {
+		t.Fatalf("search must match the principal the row shows, got %s", search.Body.String())
 	}
 }

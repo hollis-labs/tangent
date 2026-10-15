@@ -14,6 +14,10 @@ import { createPluginRegistry } from "@hollis-labs/plugin-registry";
 
 // The registry instance, created once at module load.
 const pluginRegistry = createPluginRegistry({
+  // Registry v2 admits explicitly. The host serves an empty snapshot today, so
+  // nothing is admitted until contribution rendering is wired.
+  kinds: {},
+  regions: {},
   onDiagnostic: (event) => {
     // Minimal proof logging — production would route to proper telemetry.
     console.info("[plugin-loader]", event.type, event);
@@ -34,13 +38,10 @@ export async function syncPlugins(): Promise<void> {
       return;
     }
 
-    const data = await response.json();
-
-    // Sync the registry with the fetched response.
-    const result = await pluginRegistry.sync(data);
+    // Pass the original JSON text: v2 checks raw keys and integer spelling.
+    const result = await pluginRegistry.sync(await response.text());
 
     console.info("[plugin-loader] plugins synced", {
-      protocol: data.protocol,
       accepted: result.accepted,
       loaded: result.loaded.length,
       failed: result.failed.length,

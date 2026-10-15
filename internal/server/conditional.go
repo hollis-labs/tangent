@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// writeConditionalJSON encodes value, tags it with a strong ETag over the body and
+// writeConditionalJSON encodes value, tags it with an ETag (strong over the body, weak when `tagged` differs) and
 // answers a matching If-None-Match with an empty 304. It is for list reads that a page
 // revalidates on a timer or an event: an unchanged list costs one read and no transfer,
 // parse or render. Cache-Control stays no-store so the browser never answers the
@@ -34,6 +34,11 @@ func writeConditionalJSON(w http.ResponseWriter, r *http.Request, name string, s
 	}
 	sum := sha256.Sum256(tagBytes)
 	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if tagged != nil {
+		// The tag covers different bytes than the body (the body carries a read time), so
+		// it only promises "same list", not byte equality: that is a weak validator.
+		etag = "W/" + etag
+	}
 	w.Header().Set("Server-Timing", name+";dur="+strconv.FormatFloat(float64(time.Since(start).Microseconds())/1000, 'f', 1, 64))
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-store")
@@ -53,7 +58,7 @@ func writeConditionalJSON(w http.ResponseWriter, r *http.Request, name string, s
 func etagMatches(header, etag string) bool {
 	for _, candidate := range strings.Split(header, ",") {
 		candidate = strings.TrimPrefix(strings.TrimSpace(candidate), "W/")
-		if candidate == etag || candidate == "*" {
+		if candidate == strings.TrimPrefix(etag, "W/") || candidate == "*" {
 			return true
 		}
 	}

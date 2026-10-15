@@ -98,7 +98,7 @@ func inboxSearchHandler(service InboxService) http.HandlerFunc {
 		ids := make([]string, 0)
 		if query != "" {
 			for _, entry := range entries {
-				haystack := strings.ToLower(string(entry.Interaction.RequestSnapshot))
+				haystack := strings.ToLower(string(entry.Interaction.RequestSnapshot) + " " + entry.Interaction.CallerPrincipalRef + " " + entry.Interaction.CallerScope)
 				if entry.Resolution != nil {
 					haystack += " " + strings.ToLower(string(entry.Resolution.ResponsePayload))
 				}
@@ -129,7 +129,9 @@ func summarizeInboxEntry(entry interaction.InboxEntry) interaction.InboxEntry {
 	// Binding, caller and participant bookkeeping is not shown in a row; only the kind
 	// (which picks the category) and the scope the row's group filters on are kept.
 	record.Definition = interaction.DefinitionBinding{Kind: record.Definition.Kind}
-	record.CallerPrincipalRef, record.CallerAuthority, record.CallerAssurance, record.IdempotencyKey = "", "", "", ""
+	// CallerPrincipalRef stays: entrySource falls back to it (before caller_scope) when the
+	// snapshot names no source, so clearing it would change what the row shows.
+	record.CallerAuthority, record.CallerAssurance, record.IdempotencyKey = "", "", ""
 	record.ParticipantScope, record.ParticipantRef, record.ParticipantAuthority, record.ParticipantAssurance = "", "", "", ""
 	record.ConnectionID, record.TerminalPolicyRef = "", ""
 	entry.Interaction = record
