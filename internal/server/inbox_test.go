@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"github.com/hollis-labs/tangent/internal/turns"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/turns"
 )
 
 type fakeInbox struct{ entries []interaction.InboxEntry }
@@ -81,6 +81,9 @@ func TestTurnsInboxETagIgnoresReadTimestamp(t *testing.T) {
 	}
 	if a.Body.String() == b.Body.String() {
 		t.Fatal("the body still reports the read time")
+	}
+	if !strings.HasPrefix(a.Header().Get("ETag"), "W/") {
+		t.Fatalf("a tag over different bytes than the body must be weak, got %q", a.Header().Get("ETag"))
 	}
 }
 

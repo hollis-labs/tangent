@@ -1,12 +1,16 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { TabStrip } from "./components/TabStrip";
 import { UiChannelProvider } from "./hooks/useUiCommands";
-import ChannelPane from "./routes/ChannelPane";
-import Chat from "./routes/Chat";
-import Inbox from "./routes/Inbox";
-import Settings from "./routes/Settings";
+
+// Each route is its own chunk so the entry stays small; the router fetches the
+// one being navigated to.
+const ChannelPane = lazy(() => import("./routes/ChannelPane"));
+const Chat = lazy(() => import("./routes/Chat"));
+const Inbox = lazy(() => import("./routes/Inbox"));
+const Settings = lazy(() => import("./routes/Settings"));
 
 function Layout() {
   // See RouteErrorBoundary's own doc comment for why this is a plain prop
@@ -19,7 +23,9 @@ function Layout() {
       <TabStrip />
       <div className="min-h-0 flex-1">
         <RouteErrorBoundary locationKey={location.pathname}>
-          <Outlet />
+          <Suspense fallback={<p className="p-4 text-sm text-fg-muted">Loading…</p>}>
+            <Outlet />
+          </Suspense>
         </RouteErrorBoundary>
       </div>
     </div>

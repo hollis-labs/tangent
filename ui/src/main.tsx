@@ -1,93 +1,120 @@
-import { StrictMode } from "react";
+import { lazy, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
-import {
-  AppBoard,
-  type AppBoardEnvelope,
-  type AppBoardResponse,
-} from "./components/envelopes/AppBoard";
-import {
-  ApprovalQueue,
-  type ApprovalQueueEnvelope,
-  type ApprovalQueueResponse,
+import type { AppBoardEnvelope, AppBoardResponse } from "./components/envelopes/AppBoard";
+import type {
+  ApprovalQueueEnvelope,
+  ApprovalQueueResponse,
 } from "./components/envelopes/ApprovalQueue";
-import {
-  BlockDraft,
-  type BlockDraftEnvelope,
-  type BlockDraftResponse,
-} from "./components/envelopes/BlockDraft";
-import {
-  Dashboard,
-  type DashboardEnvelope,
-  type DashboardResponse,
-} from "./components/envelopes/Dashboard";
-import {
-  DesignIteration,
-  type DesignIterationEnvelope,
-  type DesignIterationResponse,
+import type { BlockDraftEnvelope, BlockDraftResponse } from "./components/envelopes/BlockDraft";
+import type { DashboardEnvelope, DashboardResponse } from "./components/envelopes/Dashboard";
+import type {
+  DesignIterationEnvelope,
+  DesignIterationResponse,
 } from "./components/envelopes/DesignIteration";
-import {
-  DiffReview,
-  type DiffReviewEnvelope,
-  type DiffReviewResponse,
-} from "./components/envelopes/DiffReview";
-import { ExternalReview } from "./components/envelopes/ExternalReview";
-import {
-  Feedback,
-  type FeedbackEnvelope,
-  type FeedbackResponse,
-} from "./components/envelopes/Feedback";
-import {
-  FilePicker,
-  type FilePickerEnvelope,
-  type FilePickerResponse,
-} from "./components/envelopes/FilePicker";
-import {
-  FormCollect,
-  type FormCollectEnvelope,
-  type FormCollectResponse,
-} from "./components/envelopes/FormCollect";
-import {
-  InterviewQuestion,
-  type InterviewQuestionEnvelope,
-  type InterviewQuestionResponse,
+import type { DiffReviewEnvelope, DiffReviewResponse } from "./components/envelopes/DiffReview";
+import type { FeedbackEnvelope, FeedbackResponse } from "./components/envelopes/Feedback";
+import type { FilePickerEnvelope, FilePickerResponse } from "./components/envelopes/FilePicker";
+import type { FormCollectEnvelope, FormCollectResponse } from "./components/envelopes/FormCollect";
+import type {
+  InterviewQuestionEnvelope,
+  InterviewQuestionResponse,
 } from "./components/envelopes/InterviewQuestion";
-import {
-  OutputRender,
-  type OutputRenderEnvelope,
-  type OutputRenderResponse,
+import type {
+  OutputRenderEnvelope,
+  OutputRenderResponse,
 } from "./components/envelopes/OutputRender";
-import {
-  ProgressPanel,
-  type ProgressPanelEnvelope,
-  type ProgressPanelResponse,
+import type {
+  ProgressPanelEnvelope,
+  ProgressPanelResponse,
 } from "./components/envelopes/ProgressPanel";
-import {
-  ProseRevision,
-  type ProseRevisionEnvelope,
-  type ProseRevisionResponse,
+import type {
+  ProseRevisionEnvelope,
+  ProseRevisionResponse,
 } from "./components/envelopes/ProseRevision";
-import {
-  SpreadsheetReview,
-  type SpreadsheetReviewEnvelope,
-  type SpreadsheetReviewResponse,
+import type {
+  SpreadsheetReviewEnvelope,
+  SpreadsheetReviewResponse,
 } from "./components/envelopes/SpreadsheetReview";
-import {
-  SynthesisNotes,
-  type SynthesisNotesEnvelope,
-  type SynthesisNotesResponse,
+import type {
+  SynthesisNotesEnvelope,
+  SynthesisNotesResponse,
 } from "./components/envelopes/SynthesisNotes";
-import { Triage, type TriageEnvelope, type TriageResponse } from "./components/envelopes/Triage";
-import {
-  Whiteboard,
-  type WhiteboardEnvelope,
-  type WhiteboardSubmitResponse,
+import type { TriageEnvelope, TriageResponse } from "./components/envelopes/Triage";
+import type {
+  WhiteboardEnvelope,
+  WhiteboardSubmitResponse,
 } from "./components/envelopes/Whiteboard";
-import { Wizard, type WizardEnvelope, type WizardResponse } from "./components/envelopes/Wizard";
+import type { WizardEnvelope, WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import { syncPlugins } from "./lib/plugin-loader";
 import { seedShellClientIdentity } from "./lib/ws-client";
 import "./index.css";
+
+// Each envelope renderer is its own chunk, fetched when a room first presents
+// that kind (EnvelopeRouter supplies the Suspense boundary). Types stay static
+// imports and cost nothing at runtime.
+const AppBoard = lazy(() =>
+  import("./components/envelopes/AppBoard").then((m) => ({ default: m.AppBoard })),
+);
+const ApprovalQueue = lazy(() =>
+  import("./components/envelopes/ApprovalQueue").then((m) => ({ default: m.ApprovalQueue })),
+);
+const BlockDraft = lazy(() =>
+  import("./components/envelopes/BlockDraft").then((m) => ({ default: m.BlockDraft })),
+);
+const Dashboard = lazy(() =>
+  import("./components/envelopes/Dashboard").then((m) => ({ default: m.Dashboard })),
+);
+const DesignIteration = lazy(() =>
+  import("./components/envelopes/DesignIteration").then((m) => ({ default: m.DesignIteration })),
+);
+const DiffReview = lazy(() =>
+  import("./components/envelopes/DiffReview").then((m) => ({ default: m.DiffReview })),
+);
+const ExternalReview = lazy(() =>
+  import("./components/envelopes/ExternalReview").then((m) => ({ default: m.ExternalReview })),
+);
+const Feedback = lazy(() =>
+  import("./components/envelopes/Feedback").then((m) => ({ default: m.Feedback })),
+);
+const FilePicker = lazy(() =>
+  import("./components/envelopes/FilePicker").then((m) => ({ default: m.FilePicker })),
+);
+const FormCollect = lazy(() =>
+  import("./components/envelopes/FormCollect").then((m) => ({ default: m.FormCollect })),
+);
+const InterviewQuestion = lazy(() =>
+  import("./components/envelopes/InterviewQuestion").then((m) => ({
+    default: m.InterviewQuestion,
+  })),
+);
+const OutputRender = lazy(() =>
+  import("./components/envelopes/OutputRender").then((m) => ({ default: m.OutputRender })),
+);
+const ProgressPanel = lazy(() =>
+  import("./components/envelopes/ProgressPanel").then((m) => ({ default: m.ProgressPanel })),
+);
+const ProseRevision = lazy(() =>
+  import("./components/envelopes/ProseRevision").then((m) => ({ default: m.ProseRevision })),
+);
+const SpreadsheetReview = lazy(() =>
+  import("./components/envelopes/SpreadsheetReview").then((m) => ({
+    default: m.SpreadsheetReview,
+  })),
+);
+const SynthesisNotes = lazy(() =>
+  import("./components/envelopes/SynthesisNotes").then((m) => ({ default: m.SynthesisNotes })),
+);
+const Triage = lazy(() =>
+  import("./components/envelopes/Triage").then((m) => ({ default: m.Triage })),
+);
+const Whiteboard = lazy(() =>
+  import("./components/envelopes/Whiteboard").then((m) => ({ default: m.Whiteboard })),
+);
+const Wizard = lazy(() =>
+  import("./components/envelopes/Wizard").then((m) => ({ default: m.Wizard })),
+);
 
 // v0.1 envelope component registrations. Each component registers
 // against the canonical wire `type` string. tangent.triage carries the

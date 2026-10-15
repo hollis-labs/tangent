@@ -53,7 +53,9 @@ export function subscribeRevision(
   held.revisionListeners.add(onRevision);
   if (onStatus) {
     held.statusListeners.add(onStatus);
-    if (held.connected) onStatus(true);
+    // Report the current state either way: a subscriber that never hears "down" would
+    // keep its slow fallback poll if the stream fails before it ever opens.
+    onStatus(held.connected);
   }
   let closed = false;
   return {
