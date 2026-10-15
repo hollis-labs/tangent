@@ -245,19 +245,23 @@ describe("<TurnsInboxRoute>", () => {
     const fetchMock = createFetchRouter(mockInbox([item1]));
     vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock);
 
-    render(
-      <MemoryRouter initialEntries={["/turns/items/turn-q"]}>
-        <Routes>
-          <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    // Complete initial fetches and the active-item composer reset before typing.
+    await act(async () => {
+      render(
+        <MemoryRouter initialEntries={["/turns/items/turn-q"]}>
+          <Routes>
+            <Route path="/turns/items/:itemID" element={<TurnsInboxRoute />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
 
     expect(await screen.findByRole("heading", { name: "Title for turn-q" })).toBeInTheDocument();
 
     // Type response in textarea
     const textarea = screen.getByPlaceholderText("Type your guidance or decision for the agent...");
     fireEvent.change(textarea, { target: { value: "Proceed with caution" } });
+    expect(textarea).toHaveValue("Proceed with caution");
 
     const submitBtn = screen.getByRole("button", { name: /Submit Response/i });
     fireEvent.click(submitBtn);
