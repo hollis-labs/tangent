@@ -166,3 +166,33 @@ func TestInboxItemAndSearch(t *testing.T) {
 		}
 	}
 }
+
+func TestInboxSummaryKeepsCallerPrincipalForSourceFallback(t *testing.T) {
+	entry := richEntry("i2", "Title", "x")
+	entry.Interaction.RequestSnapshot = json.RawMessage(`{"title":"Title"}`)
+	entry.Interaction.CallerPrincipalRef = "agent:worker-9"
+	entry.Interaction.CallerScope = "standalone-local:test"
+	svc := &fakeInbox{entries: []interaction.InboxEntry{entry}}
+
+	rec := httptest.NewRecorder()
+	inboxHandler(svc).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/inbox?view=summary", nil))
+	var got struct {
+		Items []struct {
+			Interaction struct {
+				CallerPrincipalRef string `json:"caller_principal_ref"`
+			} `json:"interaction"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Items[0].Interaction.CallerPrincipalRef != "agent:worker-9" {
+		t.Fatalf("the row's source fallback was dropped: %q", got.Items[0].Interaction.CallerPrincipalRef)
+	}
+
+	search := httptest.NewRecorder()
+	inboxSearchHandler(svc).ServeHTTP(search, httptest.NewRequest(http.MethodGet, "/api/inbox/search?q=worker-9", nil))
+	if !strings.Contains(search.Body.String(), `"i2"`) {
+		t.Fatalf("search must match the principal the row shows, got %s", search.Body.String())
+	}
+}

@@ -33,6 +33,7 @@ const labels = {
 };
 
 // SSE is the signal; these are only safety nets.
+const EMPTY_IDS: ReadonlySet<string> = new Set();
 const INBOX_FALLBACK_POLL_MS = 30_000;
 const INBOX_DEGRADED_POLL_MS = 3_000;
 
@@ -112,9 +113,12 @@ export default function Inbox() {
       setDetail(null);
       return;
     }
+    // A new selection starts clean: neither the previous item's error nor its body.
+    setDetailError("");
     const controller = new AbortController();
     fetchInboxItem(selectedID, controller.signal).then(
       (full) => {
+        if (controller.signal.aborted) return;
         setDetail(full);
         setDetailError("");
       },
@@ -131,26 +135,44 @@ export default function Inbox() {
       ? detail
       : undefined
     : undefined;
-  const [matchedIDs, setMatchedIDs] = useState<ReadonlySet<string>>(new Set());
+  // Server-side content matches, scoped to the query they answered. A result for another
+  // query (or a failed one) is never used to filter the current one.
+  const [matches, setMatches] = useState<{
+    query: string;
+    ids: ReadonlySet<string>;
+    failed: boolean;
+  } | null>(null);
+  const trimmedSearch = search.trim();
   useEffect(() => {
-    const query = search.trim();
-    if (!query) {
-      setMatchedIDs(new Set());
+    void entries; // a changed list re-runs the search
+    if (!trimmedSearch) {
+      setMatches(null);
       return;
     }
     // Content search runs on the server: the list no longer carries full request text.
+    // It reruns when the list changes, so a new or updated item that matches appears
+    // without the query being retyped.
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      searchInbox(query, controller.signal).then(
-        (ids) => setMatchedIDs(new Set(ids)),
-        () => undefined,
+      searchInbox(trimmedSearch, controller.signal).then(
+        (ids) => {
+          if (!controller.signal.aborted)
+            setMatches({ query: trimmedSearch, ids: new Set(ids), failed: false });
+        },
+        () => {
+          if (!controller.signal.aborted)
+            setMatches({ query: trimmedSearch, ids: new Set(), failed: true });
+        },
       );
     }, 250);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [search]);
+  }, [trimmedSearch, entries]);
+  const matchedIDs: ReadonlySet<string> =
+    matches && matches.query === trimmedSearch ? matches.ids : EMPTY_IDS;
+  const searchFailed = Boolean(matches && matches.query === trimmedSearch && matches.failed);
   const filtered = useMemo(() => {
     const query = search.toLowerCase().trim();
     return entries
@@ -390,6 +412,11 @@ export default function Inbox() {
         {error ? (
           <p role="alert" className="mt-2 text-sm text-danger">
             {error}
+          </p>
+        ) : null}
+        {searchFailed ? (
+          <p role="alert" className="mt-2 text-sm text-danger">
+            Content search failed; results show title and source matches only.
           </p>
         ) : null}
       </header>
