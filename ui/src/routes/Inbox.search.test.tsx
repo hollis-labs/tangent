@@ -26,7 +26,9 @@ class FakeSource {
   listeners = new Map<string, Array<() => void>>();
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(public url: string) {
+  url: string;
+  constructor(url: string) {
+    this.url = url;
     FakeSource.instances.push(this);
   }
   addEventListener(type: string, fn: () => void) {
