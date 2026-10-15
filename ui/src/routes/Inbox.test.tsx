@@ -1,13 +1,19 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxEntry } from "@/lib/inbox-api";
 import Inbox from "./Inbox";
 
-const { fetchInbox } = vi.hoisted(() => ({ fetchInbox: vi.fn() }));
+const { fetchInbox, fetchInboxItem, searchInbox } = vi.hoisted(() => ({
+  fetchInbox: vi.fn(),
+  fetchInboxItem: vi.fn(),
+  searchInbox: vi.fn(),
+}));
 vi.mock("@/lib/inbox-api", async (original) => ({
   ...(await original<typeof import("@/lib/inbox-api")>()),
   fetchInbox,
+  fetchInboxItem,
+  searchInbox,
 }));
 vi.mock("./InboxItemBody", () => ({
   InboxItemBody: ({ entry }: { entry: InboxEntry }) => (
@@ -64,6 +70,15 @@ beforeEach(() => {
     entry("turn", 3, "tangent.agent-turn"),
     entry("workflow", 4, "tangent.approval-queue"),
   ]);
+  // The list is a summary; the open item is read in full. The fixtures serve both.
+  fetchInboxItem.mockImplementation(async (id: string) => {
+    const found = ((await fetchInbox()) as InboxEntry[]).find(
+      (item) => item.interaction.interaction_id === id,
+    );
+    if (!found) throw new Error("missing");
+    return found;
+  });
+  searchInbox.mockResolvedValue([]);
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -144,4 +159,16 @@ it("keeps external review history selectable while its renderer is read-only", a
   const wrapper = original.closest("fieldset");
   expect(wrapper).not.toHaveAttribute("inert");
   expect(wrapper).toHaveAttribute("disabled");
+});
+
+it("searches content the summary list does not carry through the server and reads the open item in full", async () => {
+  searchInbox.mockResolvedValue(["workflow"]);
+  renderInbox("/?q=needle&view=all");
+  await screen.findByText("Request workflow");
+  expect(searchInbox).toHaveBeenCalledWith("needle", expect.anything());
+  expect(screen.queryByText("Request approval")).not.toBeInTheDocument();
+  cleanup();
+  renderInbox("/inbox/items/doc");
+  await screen.findByText("Body for doc");
+  expect(fetchInboxItem).toHaveBeenCalledWith("doc", expect.anything());
 });

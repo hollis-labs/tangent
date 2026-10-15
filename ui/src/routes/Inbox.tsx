@@ -14,9 +14,11 @@ import {
   entrySource,
   entryTitle,
   fetchInbox,
+  fetchInboxItem,
   type InboxCache,
   type InboxEntry,
   isTerminal,
+  searchInbox,
 } from "@/lib/inbox-api";
 import { idCommand, type UiHandler } from "@/lib/ui-channel";
 import { cn } from "@/lib/utils";
@@ -94,11 +96,61 @@ export default function Inbox() {
       refreshSequence.current++;
     };
   }, [sync]);
-  const selected = itemID
+  // `entries` are summaries; the open item is read in full on its own.
+  const selectedSummary = itemID
     ? entries.find((entry) => entry.interaction.interaction_id === itemID)
     : roomID
       ? entries.filter((entry) => entry.interaction.legacy_room_id === roomID).at(-1)
       : undefined;
+  const selectedID = selectedSummary?.interaction.interaction_id;
+  const selectedRevision = selectedSummary?.interaction.revision;
+  const [detail, setDetail] = useState<InboxEntry | null>(null);
+  const [detailError, setDetailError] = useState("");
+  useEffect(() => {
+    void selectedRevision; // a changed revision re-reads the item
+    if (!selectedID) {
+      setDetail(null);
+      return;
+    }
+    const controller = new AbortController();
+    fetchInboxItem(selectedID, controller.signal).then(
+      (full) => {
+        setDetail(full);
+        setDetailError("");
+      },
+      (reason) => {
+        if (!controller.signal.aborted) setDetailError((reason as Error).message);
+      },
+    );
+    return () => controller.abort();
+  }, [selectedID, selectedRevision]);
+  // The header and list use the summary; the body needs the full entry, and must never be
+  // drawn from a different interaction's.
+  const selected = selectedSummary
+    ? detail && detail.interaction.interaction_id === selectedID
+      ? detail
+      : undefined
+    : undefined;
+  const [matchedIDs, setMatchedIDs] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    const query = search.trim();
+    if (!query) {
+      setMatchedIDs(new Set());
+      return;
+    }
+    // Content search runs on the server: the list no longer carries full request text.
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      searchInbox(query, controller.signal).then(
+        (ids) => setMatchedIDs(new Set(ids)),
+        () => undefined,
+      );
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search]);
   const filtered = useMemo(() => {
     const query = search.toLowerCase().trim();
     return entries
@@ -107,12 +159,13 @@ export default function Inbox() {
           (view === "all" || (view === "history") === isTerminal(entry)) &&
           (category === "all" || categoryOf(entry) === category) &&
           (!query ||
-            `${entryTitle(entry)} ${entrySource(entry)} ${entry.interaction.definition_binding.kind} ${JSON.stringify(entry.interaction.request_snapshot)}`
+            matchedIDs.has(entry.interaction.interaction_id) ||
+            `${entryTitle(entry)} ${entrySource(entry)} ${entry.interaction.definition_binding.kind}`
               .toLowerCase()
               .includes(query)),
       )
       .sort((a, b) => (sort === "newest" ? b.sequence - a.sequence : a.sequence - b.sequence));
-  }, [entries, view, category, search, sort]);
+  }, [entries, view, category, search, sort, matchedIDs]);
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -251,7 +304,7 @@ export default function Inbox() {
         },
         { name: "sort", values: [["oldest", "newest"].includes(sort) ? sort : "unsupported"] },
       ],
-      selected_ids: selected ? [selected.interaction.interaction_id] : [],
+      selected_ids: selectedID ? [selectedID] : [],
       visible_rows: filtered.slice(0, 32).map((entry) => ({
         id: entry.interaction.interaction_id,
         summary: labels[categoryOf(entry)],
@@ -374,9 +427,7 @@ export default function Inbox() {
                 <InboxRow
                   key={entry.interaction.interaction_id}
                   entry={entry}
-                  selected={
-                    selected?.interaction.interaction_id === entry.interaction.interaction_id
-                  }
+                  selected={selectedID === entry.interaction.interaction_id}
                   onSelect={selectEntry}
                   onNavigate={navigateRows}
                   registerTarget={registerTarget}
@@ -392,7 +443,7 @@ export default function Inbox() {
             hasSelection ? "flex" : "hidden md:flex",
           )}
         >
-          {selected ? (
+          {selectedSummary ? (
             <>
               <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2 text-xs">
                 <button
@@ -403,7 +454,7 @@ export default function Inbox() {
                   <ArrowLeft size={14} /> Back to inbox
                 </button>
                 <span className="ml-auto text-fg-muted">
-                  {labels[categoryOf(selected)]} · {selected.interaction.state}
+                  {labels[categoryOf(selectedSummary)]} · {selectedSummary.interaction.state}
                 </span>
                 <button
                   type="button"
@@ -415,7 +466,15 @@ export default function Inbox() {
                 </button>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto" data-testid="inbox-body">
-                {categoryOf(selected) !== "workflow" ? (
+                {!selected ? (
+                  detailError ? (
+                    <p role="alert" className="p-6 text-danger">
+                      {detailError}
+                    </p>
+                  ) : (
+                    <p className="p-6 text-fg-muted">Loading interaction…</p>
+                  )
+                ) : categoryOf(selected) !== "workflow" ? (
                   <InboxItemBody
                     key={selected.interaction.interaction_id}
                     entry={selected}

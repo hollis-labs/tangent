@@ -342,11 +342,16 @@ if (!rootEl) {
 seedShellClientIdentity();
 
 // Sync plugins from /api/plugins/registry (CW-20260911-0035 minimal proof).
-// Fire-and-forget: plugin load failures should not block app boot.
-syncPlugins();
-
+// Fire-and-forget: plugin load failures should not block app boot. It runs after the
+// first render so it never queues ahead of the first route's own data requests, and
+// still within a second so plugin contributions are not noticeably late.
 createRoot(rootEl).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+if (typeof window.requestIdleCallback === "function") {
+  window.requestIdleCallback(() => void syncPlugins(), { timeout: 1000 });
+} else {
+  window.setTimeout(() => void syncPlugins(), 0);
+}
