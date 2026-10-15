@@ -1,3 +1,4 @@
+import { Button, Callout } from "@hollis-labs/design-components";
 import { useEffect, useRef, useState } from "react";
 
 interface PluginState {
@@ -70,40 +71,66 @@ export function PluginLifecycle() {
   };
 
   return (
-    <section className="px-4 py-5 sm:px-6 lg:px-8" aria-label="Plugin lifecycle">
-      <h2 className="text-lg font-semibold">Installed plugins</h2>
-      <p>
+    <section
+      className="flex flex-col gap-3 px-4 py-5 sm:px-6 lg:px-8"
+      aria-label="Plugin lifecycle"
+    >
+      <h2 className="text-lg font-semibold text-fg">Installed plugins</h2>
+      <p className="max-w-2xl text-control text-fg-muted">
         New plugins stay disabled until you explicitly enable them. Saving settings does not enable
         a plugin.
       </p>
-      {error && <p role="alert">{error}</p>}
-      <button type="button" disabled={busy} onClick={() => void act()}>
-        Refresh plugin state
-      </button>
-      {busy && <p role="status">Loading plugin state…</p>}
-      {!busy && !plugins.length && <p>No installed plugins discovered.</p>}
-      <ul>
+      {error && <Callout tone="danger">{error}</Callout>}
+      <div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => void act()}
+        >
+          Refresh plugin state
+        </Button>
+      </div>
+      {busy && (
+        <p role="status" className="text-control text-fg-muted">
+          Loading plugin state…
+        </p>
+      )}
+      {!busy && !plugins.length && (
+        <p className="text-control text-fg-muted">No installed plugins discovered.</p>
+      )}
+      <ul className="flex flex-col gap-2">
         {plugins.map((plugin) => (
-          <li key={plugin.id} className="mt-4 flex flex-wrap items-center gap-3">
-            <span>{plugin.id}</span>
-            <span>Intent: {plugin.enabled ? "enabled" : "disabled"}</span>
-            <span>
+          <li
+            key={plugin.id}
+            className="flex flex-wrap items-center gap-3 rounded-panel border border-border bg-bg-elevated px-4 py-3 text-control text-fg"
+          >
+            <span className="font-semibold">{plugin.id}</span>
+            <span className="text-fg-muted">Intent: {plugin.enabled ? "enabled" : "disabled"}</span>
+            <span className="text-fg-muted">
               Runtime: {plugin.state} ({plugin.loaded ? "loaded" : "not loaded"})
             </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void act(plugin.id, plugin.enabled ? "disable" : "enable")}
-            >
-              {plugin.enabled ? "Disable" : "Enable"} {plugin.id}
-            </button>
-            <button
-              type="button"
-              disabled={busy || !plugin.enabled}
-              onClick={() => void act(plugin.id, "reload")}
-            >
-              Reload {plugin.id}
-            </button>
+            <span className="ml-auto flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => void act(plugin.id, plugin.enabled ? "disable" : "enable")}
+              >
+                {plugin.enabled ? "Disable" : "Enable"} {plugin.id}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy || !plugin.enabled}
+                onClick={() => void act(plugin.id, "reload")}
+              >
+                Reload {plugin.id}
+              </Button>
+            </span>
           </li>
         ))}
       </ul>
