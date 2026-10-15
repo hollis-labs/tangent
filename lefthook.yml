@@ -63,7 +63,14 @@ pre-commit:
     frontend-lint:
       glob: "*.{ts,tsx,js,jsx,mjs}"
       skip_empty: true
-      run: cd ui && npx biome check --no-errors-on-unmatched {staged_files}
+      # {staged_files} are repo-root-relative, but biome runs from ui/ (where its config
+      # lives): keep only ui/ files and strip the prefix, or biome sees paths like
+      # ui/ui/src/... and checks nothing. No --no-errors-on-unmatched: a file list that
+      # matches nothing is a bug here and must fail.
+      run: |
+        files=$(printf '%s\n' {staged_files} | sed -n 's|^ui/||p')
+        [ -z "$files" ] && exit 0
+        cd ui && npx biome check $files
       skip:
         - run: "test ! -d ui"
 
