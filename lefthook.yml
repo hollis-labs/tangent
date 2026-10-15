@@ -30,7 +30,13 @@ pre-commit:
       skip_empty: true
       run: |
         if command -v golangci-lint >/dev/null 2>&1; then
-          golangci-lint run --new --timeout 30s
+          # cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config);
+          # without pkg-config they cannot typecheck, so skip just those two (CI lints them).
+          if command -v pkg-config >/dev/null 2>&1; then
+            golangci-lint run --new --timeout 30s
+          else
+            golangci-lint run --new --timeout 30s $(go list -f '{{.Dir}}' ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+          fi
         else
           echo "golangci-lint not installed — skipping"
         fi
@@ -38,7 +44,13 @@ pre-commit:
     go-vet:
       glob: "*.go"
       skip_empty: true
-      run: go vet ./...
+      # Same pkg-config exclusion as go-lint above; CI vets the full tree.
+      run: |
+        if command -v pkg-config >/dev/null 2>&1; then
+          go vet ./...
+        else
+          go vet $(go list ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+        fi
 
     # ── Frontend ──────────────────────────────────────────────────────
 
@@ -55,4 +67,13 @@ pre-push:
     go-test:
       glob: "*.go"
       skip_empty: true
-      run: go test -race ./...
+      # cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config).
+      # Without pkg-config they cannot build, so skip just those two packages; CI runs
+      # the full suite. With pkg-config present, test everything.
+      run: |
+        if command -v pkg-config >/dev/null 2>&1; then
+          go test -race ./...
+        else
+          echo "pkg-config not found: skipping cmd/tangent-app and internal/appshell (CI runs them)"
+          go test -race $(go list ./... | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
+        fi
