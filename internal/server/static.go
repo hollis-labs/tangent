@@ -2,11 +2,14 @@
 package server
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 )
 
 // distFS embeds the production Vite build of the Tangent SPA. The build
@@ -60,7 +63,12 @@ func spaHandler() http.Handler {
 	if err != nil {
 		return http.HandlerFunc(servePlaceholder)
 	}
+	return spaHandlerFS(sub)
+}
 
+// spaHandlerFS is spaHandler over an explicit filesystem, so tests can serve a
+// built SPA without embedding one.
+func spaHandlerFS(sub fs.FS) http.Handler {
 	// Detect whether a real index.html is embedded. If not, serve the
 	// placeholder for every path.
 	if _, err := fs.ReadFile(sub, "index.html"); err != nil {
@@ -68,12 +76,15 @@ func spaHandler() http.Handler {
 	}
 
 	fileServer := http.FileServer(http.FS(sub))
+	etags := &etagCache{sub: sub, byName: map[string]string{}}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqPath := strings.TrimPrefix(r.URL.Path, "/")
 		if reqPath == "" {
 			reqPath = "index.html"
 		}
-		if _, err := fs.Stat(sub, reqPath); err != nil {
+		if _, err := fs.Stat(sub, reqPath); err == nil {
+			setStaticCacheHeaders(w, etags, reqPath)
+		} else {
 			// Path not in the embed. Distinguish two cases:
 			//   1. Static-asset miss (e.g. /assets/foo.js) — return
 			//      404 so cache busting and load-error handling work.
@@ -85,9 +96,53 @@ func spaHandler() http.Handler {
 				return
 			}
 			r.URL.Path = "/"
+			setStaticCacheHeaders(w, etags, "index.html")
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// setStaticCacheHeaders marks the embedded SPA cacheable the way its layout
+// allows. Vite writes content-hashed filenames under /assets/, so a name never
+// changes meaning and may be cached forever. Everything else (index.html, which
+// names the current hashes, and unhashed files such as the favicon) must be
+// revalidated on each load. A strong ETag from the embedded bytes lets that
+// revalidation answer 304 without resending the body. The embed carries no
+// modification times, so there is no Last-Modified.
+func setStaticCacheHeaders(w http.ResponseWriter, etags *etagCache, name string) {
+	if strings.HasPrefix(name, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if etag := etags.get(name); etag != "" {
+		w.Header().Set("ETag", etag)
+	}
+}
+
+// etagCache memoizes ETags for one handler's filesystem. It is per handler so
+// two handlers over different filesystems never share an ETag.
+type etagCache struct {
+	sub    fs.FS
+	mu     sync.Mutex
+	byName map[string]string
+}
+
+// get hashes a file once; the embed cannot change at runtime.
+func (c *etagCache) get(name string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if etag, ok := c.byName[name]; ok {
+		return etag
+	}
+	data, err := fs.ReadFile(c.sub, name)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	c.byName[name] = etag
+	return etag
 }
 
 func servePlaceholder(w http.ResponseWriter, _ *http.Request) {
