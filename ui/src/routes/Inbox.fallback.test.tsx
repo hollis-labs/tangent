@@ -44,14 +44,18 @@ describe("Inbox fallback polling", () => {
     expect(FakeSource.instances).toHaveLength(3);
 
     // Every stream fails before its first open: the Inbox must tighten to 3s.
-    act(() => FakeSource.instances.forEach((source) => source.onerror?.()));
+    act(() => {
+      for (const source of FakeSource.instances) source.onerror?.();
+    });
     await act(async () => {
       vi.advanceTimersByTime(3_000);
     });
     expect(fetchInbox).toHaveBeenCalledTimes(2);
 
     // Streams reconnect: back to the slow safety net.
-    act(() => FakeSource.instances.forEach((source) => source.onopen?.()));
+    act(() => {
+      for (const source of FakeSource.instances) source.onopen?.();
+    });
     await act(async () => {
       vi.advanceTimersByTime(3_000);
     });
