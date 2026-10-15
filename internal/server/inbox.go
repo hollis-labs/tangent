@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -44,22 +45,43 @@ func inboxHandler(service InboxService) http.HandlerFunc {
 	})
 }
 
+// inboxItemReader is the keyed read a service may offer; without it the handler lists and
+// filters, which gives the same answer more slowly.
+type inboxItemReader interface {
+	BrowserInboxItem(context.Context, string) (interaction.InboxEntry, error)
+}
+
 // inboxItemHandler serves one full entry by interaction id.
 func inboxItemHandler(service InboxService) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("interactionID")
+		notFound := func() {
+			writeHITLJSON(w, http.StatusNotFound, map[string]string{"code": "not_found", "message": "interaction not found"})
+		}
+		if keyed, ok := service.(inboxItemReader); ok {
+			entry, err := keyed.BrowserInboxItem(r.Context(), id)
+			switch {
+			case err == nil:
+				writeHITLJSON(w, http.StatusOK, entry)
+			case errors.Is(err, interaction.ErrNotFound):
+				notFound()
+			default:
+				writeRoomError(w, err)
+			}
+			return
+		}
 		entries, err := service.BrowserInbox(r.Context())
 		if err != nil {
 			writeRoomError(w, err)
 			return
 		}
-		id := r.PathValue("interactionID")
 		for _, entry := range entries {
 			if entry.Interaction.ID == id {
 				writeHITLJSON(w, http.StatusOK, entry)
 				return
 			}
 		}
-		writeHITLJSON(w, http.StatusNotFound, map[string]string{"code": "not_found", "message": "interaction not found"})
+		notFound()
 	})
 }
 

@@ -3,6 +3,7 @@ package interaction
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -92,4 +93,63 @@ func TestBrowserInboxOrdersAcrossSurfacesAndPreservesReplies(t *testing.T) {
 		t.Fatal("lost persistent visibility metadata")
 	}
 
+}
+
+func TestBrowserInboxItemMatchesTheListedEntryAndHonorsVisibility(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openTestStore(t)
+	service := newTestService(t, store)
+	var visible, foreign string
+	for index, scope := range []string{"standalone-local:a", "gateway:foreign"} {
+		surface := createTestSurface(t, store, "item-surface-"+scope)
+		created, err := store.CreateInteraction(ctx, testInteractionParams(surface.ID, scope, scope, "request"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			visible = created.Interaction.ID
+			presented, err := store.AdvanceInteraction(ctx, AdvanceInteractionParams{
+				InteractionID: visible, ExpectedRevision: created.Interaction.Revision,
+				To: InteractionStatePresented, PresentedProjectionRevision: 9,
+				ParticipantScope: "operator:local", ParticipantRef: "local-operator",
+				ParticipantAuthority: "local", ParticipantAssurance: "loopback-unverified",
+				ConnectionID: "connection-1", Authority: "loopback-unverified",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolution := resolutionParams(presented, nil)
+			resolution.ResponsePayload = json.RawMessage(`{"reply":"kept"}`)
+			if _, err := store.ResolveInteraction(ctx, resolution); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			foreign = created.Interaction.ID
+		}
+	}
+	listed, err := service.BrowserInbox(ctx)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("listed = %d, %v", len(listed), err)
+	}
+	keyed, err := service.BrowserInboxItem(ctx, visible)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(listed[0])
+	got, _ := json.Marshal(keyed)
+	if string(want) != string(got) {
+		t.Fatalf("keyed entry differs from the listed one:\n%s\n%s", got, want)
+	}
+	if _, err := service.BrowserInboxItem(ctx, foreign); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a not-visible interaction must be not found, got %v", err)
+	}
+	if _, err := service.BrowserInboxItem(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown id = %v", err)
+	}
+	if err := service.HideBrowserInboxItem(ctx, visible); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.BrowserInboxItem(ctx, visible); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a hidden item must be not found, got %v", err)
+	}
 }
