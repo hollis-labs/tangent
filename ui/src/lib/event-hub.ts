@@ -40,8 +40,8 @@ export function subscribeRevision(
       created.connected = value;
       for (const listener of created.statusListeners) listener(value);
     };
-    source.addEventListener("open", () => setConnected(true));
-    source.addEventListener("error", () => setConnected(source.readyState === EventSource.OPEN));
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
     source.addEventListener("revision", () => {
       setConnected(true);
       for (const listener of created.revisionListeners) listener();
@@ -53,7 +53,7 @@ export function subscribeRevision(
   held.revisionListeners.add(onRevision);
   if (onStatus) {
     held.statusListeners.add(onStatus);
-    onStatus(held.connected);
+    if (held.connected) onStatus(true);
   }
   let closed = false;
   return {

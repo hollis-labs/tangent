@@ -116,6 +116,14 @@ export class TurnsAPIError extends Error {
 }
 
 async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
+  return (await requestResponse(url, init)).json() as Promise<T>;
+}
+
+async function requestResponse(
+  url: string,
+  init?: RequestInit,
+  allowNotModified = false,
+): Promise<Response> {
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -124,6 +132,7 @@ async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
 
+  if (allowNotModified && response.status === 304) return response;
   if (!response.ok) {
     let code = "http_error";
     let message = `Request failed: ${response.status} ${response.statusText}`;
@@ -137,11 +146,30 @@ async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
     throw new TurnsAPIError(response.status, code, message);
   }
 
-  return (await response.json()) as T;
+  return response;
 }
 
-export async function fetchTurnsInbox(): Promise<TurnsInbox> {
-  return requestJSON<TurnsInbox>("/api/turns");
+/** Remembers the last inbox and its ETag so an unchanged read costs a 304 and no parse. */
+export interface TurnsInboxCache {
+  etag?: string;
+  value?: TurnsInbox;
+}
+
+/** With a cache, an unchanged inbox returns the SAME object, so a React setState is a no-op. */
+export async function fetchTurnsInbox(cache?: TurnsInboxCache): Promise<TurnsInbox> {
+  const conditional = Boolean(cache?.etag && cache.value);
+  const response = await requestResponse(
+    "/api/turns",
+    conditional ? { headers: { "If-None-Match": cache?.etag ?? "" } } : undefined,
+    conditional,
+  );
+  if (response.status === 304 && cache?.value) return cache.value;
+  const value = (await response.json()) as TurnsInbox;
+  if (cache) {
+    cache.value = value;
+    cache.etag = response.headers.get("ETag") ?? undefined;
+  }
+  return value;
 }
 
 export async function fetchTurnItem(itemID: string): Promise<TurnItemView> {

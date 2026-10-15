@@ -10,6 +10,7 @@ import {
 import { EvidenceDrawer } from "@/components/hitl-evidence";
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
+import { subscribeRevision } from "@/lib/event-hub";
 import {
   fetchHITLInbox,
   fetchHITLItem,
@@ -101,18 +102,19 @@ export default function HITLInboxRoute() {
   }, [itemID, syncInbox]);
 
   useEffect(() => {
-    const events = new EventSource("/api/hitl/events");
-    const handleRevision = () => void syncInbox();
-    events.addEventListener("revision", handleRevision);
-    events.onopen = () =>
-      setSyncState((current) =>
-        current.startsWith("Synced") ? current : "Connected — resynchronizing",
-      );
-    events.onerror = () => setSyncState("Connection interrupted — durable state preserved");
-    return () => {
-      events.removeEventListener("revision", handleRevision);
-      events.close();
-    };
+    const events = subscribeRevision(
+      "/api/hitl/events",
+      () => void syncInbox(),
+      (connected) =>
+        setSyncState((current) =>
+          connected
+            ? current.startsWith("Synced")
+              ? current
+              : "Connected — resynchronizing"
+            : "Connection interrupted — durable state preserved",
+        ),
+    );
+    return () => events.close();
   }, [syncInbox]);
 
   const allItems = useMemo(

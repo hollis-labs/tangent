@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageShell } from "@/components/layout/PageShell";
 import { Markdown } from "@/components/markdown";
+import { subscribeRevision } from "@/lib/event-hub";
 import {
   canReplyTurn,
   dismissTurn,
@@ -109,15 +110,13 @@ export default function TurnsInboxRoute() {
 
   // SSE revision stream
   useEffect(() => {
-    const events = new EventSource("/api/turns/events");
-    const onRevision = () => void syncInbox();
-    events.addEventListener("revision", onRevision);
-    events.onopen = () => setSyncStatus("Live revision sync active");
-    events.onerror = () => setSyncStatus("Reconnecting to live queue…");
-    return () => {
-      events.removeEventListener("revision", onRevision);
-      events.close();
-    };
+    const events = subscribeRevision(
+      "/api/turns/events",
+      () => void syncInbox(),
+      (connected) =>
+        setSyncStatus(connected ? "Live revision sync active" : "Reconnecting to live queue…"),
+    );
+    return () => events.close();
   }, [syncInbox]);
 
   const allItems = useMemo(() => {

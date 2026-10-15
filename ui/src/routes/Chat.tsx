@@ -30,12 +30,22 @@ import {
   type Roster,
   sendChat,
 } from "@/lib/chat-roster-api";
+import { createCoalescer } from "@/lib/coalesce";
+import { subscribeRevision, visiblePoll } from "@/lib/event-hub";
 import { copyText, downloadMarkdown, safeFileName } from "@/lib/message-export";
-import { fetchTurnsInbox, replyTurn, TurnsAPIError, type TurnsInbox } from "@/lib/turns-api";
+import {
+  fetchTurnsInbox,
+  replyTurn,
+  TurnsAPIError,
+  type TurnsInbox,
+  type TurnsInboxCache,
+} from "@/lib/turns-api";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZES = [25, 50, 100, 200];
-const ROSTER_POLL_MS = 5000;
+// The roster has no event stream; revision events and tab focus refresh it too, so this
+// is only the slow path for a session that started or stopped while nothing else changed.
+const ROSTER_POLL_MS = 15_000;
 
 function stamp(value?: string): string {
   if (!value) return "";
@@ -63,6 +73,7 @@ export default function Chat() {
   const syncSeq = useRef(0);
   const rosterSeq = useRef(0);
   const rosterFingerprint = useRef("");
+  const turnsCache = useRef<TurnsInboxCache>({});
   const composerApi = useRef<{ clearIf: (text: string) => void } | null>(null);
   // One idempotency key per distinct message text, so a retry after a lost
   // response cannot deliver the same message twice.
@@ -81,7 +92,8 @@ export default function Chat() {
   const sync = useCallback(async () => {
     const seq = ++syncSeq.current;
     try {
-      const next = await fetchTurnsInbox();
+      // Unchanged inbox comes back as the same object, so setInbox below is a no-op.
+      const next = await fetchTurnsInbox(turnsCache.current);
       if (seq !== syncSeq.current) return;
       setInbox(next);
       setLoadError("");
@@ -102,28 +114,27 @@ export default function Chat() {
     setRoster(next);
   }, []);
 
+  const syncOnce = useMemo(() => createCoalescer(sync), [sync]);
+  const rosterOnce = useMemo(() => createCoalescer(syncRoster), [syncRoster]);
+
   useEffect(() => {
-    void sync();
-    void syncRoster();
-    const events = new EventSource("/api/turns/events");
-    const onRevision = () => {
-      void sync();
-      void syncRoster();
-    };
-    events.addEventListener("revision", onRevision);
-    const poll = window.setInterval(() => void syncRoster(), ROSTER_POLL_MS);
-    // A session may have started or stopped while the tab was in the background.
-    const onFocus = () => void syncRoster();
+    void syncOnce();
+    void rosterOnce();
+    const events = subscribeRevision("/api/turns/events", () => {
+      void syncOnce();
+      void rosterOnce();
+    });
+    // Paused while the tab is hidden; refreshes once when it comes back, which also covers
+    // a session that started or stopped in the background.
+    const poll = visiblePoll(() => void rosterOnce(), ROSTER_POLL_MS);
+    const onFocus = () => void rosterOnce();
     window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
     return () => {
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-      events.removeEventListener("revision", onRevision);
       events.close();
-      window.clearInterval(poll);
+      poll.stop();
     };
-  }, [sync, syncRoster]);
+  }, [syncOnce, rosterOnce]);
 
   const items = useMemo(() => allItems(inbox), [inbox]);
   const rosterState = roster ?? ROSTER_UNAVAILABLE;

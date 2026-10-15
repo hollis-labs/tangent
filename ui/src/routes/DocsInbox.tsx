@@ -16,6 +16,7 @@ import {
   fetchDocsInbox,
   markDocRead,
 } from "@/lib/docs-api";
+import { subscribeRevision } from "@/lib/event-hub";
 import { idCommand } from "@/lib/ui-channel";
 import { cn } from "@/lib/utils";
 
@@ -70,15 +71,13 @@ export default function DocsInboxRoute() {
   }, [syncInbox]);
 
   useEffect(() => {
-    const events = new EventSource("/api/docs/events");
-    const onRevision = () => void syncInbox();
-    events.addEventListener("revision", onRevision);
-    events.onopen = () => setSyncStatus("Live revision sync active");
-    events.onerror = () => setSyncStatus("Reconnecting to live queue…");
-    return () => {
-      events.removeEventListener("revision", onRevision);
-      events.close();
-    };
+    const events = subscribeRevision(
+      "/api/docs/events",
+      () => void syncInbox(),
+      (connected) =>
+        setSyncStatus(connected ? "Live revision sync active" : "Reconnecting to live queue…"),
+    );
+    return () => events.close();
   }, [syncInbox]);
 
   const allItems = useMemo(() => {

@@ -413,3 +413,101 @@ it("does not show a sent message twice when it also arrives as a reply resolutio
   await within(log).findByText("hello");
   expect(within(log).getAllByText("do it")).toHaveLength(1);
 });
+
+// ── Responsiveness guards (#102 behaviours, kept under the shared event hub) ──
+
+class EmitES {
+  static all: EmitES[] = [];
+  private listeners = new Map<string, Array<() => void>>();
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor() {
+    EmitES.all.push(this);
+  }
+  addEventListener(type: string, fn: () => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+  }
+  removeEventListener() {}
+  emit(type: string) {
+    for (const fn of this.listeners.get(type) ?? []) fn();
+  }
+  close() {}
+}
+
+function etagBackend(be: Backend) {
+  const inner = globalThis.fetch as unknown as (u: string, i?: RequestInit) => Promise<Response>;
+  const seen: Array<{ url: string; ifNoneMatch?: string }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      seen.push({ url, ifNoneMatch: headers["If-None-Match"] });
+      if (url === "/api/turns") {
+        be.calls.push({ url });
+        if (headers["If-None-Match"] === '"t1"')
+          return new Response(null, { status: 304, headers: { ETag: '"t1"' } });
+        return new Response(JSON.stringify(be.turns), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ETag: '"t1"' },
+        });
+      }
+      return inner(url, init);
+    }),
+  );
+  return seen;
+}
+
+it("keeps message DOM and refetches nothing while the operator types", async () => {
+  const be = backend({
+    turns: inbox([], [turn({ item_id: "a", state: "resolved", content: "the final" })]),
+    roster: [entry("pm")],
+  });
+  const seen = etagBackend(be);
+  mount();
+  const log = await screen.findByRole("log");
+  const message = await within(log).findByText("the final");
+  const before = seen.length;
+  const box = screen.getByLabelText("Message");
+  for (const text of ["h", "he", "hel", "hell", "hello"])
+    fireEvent.change(box, { target: { value: text } });
+  expect((box as HTMLTextAreaElement).value).toBe("hello");
+  expect(within(screen.getByRole("log")).getByText("the final")).toBe(message);
+  expect(seen.length).toBe(before);
+});
+
+it("revalidates turns with If-None-Match on a revision event and keeps the DOM on 304", async () => {
+  EmitES.all = [];
+  vi.stubGlobal("EventSource", EmitES);
+  const be = backend({
+    turns: inbox([], [turn({ item_id: "a", state: "resolved", content: "the final" })]),
+    roster: [entry("pm")],
+  });
+  const seen = etagBackend(be);
+  mount();
+  const message = await within(await screen.findByRole("log")).findByText("the final");
+  for (const source of EmitES.all) source.emit("revision");
+  await waitFor(() =>
+    expect(
+      seen.filter((c) => c.url === "/api/turns" && c.ifNoneMatch === '"t1"').length,
+    ).toBeGreaterThan(0),
+  );
+  expect(within(screen.getByRole("log")).getByText("the final")).toBe(message);
+});
+
+it("does not poll the roster while the tab is hidden", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const visibility = vi.spyOn(document, "visibilityState", "get");
+  try {
+    visibility.mockReturnValue("hidden");
+    const be = backend({ turns: inbox([], []), roster: [entry("pm")] });
+    mount("/chat");
+    await vi.advanceTimersByTimeAsync(200);
+    const rosterCalls = () => be.calls.filter((c) => c.url.endsWith("/chat/agents")).length;
+    const initial = rosterCalls();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(rosterCalls()).toBe(initial);
+  } finally {
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});

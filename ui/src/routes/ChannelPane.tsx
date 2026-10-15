@@ -20,6 +20,7 @@ import {
   markChannelRead,
   sendChannelMessage,
 } from "@/lib/channel-api";
+import { visiblePoll } from "@/lib/event-hub";
 import { cn } from "@/lib/utils";
 
 // CW-20260907-0017: the minimal channel pane. A channel list with unread
@@ -127,8 +128,9 @@ export default function ChannelPaneRoute() {
     // of the list-level revision hint — see channelpane.Service.Revision's
     // own doc comment for why — so it refreshes on its own short interval
     // while open instead.
-    const poll = window.setInterval(() => void syncDetail(channelID), DETAIL_POLL_MS);
-    return () => window.clearInterval(poll);
+    // Paused while the tab is hidden and refreshed once on return.
+    const poll = visiblePoll(() => void syncDetail(channelID), DETAIL_POLL_MS);
+    return () => poll.stop();
   }, [channelID, syncDetail]);
 
   // Successful participant opens (including deep links/back-forward) retain read

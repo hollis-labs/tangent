@@ -103,12 +103,15 @@ type turnAckCommand struct {
 }
 
 func (h *turnsHTTPHandler) inbox(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	inbox, err := h.service.Inbox(r.Context())
 	if err != nil {
 		writeTurnsError(w, err)
 		return
 	}
-	writeTurnsJSON(w, http.StatusOK, inbox)
+	if err := writeConditionalJSON(w, r, "turns", start, inbox, withoutSyncTime(inbox)); err != nil {
+		writeTurnsError(w, err)
+	}
 }
 
 func (h *turnsHTTPHandler) item(w http.ResponseWriter, r *http.Request) {
@@ -377,4 +380,10 @@ func turnsLoopbackOrParticipantRoute(
 		requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler).ServeHTTP(w, r)
 	}))
 	mux.Handle(pattern, guarded)
+}
+
+// withoutSyncTime returns the inbox with its read timestamp cleared, for ETag purposes only.
+func withoutSyncTime(inbox turns.TurnsInbox) turns.TurnsInbox {
+	inbox.SyncedAt = time.Time{}
+	return inbox
 }

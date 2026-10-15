@@ -7,6 +7,8 @@ class FakeSource {
   readyState = 0;
   closed = false;
   listeners = new Map<string, Array<() => void>>();
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
   url: string;
   constructor(url: string) {
     this.url = url;
@@ -16,7 +18,10 @@ class FakeSource {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
   }
   emit(type: string) {
-    if (type === "open") this.readyState = 1;
+    if (type === "open") {
+      this.readyState = 1;
+      this.onopen?.();
+    }
     for (const fn of this.listeners.get(type) ?? []) fn();
   }
   close() {
@@ -50,7 +55,7 @@ describe("event hub", () => {
     vi.stubGlobal("EventSource", FakeSource);
     const status = vi.fn();
     const sub = subscribeRevision("/api/y/events", () => {}, status);
-    expect(status).toHaveBeenLastCalledWith(false);
+    expect(status).not.toHaveBeenCalled();
     FakeSource.instances[0].emit("open");
     expect(status).toHaveBeenLastCalledWith(true);
     sub.close();
