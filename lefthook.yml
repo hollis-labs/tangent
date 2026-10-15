@@ -68,9 +68,12 @@ pre-commit:
       # ui/ui/src/... and checks nothing. No --no-errors-on-unmatched: a file list that
       # matches nothing is a bug here and must fail.
       run: |
-        files=$(printf '%s\n' {staged_files} | sed -n 's|^ui/||p')
-        [ -z "$files" ] && exit 0
-        cd ui && npx biome check $files
+        set --
+        for file in {staged_files}; do
+          case "$file" in ui/*) set -- "$@" "${file#ui/}" ;; esac
+        done
+        [ $# -eq 0 ] && exit 0
+        cd ui && npx biome check "$@"
       skip:
         - run: "test ! -d ui"
 
