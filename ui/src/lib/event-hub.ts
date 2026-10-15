@@ -40,8 +40,8 @@ export function subscribeRevision(
       created.connected = value;
       for (const listener of created.statusListeners) listener(value);
     };
-    source.addEventListener("open", () => setConnected(true));
-    source.addEventListener("error", () => setConnected(source.readyState === EventSource.OPEN));
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
     source.addEventListener("revision", () => {
       setConnected(true);
       for (const listener of created.revisionListeners) listener();
@@ -53,6 +53,8 @@ export function subscribeRevision(
   held.revisionListeners.add(onRevision);
   if (onStatus) {
     held.statusListeners.add(onStatus);
+    // Report the current state either way: a subscriber that never hears "down" would
+    // keep its slow fallback poll if the stream fails before it ever opens.
     onStatus(held.connected);
   }
   let closed = false;

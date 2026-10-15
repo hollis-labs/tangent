@@ -7,6 +7,8 @@ class FakeSource {
   readyState = 0;
   closed = false;
   listeners = new Map<string, Array<() => void>>();
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
   url: string;
   constructor(url: string) {
     this.url = url;
@@ -16,7 +18,10 @@ class FakeSource {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
   }
   emit(type: string) {
-    if (type === "open") this.readyState = 1;
+    if (type === "open") {
+      this.readyState = 1;
+      this.onopen?.();
+    }
     for (const fn of this.listeners.get(type) ?? []) fn();
   }
   close() {
@@ -54,5 +59,23 @@ describe("event hub", () => {
     FakeSource.instances[0].emit("open");
     expect(status).toHaveBeenLastCalledWith(true);
     sub.close();
+  });
+
+  it("tells a late subscriber the stream is down when it fails before ever opening", () => {
+    vi.stubGlobal("EventSource", FakeSource);
+    const first = vi.fn();
+    const one = subscribeRevision("/api/z/events", () => {}, first);
+    expect(first).toHaveBeenLastCalledWith(false);
+    FakeSource.instances[0].onerror?.();
+    const late = vi.fn();
+    const two = subscribeRevision("/api/z/events", () => {}, late);
+    expect(late).toHaveBeenLastCalledWith(false);
+    FakeSource.instances[0].emit("open");
+    expect(first).toHaveBeenLastCalledWith(true);
+    expect(late).toHaveBeenLastCalledWith(true);
+    FakeSource.instances[0].onerror?.();
+    expect(late).toHaveBeenLastCalledWith(false);
+    one.close();
+    two.close();
   });
 });

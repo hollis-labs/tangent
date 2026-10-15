@@ -4,7 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/hollis-labs/tangent/internal/turns"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
@@ -56,5 +60,28 @@ func TestInboxServesConditionalETag(t *testing.T) {
 	changed := getInbox(t, h, etag)
 	if changed.Code != http.StatusOK || changed.Header().Get("ETag") == etag {
 		t.Fatalf("a changed list must return 200 with a new ETag, got %d %q", changed.Code, changed.Header().Get("ETag"))
+	}
+}
+
+func TestTurnsInboxETagIgnoresReadTimestamp(t *testing.T) {
+	read := func(at time.Time) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		inbox := turns.TurnsInbox{SyncedAt: at}
+		err := writeConditionalJSON(rec, httptest.NewRequest(http.MethodGet, "/api/turns", nil), "turns", time.Now(), inbox, withoutSyncTime(inbox))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rec
+	}
+	a := read(time.Unix(1000, 0))
+	b := read(time.Unix(2000, 0))
+	if a.Header().Get("ETag") != b.Header().Get("ETag") {
+		t.Fatalf("an unchanged list must keep its ETag across reads: %q vs %q", a.Header().Get("ETag"), b.Header().Get("ETag"))
+	}
+	if a.Body.String() == b.Body.String() {
+		t.Fatal("the body still reports the read time")
+	}
+	if !strings.HasPrefix(a.Header().Get("ETag"), "W/") {
+		t.Fatalf("a tag over different bytes than the body must be weak, got %q", a.Header().Get("ETag"))
 	}
 }

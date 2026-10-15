@@ -7,6 +7,7 @@ import { PageShell } from "@/components/layout/PageShell";
 import { ResponseSummary } from "@/components/ResponseSummary";
 import { UiControl, useUiCommands, useViewDescriptor } from "@/hooks/useUiCommands";
 import { useViewPresentation } from "@/hooks/useViewPresentation";
+import { createCoalescer } from "@/lib/coalesce";
 import { subscribeRevision, visiblePoll } from "@/lib/event-hub";
 import {
   categoryOf,
@@ -47,43 +48,23 @@ export default function Inbox() {
   const [expanded, setExpanded] = useState(false);
   const refreshSequence = useRef(0);
   const cache = useRef<InboxCache>({});
-  const inflight = useRef<Promise<void> | null>(null);
-  const dirty = useRef(false);
-  const sync = useCallback((): Promise<void> => {
-    // One request at a time. A call that lands mid-flight (the three event streams all
-    // announce on connect) is folded into a single follow-up, which is conditional by then
-    // and so costs a 304 instead of a second full list.
-    if (inflight.current) {
-      dirty.current = true;
-      return inflight.current;
+  const run = useCallback(async () => {
+    const sequence = ++refreshSequence.current;
+    try {
+      // An unchanged list comes back as the same array, so this setState is a no-op.
+      const next = await fetchInbox(undefined, cache.current);
+      if (sequence !== refreshSequence.current) return;
+      setEntries(next);
+      setError("");
+    } catch (reason) {
+      if (sequence === refreshSequence.current) setError((reason as Error).message);
+    } finally {
+      if (sequence === refreshSequence.current) setLoading(false);
     }
-    const run = async () => {
-      const sequence = ++refreshSequence.current;
-      try {
-        // An unchanged list comes back as the same array, so this setState is a no-op.
-        const next = await fetchInbox(undefined, cache.current);
-        if (sequence !== refreshSequence.current) return;
-        setEntries(next);
-        setError("");
-      } catch (reason) {
-        if (sequence === refreshSequence.current) setError((reason as Error).message);
-      } finally {
-        if (sequence === refreshSequence.current) setLoading(false);
-      }
-    };
-    const drain = async () => {
-      try {
-        do {
-          dirty.current = false;
-          await run();
-        } while (dirty.current);
-      } finally {
-        inflight.current = null;
-      }
-    };
-    inflight.current = drain();
-    return inflight.current;
   }, []);
+  // One request at a time; a trigger mid-flight (the three event streams all announce on
+  // connect) becomes a single conditional follow-up instead of a second full list.
+  const sync = useMemo(() => createCoalescer(run), [run]);
   useEffect(() => {
     // The three event streams all announce on connect and on every change; coalesce a
     // burst into one conditional fetch. While every stream is up, polling is only a
