@@ -1,4 +1,4 @@
-import "@hollis-labs/kit-settings/source.css";
+import { Button, Callout } from "@hollis-labs/design-components";
 import { type SettingsGroup, SettingsGroupForm } from "@hollis-labs/kit-settings";
 import { useEffect, useRef, useState } from "react";
 import { type Catalog, fetchSettingsCatalog, type Scope, settingsAPI } from "./api";
@@ -40,27 +40,30 @@ function PluginGroup({ group, scope }: { group: SettingsGroup; scope: Scope }) {
       )}
       footer={
         <div className="flex gap-3 items-center">
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="sm"
             disabled={state.busy}
             onClick={() => {
               void controller.current?.refresh();
             }}
           >
             Refresh
-          </button>
+          </Button>
           {state.snapshot?.pending_restart && (
             <>
-              <span>Saved settings await restart.</span>
-              <button
+              <span className="text-control text-fg-muted">Saved settings await restart.</span>
+              <Button
                 type="button"
+                size="sm"
                 disabled={state.busy || Object.keys(state.draft).length > 0}
                 onClick={() => {
                   void controller.current?.action("apply", { set: {}, unset: [] });
                 }}
               >
                 Apply and restart
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -83,16 +86,26 @@ export function PluginSettings() {
       });
     return () => request.abort();
   }, []);
-  if (error) return <p role="alert">Plugin settings are unavailable for this participant.</p>;
-  if (!catalog) return <p>Loading plugin settings…</p>;
+  const note = "px-4 py-5 text-control text-fg-muted sm:px-6 lg:px-8";
+  if (error)
+    return (
+      <div className="px-4 py-5 sm:px-6 lg:px-8">
+        <Callout tone="danger">Plugin settings are unavailable for this participant.</Callout>
+      </div>
+    );
+  if (!catalog) return <p className={note}>Loading plugin settings…</p>;
   if (!catalog.groups.length || !catalog.scopes.length)
-    return <p>No installed plugin declares editable settings.</p>;
+    return <p className={note}>No installed plugin declares editable settings.</p>;
   const scope = catalog.scopes[selected];
   return (
-    <section className="px-4 py-5 sm:px-6 lg:px-8" aria-label="Plugin settings">
-      <label>
-        Settings scope{" "}
-        <select value={selected} onChange={(event) => setSelected(Number(event.target.value))}>
+    <section className="flex flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8" aria-label="Plugin settings">
+      <label className="flex items-center gap-2 text-label font-medium text-fg-secondary">
+        Settings scope
+        <select
+          className="h-8 rounded-control border border-input bg-bg px-2 text-control text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          value={selected}
+          onChange={(event) => setSelected(Number(event.target.value))}
+        >
           {catalog.scopes.map((s, i) => (
             <option key={`${s.kind}:${s.id}`} value={i}>
               {s.kind}: {s.id}
@@ -100,7 +113,7 @@ export function PluginSettings() {
           ))}
         </select>
       </label>
-      <p>
+      <p className="max-w-2xl text-control text-fg-muted">
         Secrets are stored in the host keychain. Only their presence is shown. Save persists
         settings; apply restarts the plugin.
       </p>

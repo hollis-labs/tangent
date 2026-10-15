@@ -8,6 +8,11 @@
  * defines the two variants and one utility Tailwind lacks. Without this the
  * components render, render unstyled, and nothing errors. */
 @import "@hollis-labs/design-components/source.css";
+/* kit-settings ships class strings Tailwind must see too (accent-primary and
+ * the arbitrary radius form are not in design-components). It must be imported
+ * here: imported from a component it is processed as a plain stylesheet, its
+ * @source is never read, and it emits a 30-byte CSS chunk instead. */
+@import "@hollis-labs/kit-settings/source.css";
 
 @source "./**/*.{ts,tsx}";
 
