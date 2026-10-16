@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -29,6 +28,10 @@ import (
 type Config struct {
 	// Port is the TCP port to listen on (e.g. 7842).
 	Port int
+
+	// ProxiedHTTPAddr optionally binds a second loopback socket whose requests
+	// always require MCP caller authentication, even without forwarding headers.
+	ProxiedHTTPAddr string
 
 	// DevFrontendURL, when non-empty, makes the server reverse-proxy all
 	// non-API requests to the given URL (typically a Vite dev server at
@@ -239,6 +242,9 @@ const (
 // startup in cmd/tangent/main.go; passing it through Config keeps the
 // server agnostic to manifest-load lifecycle.
 func New(cfg Config) (*Server, error) {
+	if err := validateProxiedHTTPAddr(cfg.ProxiedHTTPAddr); err != nil {
+		return nil, err
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -486,7 +492,8 @@ func New(cfg Config) (*Server, error) {
 		// headers and outside the routes so a document navigation has a
 		// session before any route reads one; logging stays innermost so it
 		// measures the handler rather than the middleware.
-		Handler:           securityHeaders(cfg.DevFrontendURL, mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux))),
+		Handler:           markProxiedRequests(securityHeaders(cfg.DevFrontendURL, mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux)))),
+		ConnContext:       proxiedConnContext,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       httpServerReadTimeout,
 		WriteTimeout:      httpServerWriteTimeout,
@@ -527,24 +534,6 @@ func longLivedMCPHandler(next http.Handler) http.Handler {
 // (MCP, WebSocket) can grab it after construction without revisiting
 // New's signature.
 func (s *Server) Envelope() *envelope.Service { return s.envelope }
-
-// Listen binds the server's TCP socket and returns the listener.
-// Callers can fail-fast on bind errors (e.g. EADDRINUSE) before logging
-// readiness. Pass the returned listener to Serve.
-func (s *Server) Listen() (net.Listener, error) {
-	return net.Listen("tcp", s.httpS.Addr)
-}
-
-// Serve runs the HTTP server on the given listener. Blocks until the
-// listener errors out; callers should treat http.ErrServerClosed as a
-// clean shutdown.
-func (s *Server) Serve(ln net.Listener) error {
-	s.logger.Info("tangent listening",
-		"addr", s.httpS.Addr,
-		"dev_frontend_url", s.cfg.DevFrontendURL,
-	)
-	return s.httpS.Serve(ln)
-}
 
 // ListenAndServe is a convenience for tests / non-production callers
 // that don't need to log readiness only after a successful bind.

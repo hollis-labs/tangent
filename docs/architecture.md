@@ -1349,9 +1349,10 @@ trusting it.
 ### Scope decisions (not defects)
 
 - **Single-user local trust boundary.** Proxied MCP has producer bearer
-  authentication under CW-20261016-0208, but the pilot's hub-only raw TCP
-  ingress still appears as unmarked loopback. That separate ingress remains
-  tokenless pending the coordinator's follow-up. Relay and plugin tools refuse
+  authentication under CW-20261016-0208. Raw TCP ingress must target the
+  optional always-proxied listener (`TANGENT_PROXIED_HTTP_ADDR`,
+  CW-20261016-0229); targeting the main listener still admits header-free
+  forwarded traffic as tokenless loopback. Relay and plugin tools refuse
   authenticated producers until they can preserve caller authority end to end;
   direct local callers retain them. Local turns await/ack is operator-wide,
   and shared telemetry may expose producer identifiers. See the

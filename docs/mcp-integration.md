@@ -1034,6 +1034,10 @@ credential, on both `/mcp` and `/sse` (including each legacy SSE POST). Host and
 Origin are not proof of a local peer: the pilot's Caddy rewrites both.
 Missing or invalid credentials return HTTP 401 with a Bearer challenge before
 MCP dispatch. Supplying a bad credential never falls back to local access.
+Caddy adds `X-Forwarded-For` by default: authentication takes effect as soon as
+this binary is installed, even before `X-Tangent-Via` is configured. Provision
+and configure every existing gateway/client credential before deploying it;
+the marker is not an activation switch.
 
 Set `TANGENT_MCP_TOKENS` in the service's protected EnvironmentFile to a
 comma-separated list of `producer=SHA256(token)` entries. Digests are exactly
@@ -1068,37 +1072,69 @@ producers' identifiers. Tokenless local turns await/ack can read and acknowledge
 all producers' turns. These are accepted phase-1 limits, not producer isolation
 claims for those surfaces.
 
-The pilot also has a separate hub-only TCP ingress at
-`~/.local/share/tangent-pilot/ingress/hub-only-proxy.py`: it listens on
-`100.112.71.40:7853`, forwards to `127.0.0.1:7843`, and admits only the hub source
-IP `100.74.49.44`. It cannot add HTTP proxy markers, so hub-originated traffic
-through this ingress appears as unmarked loopback and remains tokenless,
-including relay access. This PR does not change that ingress; securing it is a
-separate coordinator follow-up. Caddy checks below do not verify this ingress.
+For raw TCP forwarders, set `TANGENT_PROXIED_HTTP_ADDR=127.0.0.1:7844`
+to enable an additional loopback listener. It serves the same browser, API and
+WebSocket routes with their existing participant/origin controls, but every
+MCP/SSE request requires a token even without forwarding headers. The listener
+sets its own proxy marker, overwriting any caller-supplied value. The main
+listener keeps direct-local compatibility. The optional address must be a
+literal loopback IP and numeric port; invalid addresses or failure to bind
+either socket fail startup. Unset means no additional listener. Both sockets
+share HTTP deadlines and graceful shutdown.
+
+The pilot's hub-only TCP ingress at
+`~/.local/share/tangent-pilot/ingress/hub-only-proxy.py` listens on
+`100.112.71.40:7853` and admits only hub source IP `100.74.49.44`. The hub Caddy
+uses it for MCP/SSE and browser/inbox/WS, so keep the forwarder running and
+retarget its `TARGET_PORT` from `7843` to `7844` after enabling the proxied
+listener. Forwarding to the main port lets direct header-free hub requests
+appear as local and bypass MCP authentication. A successful public-Caddy probe
+does not test that raw-port path.
 
 Deploy in this order:
 
-1. Install the reviewed Tangent binary with the digest configuration and keep
-   the prior binary/configuration for rollback.
-2. Back up Caddy's configuration, then have its operator add the
+1. Inventory both direct MCP clients and proxy upstreams. Provision the owner-held
+   producer credentials and matching server digests, and have each client owner
+   stage and verify its secret reference before installing the authenticated
+   binary. The hub Tether gateway uses producer `tether-gateway` and reference
+   `tangent-mcp-tether-gateway`; its one shared token represents one producer,
+   not separate hub-session authorities. Keep relay/plugin tools refused for
+   that gateway until their caller binding is implemented.
+2. Install the reviewed Tangent binary with the matching digest configuration
+   and verify the configured gateway immediately. Keep binary/configuration
+   backups. Ordinary Caddy forwarding headers already require authentication;
+   do not wait for the explicit marker to test existing clients.
+3. Enable the proxied listener and verify its socket is ready. Back up the
+   ingress user-unit configuration, set `TARGET_PORT=7844`, and restart the
+   forwarder. Preserve its source-IP allowlist and current Caddy Host/Origin
+   rewrites. From the hub, require 401 for tokenless and invalid-token MCP/SSE
+   requests directly to `100.112.71.40:7853`, including requests without proxy
+   headers. Verify the configured gateway still works.
+4. Where Caddy still targets the main listener, its operator can back up the
+   configuration and add the
    [proxy marker fragment](../deploy/caddy/tangent-mcp-auth.caddy) inside the
-   existing Tangent `reverse_proxy` block, validate, and reload. Caddy must
+   existing Tangent `reverse_proxy` block, validate, and reload. This is optional
+   defense in depth for the dedicated proxied listener. Caddy must
    overwrite `X-Tangent-Via: caddy`; any forwarding evidence requires auth,
    even if the explicit marker is absent. This repository change does not edit
    `/etc/caddy/Caddyfile` or reload Caddy.
-3. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
+5. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
    `https://tangent.nanite.cloud/mcp`; both must return 401. Repeat with
    `Authorization: Bearer intentionally-invalid` and require 401. A tokenless
    GET of `https://tangent.nanite.cloud/sse` must also return 401.
-4. Using two separately provisioned producer secret references, enqueue a HITL
+6. Using two separately provisioned producer secret references, enqueue a HITL
    item as producer A. Get that item as producer B while declaring A in the
    caller arguments: require the tool's `not_found` error, matching an unknown
    item. Producer A must still retrieve its own item. Supply secrets through
    the client secret store, never shell arguments. Confirm the Tether producer
-   succeeds and run the existing local runner smoke. Record statuses and item
+   succeeds and run the existing local runner smoke. From both worker-1 and
+   the hub, load the Inbox, exercise participant elevation and API reads, and
+   confirm a room WebSocket upgrades and receives frames. Record statuses and item
    IDs only, never authorization headers or bearer values.
 
-Before rolling back to a pre-authentication binary, **close `/mcp` and `/sse`
+Before rolling back to a pre-authentication binary, stop the raw TCP forwarder
+and confirm port 7853 is unreachable from the hub; retargeting it to the main
+listener would reopen the bypass. **Close `/mcp` and `/sse`
 at Caddy first**, validate/reload the configuration, and confirm both routes are
 blocked from worker-1. A marker alone cannot protect an old binary. For example,
 place this block before the Tangent reverse proxy in its ordered `route` block:
@@ -1111,7 +1147,8 @@ respond @mcp_rollback 403
 Only after those checks pass, restore the recorded binary/service configuration
 backups and restart Tangent. Retain the route blocks until an authenticated
 binary and marker configuration are restored and tested. This closes Caddy
-access only; the separately accepted hub-only ingress remains unchanged.
+access only; keep the raw forwarder stopped until the authenticated proxied
+listener is restored and both raw-port and public-Caddy checks pass.
 Credential rotation requires updating the hash/client secret reference and
 restarting Tangent, which closes existing SSE sessions. There is no live
 revocation or configuration reload.
