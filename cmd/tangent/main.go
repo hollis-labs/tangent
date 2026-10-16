@@ -22,6 +22,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/boot"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
 )
 
@@ -330,6 +331,7 @@ func run() int {
 	_, srv, closer, bootErr := boot.Boot(boot.Config{
 		DBPath:                  dbPath,
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
+		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
 		Port:                    *port,
 		DevFrontendURL:          os.Getenv(envDevFrontendURL),
 		ManagedResource:         os.Getenv(envManagedResource),

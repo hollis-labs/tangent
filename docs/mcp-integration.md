@@ -1025,3 +1025,54 @@ An installed GitHub adapter fetches a PR and maps it to the domain-free external
 review kind, submitted through `tangent_session_advance`. The room appears in the
 same Inbox as other requests. See [GitHub PR reviews](github-pr-review.md) for
 installation, the plugin tool, authentication and operator actions.
+
+## Caller authentication through a proxy
+
+Direct, unmarked loopback MCP remains tokenless for local clients. Every
+non-loopback peer or request carrying proxy/forwarding headers needs a bearer
+credential, on both `/mcp` and `/sse` (including each legacy SSE POST). Host and
+Origin are not proof of a local peer: the pilot's Caddy rewrites both.
+Missing or invalid credentials return HTTP 401 with a Bearer challenge before
+MCP dispatch. Supplying a bad credential never falls back to local access.
+
+Set `TANGENT_MCP_TOKENS` in the service's protected EnvironmentFile to a
+comma-separated list of `producer=SHA256(token)` entries. Digests are exactly
+64 hexadecimal characters; producer names match `[a-z][a-z0-9_-]{0,63}`.
+Duplicate names or digests and malformed entries fail startup without echoing
+values. Unset configuration boots normally and refuses proxied MCP. Only
+hashes are kept by the server; provision high-entropy bearer values through
+the owner's secret store, separately from the digest configuration. Do not
+put bearer values in URLs, command arguments, source control, or logs.
+
+The Tether alert producer is `tether`, with credential reference
+`tangent-mcp-tether-alert`. Its client supplies `Authorization: Bearer <token>`
+for every request. An authenticated producer is bound to `gateway:<producer>`;
+application IDs, requester scopes, and principal labels in tool arguments
+cannot select another producer's authority. Existing local-owned items stay
+local-owned. There is no automatic ownership migration. Legacy SSE sessions
+are isolated per producer, including from tokenless local clients.
+
+Turns await/ack narrow authenticated producers to their own items. Unknown or
+foreign session/item IDs return the same `not_found` error. Phase-1 tokenless
+local runner await/ack retains its existing operator-wide behavior. Browser
+routes, WebSockets, and HITL event streams keep their separate participant and
+operator-elevation controls.
+
+Deploy in this order:
+
+1. Install the reviewed Tangent binary with the digest configuration and keep
+   the prior binary/configuration for rollback.
+2. Back up Caddy's configuration, then have its operator add the
+   [proxy marker fragment](../deploy/caddy/tangent-mcp-auth.caddy) inside the
+   existing Tangent `reverse_proxy` block, validate, and reload. Caddy must
+   overwrite `X-Tangent-Via: caddy`; any forwarding evidence requires auth,
+   even if the explicit marker is absent. This repository change does not edit
+   `/etc/caddy/Caddyfile` or reload Caddy.
+3. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
+   `https://tangent.nanite.cloud/mcp`; both must return 401. Check authenticated
+   calls using the provisioned Tether secret reference, then run the existing
+   local runner smoke. Do not record bearer values in verification evidence.
+
+Rollback restores the previous binary and service configuration. Keep the
+proxy marker in place while caller authentication is enabled. Credential
+rotation takes effect on restart, which also closes existing SSE sessions.

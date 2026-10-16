@@ -16,6 +16,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/appshell"
 	"github.com/hollis-labs/tangent/internal/boot"
+	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
 )
 
@@ -38,6 +39,7 @@ func main() {
 		Config: boot.Config{
 			DBPath:                  os.Getenv(envDBPath),
 			OperatorToken:           os.Getenv(participant.EnvOperatorToken),
+			MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
 			Port:                    resolvePort(),
 			DevFrontendURL:          os.Getenv(envDevFrontendURL),
 			ManagedResource:         os.Getenv(envManagedResource),

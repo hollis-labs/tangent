@@ -50,6 +50,7 @@ const (
 // NewTriageHandler in cmd/tangent/main.go (see internal/mcp/triage_handler.go),
 // not stored on the Server.
 type Server struct {
+	callerAuth   *CallerAuth
 	envSvc       *envelope.Service
 	dispatcher   *envelope.Dispatcher
 	manager      *room.Manager
@@ -384,7 +385,7 @@ func (s *Server) MCP() *mcpsdk.Server { return s.mcp.SDKServer() }
 //     docs/mcp-smoketest.md) sends one POST and expects one JSON reply;
 //     a session-bound mode would force every probe to do `initialize`
 //     first, which adds friction without protecting anything we care
-//     about (localhost-only, no auth in v0.1).
+//     about (authentication is enforced independently before SDK dispatch).
 //   - JSONResponse forces application/json replies even when the client
 //     advertises text/event-stream Accept. SSE-style streaming is used
 //     by the dedicated /sse mount; mixing both on /mcp would surprise
@@ -399,13 +400,16 @@ func (s *Server) MCP() *mcpsdk.Server { return s.mcp.SDKServer() }
 // deliberately leaves prompts, resources, and every transport not common to
 // every consumer for a caller to drive directly against SDKServer().
 func (s *Server) HTTPHandler() http.Handler {
-	return mcpsdk.NewStreamableHTTPHandler(
+	handler := mcpsdk.NewStreamableHTTPHandler(
 		func(*http.Request) *mcpsdk.Server { return s.mcp.SDKServer() },
 		&mcpsdk.StreamableHTTPOptions{
 			Stateless:    true,
 			JSONResponse: true,
 		},
 	)
+	return s.callerAuth.wrap(func(w http.ResponseWriter, r *http.Request, _ string) {
+		handler.ServeHTTP(w, r)
+	})
 }
 
 // SSEHandler returns the SSE-fallback handler suitable for mounting at
@@ -413,9 +417,22 @@ func (s *Server) HTTPHandler() http.Handler {
 // streamable-HTTP) connect here; the SDK manages the long-lived event
 // stream.
 func (s *Server) SSEHandler() http.Handler {
-	return mcpsdk.NewSSEHandler(func(*http.Request) *mcpsdk.Server {
-		return s.mcp.SDKServer()
-	}, nil)
+	// The SDK keys POSTs only by session ID. Separate registries prevent a
+	// different producer (including tokenless local callers) from using it.
+	newHandler := func() http.Handler {
+		return mcpsdk.NewSSEHandler(func(*http.Request) *mcpsdk.Server {
+			return s.mcp.SDKServer()
+		}, nil)
+	}
+	handlers := map[string]http.Handler{"": newHandler()}
+	if s.callerAuth != nil {
+		for _, credential := range s.callerAuth.credentials {
+			handlers[credential.producer] = newHandler()
+		}
+	}
+	return s.callerAuth.wrap(func(w http.ResponseWriter, r *http.Request, producer string) {
+		handlers[producer].ServeHTTP(w, r)
+	})
 }
 
 // registerTools wires the Tangent MCP tool surface. Called once during

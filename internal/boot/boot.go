@@ -79,6 +79,9 @@ type Config struct {
 	// naming the variable. Only a digest is retained.
 	OperatorToken string
 
+	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
+	MCPCallerTokens string
+
 	// Port is the TCP port the constructed server will bind when Listen is
 	// called. Boot does not listen; it only threads Port into the
 	// constructed server.Config and the room URL base the MCP tool surface
@@ -233,6 +236,10 @@ func (c *ownedCloser) Close() error {
 // already holds this database; that is the fact cmd/tangent-app's
 // adopt-or-boot decision is built on.
 func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
+	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -600,6 +607,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 
 	mcpOptions := []mcp.Option{
+		mcp.WithCallerAuth(callerAuth),
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),

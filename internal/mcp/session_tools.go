@@ -182,7 +182,7 @@ func (s *Server) handleSessionCreate(
 	// for. The new surface's owner scope is the host-derived caller scope; the
 	// caller cannot nominate it.
 	if s.roomflow != nil {
-		if ownErr := s.roomflow.EnsureRoomOwnership(ctx, rm.ID, callerIdentity()); ownErr != nil {
+		if ownErr := s.roomflow.EnsureRoomOwnership(ctx, rm.ID, callerIdentity(ctx)); ownErr != nil {
 			return nil, toolErrorResult(envelopes.ErrorCodeHostError,
 				fmt.Sprintf("record room ownership: %v", ownErr))
 		}
@@ -208,7 +208,7 @@ func (s *Server) handleSessionGet(
 	// vocabulary, and narrowing a read would break "show me all my rooms"
 	// without buying isolation that `standalone-local` partitions can back.
 	// Cross-authority is still refused, and as not-found.
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(ctx),
 		authz.View, authz.AuthorityWide); err != nil {
 		return nil, roomAuthorizationError(args.RoomID, err)
 	}
@@ -284,7 +284,7 @@ func (s *Server) handleSessionAdvancePhase(
 	ctx context.Context,
 	args sessionAdvancePhaseInput,
 ) (any, error) {
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(ctx),
 		authz.Submit, authz.PartitionScoped); err != nil {
 		return nil, roomAuthorizationError(args.RoomID, err)
 	}
@@ -304,7 +304,7 @@ func (s *Server) handleSessionSetPhaseOutput(
 	ctx context.Context,
 	args sessionSetPhaseOutputInput,
 ) (any, error) {
-	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(),
+	if err := s.authorizeRoom(ctx, args.RoomID, callerIdentity(ctx),
 		authz.Submit, authz.PartitionScoped); err != nil {
 		return nil, roomAuthorizationError(args.RoomID, err)
 	}
@@ -332,7 +332,7 @@ func (s *Server) handleSessionClose(
 	// deliberate exception to treating `session_*` as compatibility
 	// vocabulary: closing dispositions another partition's pending human work.
 	// Reads stay authority-wide; only the destructive operation is narrowed.
-	caller := callerIdentity()
+	caller := callerIdentity(ctx)
 	if err := s.authorizeRoom(ctx, args.RoomID, caller, authz.Close, authz.PartitionScoped); err != nil {
 		return nil, roomAuthorizationError(args.RoomID, err)
 	}
@@ -365,7 +365,7 @@ func (s *Server) handleSessionList(
 		return nil, toolErrorResult(envelopes.ErrorCodeHostError, fmt.Sprintf("list rooms: %v", err))
 	}
 	return sessionListResult{
-		Rooms: s.visibleRooms(ctx, rooms, callerIdentity()),
+		Rooms: s.visibleRooms(ctx, rooms, callerIdentity(ctx)),
 	}, nil
 }
 
@@ -432,7 +432,7 @@ func (s *Server) advanceRoomEnvelope(
 	// arbitrary caller-supplied room and receive that room's human response.
 	// A room the caller just created has no owner yet, which AuthorizeRoom
 	// permits; one another authority owns is refused as not-found.
-	caller := callerIdentity()
+	caller := callerIdentity(ctx)
 	if err := s.authorizeRoom(ctx, roomID, caller, authz.Submit, authz.PartitionScoped); err != nil {
 		return nil, roomAuthorizationError(roomID, err)
 	}

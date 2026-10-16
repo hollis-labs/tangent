@@ -96,6 +96,13 @@ which uses React Router to pick up the ID and connect over WS.
 
 ### MCP server (Streamable HTTP + SSE)
 
+MCP admission authenticates proxied/non-loopback callers using per-producer
+bearer digests from `TANGENT_MCP_TOKENS`. Verified bindings use
+`gateway:<producer>`; request fields remain attribution. Direct unmarked
+loopback callers retain local compatibility. Legacy SSE session registries are
+separate per producer. See [caller authentication](mcp-integration.md#caller-authentication-through-a-proxy)
+for configuration, the Caddy marker, and rollout order.
+
 `internal/mcp/` — built on `github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp`, the portfolio's
 shared MCP library, itself a thin wrapper around the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable

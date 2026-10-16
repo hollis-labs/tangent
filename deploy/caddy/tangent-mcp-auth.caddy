@@ -1,0 +1,5 @@
+# Add inside the existing Tangent reverse_proxy block. This is a reviewed
+# configuration fragment, not a replacement Caddyfile. Keep the existing
+# Host/Origin rewriting and same-origin checks.
+# Overwrite, never append or preserve a client-supplied value.
+header_up X-Tangent-Via caddy
