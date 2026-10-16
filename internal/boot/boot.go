@@ -139,6 +139,20 @@ type Config struct {
 	// defaults to slog.Default(). Boot does not call slog.SetDefault —
 	// that is a process-global side effect the caller owns.
 	Logger *slog.Logger
+
+	// EventsDisabled is the kill switch for the typed event stream
+	// (TANGENT_EVENTS_DISABLED=1, resolved by the caller). The durable journal,
+	// relay, retention job and typed SSE frames are not started, so the legacy
+	// revision pings are all a browser sees. Approval lifecycle transitions
+	// still write their outbox rows (the observer is part of the transition
+	// transaction), so turning the stream back on drains whatever accrued.
+	EventsDisabled bool
+
+	// eventsRelayTick overrides the relay's polling interval; tests only.
+	eventsRelayTick time.Duration
+	// eventsNoCommitHook leaves the relay to its tick alone; tests only, to
+	// prove delivery never depends on the post-commit wake.
+	eventsNoCommitHook bool
 }
 
 // Services is the constructed service graph. Callers that only need to
@@ -192,12 +206,18 @@ type ownedCloser struct {
 	loopback io.Closer
 	// stopSweeper ends the HITL expiry sweeper, which reads the database.
 	stopSweeper context.CancelFunc
+	// stopEvents ends the event relay and retention job and waits for them;
+	// both use the database.
+	stopEvents func()
 }
 
 func (c *ownedCloser) Close() error {
 	var errs []error
 	if c.stopSweeper != nil {
 		c.stopSweeper()
+	}
+	if c.stopEvents != nil {
+		c.stopEvents()
 	}
 	if c.plugins != nil {
 		if err := c.plugins.UnloadAll(); err != nil {
@@ -446,6 +466,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	go hitlService.RunExpirySweeper(sweepCtx, time.Second, func(sweepErr error) {
 		logger.Warn("hitl expiry sweep failed", "error", sweepErr)
 	})
+	hitlEvents, stopEvents, err := startEventStream(cfg, logger, sqlDB, interactionStore)
+	if err != nil {
+		return release(err)
+	}
+	closer.stopEvents = stopEvents
 	turnsService, err := turns.NewService(interactionService)
 	if err != nil {
 		return release(fmt.Errorf("build turns service: %w", err))
@@ -712,6 +737,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		PluginHost:         pluginHost,
 		PluginConfig:       configStore,
 		PluginHostInstance: pluginHost.HostInstance(),
+		HITLEvents:         hitlEvents,
 	})
 	if err != nil {
 		return release(err)

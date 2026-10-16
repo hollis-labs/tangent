@@ -78,6 +78,11 @@ const (
 	// callable but unlisted, so strict clients never see a name outside
 	// [a-z0-9_]. See docs/mcp-tool-names.md.
 	envListLegacyToolNames = "TANGENT_MCP_LEGACY_TOOL_NAMES"
+
+	// envEventsDisabled=1 is the kill switch for the typed approval event
+	// stream: no journal, relay or typed SSE frames, only the legacy revision
+	// pings. Outbox rows are still written, so re-enabling drains them.
+	envEventsDisabled = "TANGENT_EVENTS_DISABLED"
 )
 
 // main is a thin wrapper so that every exit path runs the deferred cleanup
@@ -336,6 +341,7 @@ func run() int {
 		OTel:                    os.Getenv(envOpenTelemetry) != "",
 		DisablePluginHealthGate: os.Getenv(envDisablePluginHealthGate) != "",
 		ListLegacyToolNames:     os.Getenv(envListLegacyToolNames) != "",
+		EventsDisabled:          os.Getenv(envEventsDisabled) == "1",
 		OwnerLabel:              "tangent serve",
 		Logger:                  logger,
 	})

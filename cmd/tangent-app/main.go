@@ -27,6 +27,7 @@ const (
 	envManagedResource         = "TANGENT_MANAGED_RESOURCE"
 	envOpenTelemetry           = "TANGENT_OTEL"
 	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
+	envEventsDisabled          = "TANGENT_EVENTS_DISABLED"
 	ownerLabel                 = "tangent-app"
 )
 
@@ -43,6 +44,7 @@ func main() {
 			ManagedResource:         os.Getenv(envManagedResource),
 			OTel:                    os.Getenv(envOpenTelemetry) != "",
 			DisablePluginHealthGate: os.Getenv(envDisablePluginHealthGate) != "",
+			EventsDisabled:          os.Getenv(envEventsDisabled) == "1",
 			OwnerLabel:              ownerLabel,
 			Logger:                  logger,
 		},

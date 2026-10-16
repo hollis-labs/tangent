@@ -328,6 +328,19 @@ typed-stream configuration fails at startup. A failed log Head read degrades
 that connection to revision hints while preserving any valid supplied cursor,
 retrying typed setup on reconnect.
 
+`internal/boot` wires that log (CW-20261016-0143). Approval lifecycle
+transitions write an `event_outbox` row in their own transaction
+(`internal/events`); a relay (`internal/events/log`) appends each row to a
+SQLite `streamhub.Log` on stream `tangent/approvals` and stamps `appended_at`.
+The store's post-commit hook wakes the relay at once, and a 500 ms tick is the
+fallback, so delivery never depends on the hook. The journal keeps 400 days
+(R-audit) and is trimmed hourly. Boot logs `typed event stream enabled` with
+the stream, epoch and head seq. `TANGENT_EVENTS_DISABLED=1` is the kill switch:
+no journal, relay, retention job or typed frames (the stream falls back to
+revision pings), while outbox rows keep being written, so turning it back on
+delivers what accrued. The epoch is read once at boot: after `Log.Reset` (a
+restore-time action) restart the process.
+
 ### Durable Docs operator surface
 
 `internal/docs/` owns document review semantics within the unified Inbox
