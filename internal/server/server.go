@@ -316,6 +316,7 @@ func New(cfg Config) (*Server, error) {
 		// acknowledging a presented projection needs `draft`, and submitting a
 		// terminal response needs `resolve`.
 		hitlHandler := newHITLHTTPHandler(cfg.HITL)
+		hitlHandler.logger = logger
 		hitlHandler.eventStream = cfg.HITLEvents
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
 			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)

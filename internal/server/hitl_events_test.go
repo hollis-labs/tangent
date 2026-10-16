@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -139,6 +140,9 @@ func openTestEventConnection(t *testing.T, source *HITLEventStream, header, quer
 	}
 	if response.Header.Get("Content-Type") != "text/event-stream" {
 		t.Fatalf("headers = %v", response.Header)
+	}
+	if response.Header.Get("X-Accel-Buffering") != "no" {
+		t.Fatalf("proxy buffering header was not sent: %v", response.Header)
 	}
 	reader := bufio.NewReader(response.Body)
 	checkpoint := ""
@@ -301,6 +305,8 @@ func TestHITLTypedEventsHeadFailurePreservesRevisionHints(t *testing.T) {
 	defer cancel()
 	service := cancelAfterRefreshService{&fakeHITLService{inbox: hitl.OperatorInbox{Revision: "revision-1"}}, cancel}
 	handler := newHITLHTTPHandler(service)
+	var logs bytes.Buffer
+	handler.logger = slog.New(slog.NewTextHandler(&logs, nil))
 	handler.eventStream = &HITLEventStream{Log: failingHeadLog{log}, Notify: notify, Epoch: testEventEpoch, Stream: testEventStream}
 	handler.eventPoll = time.Millisecond
 	handler.eventLifetime = 10 * time.Second
@@ -308,6 +314,9 @@ func TestHITLTypedEventsHeadFailurePreservesRevisionHints(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/hitl/events", nil).WithContext(ctx)
 	request.Header.Set("Last-Event-ID", "epoch-test:7")
 	handler.events(response, request)
+	if !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), "head unavailable") {
+		t.Fatalf("head failure was not logged: %s", logs.String())
+	}
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/event-stream" {
 		t.Fatalf("head failure disabled legacy SSE: %d %v", response.Code, response.Header())
 	}

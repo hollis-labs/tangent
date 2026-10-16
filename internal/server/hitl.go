@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net"
 	"net/http"
@@ -40,6 +41,7 @@ type HITLService interface {
 
 type hitlHTTPHandler struct {
 	service       HITLService
+	logger        *slog.Logger
 	eventPoll     time.Duration
 	eventLifetime time.Duration
 	eventStream   *HITLEventStream
@@ -59,7 +61,7 @@ type resolveCommand struct {
 
 func newHITLHTTPHandler(service HITLService) *hitlHTTPHandler {
 	return &hitlHTTPHandler{
-		service: service, eventPoll: hitlEventPoll, eventLifetime: hitlEventLifetime,
+		service: service, logger: slog.Default(), eventPoll: hitlEventPoll, eventLifetime: hitlEventLifetime,
 	}
 }
 
@@ -181,6 +183,7 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 		}
 		// A failed typed log must not disable legacy revision hints. Retry
 		// opening it when this bounded stream ends and EventSource reconnects.
+		h.logger.WarnContext(ctx, "typed HITL event log unavailable; serving revision hints", "error", err)
 	}
 	defer stream.close()
 	var notify <-chan struct{}
@@ -195,10 +198,10 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	if err := stream.writeCheckpoint(w); err != nil {
 		return
 	}
-	w.Header().Set("X-Accel-Buffering", "no")
 	if err := writeHITLRevisionEvent(w, inbox.Revision); err != nil {
 		return
 	}
