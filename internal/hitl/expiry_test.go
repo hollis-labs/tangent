@@ -83,3 +83,57 @@ func TestExpireDueSweepsAndAwaitReturnsExpired(t *testing.T) {
 		t.Fatalf("second sweep expired %d, want 0", n)
 	}
 }
+
+func TestEnqueueRetryPastDeadlineReturnsOriginalItem(t *testing.T) {
+	svc, _, _, _ := newTestService(t, "expiry-retry.db")
+	ctx := context.Background()
+	caller := directTestCaller("app", "agent")
+	request := expiringRequest(t, "retry", time.Now().Add(time.Hour))
+	first, err := svc.Enqueue(ctx, EnqueueInput{Request: request, Caller: caller})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	svc.now = func() time.Time { return time.Now().Add(2 * time.Hour) }
+	retry, err := svc.Enqueue(ctx, EnqueueInput{Request: request, Caller: caller})
+	if err != nil || retry.ItemID != first.ItemID {
+		t.Fatalf("retry past deadline = %#v, %v; want original item %q", retry, err, first.ItemID)
+	}
+}
+
+func TestExpireIfDueRetriesAfterNonTerminalRevisionConflict(t *testing.T) {
+	svc, interactions, _, _ := newTestService(t, "expiry-conflict.db")
+	ctx := context.Background()
+	caller := directTestCaller("app", "agent")
+	handle, err := svc.Enqueue(ctx, EnqueueInput{
+		Request: expiringRequest(t, "conflict", time.Now().Add(time.Hour)), Caller: caller,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	stale, err := interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
+		InteractionID: handle.ItemID, RequesterScope: OperatorParticipant.Scope, Capability: reservedSurfaceCapability,
+	})
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	// A presentation ack bumps the revision without terminating the item.
+	if _, presentErr := svc.Present(ctx, PresentInput{
+		ItemID: handle.ItemID, ExpectedRevision: stale.Interaction.Revision,
+		PresentedProjectionRevision: 1, ConnectionID: "test",
+	}); presentErr != nil {
+		t.Fatalf("Present: %v", presentErr)
+	}
+	svc.now = func() time.Time { return time.Now().Add(2 * time.Hour) }
+	done, err := svc.expireIfDue(ctx, stale.Interaction)
+	if err != nil || !done {
+		t.Fatalf("expireIfDue(stale) = %v, %v; want terminal", done, err)
+	}
+	// Read the store directly: Get would itself expire the item and hide a
+	// missed retry here.
+	stored, err := interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
+		InteractionID: handle.ItemID, RequesterScope: OperatorParticipant.Scope, Capability: reservedSurfaceCapability,
+	})
+	if err != nil || stored.Interaction.State != interaction.InteractionStateExpired {
+		t.Fatalf("stored state = %v, %v; want expired", stored.Interaction.State, err)
+	}
+}
