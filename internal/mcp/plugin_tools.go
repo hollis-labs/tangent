@@ -99,6 +99,9 @@ func pluginToolHandler(
 		ctx context.Context,
 		arguments map[string]any,
 	) (result any, err error) {
+		if authErr := requireLocalMCPCaller(ctx); authErr != nil {
+			return nil, authErr
+		}
 		defer func() {
 			if recovered := recover(); recovered != nil {
 				// Contained here rather than left to the SDK: a panic that

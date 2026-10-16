@@ -1335,8 +1335,16 @@ trusting it.
 
 ### Scope decisions (not defects)
 
-- **Localhost only, single-user.** No remote access. Authorization is
-  object-scoped (ADR 0004) but loopback admission is not authentication: a
+- **Single-user local trust boundary.** Proxied MCP has producer bearer
+  authentication under CW-20261016-0208, but the pilot's hub-only raw TCP
+  ingress still appears as unmarked loopback. That separate ingress remains
+  tokenless pending the coordinator's follow-up. Relay and plugin tools refuse
+  authenticated producers until they can preserve caller authority end to end;
+  direct local callers retain them. Local turns await/ack is operator-wide,
+  and shared telemetry may expose producer identifiers. See the
+  [phase-1 limits and rollout](mcp-integration.md#caller-authentication-through-a-proxy).
+  Authorization is object-scoped (ADR 0004) but loopback admission is not
+  authentication: a
   hostile local process running as the same user can still mint a participant
   session. Tangent moves authority off the URL; it does not defend against
   that.

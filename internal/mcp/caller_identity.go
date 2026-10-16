@@ -166,3 +166,13 @@ func surfaceMetadataWithAttribution(metadata map[string]any, declaredOwner, decl
 	labels["declared_by_caller"] = attribution
 	return rawJSON(labels)
 }
+
+// requireLocalMCPCaller fences adapters that cannot preserve a producer binding.
+// Relay identity is still argument-derived, and plugin callbacks use a local
+// session. Neither may turn an authenticated producer into a local deputy.
+func requireLocalMCPCaller(ctx context.Context) error {
+	if _, verified := verifiedCaller(ctx); verified {
+		return toolErrorResult("not_authorized", "this tool requires a direct local caller")
+	}
+	return nil
+}

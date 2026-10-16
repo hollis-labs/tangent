@@ -1040,7 +1040,8 @@ comma-separated list of `producer=SHA256(token)` entries. Digests are exactly
 64 hexadecimal characters; producer names match `[a-z][a-z0-9_-]{0,63}`.
 Duplicate names or digests and malformed entries fail startup without echoing
 values. Unset configuration boots normally and refuses proxied MCP. Only
-hashes are kept by the server; provision high-entropy bearer values through
+hashes are kept by the server; provision bearer values with at least 32 bytes
+of cryptographically random entropy through
 the owner's secret store, separately from the digest configuration. Do not
 put bearer values in URLs, command arguments, source control, or logs.
 
@@ -1058,6 +1059,23 @@ local runner await/ack retains its existing operator-wide behavior. Browser
 routes, WebSockets, and HITL event streams keep their separate participant and
 operator-elevation controls.
 
+Relay and plugin tools return `not_authorized` to authenticated gateway
+producers before provider/plugin dispatch. Relay still uses argument-derived
+identities, and plugin callbacks use a local MCP session; neither preserves a
+producer binding end to end yet. Direct local callers retain those tools.
+`telemetry_query` remains shared operational telemetry and can expose other
+producers' identifiers. Tokenless local turns await/ack can read and acknowledge
+all producers' turns. These are accepted phase-1 limits, not producer isolation
+claims for those surfaces.
+
+The pilot also has a separate hub-only TCP ingress at
+`~/.local/share/tangent-pilot/ingress/hub-only-proxy.py`: it listens on
+`100.112.71.40:7853`, forwards to `127.0.0.1:7843`, and admits only the hub source
+IP `100.74.49.44`. It cannot add HTTP proxy markers, so hub-originated traffic
+through this ingress appears as unmarked loopback and remains tokenless,
+including relay access. This PR does not change that ingress; securing it is a
+separate coordinator follow-up. Caddy checks below do not verify this ingress.
+
 Deploy in this order:
 
 1. Install the reviewed Tangent binary with the digest configuration and keep
@@ -1069,10 +1087,31 @@ Deploy in this order:
    even if the explicit marker is absent. This repository change does not edit
    `/etc/caddy/Caddyfile` or reload Caddy.
 3. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
-   `https://tangent.nanite.cloud/mcp`; both must return 401. Check authenticated
-   calls using the provisioned Tether secret reference, then run the existing
-   local runner smoke. Do not record bearer values in verification evidence.
+   `https://tangent.nanite.cloud/mcp`; both must return 401. Repeat with
+   `Authorization: Bearer intentionally-invalid` and require 401. A tokenless
+   GET of `https://tangent.nanite.cloud/sse` must also return 401.
+4. Using two separately provisioned producer secret references, enqueue a HITL
+   item as producer A. Get that item as producer B while declaring A in the
+   caller arguments: require the tool's `not_found` error, matching an unknown
+   item. Producer A must still retrieve its own item. Supply secrets through
+   the client secret store, never shell arguments. Confirm the Tether producer
+   succeeds and run the existing local runner smoke. Record statuses and item
+   IDs only, never authorization headers or bearer values.
 
-Rollback restores the previous binary and service configuration. Keep the
-proxy marker in place while caller authentication is enabled. Credential
-rotation takes effect on restart, which also closes existing SSE sessions.
+Before rolling back to a pre-authentication binary, **close `/mcp` and `/sse`
+at Caddy first**, validate/reload the configuration, and confirm both routes are
+blocked from worker-1. A marker alone cannot protect an old binary. For example,
+place this block before the Tangent reverse proxy in its ordered `route` block:
+
+```caddy
+@mcp_rollback path /mcp /mcp/* /sse /sse/*
+respond @mcp_rollback 403
+```
+
+Only after those checks pass, restore the recorded binary/service configuration
+backups and restart Tangent. Retain the route blocks until an authenticated
+binary and marker configuration are restored and tested. This closes Caddy
+access only; the separately accepted hub-only ingress remains unchanged.
+Credential rotation requires updating the hash/client secret reference and
+restarting Tangent, which closes existing SSE sessions. There is no live
+revocation or configuration reload.

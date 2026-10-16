@@ -131,6 +131,9 @@ func (s *Server) handleRelayOpenChannel(
 	ctx context.Context,
 	input relayOpenChannelInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.OpenChannel(ctx, relay.OpenChannelParams{
 		Title: input.Title, ProjectRef: input.ProjectRef,
 	})
@@ -181,6 +184,9 @@ func (s *Server) handleRelayAttach(
 	ctx context.Context,
 	input relayAttachInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.Attach(ctx, relay.AttachParams{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 		RuntimeAuthority: input.Runtime.Authority, RuntimeEndpointRef: input.Runtime.EndpointRef,
@@ -213,6 +219,9 @@ func (s *Server) handleRelayDetach(
 	ctx context.Context,
 	input relayDetachInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.Detach(ctx, relay.DetachParams{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 	})
@@ -263,6 +272,9 @@ func (s *Server) handleRelaySend(
 	ctx context.Context,
 	input relaySendInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.Send(ctx, relay.SendParams{
 		ChannelID: input.ChannelID, IdempotencyKey: input.IdempotencyKey, Source: input.Source.toRelaySource(),
 		RecipientApplicationID: input.RecipientApplicationID, RecipientAgentID: input.RecipientAgentID,
@@ -330,6 +342,9 @@ func (s *Server) handleRelayReceive(
 	ctx context.Context,
 	input relayReceiveInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	page, err := s.relayProvider.Receive(ctx, relay.InboxQuery{
 		ChannelID: input.ChannelID, Source: input.Source.toRelaySource(),
 		Cursor: input.Cursor, Wait: time.Duration(input.WaitMs) * time.Millisecond, Limit: int(input.Limit),
@@ -375,6 +390,9 @@ func (s *Server) handleRelayAck(
 	ctx context.Context,
 	input relayAckInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.Ack(ctx, relay.AckParams{
 		Source: input.Source.toRelaySource(), ExchangeID: input.ExchangeID,
 	})
@@ -423,6 +441,9 @@ func (s *Server) handleRelayCapabilities(
 	ctx context.Context,
 	input relayCapabilitiesInput,
 ) (any, error) {
+	if err := requireLocalMCPCaller(ctx); err != nil {
+		return nil, err
+	}
 	result, err := s.relayProvider.Capabilities(ctx, relay.CapabilitiesParams{
 		ChannelID: input.ChannelID, ApplicationID: input.ApplicationID, AgentID: input.AgentID,
 	})

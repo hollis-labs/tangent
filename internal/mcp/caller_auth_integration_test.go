@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/tangent/internal/channel"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -20,6 +24,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
+	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/turns"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -49,7 +54,7 @@ func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, register := range []func(*envelope.Service) error{extensions.RegisterHITLItem, extensions.RegisterAgentTurn, extensions.RegisterDocItem} {
+	for _, register := range []func(*envelope.Service) error{extensions.RegisterTriage, extensions.RegisterHITLItem, extensions.RegisterAgentTurn, extensions.RegisterDocItem} {
 		if registerErr := register(env); registerErr != nil {
 			t.Fatal(registerErr)
 		}
@@ -74,7 +79,15 @@ func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := tangentmcp.New(env, envelope.NewDispatcher(env), room.NewManager(nil), "", tangentmcp.WithCallerAuth(auth), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService), tangentmcp.WithTurnsService(turnService), tangentmcp.WithDocsService(docService))
+	channels, err := channel.NewStore(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relayStore, err := relay.NewStore(database, channels)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := tangentmcp.New(env, envelope.NewDispatcher(env), room.NewManager(database), "", tangentmcp.WithRelay(channels, relayStore), tangentmcp.WithCallerAuth(auth), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService), tangentmcp.WithTurnsService(turnService), tangentmcp.WithDocsService(docService))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +124,11 @@ func connectCallerAuthClient(ctx context.Context, t *testing.T, endpoint, transp
 func requireAuthNotFound(ctx context.Context, t *testing.T, client *mcpsdk.ClientSession, tool string, args map[string]any) string {
 	t.Helper()
 	result, err := client.CallTool(ctx, &mcpsdk.CallToolParams{Name: tool, Arguments: args})
-	if err != nil || result == nil || !result.IsError || !strings.Contains(extractText(t, result), "not_found") {
-		t.Fatalf("%s cross-producer result = %v, %v", tool, result, err)
+	if err != nil || result == nil || !result.IsError || !strings.Contains(strings.ToLower(extractText(t, result)), "not_found") {
+		if result != nil {
+			t.Fatalf("%s cross-producer result = %s, %v", tool, extractText(t, result), err)
+		}
+		t.Fatalf("%s cross-producer transport error = %v", tool, err)
 	}
 	return extractText(t, result)
 }
@@ -265,5 +281,145 @@ func TestCallerAuthRefusesProxyBeforeProtocolDispatch(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Adapters without an end-to-end producer binding must never dispatch on
+// behalf of authenticated callers, even when arguments name a valid local actor.
+func TestCallerAuthRefusesRelayAndPluginOverBothTransports(t *testing.T) {
+	for _, transport := range []string{"http", "sse"} {
+		t.Run(transport, func(t *testing.T) {
+			server, _ := newCallerAuthServer(t)
+			var dispatches atomic.Int32
+			if err := server.AddPluginTool(echoTool(func(context.Context, subprocess.MCPCallRequest) (subprocess.MCPCallResult, error) {
+				dispatches.Add(1)
+				return subprocess.MCPCallResult{Content: json.RawMessage(`{"ok":true}`)}, nil
+			})); err != nil {
+				t.Fatal(err)
+			}
+			handler := server.HTTPHandler()
+			if transport == "sse" {
+				handler = server.SSEHandler()
+			}
+			httpServer := httptest.NewServer(handler)
+			t.Cleanup(httpServer.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			t.Cleanup(cancel)
+			local := connectCallerAuthClient(ctx, t, httpServer.URL, transport, "")
+			opened := callInteractionTool[map[string]any](t, local, "tangent_relay_channel_open", map[string]any{"title": "local relay"})
+			channelID := opened["channel_id"]
+			alpha := map[string]any{"application_id": "alpha", "agent_id": "alpha-agent"}
+			beta := map[string]any{"application_id": "beta", "agent_id": "beta-agent"}
+			for _, source := range []map[string]any{alpha, beta} {
+				_ = callInteractionTool[map[string]any](t, local, "tangent_relay_attach", map[string]any{"channel_id": channelID, "source": source, "runtime": map[string]any{"authority": "test"}})
+			}
+			sent := callInteractionTool[map[string]any](t, local, "tangent_relay_send", map[string]any{"channel_id": channelID, "source": beta, "idempotency_key": "private-message", "body": "private relay body", "recipient_application_id": "alpha", "recipient_agent_id": "alpha-agent"})
+			probes := map[string]map[string]any{
+				"tangent_relay_channel_open":     {"title": "forbidden"},
+				"tangent_relay_attach":           {"channel_id": channelID, "source": alpha, "runtime": map[string]any{"authority": "forged"}},
+				"tangent_relay_detach":           {"channel_id": channelID, "source": alpha},
+				"tangent_relay_send":             {"channel_id": channelID, "source": alpha, "idempotency_key": "forged", "body": "forged"},
+				"tangent_relay_receive":          {"channel_id": channelID, "source": alpha, "wait_ms": 0},
+				"tangent_relay_ack":              {"source": alpha, "exchange_id": sent["exchange_id"]},
+				"tangent_relay_capabilities_get": {"channel_id": channelID, "application_id": "alpha", "agent_id": "alpha-agent"},
+				"tangent.stub_board":             {"filter": "all"},
+			}
+			for _, token := range []string{producerAToken, producerBToken} {
+				client := connectCallerAuthClient(ctx, t, httpServer.URL, transport, token)
+				for name, args := range probes {
+					result, err := client.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: args})
+					if err != nil || result == nil || !result.IsError || relayErrorCode(t, result) != "not_authorized" {
+						t.Fatalf("%s: result=%v err=%v", name, result, err)
+					}
+				}
+			}
+			if dispatches.Load() != 0 {
+				t.Fatal("gateway invoked plugin callback")
+			}
+			_ = callInteractionTool[map[string]any](t, local, "tangent.stub_board", map[string]any{"filter": "all"})
+			if dispatches.Load() != 1 {
+				t.Fatal("local plugin callback did not run")
+			}
+			// Refused receive/ack/detach left the local participant and unacked message intact.
+			received := callInteractionTool[struct {
+				Items []struct {
+					ExchangeID string `json:"exchange_id"`
+				} `json:"items"`
+			}](t, local, "tangent_relay_receive", map[string]any{"channel_id": channelID, "source": alpha, "wait_ms": 0, "unacked_only": true})
+			if len(received.Items) != 1 || received.Items[0].ExchangeID != sent["exchange_id"] {
+				t.Fatalf("local inbox after refusals = %+v", received)
+			}
+			_ = callInteractionTool[map[string]any](t, local, "tangent_relay_ack", map[string]any{"source": alpha, "exchange_id": sent["exchange_id"]})
+		})
+	}
+}
+
+func TestCallerAuthRoomInteractionAndInboxOwnership(t *testing.T) {
+	for _, transport := range []string{"http", "sse"} {
+		t.Run(transport, func(t *testing.T) {
+			server, _ := newCallerAuthServer(t)
+			handler := server.HTTPHandler()
+			if transport == "sse" {
+				handler = server.SSEHandler()
+			}
+			httpServer := httptest.NewServer(handler)
+			t.Cleanup(httpServer.Close)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			t.Cleanup(cancel)
+			a := connectCallerAuthClient(ctx, t, httpServer.URL, transport, producerAToken)
+			b := connectCallerAuthClient(ctx, t, httpServer.URL, transport, producerBToken)
+			created := callInteractionTool[map[string]any](t, a, "tangent_session_create", map[string]any{"title": "private room", "meta": map[string]any{}})
+			roomID := created["roomID"]
+			for name, args := range map[string]map[string]any{
+				"tangent_session_get":              {"roomID": roomID},
+				"tangent_session_close":            {"roomID": roomID, "status": "closed"},
+				"tangent_session_phase_advance":    {"roomID": roomID, "to_phase": "review", "reason": "forged"},
+				"tangent_session_phase_output_set": {"roomID": roomID, "phase": "review", "key": "forged", "value": "forged"},
+			} {
+				requireAuthNotFound(ctx, t, b, name, args)
+			}
+			workflow := map[string]any{"envelope": map[string]any{"v": 1, "id": "private-workflow", "type": "tangent.triage", "data": map[string]any{"prompt": "Unique private prompt", "items": []any{"a", "b"}}, "meta": map[string]any{"roomID": roomID}}, "completion": map[string]any{"mode": "async"}}
+			requireAuthNotFound(ctx, t, b, "tangent_triage", workflow)
+			_ = callInteractionTool[map[string]any](t, a, "tangent_triage", workflow)
+			advance := map[string]any{"roomID": roomID, "envelope": workflow["envelope"], "completion": workflow["completion"]}
+			requireAuthNotFound(ctx, t, b, "tangent_session_advance", advance)
+			_ = callInteractionTool[map[string]any](t, a, "tangent_session_get", map[string]any{"roomID": roomID})
+			rooms := callInteractionTool[struct {
+				Rooms []room.RoomSummary `json:"rooms"`
+			}](t, b, "tangent_session_list", map[string]any{"active_only": false})
+			if len(rooms.Rooms) != 0 {
+				t.Fatalf("foreign rooms listed: %+v", rooms)
+			}
+			surface := callInteractionTool[interaction.SurfaceHandle](t, a, "tangent_surface_open", map[string]any{"caller": map[string]any{"scope": "beta", "principal_ref": "forged"}, "owner_scope": "gateway:beta", "idempotency_key": "private-surface"})
+			submitted := callInteractionTool[interaction.InteractionHandle](t, a, "tangent_interaction_submit", map[string]any{"surface_id": surface.SurfaceID, "caller": map[string]any{"scope": "beta", "principal_ref": "forged"}, "idempotency_key": "private-interaction", "definition": map[string]any{"kind": "tangent.triage", "version": "0.2"}, "request": map[string]any{"prompt": "Unique private prompt", "items": []any{"a", "b"}}})
+			for _, name := range []string{"tangent_interaction_get", "tangent_interaction_await", "tangent_interaction_ack"} {
+				args := map[string]any{"interaction_id": submitted.InteractionID, "requester_scope": "gateway:alpha"}
+				if name == "tangent_interaction_await" {
+					args["maximum_wait_ms"] = 5000
+				}
+				requireAuthNotFound(ctx, t, b, name, args)
+			}
+			_ = callInteractionTool[interaction.TerminalOutcome](t, a, "tangent_interaction_get", map[string]any{"interaction_id": submitted.InteractionID, "requester_scope": "beta"})
+			for _, name := range []string{"tangent_inbox_list", "tangent_inbox_search"} {
+				args := map[string]any{"requester_scope": "gateway:alpha"}
+				if name == "tangent_inbox_search" {
+					args["query"] = "Unique private prompt"
+				}
+				foreign := callInteractionTool[interaction.InboxReadPage](t, b, name, args)
+				if len(foreign.Items) != 0 {
+					t.Fatalf("%s leaked items: %+v", name, foreign)
+				}
+				own := callInteractionTool[interaction.InboxReadPage](t, a, name, args)
+				found := false
+				for _, item := range own.Items {
+					if item.ItemID == submitted.InteractionID {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("%s omitted own interaction: %+v", name, own)
+				}
+			}
+		})
 	}
 }
