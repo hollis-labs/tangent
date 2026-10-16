@@ -726,6 +726,17 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (TerminalOutc
 		if loadErr != nil {
 			return TerminalOutcome{}, loadErr
 		}
+		// Losing the compare-and-swap to another terminal outcome is the same
+		// fact as finding the item terminal on entry above, so it gets the same
+		// answer. Which one a concurrent loser sees depends only on whether it
+		// read before or after the winner committed; the contract must not.
+		if isTerminal(latest.Interaction.State) {
+			projected, projectionErr := terminalOutcome(latest)
+			if projectionErr != nil {
+				return TerminalOutcome{}, projectionErr
+			}
+			return TerminalOutcome{}, &TerminalConflictError{Outcome: *projected}
+		}
 		return TerminalOutcome{}, staleError("resolve", input.ItemID, input.ExpectedRevision, latest)
 	}
 	if err != nil {

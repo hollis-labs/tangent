@@ -171,6 +171,14 @@ func TestHandler_DisconnectPreservesPending(t *testing.T) {
 	first := readFrame(t, clientConn, 2*time.Second)
 	// Client slams the door.
 	_ = clientConn.Close(websocket.StatusGoingAway, "tab closed")
+	// The reconnect below must start after the server has noticed the old tab
+	// is gone. Until it detaches, that connection still holds the resolver
+	// lease, and a peer that answers before then is refused with
+	// resolver_lease_held (the response is dropped, so Push never settles).
+	// That refusal is the lease working as designed; this test is about what a
+	// reconnect after the disconnect finds, so it waits for the disconnect to
+	// be observed instead of racing it.
+	waitForConnections(t, rm, 0, 5*time.Second)
 
 	replacement, _, err := websocket.Dial(dialCtx, wsURL(base, rm.ID), nil)
 	if err != nil {
