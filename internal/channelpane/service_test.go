@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -177,15 +178,26 @@ func TestGetChannelReportsQueuedWhilePeerIsActivelyReceiving(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
+	// The agent's receive stays open until this test ends it. Two things used
+	// to end it early and flip the answer to awaiting-peer under load: a fixed
+	// 300ms wait that elapsed before GetChannel ran, and the receive's own
+	// poll picking up the message AcceptExchange had just stored (which closes
+	// the receive and, correctly, the agent's presence). A cursor already past
+	// every message keeps the receive from seeing the exchange, and cancelling
+	// the context is the only thing that closes it.
+	receiveCtx, endReceive := context.WithCancel(ctx)
+	defer endReceive()
 	receiveDone := make(chan struct{})
 	go func() {
 		defer close(receiveDone)
-		_, _ = h.relay.Receive(ctx, relay.ReceiveParams{ChannelID: channelID, ParticipantID: agentID, Wait: 300 * time.Millisecond})
+		_, _ = h.relay.Receive(receiveCtx, relay.ReceiveParams{
+			ChannelID: channelID, ParticipantID: agentID,
+			Cursor: math.MaxInt32, Wait: relay.MaximumReceiveWait,
+		})
 	}()
-	// Give the goroutine's Receive call time to open before sending — this
-	// is the same "confirmed still open" style CW-20260906-0071's live proof
-	// used, adapted to a unit test's shorter, deterministic window.
-	deadline := time.Now().Add(2 * time.Second)
+	// Wait for the receive to open before sending, so the exchange is accepted
+	// while the agent's receive is genuinely open.
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		presence, presErr := h.relay.Presence(ctx, agentID)
 		if presErr != nil {
@@ -214,6 +226,7 @@ func TestGetChannelReportsQueuedWhilePeerIsActivelyReceiving(t *testing.T) {
 	if len(detail.Messages) != 1 || detail.Messages[0].DeliveryState != "queued" {
 		t.Fatalf("GetChannel while the agent's receive is open = %+v, want delivery_state queued", detail.Messages)
 	}
+	endReceive()
 	<-receiveDone
 }
 
