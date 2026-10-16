@@ -1,17 +1,27 @@
 package sqlstore_test
 
 import (
+	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 	"github.com/hollis-labs/libs/mesh/core/hitl/hitltest"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/hitl/sqlstore"
+	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
 func newStore(t *testing.T) hitl.Store {
+	t.Helper()
+	_, store := newDBStore(t)
+	return store
+}
+
+func newDBStore(t *testing.T) (*sql.DB, hitl.Store) {
 	t.Helper()
 	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "tangent.db"))
 	if err != nil {
@@ -21,7 +31,7 @@ func newStore(t *testing.T) hitl.Store {
 	if err := tangentdb.RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
-	return sqlstore.New(db)
+	return db, sqlstore.New(db)
 }
 
 func TestStoreContract(t *testing.T) { hitltest.RunStoreContract(t, newStore) }
@@ -33,32 +43,43 @@ func TestServiceConformance(t *testing.T) {
 	hitltest.RunConformance(t, hitltest.NewServiceAdapter(svc), hitltest.ServiceCaps()...)
 }
 
-// TestSchemaTerminalStatesMatchLib walks the lib's states and checks the
-// table's outcome/state CHECK agrees with State.IsTerminal, so a lib change
-// can't silently break Swap.
-func TestSchemaTerminalStatesMatchLib(t *testing.T) {
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "tangent.db"))
+// TestRowsAreTangentInteractions checks the store writes real interaction
+// rows that Tangent's own interaction store reads: presented at revision 4 (lib
+// revision 1) and, once resolved, terminal with a resolutions row.
+func TestRowsAreTangentInteractions(t *testing.T) {
+	db, store := newDBStore(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	rec := hitl.Record{ItemID: "item-1", CallerScope: "app", IdempotencyKey: "k", Digest: "d", Kind: "approval",
+		Request: []byte(`{"kind":"approval"}`), State: hitl.StatePresented, Revision: 1, CreatedAt: t0, UpdatedAt: t0}
+	if _, created, err := store.Create(ctx, rec); err != nil || !created {
+		t.Fatalf("Create = %v, %v", created, err)
+	}
+	row, err := interaction.NewStore(db).GetInteraction(ctx, "item-1")
+	if err != nil || row.State != interaction.InteractionStatePresented || row.Revision != 4 {
+		t.Fatalf("interaction = %+v, %v; want presented at revision 4", row, err)
+	}
+	next := rec
+	next.State, next.Revision, next.UpdatedAt = hitl.StateResolved, 2, t0.Add(time.Second)
+	next.Outcome = hitl.Resolved{ItemID: "item-1", InteractionRevision: 2, Resolution: hitl.ResolutionRecord{
+		ResolutionID: "res-1", Response: hitl.Response{Kind: "approval", Decision: "approved"},
+		Participant: hitl.Participant{Responder: &hitl.Responder{Kind: "human", Ref: "alice"}, Assurance: "asserted"},
+		ResolvedAt:  next.UpdatedAt, InteractionRevision: 2}}
+	if err = store.Swap(ctx, "item-1", 1, next); err != nil {
+		t.Fatal(err)
+	}
+	row, err = interaction.NewStore(db).GetInteraction(ctx, "item-1")
+	if err != nil || row.State != interaction.InteractionStateResolved || row.Revision != 5 || row.TerminalAt == nil {
+		t.Fatalf("interaction = %+v, %v; want resolved at revision 5", row, err)
+	}
+	if res, resErr := interaction.NewStore(db).GetResolution(ctx, "item-1"); resErr != nil || res.ID != "res-1" || res.ParticipantRef != "alice" {
+		t.Fatalf("resolution = %+v, %v", res, resErr)
+	}
+	got, err := store.Get(ctx, "item-1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err := tangentdb.RunMigrations(db); err != nil {
-		t.Fatal(err)
-	}
-	insert := func(id string, state hitl.State, outcome any) error {
-		_, err := db.Exec(`INSERT INTO hitl_store_records
-(item_id, caller_scope, idempotency_key, digest, kind, request, state, revision, created_at, updated_at, outcome)
-VALUES (?, 's', ?, 'd', 'approval', '{}', ?, 1, 't', 't', ?)`, id, id, string(state), outcome)
-		return err
-	}
-	for _, state := range hitl.AllStates() {
-		terminal := state.IsTerminal()
-		withOutcome, without := insert("o-"+string(state), state, `{}`), insert("n-"+string(state), state, nil)
-		if terminal && (withOutcome != nil || without == nil) {
-			t.Errorf("%s is terminal in the lib: want outcome accepted and missing outcome rejected, got %v / %v", state, withOutcome, without)
-		}
-		if !terminal && (withOutcome == nil || without != nil) {
-			t.Errorf("%s is nonterminal in the lib: want outcome rejected and missing outcome accepted, got %v / %v", state, withOutcome, without)
-		}
+	if r, ok := got.Outcome.(hitl.Resolved); !ok || r.Resolution.Participant.Responder == nil || r.Resolution.Participant.Responder.Kind != "human" {
+		t.Fatalf("outcome = %#v; want the responder kind to round-trip", got.Outcome)
 	}
 }
