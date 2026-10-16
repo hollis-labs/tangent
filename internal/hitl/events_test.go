@@ -287,23 +287,3 @@ func TestEventWriteIsAtomicWithTransition(t *testing.T) {
 		t.Fatalf("outbox after recovery = %v", got)
 	}
 }
-
-func TestCommitHookRunsOnlyAfterCommit(t *testing.T) {
-	ctx := context.Background()
-	svc, _, _, _, store := newTestServiceStore(t, filepath.Join(t.TempDir(), "hook.db"))
-	caller := directTestCaller("app", "agent")
-	calls := 0
-	store.SetCommitHook(func() { calls++ })
-	h, rev := presentApproval(t, svc, caller, "h")
-	if calls == 0 {
-		t.Fatal("hook did not run after a committed create")
-	}
-	before := calls
-	store.SetTransitionObserver(failingObserver{errors.New("boom")})
-	if _, err := svc.Resolve(ctx, ResolveInput{ItemID: h.ItemID, ExpectedRevision: rev, PresentedProjectionRevision: 2, Response: json.RawMessage(`{"kind":"approval","decision":"approved"}`)}); err == nil {
-		t.Fatal("expected failure")
-	}
-	if calls != before {
-		t.Fatal("hook ran for a rolled-back transition")
-	}
-}

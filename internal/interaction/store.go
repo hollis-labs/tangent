@@ -27,11 +27,10 @@ var (
 
 // Store persists canonical records without imposing transport behavior.
 type Store struct {
-	db          *sql.DB
-	now         func() time.Time
-	id          func() string
-	observer    TransitionObserver
-	afterCommit func()
+	db       *sql.DB
+	now      func() time.Time
+	id       func() string
+	observer TransitionObserver
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -377,7 +376,6 @@ INSERT INTO interaction_events (
 	if err := tx.Commit(); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("commit create interaction: %w", err)
 	}
-	s.committed()
 	record, getErr := s.GetInteraction(ctx, id)
 	return CreateInteractionResult{Interaction: record, Created: true}, getErr
 }
@@ -774,7 +772,6 @@ INSERT INTO resolution_deliveries (
 	if err := tx.Commit(); err != nil {
 		return ResolveInteractionResult{}, fmt.Errorf("commit resolve interaction: %w", err)
 	}
-	s.committed()
 
 	interactionRecord, err := s.GetInteraction(ctx, params.InteractionID)
 	if err != nil {
@@ -966,7 +963,6 @@ INSERT INTO terminal_notifications (
 	if err := tx.Commit(); err != nil {
 		return TerminalizeInteractionResult{}, fmt.Errorf("commit terminal disposition: %w", err)
 	}
-	s.committed()
 	interactionRecord, err := s.GetInteraction(ctx, params.InteractionID)
 	if err != nil {
 		return TerminalizeInteractionResult{}, err
