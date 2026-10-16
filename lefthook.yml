@@ -83,15 +83,9 @@ pre-push:
     go-test:
       glob: "*.go"
       skip_empty: true
-      # cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config) on
-      # Linux. Without pkg-config they cannot build, so skip just those two packages; CI
-      # runs the full suite. Elsewhere, or with pkg-config present, test everything.
-      run: |
-        if [ "$(uname -s)" = Linux ] && ! command -v pkg-config >/dev/null 2>&1; then
-          echo "pkg-config not found: skipping cmd/tangent-app and internal/appshell (CI runs them)"
-          pkgs=$(go list ./...) || exit 1
-          pkgs=$(printf '%s\n' "$pkgs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$')
-          go test -race $pkgs
-        else
-          go test -race ./...
-        fi
+      # Focused: the packages this push changes, with -p 2 and a per-package
+      # timeout. The full `go test -race ./...` starts one race binary per CPU
+      # at once and internal/mcp alone outran the default 10m timeout on busy
+      # hosts. CI is the full gate; TANGENT_PREPUSH_FULL=1 runs everything
+      # locally. See scripts/pre-push-go-test.sh for the knobs.
+      run: scripts/pre-push-go-test.sh
