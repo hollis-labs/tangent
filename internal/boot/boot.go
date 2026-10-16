@@ -82,6 +82,9 @@ type Config struct {
 	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
 	MCPCallerTokens string
 
+	// MCPTrustedForwarders names configured producers trusted to assert sessions.
+	MCPTrustedForwarders string
+
 	// ProxiedHTTPAddr is the optional always-proxied loopback listener address.
 	ProxiedHTTPAddr string
 
@@ -259,7 +262,7 @@ func (c *ownedCloser) Close() error {
 // already holds this database; that is the fact cmd/tangent-app's
 // adopt-or-boot decision is built on.
 func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
-	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens)
+	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens, cfg.MCPTrustedForwarders)
 	if err != nil {
 		return nil, nil, nil, err
 	}

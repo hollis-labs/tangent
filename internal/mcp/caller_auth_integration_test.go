@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +43,12 @@ func (authSurfacePolicy) AuthorizeInboxRead(string) bool { return true }
 
 func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 	t.Helper()
+	server, turns, _ := newCallerAuthServerWithForwarders(t, "")
+	return server, turns
+}
+
+func newCallerAuthServerWithForwarders(t *testing.T, forwarders string) (*tangentmcp.Server, *turns.Service, *sql.DB) {
+	t.Helper()
 	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "auth.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +82,7 @@ func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))))
+	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))), forwarders)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +98,7 @@ func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return server, turnService
+	return server, turnService, database
 }
 
 type bearerTransport struct{ token string }

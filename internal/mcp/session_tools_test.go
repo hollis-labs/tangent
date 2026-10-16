@@ -54,6 +54,7 @@ type sessionRig struct {
 // so every named workflow takes the blocking path. It is deliberately retained
 // as the compatibility reference the durable path is measured against.
 type sessionRigOptions struct {
+	callerAuth *tangentmcp.CallerAuth
 	// durable installs the interaction service, which is the only switch that
 	// routes room workflows through the canonical completion adapter.
 	durable bool
@@ -210,6 +211,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	serverOptions := []tangentmcp.Option{
 		tangentmcp.WithTelemetry(recorder, observed),
 		tangentmcp.WithHealthReporter(healthReporter),
+	}
+	if options.callerAuth != nil {
+		serverOptions = append(serverOptions, tangentmcp.WithCallerAuth(options.callerAuth))
 	}
 	if options.durable {
 		interactions, err = interaction.NewService(
