@@ -49,3 +49,17 @@ CREATE TABLE stream_log_gaps (
   recorded_at  TEXT NOT NULL
 );
 CREATE INDEX idx_stream_log_gaps_stream ON stream_log_gaps (stream, id);
+
+-- Repair work list for events the emitter could not map (CW-20261016-0143).
+-- A transition whose event could not be mapped still commits; this row, written
+-- in the same transaction, makes the gap repairable. Error class only, never
+-- raw text.
+CREATE TABLE event_outbox_skipped (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  error_class TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  repaired_at TEXT NULL
+);
+CREATE INDEX event_outbox_skipped_open ON event_outbox_skipped (id) WHERE repaired_at IS NULL;
