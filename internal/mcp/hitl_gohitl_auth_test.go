@@ -50,7 +50,7 @@ func newHITLAuthServer(t *testing.T, goHITL bool) (*tangentmcp.Server, *sql.DB) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))))
+	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))), "")
 	if err != nil {
 		t.Fatal(err)
 	}

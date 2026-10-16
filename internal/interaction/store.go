@@ -90,8 +90,8 @@ INSERT INTO surfaces (
 INSERT INTO surface_events (
   event_id, surface_id, event_type, actor_ref, authority,
   from_revision, to_revision, metadata, recorded_at
-) VALUES (?, ?, 'surface.created', ?, ?, NULL, 1, '{}', ?)`,
-		s.id(), id, nullString(params.ActorRef), nullString(params.Authority), now,
+) VALUES (?, ?, 'surface.created', ?, ?, NULL, 1, ?, ?)`,
+		s.id(), id, nullString(params.ActorRef), nullString(params.Authority), forwarderAdmissionMetadata(ctx, nil), now,
 	); err != nil {
 		return SurfaceRecord{}, fmt.Errorf("insert surface event: %w", err)
 	}
@@ -330,10 +330,10 @@ INSERT INTO surface_events (
 INSERT INTO interaction_events (
   event_id, surface_id, interaction_id, event_type, actor_ref, authority,
   from_revision, to_revision, metadata, recorded_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			s.id(), params.SurfaceID, id, eventType,
 			nullString(params.ActorRef), nullString(params.Authority),
-			fromRevision, revision+1, now,
+			fromRevision, revision+1, forwarderAdmissionMetadata(ctx, nil), now,
 		); err != nil {
 			return CreateInteractionResult{}, fmt.Errorf("insert %s event: %w", eventType, err)
 		}

@@ -1057,6 +1057,66 @@ cannot select another producer's authority. Existing local-owned items stay
 local-owned. There is no automatic ownership migration. Legacy SSE sessions
 are isolated per producer, including from tokenless local clients.
 
+### Trusted gateway session scopes
+
+By default each producer remains one authority and forwarded identity headers
+are ignored. To trust a configured gateway to attest upstream sessions, set
+`TANGENT_MCP_TRUSTED_FORWARDERS=tether-gateway` alongside its token digest.
+This is a comma-separated opt-in list; duplicate or unconfigured producer names
+fail startup. Trust only a gateway that strips incoming identity headers and
+rebuilds them from its authenticated, daemon-resolved caller context.
+
+After authenticating that producer's bearer, Tangent accepts exactly one of
+each matching header:
+
+```text
+X-Forwarded-User-Id: session:<uuid>
+X-Tether-Session-Id: <uuid>
+```
+
+The UUID must be canonical lowercase `8-4-4-4-12` hexadecimal text. A duplicate,
+partial, mismatched or malformed pair returns a fixed HTTP 400 before MCP
+protocol dispatch, without echoing supplied values. Invalid credentials still
+return 401 first. A valid pair binds the caller to
+`gateway:tether-gateway/session:<uuid>`. With both headers absent the binding is
+`gateway:tether-gateway`. Other producers ignore the headers and retain their
+own binding. Tool arguments cannot select either binding.
+
+Parent and session scopes are disjoint: no prefix inheritance, automatic
+migration, or parent access to session-owned records. Room, surface, interaction,
+inbox, idempotency and one-time-secret delivery use the effective scope. Turns
+await/ack also use that scope, independently of the turn's argument-supplied
+`session_id` label. Dropping headers cannot recover a session's objects. A
+trusted gateway credential can attest any session, so the gateway's upstream
+authentication remains part of this boundary.
+
+With a valid session pair, optional `X-Tether-Agent-Urn`,
+`X-Tether-Workstream-Id`, `X-Tether-Launch-Id`, `X-Tether-Project-Id` and
+`X-Tether-Logical-Agent-Id` are retained as forwarder attribution. Each must be
+a single nonempty value of at most 512 printable ASCII bytes (`0x21`–`0x7e`, no
+spaces). Invalid supplied labels return the same fixed 400. Without a session
+pair they are ignored. These labels never grant authority or change idempotency.
+They are host-owned context recorded under `forwarder_attribution` in admission
+audit-event metadata, separate from request/source/metadata assertions. An
+idempotent retry retains the original admission evidence. Bearer values and raw
+forwarded identity headers are stripped before SDK dispatch.
+
+The current Tether gateway sends the pair only for `tools/call` over stateless
+HTTP; initialize and discovery may therefore use the parent binding. Legacy
+SSE clients must send the same identity on their GET stream and every POST.
+Each effective scope has its own SDK session registry, so a POST with another
+session or no session cannot address the existing stream. Legacy SSE retains
+the attribution from its opening GET; HTTP attribution is per request. Idle SSE
+registries are removed after streams and in-flight requests finish.
+
+Enable this opt-in only after the credential and proxied-ingress rollout below
+has passed its gateway/browser/WebSocket probes. Restart Tangent when changing
+configuration. Existing parent-owned records stay parent-owned, and disabling
+the opt-in does not make session-owned records parent-readable. Relay/provider
+and plugin tools remain refused for authenticated gateway callers.
+
+### Ingress rollout
+
 Turns await/ack narrow authenticated producers to their own items. Unknown or
 foreign session/item IDs return the same `not_found` error. Phase-1 tokenless
 local runner await/ack retains its existing operator-wide behavior. Browser
