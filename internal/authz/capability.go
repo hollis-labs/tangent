@@ -93,6 +93,15 @@ func DefaultParticipantCapabilities() []Capability {
 	return []Capability{View, Draft, Resolve, Cancel}
 }
 
+// MintedParticipantCapabilities is the set a session minted from loopback
+// admission alone receives: the participant row without Resolve. Loopback
+// admission is producible by any local process, including the agent that
+// enqueued an approval, so it must never carry the terminal decision
+// (CW-20261016-0174). Resolve is reached by operator elevation.
+func MintedParticipantCapabilities() []Capability {
+	return []Capability{View, Draft, Cancel}
+}
+
 // Grants reports whether a principal kind holds a capability at all, before
 // any object is considered. An empty matrix cell can never be reached by an
 // object rule.

@@ -527,6 +527,19 @@ type PresentInput struct {
 	ExpectedRevision            int64
 	PresentedProjectionRevision int64
 	ConnectionID                string
+	// Participant is the binding the presentation records. Zero means
+	// OperatorParticipant. The browser adapter passes the elevated session's
+	// binding (CW-20261016-0174), and the interaction store requires the
+	// resolver to match the presenter, so Present and Resolve must agree.
+	Participant interaction.ActorBinding
+}
+
+// participantOrDefault returns the binding a browser command acts as.
+func participantOrDefault(binding interaction.ActorBinding) interaction.ActorBinding {
+	if binding.Scope == "" && binding.PrincipalRef == "" && binding.Authority == "" && binding.Assurance == "" {
+		return OperatorParticipant
+	}
+	return binding
 }
 
 // Inbox returns the complete operator projection without recording a caller
@@ -637,7 +650,7 @@ func (s *Service) Present(ctx context.Context, input PresentInput) (ItemHandle, 
 	handle, err := s.interactions.AcknowledgePresentation(ctx, interaction.PresentInteractionInput{
 		InteractionID: input.ItemID, ExpectedRevision: input.ExpectedRevision,
 		PresentedProjectionRevision: input.PresentedProjectionRevision,
-		Participant:                 OperatorParticipant, ConnectionID: input.ConnectionID,
+		Participant:                 participantOrDefault(input.Participant), ConnectionID: input.ConnectionID,
 		Capability: reservedSurfaceCapability,
 	})
 	if errors.Is(err, interaction.ErrRevisionConflict) || errors.Is(err, interaction.ErrTerminal) {
@@ -662,6 +675,9 @@ type ResolveInput struct {
 	ExpectedRevision            int64
 	PresentedProjectionRevision int64
 	Response                    json.RawMessage
+	// Participant is the binding the resolution records as its participant
+	// (participant_assurance included). Zero means OperatorParticipant.
+	Participant interaction.ActorBinding
 }
 
 func (s *Service) Resolve(ctx context.Context, input ResolveInput) (TerminalOutcome, error) {
@@ -702,7 +718,7 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (TerminalOutc
 	result, err := s.interactions.ResolveInteraction(ctx, interaction.ResolveInteractionInput{
 		InteractionID: input.ItemID, ExpectedInteractionRevision: input.ExpectedRevision,
 		PresentedProjectionRevision: input.PresentedProjectionRevision,
-		Participant:                 OperatorParticipant, ResponseKind: "data", ResponsePayload: response,
+		Participant:                 participantOrDefault(input.Participant), ResponseKind: "data", ResponsePayload: response,
 		Capability: reservedSurfaceCapability,
 	})
 	if errors.Is(err, interaction.ErrRevisionConflict) || errors.Is(err, interaction.ErrTerminal) {

@@ -246,6 +246,8 @@ func TestCrossSiteRequestsAreRefusedOnEveryPrivilegedRoute(t *testing.T) {
 type guardedApp struct {
 	database *sql.DB
 	sessions *participant.Store
+	gate     *participant.Gate
+	hitl     *hitl.Service
 	manager  *room.Manager
 	channels *channel.Store
 	relay    *relay.Store
@@ -316,6 +318,9 @@ func startGuardedAppWith(t *testing.T, adjust func(*server.Config)) *guardedApp 
 	if err != nil {
 		t.Fatalf("participant.NewGate: %v", err)
 	}
+	// Every guarded app has an operator token configured, so a test can
+	// elevate; the fail-closed tests clear it through the adjust hook.
+	gate.ConfigureOperatorToken(testOperatorToken, nil)
 	wsHandler := tangentws.New(manager, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	wsHandler.SetParticipantResolver(gate.ResolveBinding)
 
@@ -351,7 +356,8 @@ func startGuardedAppWith(t *testing.T, adjust func(*server.Config)) *guardedApp 
 		t.Fatalf("server.Listen: %v", err)
 	}
 	app := &guardedApp{
-		database: database, sessions: sessions, manager: manager, channels: channels, relay: relayStore,
+		database: database, sessions: sessions, gate: gate, hitl: hitlService,
+		manager: manager, channels: channels, relay: relayStore,
 		server: httpServer, listener: listener, baseURL: "http://" + listener.Addr().String(),
 		logs: logs, done: make(chan error, 1),
 	}

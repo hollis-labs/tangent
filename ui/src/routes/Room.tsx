@@ -30,6 +30,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { requestOperatorElevation } from "@/lib/operator-elevation";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { PageShell } from "../components/layout/PageShell";
@@ -129,6 +130,10 @@ export default function Room({
         // paths that genuinely have no mounted renderer left.
         lifecycleRef.current?.receiveServerError(refused);
         setServerError(refused);
+        // An unelevated session cannot answer (CW-20261016-0174). Ask for the
+        // operator token now; the socket carries the elevated session after
+        // a reload, which the refusal copy says.
+        if (refused.code === "not_authorized") void requestOperatorElevation();
         setPending((current) => current ?? restoredPending(lifecycleRef.current));
         setSubmitting(false);
         setStatus("submission refused");

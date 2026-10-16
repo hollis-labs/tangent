@@ -60,7 +60,9 @@ func TestPluginConfigHTTPGuardsCASSecretPresenceAndApply(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := startGuardedAppWith(t, func(cfg *server.Config) { cfg.PluginHost = host; cfg.PluginConfig = store })
-	cookie := app.openDocument(t, "/")
+	// Plugin management and config writes take `resolve`, which needs an
+	// elevated session (CW-20261016-0174).
+	cookie := app.openElevatedDocument(t, "/")
 	request := func(method, path, body, origin string, credential bool) (int, []byte) {
 		t.Helper()
 		req, e := http.NewRequest(method, app.baseURL+path, strings.NewReader(body))

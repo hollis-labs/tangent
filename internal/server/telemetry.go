@@ -36,10 +36,23 @@ func reportObjectAccessDenial(
 	capability authz.Capability,
 	transport string,
 ) {
+	reportObjectAccessDenialCode(ctx, recorder, capability, transport, "forbidden")
+}
+
+// reportObjectAccessDenialCode is reportObjectAccessDenial with a refusal
+// code from the telemetry package's closed vocabulary: `forbidden`,
+// `assurance_insufficient`, `elevation_refused`, or `elevation_rate_limited`.
+func reportObjectAccessDenialCode(
+	ctx context.Context,
+	recorder *telemetry.Recorder,
+	capability authz.Capability,
+	transport string,
+	code string,
+) {
 	recorder.Emit(ctx, telemetry.Event{
 		Name:    telemetry.EventCapabilityDenied,
 		Outcome: telemetry.OutcomeRefused,
-		Code:    "forbidden",
+		Code:    code,
 		// Filed under a fixed subject trace rather than an invocation's. A
 		// refused request never named an interaction the host was willing to
 		// confirm exists — that is the refusal — so there is nothing to

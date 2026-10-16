@@ -9,7 +9,9 @@
 // Loopback admission is not authentication, and this package must never be
 // described as if it were. A malicious local process running as the same user
 // can still mint a session by making a same-origin request. What the session
-// buys is that a room UUID stops being an answer credential.
+// buys is that a room UUID stops being an answer credential. Operator authority
+// (`resolve`) additionally requires elevation with the operator token; see
+// operator.go.
 package participant
 
 import (
@@ -91,12 +93,16 @@ func (s Session) Holds(capability authz.Capability) bool {
 // makes it a *template* rather than the identity itself: the session is the
 // identity, and two browsers on the same machine get two sessions and two
 // audit trails while both act as this operator.
+//
+// It does not hold `resolve` (CW-20261016-0174): loopback admission is
+// something any local process can produce, so it may view and acknowledge but
+// never decide. Deciding needs an elevated session (OperatorTemplate).
 var DefaultTemplate = Session{
 	Scope:     authz.ParticipantScope,
 	Ref:       "local-operator",
 	Authority: "tangent-loopback",
-	Assurance: "loopback-unverified",
-	Grants:    authz.DefaultParticipantCapabilities(),
+	Assurance: AssuranceLoopbackUnverified,
+	Grants:    authz.MintedParticipantCapabilities(),
 }
 
 // newCookieValue returns a fresh opaque cookie value and its storage hash.

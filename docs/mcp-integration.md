@@ -956,8 +956,17 @@ so MCP clients and the `curl` recipes in this document are unaffected; what it
 refuses is a browser request that declares itself cross-site.
 
 **Revoking sessions.** `tangent --revoke-participant-sessions` ends every
-browser session and exits. Sessions have no idle expiry and an absolute 30-day
-lifetime; every browser mints a fresh one on its next page load.
+browser session and exits. `tangent session revoke --all` and
+`tangent session revoke --id-prefix <8 hex>` do the same (or target sessions
+listed by `tangent session list`) and are safe to run while Tangent is
+serving. Sessions have no idle expiry and an absolute 30-day lifetime; every
+browser mints a fresh one on its next page load.
+
+**Operator token.** A minted browser session can view the queues but cannot
+approve, deny, reply, or acknowledge. Set `TANGENT_OPERATOR_TOKEN` (at least
+32 bytes) in the service environment; the browser asks for it once and
+elevates its session through `POST /api/session/elevate`. Without it, browser
+approvals cannot be resolved at all.
 
 ## Troubleshooting
 

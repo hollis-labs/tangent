@@ -50,8 +50,13 @@ func TestMintedSessionStoresOnlyTheHashOfItsCookie(t *testing.T) {
 	if resolved.ID != session.ID || resolved.Scope != authz.ParticipantScope {
 		t.Fatalf("Lookup returned %+v, want the minted session", resolved)
 	}
-	if !resolved.Holds(authz.Resolve) || resolved.Holds(authz.Close) {
-		t.Fatalf("minted grants = %v, want the participant row without close", resolved.Grants)
+	// CW-20261016-0174: a minted session is the participant row without
+	// resolve (operator elevation grants it) and, as ever, without close.
+	if resolved.Holds(authz.Resolve) || resolved.Holds(authz.Close) || !resolved.Holds(authz.View) {
+		t.Fatalf("minted grants = %v, want the participant row without resolve or close", resolved.Grants)
+	}
+	if resolved.Assurance != AssuranceLoopbackUnverified || resolved.Elevated() {
+		t.Fatalf("minted assurance = %q, want %q", resolved.Assurance, AssuranceLoopbackUnverified)
 	}
 	if resolved.ExpiresAt.Sub(resolved.CreatedAt) != MaximumLifetime {
 		t.Fatalf("session lifetime = %s, want the 30-day absolute maximum", resolved.ExpiresAt.Sub(resolved.CreatedAt))

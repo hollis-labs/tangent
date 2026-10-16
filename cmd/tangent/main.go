@@ -180,9 +180,16 @@ func run() int {
 		return runPluginCommand(flagSet.Args()[1:])
 	}
 
-	// Tangent has no subcommands besides `plugin`. A stray positional argument
-	// used to fall through and start a server, so `tangent docs --help` served
-	// for days and held the database owner lock. Resolve it before anything
+	// `tangent session ...` revokes or lists browser participant sessions. It
+	// runs before the ownership claim on purpose: revocation must work while
+	// Tangent is serving (see session.go).
+	if flagSet.NArg() > 0 && flagSet.Arg(0) == "session" {
+		return runSessionCommand(flagSet.Args()[1:], resolveDBPath(), os.Stdout, os.Stderr)
+	}
+
+	// Tangent has no subcommands besides `plugin` and `session`. A stray
+	// positional argument used to fall through and start a server, so
+	// `tangent docs --help` served for days and held the database owner lock. Resolve it before anything
 	// opens the database, takes the lock or binds a port.
 	if flagSet.NArg() > 0 {
 		return rejectPositional(flagSet)
@@ -322,6 +329,7 @@ func run() int {
 	// function this does.
 	_, srv, closer, bootErr := boot.Boot(boot.Config{
 		DBPath:                  dbPath,
+		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 		Port:                    *port,
 		DevFrontendURL:          os.Getenv(envDevFrontendURL),
 		ManagedResource:         os.Getenv(envManagedResource),

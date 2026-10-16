@@ -120,6 +120,10 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 	command.Env = append(os.Environ(),
 		"HOME="+root,
 		"TANGENT_DB_PATH="+dbPath,
+		// The operator token lets the smoke operator elevate its browser
+		// session so it may answer (CW-20261016-0174). A fixture value,
+		// scoped to this throwaway process.
+		"TANGENT_OPERATOR_TOKEN="+smokeOperatorToken,
 		"TANGENT_PLUGIN_DIR="+pluginDir,
 		"TANGENT_HTTP_PORT="+strconv.Itoa(port),
 		// An unset dev frontend URL keeps the embedded bundle in play, which

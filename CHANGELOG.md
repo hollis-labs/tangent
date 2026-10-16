@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- A browser session minted from loopback admission no longer holds `resolve`:
+  any local process (or anything a reverse proxy forwards with a loopback
+  Host) could mint one and approve its own HITL request. Resolving, and
+  presenting a HITL item, now require operator elevation with
+  `TANGENT_OPERATOR_TOKEN` via `POST /api/session/elevate`, which rotates the
+  session to `operator-token` assurance; resolutions record it. An unset or
+  short (< 32 bytes) token fails closed. **Deploy prerequisite:** provision
+  `TANGENT_OPERATOR_TOKEN` before upgrading, or browser approvals become
+  unresolvable (CW-20261016-0174).
+
 ### Added
+
+- `tangent session revoke --all | --id-prefix <8 hex>` and
+  `tangent session list`, safe to run while serving (CW-20261016-0174).
 
 - `internal/hitl/sqlstore`: a go-hitl `Store` (`libs/mesh/core/hitl`) over
   Tangent's `interactions` tables (no migration), run against the lib's

@@ -163,7 +163,15 @@ func requireParticipant(
 		// participant never holds `close` however a session row is spelled,
 		// and routing the check here rather than reading Holds directly is
 		// what keeps that true in one place.
-		if gate.Authorize(session, participant.LocalSurfaces(), capability) != nil {
+		if authErr := gate.Authorize(session, participant.LocalSurfaces(), capability); authErr != nil {
+			// An admitted but unelevated session is told what would fix it:
+			// the operator token (CW-20261016-0174). Every other refusal stays
+			// the fixed message that names nothing.
+			if errors.Is(authErr, participant.ErrAssuranceInsufficient) {
+				writeAssuranceRefusal(w)
+				reportObjectAccessDenialCode(r.Context(), recorder, capability, "browser-api", codeAssuranceInsufficient)
+				return
+			}
 			writeParticipantRefusal(w)
 			reportObjectAccessDenial(r.Context(), recorder, capability, "browser-api")
 			return
@@ -179,6 +187,23 @@ func writeParticipantRefusal(w http.ResponseWriter) {
 	writeHITLJSON(w, http.StatusForbidden, map[string]any{
 		"code":    "forbidden",
 		"message": participantRefusalMessage,
+	})
+}
+
+// codeAssuranceInsufficient is the refusal code for a session that is
+// admitted but not elevated to operator assurance. The browser answers it by
+// asking for the operator token and retrying; a script receives a terminal,
+// self-describing refusal.
+const codeAssuranceInsufficient = "assurance_insufficient"
+
+// assuranceRefusalMessage is fixed. It names the remedy, which is not a probe:
+// that an operator token exists is not a secret, its value is.
+const assuranceRefusalMessage = "this action requires operator elevation; enter the operator token to continue"
+
+func writeAssuranceRefusal(w http.ResponseWriter) {
+	writeHITLJSON(w, http.StatusForbidden, map[string]any{
+		"code":    codeAssuranceInsufficient,
+		"message": assuranceRefusalMessage,
 	})
 }
 

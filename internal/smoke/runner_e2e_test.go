@@ -157,8 +157,17 @@ func newOperator(ctx context.Context, t *testing.T, endpoint smoke.Endpoint) *op
 	if len(jar.Cookies(request.URL)) == 0 {
 		t.Fatalf("a document navigation to %s minted no participant session", request.URL)
 	}
+	// Answering takes `resolve`, which a minted session no longer holds:
+	// elevate with the operator token, as the browser prompt does.
+	if err := o.do(ctx, http.MethodPost, "/api/session/elevate", map[string]any{"token": smokeOperatorToken}, nil); err != nil {
+		t.Fatalf("elevate the operator session: %v", err)
+	}
 	return o
 }
+
+// smokeOperatorToken is the fixture TANGENT_OPERATOR_TOKEN the smoke harness
+// boots the shipped binary with.
+const smokeOperatorToken = "smoke-fixture-operator-token-5e8b2a7c1d9f4036"
 
 func (o *operator) do(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader

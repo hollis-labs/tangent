@@ -16,6 +16,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/appshell"
 	"github.com/hollis-labs/tangent/internal/boot"
+	"github.com/hollis-labs/tangent/internal/participant"
 )
 
 const (
@@ -36,6 +37,7 @@ func main() {
 	shell, err := appshell.New(appshell.Config{
 		Config: boot.Config{
 			DBPath:                  os.Getenv(envDBPath),
+			OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 			Port:                    resolvePort(),
 			DevFrontendURL:          os.Getenv(envDevFrontendURL),
 			ManagedResource:         os.Getenv(envManagedResource),

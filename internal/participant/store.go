@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -219,6 +220,76 @@ WHERE revoked_at IS NULL`, s.now(), reason)
 		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
 	}
 	return affected, nil
+}
+
+// MinRevokePrefixLength is the shortest session-id prefix RevokeByIDPrefix
+// accepts. Eight hex digits is the first group of a UUID: short enough to
+// type, long enough that it does not sweep up sessions by accident.
+const MinRevokePrefixLength = 8
+
+// ErrInvalidPrefix means a revocation prefix was too short or not hex.
+var ErrInvalidPrefix = errors.New("participant: session id prefix must be at least 8 hex digits")
+
+// RevokeByIDPrefix ends every live session whose id starts with prefix, and
+// returns how many it ended. The prefix is validated as lowercase hex (with
+// the UUID hyphens allowed) so it can never carry a LIKE wildcard.
+func (s *Store) RevokeByIDPrefix(ctx context.Context, prefix, reason string) (int64, error) {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if len(prefix) < MinRevokePrefixLength {
+		return 0, ErrInvalidPrefix
+	}
+	for _, r := range prefix {
+		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') && r != '-' {
+			return 0, ErrInvalidPrefix
+		}
+	}
+	result, err := s.db.ExecContext(ctx, `
+UPDATE participant_sessions SET revoked_at = ?, revoked_reason = ?
+WHERE revoked_at IS NULL AND substr(id, 1, ?) = ?`, s.now(), reason, len(prefix), prefix)
+	if err != nil {
+		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
+	}
+	return affected, nil
+}
+
+// SessionSummary is the non-secret description of one session row, for the
+// operator CLI. It carries no cookie hash.
+type SessionSummary struct {
+	ID         string
+	Assurance  string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	Revoked    bool
+}
+
+// List returns every session row, newest first, without capability material.
+func (s *Store) List(ctx context.Context) ([]SessionSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, participant_assurance, created_at, last_seen_at, expires_at, revoked_at
+FROM participant_sessions ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("participant: list sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionSummary
+	for rows.Next() {
+		var (
+			summary   SessionSummary
+			revokedAt sql.NullTime
+		)
+		if err := rows.Scan(&summary.ID, &summary.Assurance, &summary.CreatedAt,
+			&summary.LastSeenAt, &summary.ExpiresAt, &revokedAt); err != nil {
+			return nil, fmt.Errorf("participant: list sessions: %w", err)
+		}
+		summary.Revoked = revokedAt.Valid
+		out = append(out, summary)
+	}
+	return out, rows.Err()
 }
 
 // sqlExecutor is the narrow slice of *sql.DB and *sql.Tx insert needs, so a
