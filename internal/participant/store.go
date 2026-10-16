@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,40 +89,63 @@ func (s *Store) Lookup(ctx context.Context, value string) (Session, error) {
 		return Session{}, ErrNoSession
 	}
 	hash := HashCookie(value)
+	session, storedHash, err := s.load(ctx, `cookie_sha256 = ?`, hash)
+	if err != nil {
+		return Session{}, err
+	}
+	if !constantTimeEqual(storedHash, hash) {
+		return Session{}, ErrSessionInvalid
+	}
+	return session, nil
+}
+
+// LookupByID re-reads a live session by its row id. It is the cheap primary
+// key read a long-lived transport uses to notice that the session behind it
+// was revoked, expired, or lost its elevation (CW-20261016-0174).
+func (s *Store) LookupByID(ctx context.Context, sessionID string) (Session, error) {
+	if sessionID == "" {
+		return Session{}, ErrSessionInvalid
+	}
+	session, _, err := s.load(ctx, `id = ?`, sessionID)
+	return session, err
+}
+
+// load reads one session row by a fixed predicate, refusing a revoked or
+// expired one, and applies the elevation window.
+func (s *Store) load(ctx context.Context, predicate string, arg string) (Session, string, error) {
 	var (
 		session    Session
 		storedHash string
 		grantsJSON string
 		revokedAt  sql.NullTime
 	)
+	//nolint:gosec // G202: predicate is one of two fixed literals in this file.
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, cookie_sha256, participant_scope, participant_ref,
        participant_authority, participant_assurance, capabilities,
        created_at, last_seen_at, expires_at, revoked_at
 FROM participant_sessions
-WHERE cookie_sha256 = ?`, hash).Scan(
+WHERE `+predicate, arg).Scan(
 		&session.ID, &storedHash, &session.Scope, &session.Ref,
 		&session.Authority, &session.Assurance, &grantsJSON,
 		&session.CreatedAt, &session.LastSeenAt, &session.ExpiresAt, &revokedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, ErrSessionInvalid
+		return Session{}, "", ErrSessionInvalid
 	}
 	if err != nil {
-		return Session{}, fmt.Errorf("participant: load session: %w", err)
+		return Session{}, "", fmt.Errorf("participant: load session: %w", err)
 	}
-	if !constantTimeEqual(storedHash, hash) {
-		return Session{}, ErrSessionInvalid
-	}
-	if revokedAt.Valid || !s.now().Before(session.ExpiresAt) {
-		return Session{}, ErrSessionInvalid
+	now := s.now()
+	if revokedAt.Valid || !now.Before(session.ExpiresAt) {
+		return Session{}, "", ErrSessionInvalid
 	}
 	var granted []string
 	if err := json.Unmarshal([]byte(grantsJSON), &granted); err != nil {
-		return Session{}, fmt.Errorf("participant: decode capabilities: %w", err)
+		return Session{}, "", fmt.Errorf("participant: decode capabilities: %w", err)
 	}
 	session.Grants = authz.ParseCapabilities(granted)
-	return session, nil
+	return applyElevationWindow(session, now), storedHash, nil
 }
 
 // Touch records that a session was used. It moves last_seen_at only: there is
@@ -155,6 +179,21 @@ func (s *Store) Rotate(ctx context.Context, sessionID string, next Session) (Ses
 		return Session{}, "", err
 	}
 	now := s.now()
+	// The successor inherits the predecessor's absolute expiry: an assurance
+	// change is not a reason to extend a session's life, and an elevation in
+	// particular must not refresh the 30-day clock (CW-20261016-0174).
+	var predecessorExpiry time.Time
+	switch scanErr := transaction.QueryRowContext(ctx,
+		`SELECT expires_at FROM participant_sessions WHERE id = ? AND revoked_at IS NULL`, sessionID,
+	).Scan(&predecessorExpiry); {
+	case errors.Is(scanErr, sql.ErrNoRows):
+		return Session{}, "", ErrSessionInvalid
+	case scanErr != nil:
+		return Session{}, "", fmt.Errorf("participant: load predecessor: %w", scanErr)
+	}
+	if !now.Before(predecessorExpiry) {
+		return Session{}, "", ErrSessionInvalid
+	}
 	successor := Session{
 		ID:         uuid.NewString(),
 		Scope:      next.Scope,
@@ -164,7 +203,7 @@ func (s *Store) Rotate(ctx context.Context, sessionID string, next Session) (Ses
 		Grants:     append([]authz.Capability(nil), next.Grants...),
 		CreatedAt:  now,
 		LastSeenAt: now,
-		ExpiresAt:  now.Add(MaximumLifetime),
+		ExpiresAt:  predecessorExpiry,
 	}
 	if insertErr := s.insert(ctx, transaction, successor, hash); insertErr != nil {
 		return Session{}, "", insertErr
@@ -219,6 +258,89 @@ WHERE revoked_at IS NULL`, s.now(), reason)
 		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
 	}
 	return affected, nil
+}
+
+// MinRevokePrefixLength is the shortest session-id prefix RevokeByIDPrefix
+// accepts. Eight hex digits is the first group of a UUID: short enough to
+// type, long enough that it does not sweep up sessions by accident.
+const MinRevokePrefixLength = 8
+
+// ErrInvalidPrefix means a revocation prefix was too short or not hex.
+var ErrInvalidPrefix = errors.New("participant: session id prefix must be at least 8 hex digits")
+
+// ValidRevokePrefix reports whether prefix is at least MinRevokePrefixLength
+// characters of lowercase hex (UUID hyphens allowed), so it can never carry a
+// LIKE wildcard or sweep up sessions by accident.
+func ValidRevokePrefix(prefix string) bool {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if len(prefix) < MinRevokePrefixLength {
+		return false
+	}
+	for _, r := range prefix {
+		isDigit := r >= '0' && r <= '9'
+		isHexLetter := r >= 'a' && r <= 'f'
+		if !isDigit && !isHexLetter && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// RevokeByIDPrefix ends every live session whose id starts with prefix, and
+// returns how many it ended. The prefix is validated as lowercase hex (with
+// the UUID hyphens allowed) so it can never carry a LIKE wildcard.
+func (s *Store) RevokeByIDPrefix(ctx context.Context, prefix, reason string) (int64, error) {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if !ValidRevokePrefix(prefix) {
+		return 0, ErrInvalidPrefix
+	}
+	result, err := s.db.ExecContext(ctx, `
+UPDATE participant_sessions SET revoked_at = ?, revoked_reason = ?
+WHERE revoked_at IS NULL AND substr(id, 1, ?) = ?`, s.now(), reason, len(prefix), prefix)
+	if err != nil {
+		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("participant: revoke sessions: %w", err)
+	}
+	return affected, nil
+}
+
+// SessionSummary is the non-secret description of one session row, for the
+// operator CLI. It carries no cookie hash.
+type SessionSummary struct {
+	ID         string
+	Assurance  string
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+	Revoked    bool
+}
+
+// List returns every session row, newest first, without capability material.
+func (s *Store) List(ctx context.Context) ([]SessionSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, participant_assurance, created_at, last_seen_at, expires_at, revoked_at
+FROM participant_sessions ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("participant: list sessions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []SessionSummary
+	for rows.Next() {
+		var (
+			summary   SessionSummary
+			revokedAt sql.NullTime
+		)
+		if err := rows.Scan(&summary.ID, &summary.Assurance, &summary.CreatedAt,
+			&summary.LastSeenAt, &summary.ExpiresAt, &revokedAt); err != nil {
+			return nil, fmt.Errorf("participant: list sessions: %w", err)
+		}
+		summary.Revoked = revokedAt.Valid
+		out = append(out, summary)
+	}
+	return out, rows.Err()
 }
 
 // sqlExecutor is the narrow slice of *sql.DB and *sql.Tx insert needs, so a

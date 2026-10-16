@@ -18,7 +18,8 @@ import (
 // prove" has one answer, and so nothing outside this package ever handles a
 // cookie value.
 type Gate struct {
-	store *Store
+	store    *Store
+	operator operatorToken
 }
 
 // NewGate constructs a Gate over a session store.
@@ -67,7 +68,9 @@ const lastSeenResolution = time.Minute
 // Mint creates a session for this browser and writes its cookie.
 //
 // The only evidence is loopback admission, which is exactly what the session
-// records: the default template's assurance is `loopback-unverified`. Minting
+// records: the default template's assurance is `loopback-unverified`, and
+// since CW-20261016-0174 it does not hold `resolve` — operator authority needs
+// Elevate. Minting
 // is what keeps standalone use ergonomic — a user opens a URL and answers,
 // with nothing new on any tool argument — and it is why an invitation token
 // was rejected: on loopback an invitation proves nothing admission did not,
@@ -94,7 +97,17 @@ func (g *Gate) Clear(w http.ResponseWriter) {
 // single, and the matrix is consulted even where the session's own grant set
 // would have answered. That matters: `Grants(KindParticipant, Close)` is false,
 // so a session row that somehow carried `close` still cannot close anything.
+//
+// A capability that requires operator assurance (`resolve`) is refused with
+// ErrAssuranceInsufficient to a session that is not elevated, even when its
+// stored grant set lists it — sessions minted before CW-20261016-0174 do.
 func (g *Gate) Authorize(session Session, ownerScope string, capability authz.Capability) error {
+	if requiresOperatorAssurance(capability) && !session.Elevated() {
+		if authz.Grants(authz.KindParticipant, capability) {
+			return ErrAssuranceInsufficient
+		}
+		return authz.ErrForbidden
+	}
 	return authz.Authorize(authz.Request{
 		Kind:       authz.KindParticipant,
 		Scope:      session.Scope,
@@ -141,11 +154,28 @@ func (g *Gate) ResolveBinding(r *http.Request) (room.ParticipantBinding, error) 
 	if err != nil {
 		return room.ParticipantBinding{}, err
 	}
+	return g.binding(session), nil
+}
+
+// binding projects a session into the room-facing binding. Revalidate closes
+// over the row id so a socket can re-read its session before an
+// authority-bearing frame without the id ever riding in the binding.
+func (g *Gate) binding(session Session) room.ParticipantBinding {
+	sessionID := session.ID
 	return room.ParticipantBinding{
 		Scope:        session.Scope,
 		PrincipalRef: session.Ref,
 		Authority:    session.Authority,
 		Assurance:    session.Assurance,
-		Capabilities: authz.FormatCapabilities(session.Grants),
-	}, nil
+		// Effective, not stored: an unelevated session's binding never carries
+		// `resolve`, so a room frame that needs it is refused the same way.
+		Capabilities: authz.FormatCapabilities(effectiveCapabilities(session)),
+		Revalidate: func(ctx context.Context) (room.ParticipantBinding, error) {
+			current, err := g.store.LookupByID(ctx, sessionID)
+			if err != nil {
+				return room.ParticipantBinding{}, err
+			}
+			return g.binding(current), nil
+		},
+	}
 }

@@ -679,10 +679,19 @@ func (s *Store) ResolveInteraction(ctx context.Context, params ResolveInteractio
 	if current.State != InteractionStatePresented && current.State != InteractionStateInProgress {
 		return ResolveInteractionResult{}, ErrNotRespondable
 	}
-	if current.ParticipantScope != params.ParticipantScope || current.ParticipantRef != params.ParticipantRef ||
-		current.ParticipantAuthority != params.ParticipantAuthority ||
-		current.ParticipantAssurance != params.ParticipantAssurance {
-		return ResolveInteractionResult{}, ErrNotRespondable
+	resolver := ActorBinding{
+		Scope: params.ParticipantScope, PrincipalRef: params.ParticipantRef,
+		Authority: params.ParticipantAuthority, Assurance: params.ParticipantAssurance,
+	}
+	superseded := false
+	if !actorMatchesParticipant(current, resolver) {
+		// A different identity may resolve only by assurance-ordered
+		// takeover: strictly higher assurance in the same participant scope.
+		// The reverse, and any equal-assurance peer, stays refused.
+		if !CanSupersedePresenter(current, resolver) {
+			return ResolveInteractionResult{}, ErrNotRespondable
+		}
+		superseded = true
 	}
 	if current.PresentedProjectionRevision == nil ||
 		*current.PresentedProjectionRevision != params.PresentedProjectionRevision {
@@ -698,12 +707,19 @@ func (s *Store) ResolveInteraction(ctx context.Context, params ResolveInteractio
 		resolutionID = s.id()
 	}
 	digest := resolutionDigest(params, payload)
+	// On takeover the interaction's participant binding moves to the
+	// resolver in the same terminal write, so the row, the resolution, and
+	// the journal all name who actually decided.
 	result, updateErr := tx.ExecContext(ctx, `
 UPDATE interactions
 SET lifecycle_state = 'resolved', revision = revision + 1,
-    updated_at = ?, terminal_at = ?
+    updated_at = ?, terminal_at = ?,
+    participant_scope = ?, participant_ref = ?,
+    participant_authority = ?, participant_assurance = ?
 WHERE id = ? AND revision = ?`,
-		now, now, params.InteractionID, params.ExpectedInteractionRevision,
+		now, now,
+		params.ParticipantScope, params.ParticipantRef, params.ParticipantAuthority, params.ParticipantAssurance,
+		params.InteractionID, params.ExpectedInteractionRevision,
 	)
 	if updateErr != nil {
 		return ResolveInteractionResult{}, fmt.Errorf("terminalize interaction: %w", updateErr)
@@ -726,6 +742,29 @@ INSERT INTO resolutions (
 		params.SubmittedAt, now, now,
 	); err != nil {
 		return ResolveInteractionResult{}, fmt.Errorf("insert resolution: %w", err)
+	}
+	if superseded {
+		// Journal the takeover: who presented, who superseded, and at what
+		// assurance. Refs and assurance names only; no free text.
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO interaction_events (
+  event_id, surface_id, interaction_id, event_type, actor_ref, authority,
+  from_revision, to_revision, metadata, recorded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			s.id(), current.SurfaceID, current.ID, EventPresenterSuperseded,
+			params.ParticipantRef, params.ParticipantAuthority,
+			params.ExpectedInteractionRevision, params.ExpectedInteractionRevision+1,
+			mustJSON(map[string]any{
+				"from_participant_ref":       current.ParticipantRef,
+				"from_participant_authority": current.ParticipantAuthority,
+				"from_participant_assurance": current.ParticipantAssurance,
+				"to_participant_ref":         params.ParticipantRef,
+				"to_participant_authority":   params.ParticipantAuthority,
+				"to_participant_assurance":   params.ParticipantAssurance,
+			}), now,
+		); err != nil {
+			return ResolveInteractionResult{}, fmt.Errorf("insert presenter superseded event: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO interaction_events (

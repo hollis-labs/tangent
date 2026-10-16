@@ -1023,9 +1023,34 @@ cookie naming a durable row that stores only the SHA-256 of the cookie value.
 Sessions survive a restart, have no idle expiry (a local tool must not log its
 user out mid-decision), expire absolutely after 30 days, rotate when an
 assurance change binds a verified principal, and are revoked with
-`tangent --revoke-participant-sessions`. A minted session receives `view`,
-`draft`, `resolve`, and participant-cause `cancel` — not `close`, not
-`administer`.
+`tangent --revoke-participant-sessions` or, while serving,
+`tangent session revoke --all | --id-prefix <8 hex>`. A minted session
+(`loopback-unverified`) receives `view`, `draft`, and participant-cause
+`cancel` — not `resolve`, not `close`, not `administer`.
+
+**Operator elevation (CW-20261016-0174).** Loopback admission is producible by
+any local process, including the agent that enqueued an approval, so it must
+not decide anything. `resolve` — and presenting a HITL item, which binds the
+participant allowed to resolve it — requires an `operator-token` session.
+`POST /api/session/elevate` with `{"token": "..."}` verifies the value of
+`TANGENT_OPERATOR_TOKEN` (constant-time, on SHA-256 digests; 5 failures per
+session per minute, with a process-wide flood *alert* — never a refusal — above
+10 per minute) and rotates the session to `operator-token` assurance, which
+resolutions then record as `participant_assurance`. Operator authority lasts
+12 hours from elevation; the session then reads as minted again and keeps its
+original absolute expiry. A live WebSocket re-reads its session before every
+answer frame, so revocation, expiry, and a lapsed elevation reach open tabs.
+A higher-assurance participant may resolve an item a lower-assurance identity
+presented (journaled as `interaction.presenter_superseded`); never the reverse.
+
+The guarantee holds only against principals limited to loopback HTTP/WS (MCP
+agents, scripts, proxied tailnet devices). It is not protection against a
+same-user process with a shell, which can write `participant_assurance` in
+SQLite directly, read the token from `/proc/<pid>/environ`, or run
+`tangent session revoke`; that needs OS-level separation. An unset token, or one shorter than 32 bytes, fails
+closed: nothing can be resolved from a browser, and startup logs one warning
+naming the variable. Unelevated requests are refused 403
+`assurance_insufficient`, which the UI answers with an operator-token prompt.
 
 The `/ws` upgrade requires a valid session immediately, with no grace period.
 That is the change that stops a room UUID from being an answer credential. A

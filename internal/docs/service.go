@@ -126,6 +126,18 @@ type AcknowledgeInput struct {
 	ItemID           string
 	ExpectedRevision int64
 	Note             string
+	// Participant is who acknowledges. Zero means OperatorParticipant. An
+	// elevated browser session passes its own `operator-token` binding and
+	// supersedes the auto-presentation's (CW-20261016-0174).
+	Participant interaction.ActorBinding
+}
+
+// participantOrDefault returns the binding a browser command acts as.
+func participantOrDefault(binding interaction.ActorBinding) interaction.ActorBinding {
+	if binding == (interaction.ActorBinding{}) {
+		return OperatorParticipant
+	}
+	return binding
 }
 
 type ArchiveInput struct {
@@ -450,7 +462,7 @@ func (s *Service) Acknowledge(ctx context.Context, input AcknowledgeInput) (DocI
 		InteractionID:               input.ItemID,
 		ExpectedInteractionRevision: input.ExpectedRevision,
 		PresentedProjectionRevision: projRev,
-		Participant:                 OperatorParticipant,
+		Participant:                 participantOrDefault(input.Participant),
 		ResponseKind:                "data",
 		ResponsePayload:             responsePayload,
 		Capability:                  ReservedSurfaceCapability,

@@ -90,6 +90,7 @@ func (h *hitlHTTPHandler) present(w http.ResponseWriter, r *http.Request) {
 		ItemID: r.PathValue("itemID"), ExpectedRevision: command.ExpectedRevision,
 		PresentedProjectionRevision: command.PresentedProjectionRevision,
 		ConnectionID:                canonicalConnectionID(r, command.ConnectionID),
+		Participant:                 sessionParticipant(r),
 	})
 	if err != nil {
 		writeHITLError(w, err)
@@ -113,12 +114,30 @@ func (h *hitlHTTPHandler) resolve(w http.ResponseWriter, r *http.Request) {
 		ItemID: r.PathValue("itemID"), ExpectedRevision: command.ExpectedRevision,
 		PresentedProjectionRevision: command.PresentedProjectionRevision,
 		Response:                    command.Response,
+		Participant:                 sessionParticipant(r),
 	})
 	if err != nil {
 		writeHITLError(w, err)
 		return
 	}
 	writeHITLJSON(w, http.StatusOK, outcome)
+}
+
+// sessionParticipant returns the participant binding of the session
+// requireParticipant resolved for this request, so a presentation and a
+// resolution record who actually acted — including `operator-token`
+// assurance for an elevated session (CW-20261016-0174). With no session (an
+// embedder that wired no gate) the zero binding selects the HITL service's
+// historical OperatorParticipant.
+func sessionParticipant(r *http.Request) interaction.ActorBinding {
+	session, ok := participant.FromContext(r.Context())
+	if !ok {
+		return interaction.ActorBinding{}
+	}
+	return interaction.ActorBinding{
+		Scope: session.Scope, PrincipalRef: session.Ref,
+		Authority: session.Authority, Assurance: session.Assurance,
+	}
 }
 
 // canonicalConnectionID returns the server-assigned connection id for a
@@ -304,7 +323,16 @@ func writeHITLError(w http.ResponseWriter, err error) {
 		"message":          err.Error(),
 	}
 	var stale *hitl.StaleRevisionError
+	var terminal *hitl.TerminalConflictError
 	switch {
+	case errors.As(err, &terminal):
+		// Another terminal outcome won before this request looked: the
+		// contract's terminal_conflict, carrying the winner, exactly as the
+		// MCP adapter reports it. It previously fell through to the generic
+		// "conflict", which is what the browser/withdraw race test caught.
+		status = http.StatusConflict
+		response["code"] = "terminal_conflict"
+		response["terminal_outcome"] = terminal.Outcome
 	case errors.Is(err, errHITLContentType):
 		status = http.StatusUnsupportedMediaType
 		response["code"] = "unsupported_media_type"

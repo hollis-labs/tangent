@@ -48,7 +48,9 @@ func TestRuntimePluginRoutesAndManagementRetainParticipantGuards(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := startGuardedAppWith(t, func(cfg *server.Config) { cfg.PluginHost = host })
-	cookie := app.openDocument(t, "/")
+	// Plugin management and config writes take `resolve`, which needs an
+	// elevated session (CW-20261016-0174).
+	cookie := app.openElevatedDocument(t, "/")
 	request := func(path string, credential bool) int {
 		t.Helper()
 		req, e := http.NewRequest(http.MethodPost, app.baseURL+path, nil)

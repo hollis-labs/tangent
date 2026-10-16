@@ -27,6 +27,7 @@
 // failure the stamp exists to prevent.
 
 import type { HITLEvidence } from "@/components/hitl-evidence";
+import { fetchWithElevation } from "@/lib/operator-elevation";
 
 /**
  * The `@definition-source` stamp above, as a value, so `hitl-api.drift.test.ts`
@@ -279,7 +280,7 @@ export function getHITLConnectionID(): string {
 }
 
 async function hitlRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetchWithElevation(path, {
     ...init,
     headers: { Accept: "application/json", ...init.headers },
   });

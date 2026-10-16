@@ -323,3 +323,36 @@ func TestDeleteHidesPendingAndAcknowledgedDocsWithoutLosingEvidence(t *testing.T
 		})
 	}
 }
+
+// TestElevatedAcknowledgeSupersedesTheAutoPresentation: docs are
+// auto-presented under the loopback-unverified operator at enqueue; an
+// operator-token acknowledgement takes over and records operator-token
+// (CW-20261016-0174).
+func TestElevatedAcknowledgeSupersedesTheAutoPresentation(t *testing.T) {
+	svc, database := newTestService(t)
+	ctx := context.Background()
+	h, err := svc.Enqueue(ctx, EnqueueInput{
+		Request: docRequestJSON("fe:elevated-ack", "Needs a nod", "Please confirm", true),
+		Caller:  testCaller("fragments-engine"),
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	elevated := OperatorParticipant
+	elevated.Assurance = "operator-token"
+	if _, err := svc.Acknowledge(ctx, AcknowledgeInput{
+		ItemID: h.ItemID, ExpectedRevision: h.Revision, Note: "ok", Participant: elevated,
+	}); err != nil {
+		t.Fatalf("Acknowledge: %v", err)
+	}
+	var assurance string
+	if err := database.QueryRow(`SELECT participant_assurance FROM resolutions WHERE interaction_id = ?`,
+		h.ItemID).Scan(&assurance); err != nil || assurance != "operator-token" {
+		t.Fatalf("resolution assurance = %q, %v; want operator-token", assurance, err)
+	}
+	var superseded int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM interaction_events WHERE interaction_id = ? AND event_type = ?`,
+		h.ItemID, interaction.EventPresenterSuperseded).Scan(&superseded); err != nil || superseded != 1 {
+		t.Fatalf("presenter_superseded events = %d, %v; want 1", superseded, err)
+	}
+}

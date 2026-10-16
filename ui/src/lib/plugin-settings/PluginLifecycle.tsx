@@ -1,5 +1,6 @@
 import { Button, Callout } from "@hollis-labs/design-components";
 import { useEffect, useRef, useState } from "react";
+import { fetchWithElevation } from "@/lib/operator-elevation";
 
 interface PluginState {
   id: string;
@@ -49,11 +50,14 @@ export function PluginLifecycle() {
     try {
       let refused = false;
       if (id && action) {
-        const response = await fetch(`/api/plugin-management/${encodeURIComponent(id)}/${action}`, {
-          method: "POST",
-          signal: owned.signal,
-          credentials: "same-origin",
-        });
+        const response = await fetchWithElevation(
+          `/api/plugin-management/${encodeURIComponent(id)}/${action}`,
+          {
+            method: "POST",
+            signal: owned.signal,
+            credentials: "same-origin",
+          },
+        );
         refused = !response.ok;
       }
       // A failed start can still save enabled intent. Refresh actual state

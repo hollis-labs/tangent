@@ -97,6 +97,36 @@ type ParticipantBinding struct {
 	// `cancel` frame can be checked against the session that opened the
 	// socket rather than against the socket itself.
 	Capabilities []string `json:"-"`
+
+	// Revalidate re-reads the session behind this binding and returns its
+	// current form, or an error when the session is revoked, expired, or
+	// gone (CW-20261016-0174). The binding is a snapshot taken at upgrade;
+	// a transport calls Revalidate before an authority-bearing frame so a
+	// revocation or an expiry reaches a live socket on its next decision.
+	// It closes over the session lookup, so the session id itself never
+	// rides in the binding. Nil means the binding cannot change (embedders
+	// and transport tests without a session store).
+	Revalidate func(context.Context) (ParticipantBinding, error) `json:"-"`
+}
+
+// Complete reports whether the binding names a full participant identity.
+func (p ParticipantBinding) Complete() bool {
+	return p.Scope != "" && p.PrincipalRef != "" && p.Authority != "" && p.Assurance != ""
+}
+
+type resolverContextKey struct{}
+
+// WithResolver attaches the participant binding that is settling a
+// presentation to the context handed to Disposition.Resolve, so the durable
+// resolution records who actually answered (CW-20261016-0174).
+func WithResolver(ctx context.Context, binding ParticipantBinding) context.Context {
+	return context.WithValue(ctx, resolverContextKey{}, binding)
+}
+
+// ResolverFrom returns the binding WithResolver attached, if any.
+func ResolverFrom(ctx context.Context) (ParticipantBinding, bool) {
+	binding, ok := ctx.Value(resolverContextKey{}).(ParticipantBinding)
+	return binding, ok
 }
 
 // Holds reports whether this binding was granted a capability.

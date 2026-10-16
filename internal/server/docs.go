@@ -109,6 +109,7 @@ func (h *docsHTTPHandler) acknowledge(w http.ResponseWriter, r *http.Request) {
 		ItemID:           r.PathValue("itemID"),
 		ExpectedRevision: cmd.ExpectedRevision,
 		Note:             cmd.Note,
+		Participant:      sessionParticipant(r),
 	})
 	if err != nil {
 		writeDocsError(w, err)

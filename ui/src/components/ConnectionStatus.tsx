@@ -164,11 +164,13 @@ function describeServerError(error: ServerError): string {
       return "Not submitted: this room is closed.";
     case "not_authorized":
       // A room URL is a locator, not a credential: this tab reached the room
-      // but its browser session may not answer here. Reloading mints a fresh
-      // session, which is the whole recovery.
+      // but its browser session may not answer here. Since CW-20261016-0174
+      // the usual cause is a session that was never elevated: answering needs
+      // the operator token, and the socket picks up the elevated session on
+      // reload.
       return describeRefusal(
         "this browser session is not authorized to answer here",
-        "Reload Tangent, then try again.",
+        "Enter the operator token when asked, then reload Tangent and try again.",
       );
     default:
       return error.message || `Not submitted: ${error.code}`;

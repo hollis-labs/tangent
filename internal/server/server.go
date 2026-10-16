@@ -294,6 +294,10 @@ func New(cfg Config) (*Server, error) {
 		)
 	}
 
+	// Operator elevation (CW-20261016-0174): the only way a browser session
+	// acquires `resolve`.
+	registerOperatorElevation(mux, cfg, logger)
+
 	if cfg.Inbox != nil {
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
@@ -314,7 +318,14 @@ func New(cfg Config) (*Server, error) {
 		register("GET /api/hitl/items/{itemID}", authz.View, hitlHandler.item)
 		register("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/reference", authz.View, hitlHandler.tangentEvidence)
 		register("GET /api/hitl/items/{itemID}/evidence/{evidenceIndex}/preview", authz.View, hitlHandler.artifactPreview)
-		register("POST /api/hitl/items/{itemID}/present", authz.Draft, hitlHandler.present)
+		// Present is gated on `resolve`, not `draft`, since CW-20261016-0174.
+		// Presenting binds the participant who may resolve the item — the
+		// interaction store refuses a resolution whose participant binding
+		// differs from the presenter's — so an unelevated presenter would
+		// pin an approval to an identity that can never decide it. That
+		// makes presentation authority-bearing, and it takes the same
+		// operator assurance as the decision it sets up.
+		register("POST /api/hitl/items/{itemID}/present", authz.Resolve, hitlHandler.present)
 		register("POST /api/hitl/items/{itemID}/resolve", authz.Resolve, hitlHandler.resolve)
 	}
 

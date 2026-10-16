@@ -414,8 +414,10 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 		// `draft`, not `resolve`. Recording what a participant is looking at is
 		// a strictly lesser act than deciding, and a surface that let a viewer
 		// answer because they could type would be the wrong shape. This is the
-		// capability ADR 0004 already gives the participant session and the one
-		// /api/hitl/items/{itemID}/present uses.
+		// capability ADR 0004 gives every participant session, minted or
+		// elevated. (HITL /present is gated on `resolve` since
+		// CW-20261016-0174, because presenting there binds the resolver; a
+		// room draft binds nothing.)
 		if !h.authorize(ctx, rm, c, msg, authz.Draft) {
 			return
 		}
@@ -456,7 +458,18 @@ func (h *Handler) authorize(
 	msg inboundMessage,
 	capability authz.Capability,
 ) bool {
-	if c.Participant().Holds(string(capability)) {
+	binding := c.Participant()
+	// The binding is a snapshot taken at upgrade. A terminal decision re-reads
+	// the session first, so a revocation, an expiry, or a lapsed elevation
+	// reaches a live socket on its very next answer (CW-20261016-0174).
+	if capability == authz.Resolve && binding.Revalidate != nil {
+		current, err := binding.Revalidate(ctx)
+		if err != nil {
+			current = room.ParticipantBinding{}
+		}
+		binding = current
+	}
+	if binding.Holds(string(capability)) {
 		return true
 	}
 	h.sendError(ctx, c, outboundError{

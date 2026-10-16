@@ -1101,7 +1101,7 @@ func (r *Room) HandleResponse(envelopeID string, resp *envelopes.Response) {
 	}
 	p.presentationMu.Lock()
 	defer p.presentationMu.Unlock()
-	_ = r.settleResponse(envelopeID, p, resp)
+	_ = r.settleResponse(r.lifetime, envelopeID, p, resp)
 }
 
 // HandleResponseFrom resolves an envelope on behalf of one connection.
@@ -1128,7 +1128,7 @@ func (r *Room) HandleResponseFrom(
 		return err
 	}
 	defer p.presentationMu.Unlock()
-	return r.settleResponse(envelopeID, p, resp)
+	return r.settleResponse(WithResolver(r.lifetime, c.Participant()), envelopeID, p, resp)
 }
 
 // HandleDraftFrom records one participant's non-terminal state for an
@@ -1217,7 +1217,7 @@ func (r *Room) authorizeDisposition(
 	return p, nil
 }
 
-func (r *Room) settleResponse(envelopeID string, p *Pending, resp *envelopes.Response) error {
+func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending, resp *envelopes.Response) error {
 	if p.settled.Load() {
 		return nil
 	}
@@ -1239,7 +1239,7 @@ func (r *Room) settleResponse(envelopeID string, p *Pending, resp *envelopes.Res
 		// Canonical first. Nothing — not the v0.12 projection row, not a
 		// waiting caller, not the response channel — observes this submission
 		// until the durable resolution exists.
-		if err := p.disposition.Resolve(r.lifetime, r.ID, p.Envelope, nextResp); err != nil {
+		if err := p.disposition.Resolve(ctx, r.ID, p.Envelope, nextResp); err != nil {
 			return r.retireStalePresentation(envelopeID, p, err)
 		}
 	}

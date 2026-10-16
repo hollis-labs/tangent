@@ -152,6 +152,14 @@ var knownCodes = map[string]bool{
 	"forbidden": true,
 	"not_found": true,
 
+	// Operator elevation (CW-20261016-0174): a session admitted but not
+	// elevated, a refused elevation attempt, and one refused unexamined
+	// because the attempt rate limit was exceeded.
+	"assurance_insufficient": true,
+	"elevation_refused":      true,
+	"elevation_rate_limited": true,
+	"elevation_flood":        true,
+
 	// internal/interaction store and service sentinels.
 	"revision_conflict":    true,
 	"idempotency_conflict": true,

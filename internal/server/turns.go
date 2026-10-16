@@ -148,6 +148,7 @@ func (h *turnsHTTPHandler) reply(w http.ResponseWriter, r *http.Request) {
 		SelectedOption:   cmd.SelectedOption,
 		Note:             cmd.Note,
 		Interrupt:        interrupt,
+		Participant:      sessionParticipant(r),
 	})
 	if err != nil {
 		writeTurnsError(w, err)

@@ -71,6 +71,14 @@ type Config struct {
 	// (see internal/db).
 	DBPath string
 
+	// OperatorToken is the value of TANGENT_OPERATOR_TOKEN
+	// (participant.EnvOperatorToken), which elevates a browser session to
+	// operator assurance so it may resolve approvals (CW-20261016-0174).
+	// Empty or shorter than participant.MinOperatorTokenBytes fails closed:
+	// nothing can be resolved from a browser, and Boot logs one warning
+	// naming the variable. Only a digest is retained.
+	OperatorToken string
+
 	// Port is the TCP port the constructed server will bind when Listen is
 	// called. Boot does not listen; it only threads Port into the
 	// constructed server.Config and the room URL base the MCP tool surface
@@ -493,6 +501,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// refusal is an ordinary 403 rather than a socket that closes without
 	// explanation.
 	wsHandler.SetParticipantResolver(participantGate.ResolveBinding)
+	participantGate.ConfigureOperatorToken(cfg.OperatorToken, logger)
 
 	// The host-mediated effect broker (ADR 0003 §2.5). It shares the same
 	// database handle as everything else: a receipt whose interaction

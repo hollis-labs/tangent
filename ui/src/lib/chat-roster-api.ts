@@ -2,6 +2,8 @@
 // routes (Tangent core has no Tether client). Nothing here is stored: the
 // roster is whatever Tether reports, and "unavailable" is a first-class state.
 
+import { fetchWithElevation } from "@/lib/operator-elevation";
+
 export interface RosterSession {
   id: string;
   state: string;
@@ -82,7 +84,7 @@ export async function sendChat(
   text: string,
   idempotencyKey: string,
 ): Promise<ChatSendResult> {
-  const response = await fetch(SEND_URL, {
+  const response = await fetchWithElevation(SEND_URL, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ launch_id: launchID, text, idempotency_key: idempotencyKey }),
