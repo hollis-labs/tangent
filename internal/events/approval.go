@@ -206,14 +206,14 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	if a.Kind == catalog.KindApprovalRequested {
 		setIf(candidate, "class", a.Class)
 		setIf(candidate, "requester", a.Requester.ID)
-		setIf(candidate, "requester_assurance", a.Requester.Assurance)
+		setIf(candidate, "requester_assurance", assuranceTerm(a.Requester.Assurance))
 		setIf(candidate, "expires_at", a.ExpiresAt)
 	} else {
 		actor = a.Resolver
 		candidate["outcome"] = a.Outcome
 		if a.Resolver.ID != "" || a.Resolver.Kind != "" {
 			resolverBlock := map[string]any{"kind": a.Resolver.Kind, "id": a.Resolver.ID}
-			setIf(resolverBlock, "assurance", a.Resolver.Assurance)
+			setIf(resolverBlock, "assurance", assuranceTerm(a.Resolver.Assurance))
 			candidate["resolver"] = resolverBlock
 		}
 		if a.Outcome == OutcomeExpired {
@@ -270,6 +270,16 @@ RETURNING last_sequence, generation`).Scan(&seq, &generation); err != nil {
 	}, nil
 }
 
+// assuranceTerm keeps the payload's assurance detail in its closed vocabulary:
+// an assurance Tangent does not know yet is reported as "other" rather than
+// failing the payload. An empty assurance stays empty (the key is omitted).
+func assuranceTerm(assurance string) string {
+	if assurance == "" || assuranceVocab[assurance] {
+		return assurance
+	}
+	return "other"
+}
+
 // redactions clamps the dropped-key count into the envelope's uint32 counter.
 func redactions(dropped int) uint32 {
 	if dropped < 0 {
@@ -295,9 +305,10 @@ const (
 )
 
 var (
-	classVocab    = map[string]bool{"approval": true}
-	outcomeVocab  = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
-	principalKind = map[string]bool{"operator": true, "agent": true, "service": true}
+	classVocab     = map[string]bool{"approval": true}
+	outcomeVocab   = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
+	assuranceVocab = map[string]bool{"asserted": true, "loopback-unverified": true, "operator-token": true, "other": true}
+	principalKind  = map[string]bool{"operator": true, "agent": true, "service": true}
 )
 
 type field struct {
@@ -313,7 +324,7 @@ var allowlists = map[string]map[string]field{
 		"hitl_ref":            {true, boundedString(maxIDLen+32, nil)},
 		"class":               {false, boundedString(maxIDLen, classVocab)},
 		"requester":           {false, boundedString(maxIDLen, nil)},
-		"requester_assurance": {false, boundedString(maxIDLen, nil)},
+		"requester_assurance": {false, boundedString(maxIDLen, assuranceVocab)},
 		"subject":             {false, boundedString(maxIDLen+32, nil)},
 		"expires_at":          {false, timestamp},
 	},
@@ -412,7 +423,13 @@ func resolver(v any) (any, string) {
 				return nil, bad
 			}
 			out[key] = cleaned
-		case "id", "assurance":
+		case "assurance":
+			cleaned, bad := boundedString(maxIDLen, assuranceVocab)(value)
+			if bad != "" {
+				return nil, bad
+			}
+			out[key] = cleaned
+		case "id":
 			cleaned, bad := boundedString(maxIDLen, nil)(value)
 			if bad != "" {
 				return nil, bad
