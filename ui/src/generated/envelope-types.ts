@@ -1179,7 +1179,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 export const DEFINITION_SOURCE_DIGEST = "sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d";
 
 /** The Tangent release these types were generated against. */
-export const DEFINITION_HOST_VERSION = "v0.19.0";
+export const DEFINITION_HOST_VERSION = "v0.20.0";
 
 /** One manifest's contribution to the source digest. */
 export interface DefinitionSourceEntry {
