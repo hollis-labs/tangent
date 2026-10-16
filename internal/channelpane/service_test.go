@@ -183,7 +183,7 @@ func TestGetChannelReportsQueuedWhilePeerIsActivelyReceiving(t *testing.T) {
 	// 300ms wait that elapsed before GetChannel ran, and the receive's own
 	// poll picking up the message AcceptExchange had just stored (which closes
 	// the receive and, correctly, the agent's presence). A cursor already past
-	// every message keeps the receive from seeing the exchange, and cancelling
+	// every message keeps the receive from seeing the exchange, and canceling
 	// the context is the only thing that closes it.
 	receiveCtx, endReceive := context.WithCancel(ctx)
 	defer endReceive()

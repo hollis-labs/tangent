@@ -84,6 +84,7 @@ if [ -z "$pkgs" ]; then
 fi
 
 echo "pre-push: go test -race -p $parallel -timeout $timeout on:"
+# shellcheck disable=SC2086
 printf '  %s\n' $pkgs
 if [ "${TANGENT_PREPUSH_DRYRUN:-0}" = 1 ]; then
   exit 0
