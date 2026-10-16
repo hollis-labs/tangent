@@ -43,7 +43,7 @@ func TestFromEnvelopeDataFindsTopAndSectionSecrets(t *testing.T) {
 func TestRedactRemovesEverySecretAndKeepsTheRest(t *testing.T) {
 	f := FromEnvelopeData(schemaData(t))
 	in := answers()
-	out, secrets := f.Redact(in, "env-1", time.Unix(5, 0), "actor")
+	out, secrets := f.Redact(in, time.Unix(5, 0), "actor")
 	raw, _ := json.Marshal(out)
 	if strings.Contains(string(raw), canary) {
 		t.Fatalf("canary survived redaction: %s", raw)
@@ -58,7 +58,7 @@ func TestRedactRemovesEverySecretAndKeepsTheRest(t *testing.T) {
 		t.Fatal("input must not be mutated")
 	}
 	tomb := out["api_key"].(map[string]any)
-	if tomb["policy_ref"] != PolicyRef || !strings.HasPrefix(tomb["content_digest"].(string), "sha256:") {
+	if tomb["policy_ref"] != PolicyRef || tomb["content_digest"] != NoDigest {
 		t.Fatalf("tombstone = %v", tomb)
 	}
 	// round trip
@@ -70,7 +70,7 @@ func TestRedactRemovesEverySecretAndKeepsTheRest(t *testing.T) {
 
 func TestEmptySecretAnswerStaysEmpty(t *testing.T) {
 	f := FromEnvelopeData(schemaData(t))
-	out, secrets := f.Redact(map[string]any{"api_key": ""}, "e", time.Now(), "a")
+	out, secrets := f.Redact(map[string]any{"api_key": ""}, time.Now(), "a")
 	if out["api_key"] != "" || len(secrets) != 0 {
 		t.Fatalf("out=%v secrets=%v", out, secrets)
 	}
@@ -97,7 +97,7 @@ func TestRedactPayloadAlsoBlanksSavedDraftsAndTemplates(t *testing.T) {
 	f := FromEnvelopeData(schemaData(t))
 	payload := map[string]any{"form_id": "f", "answers": answers(),
 		"saved_drafts": []any{map[string]any{"answers": answers()}}, "templates": []any{map[string]any{"answers": answers()}}}
-	out, secrets := f.RedactPayload(payload, "e", time.Now(), "a")
+	out, secrets := f.RedactPayload(payload, time.Now(), "a")
 	if strings.Contains(string(mustJSON(out)), canary) || len(secrets) != 4 {
 		t.Fatalf("payload = %s secrets=%v", mustJSON(out), secrets)
 	}
@@ -123,7 +123,7 @@ func TestVaultIsOneShotAndExpires(t *testing.T) {
 
 func TestDeliverRestoresOnceThenOnlyTombstones(t *testing.T) {
 	f := FromEnvelopeData(schemaData(t))
-	redacted, secrets := f.Redact(answers(), "env-d", time.Now(), "a")
+	redacted, secrets := f.Redact(answers(), time.Now(), "a")
 	stored := mustJSON(map[string]any{"v": 1, "payload": map[string]any{"form_id": "f", "answers": redacted}})
 	Default.Put("env-d", secrets)
 	first, ok := Deliver("env-d", stored)
@@ -142,4 +142,39 @@ func TestDeliverRestoresOnceThenOnlyTombstones(t *testing.T) {
 func mustJSON(v any) json.RawMessage {
 	raw, _ := json.Marshal(v)
 	return raw
+}
+
+func TestTombstoneCarriesNoDigestOfTheSecret(t *testing.T) {
+	f := FromEnvelopeData(schemaData(t))
+	out, _ := f.Redact(map[string]any{"api_key": "hunter2"}, time.Now(), "a")
+	raw := string(mustJSON(out))
+	if strings.Contains(raw, "sha256") || strings.Contains(raw, "hunter2") || !strings.Contains(raw, NoDigest) {
+		t.Fatalf("tombstone = %s", raw)
+	}
+}
+
+func TestPrefilledFindsASeededSecretAndNamesOnlyThePath(t *testing.T) {
+	f := FromEnvelopeData(schemaData(t))
+	cases := map[string]map[string]any{
+		"answers.api_key":                 {"answers": map[string]any{"api_key": canary}},
+		"answers.one.pw":                  {"answers": map[string]any{"one": map[string]any{"pw": canary}}},
+		"answers.creds[1].token":          {"answers": map[string]any{"creds": []any{map[string]any{}, map[string]any{"token": canary}}}},
+		"saved_drafts[0].answers.api_key": {"saved_drafts": []any{map[string]any{"answers": map[string]any{"api_key": canary}}}},
+		"templates[0].answers.api_key":    {"templates": []any{map[string]any{"answers": map[string]any{"api_key": canary}}}},
+	}
+	for want, data := range cases {
+		got := f.Prefilled(data)
+		if got != want || strings.Contains(got, canary) {
+			t.Errorf("Prefilled = %q, want %q", got, want)
+		}
+	}
+	for name, data := range map[string]map[string]any{
+		"empty secret":    {"answers": map[string]any{"api_key": ""}},
+		"non-secret only": {"answers": map[string]any{"name": "visible"}},
+		"no answers":      {},
+	} {
+		if got := f.Prefilled(data); got != "" {
+			t.Errorf("%s: Prefilled = %q, want none", name, got)
+		}
+	}
 }

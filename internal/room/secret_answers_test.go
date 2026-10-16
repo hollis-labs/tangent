@@ -86,11 +86,11 @@ func TestSecretFreeFormsAndOtherKindsPassThrough(t *testing.T) {
 	plain := &envelopes.Envelope{V: 1, ID: "p", Type: formsecret.FormCollectType,
 		Data: map[string]any{"schema": map[string]any{"fields": []any{map[string]any{"id": "a", "type": "text"}}}}}
 	resp := &envelopes.Response{Payload: map[string]any{"answers": map[string]any{"a": "x"}}}
-	if got, secrets := redactSecretAnswers(plain, "p", resp); got != resp || secrets != nil {
+	if got, secrets := redactSecretAnswers(plain, resp); got != resp || secrets != nil {
 		t.Fatalf("a form without secrets must be untouched: %v %v", got, secrets)
 	}
 	other := &envelopes.Envelope{V: 1, ID: "o", Type: "triage"}
-	if got, secrets := redactSecretAnswers(other, "o", resp); got != resp || secrets != nil {
+	if got, secrets := redactSecretAnswers(other, resp); got != resp || secrets != nil {
 		t.Fatal("another envelope kind must be untouched")
 	}
 }

@@ -13,7 +13,7 @@ import (
 // tombstones and returns the removed values. resp must already be a private
 // copy. A response for any other envelope kind, or a form with no secret
 // field, comes back unchanged with no secrets.
-func redactSecretAnswers(env *envelopes.Envelope, envelopeID string, resp *envelopes.Response) (*envelopes.Response, formsecret.Secrets) {
+func redactSecretAnswers(env *envelopes.Envelope, resp *envelopes.Response) (*envelopes.Response, formsecret.Secrets) {
 	if env == nil || resp == nil || env.Type != formsecret.FormCollectType {
 		return resp, nil
 	}
@@ -25,7 +25,7 @@ func redactSecretAnswers(env *envelopes.Envelope, envelopeID string, resp *envel
 	if !ok {
 		return resp, nil
 	}
-	redacted, secrets := fields.RedactPayload(payload, envelopeID, time.Now(), "form-secret")
+	redacted, secrets := fields.RedactPayload(payload, time.Now(), "form-secret")
 	next := *resp
 	next.Payload = redacted
 	return &next, secrets

@@ -9,6 +9,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
+	"github.com/hollis-labs/tangent/internal/formsecret"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -79,6 +80,17 @@ func (s *Server) handlePackagedRoomWorkflow(
 			envelopes.ErrorCodeUnsupportedType,
 			fmt.Sprintf("%s rejects envelope type %q; want %q", kind, args.Envelope.Type, kind),
 		)
+	}
+
+	// A secret field collects a value from the participant; a request must not
+	// seed one (it would be stored in the request and the room's form state).
+	if kind == formsecret.FormCollectType {
+		if path := formsecret.FromEnvelopeData(args.Envelope.Data).Prefilled(args.Envelope.Data); path != "" {
+			return nil, toolErrorResult(
+				envelopes.ErrorCodeValidationFailed,
+				fmt.Sprintf("%s: %s is a secret field and must not be prefilled", kind, path),
+			)
+		}
 	}
 
 	pkg, ok := s.packages.Lookup(kind)

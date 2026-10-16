@@ -1232,7 +1232,7 @@ func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending
 	// Secret-flagged answers leave the response before anything below stores,
 	// transforms or projects it, so no row, state blob or WAL frame ever holds
 	// them. The real values wait in the in-memory vault for the waiting caller.
-	nextResp, secrets := redactSecretAnswers(p.Envelope, envelopeID, nextResp)
+	nextResp, secrets := redactSecretAnswers(p.Envelope, nextResp)
 	delivered := false
 	if len(secrets) > 0 {
 		formsecret.Default.Put(envelopeID, secrets)

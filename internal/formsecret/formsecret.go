@@ -11,9 +11,8 @@
 package formsecret
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +24,11 @@ const FormCollectType = "tangent.form-collect"
 
 // PolicyRef names the redaction policy in a tombstone.
 const PolicyRef = "form.secret-field"
+
+// NoDigest is the content_digest of a secret-field tombstone. A digest of a
+// weak secret would let anyone with the database guess it offline, so secret
+// fields keep a fixed marker where other redactions keep a sha256.
+const NoDigest = "none:secret-field"
 
 // Tombstone is the RedactionTombstone shape of ADR 0002 section 2
 // (internal/db.RedactionTombstone), one per redacted answer.
@@ -96,9 +100,9 @@ func FromEnvelopeData(data map[string]any) Fields {
 type Secrets map[string]string
 
 // Redact returns a deep copy of answers with every secret value replaced by a
-// tombstone, and the removed values. salt scopes the digests (use the
-// interaction or envelope id) so the same secret digests differently per form.
-func (f Fields) Redact(answers map[string]any, salt string, at time.Time, actor string) (map[string]any, Secrets) {
+// tombstone, and the removed values. The tombstone carries no digest of the
+// value (NoDigest).
+func (f Fields) Redact(answers map[string]any, at time.Time, actor string) (map[string]any, Secrets) {
 	secrets := Secrets{}
 	out := cloneMap(answers)
 	tomb := func(path string, value any) any {
@@ -107,10 +111,9 @@ func (f Fields) Redact(answers map[string]any, salt string, at time.Time, actor 
 			return value // nothing was typed: nothing to hide, and an empty answer stays empty
 		}
 		secrets[path] = text
-		sum := sha256.Sum256([]byte(salt + "\x00" + path + "\x00" + text))
 		return map[string]any{
 			"redacted": true, "policy_ref": PolicyRef, "at": at.UTC().Format(time.RFC3339),
-			"content_digest": "sha256:" + hex.EncodeToString(sum[:]), "actor_ref": actor,
+			"content_digest": NoDigest, "actor_ref": actor,
 		}
 	}
 	for id := range f.Top {
@@ -185,14 +188,14 @@ func (s Secrets) Restore(answers map[string]any) map[string]any {
 // RedactPayload applies Redact to a form-collect payload ({"answers": {...}}),
 // and Blank to the answers inside saved_drafts and templates. It returns a new
 // payload map and the removed secrets.
-func (f Fields) RedactPayload(payload map[string]any, salt string, at time.Time, actor string) (map[string]any, Secrets) {
+func (f Fields) RedactPayload(payload map[string]any, at time.Time, actor string) (map[string]any, Secrets) {
 	if f.Empty() {
 		return payload, nil
 	}
 	out := cloneMap(payload)
 	var secrets Secrets
 	if answers, ok := out["answers"].(map[string]any); ok {
-		out["answers"], secrets = f.Redact(answers, salt, at, actor)
+		out["answers"], secrets = f.Redact(answers, at, actor)
 	}
 	for _, key := range []string{"saved_drafts", "templates"} {
 		list, _ := out[key].([]any)
@@ -237,9 +240,47 @@ func (f Fields) BlankDraft(draft json.RawMessage) json.RawMessage {
 	return raw
 }
 
+// Prefilled returns the path of the first secret field that already holds a
+// value in an envelope's data (data.answers, or the answers of its saved
+// drafts and templates), or "" when there is none. A request must not seed a
+// secret: the field exists to collect one from the participant.
+func (f Fields) Prefilled(data map[string]any) string {
+	if f.Empty() {
+		return ""
+	}
+	check := func(raw any) string {
+		answers, _ := raw.(map[string]any)
+		_, found := f.Redact(answers, time.Time{}, "")
+		paths := make([]string, 0, len(found))
+		for path := range found {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
+		if len(paths) > 0 {
+			return paths[0]
+		}
+		return ""
+	}
+	if path := check(data["answers"]); path != "" {
+		return "answers." + path
+	}
+	for _, key := range []string{"saved_drafts", "templates"} {
+		list, _ := data[key].([]any)
+		for i, raw := range list {
+			item, _ := raw.(map[string]any)
+			if path := check(item["answers"]); path != "" {
+				return key + "[" + strconv.Itoa(i) + "].answers." + path
+			}
+		}
+	}
+	return ""
+}
+
 // Vault holds secrets in memory until the waiting caller takes them. It is
-// deliberately not persistent: a restart loses undelivered values, and the
-// caller then sees only the tombstone and must ask again.
+// deliberately not persistent: an undelivered value is lost on restart or after
+// the TTL (15 minutes for Default), and the caller then sees only the tombstone
+// and must re-request. Follow-up for request_secret (CW-20261015-0051): decide
+// whether it needs a durable, encrypted hand-off.
 type Vault struct {
 	mu    sync.Mutex
 	ttl   time.Duration

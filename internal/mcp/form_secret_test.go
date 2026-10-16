@@ -147,3 +147,35 @@ func assertNoCanaryInTables(t *testing.T, db *sql.DB, canary string) {
 		}
 	}
 }
+
+// A request must not seed a secret field: it would be stored in the request
+// and in the room's form state before anyone typed anything.
+func TestFormCollectRejectsAPrefilledSecret(t *testing.T) {
+	rg := newSessionRigWith(t, sessionRigOptions{durable: true, window: 5 * time.Second, dbPath: filepath.Join(t.TempDir(), "tangent.db")})
+	defer rg.cleanup()
+	roomID, _ := createSession(t, rg, "form-secret-prefill")
+
+	fixture := namedFixture(t, "tangent_form_collect")
+	data := map[string]any{
+		"form_id": "secret-probe",
+		"schema": map[string]any{"fields": []any{
+			map[string]any{"id": "api_key", "label": "API key", "type": "password", "secret": true},
+		}},
+		"answers": map[string]any{"api_key": formSecretCanary},
+	}
+	result := callWorkflow(t, rg, fixture, roomID, "form-secret-prefill-envelope", nil, data)
+	if result.err == nil && (result.result == nil || !result.result.IsError) {
+		t.Fatal("a prefilled secret must be rejected")
+	}
+	var text string
+	if result.result != nil {
+		text = extractText(t, result.result)
+	}
+	if !strings.Contains(text, "answers.api_key") || !strings.Contains(text, "must not be prefilled") {
+		t.Fatalf("error should name the field path:\n%s", text)
+	}
+	if strings.Contains(text, formSecretCanary) {
+		t.Fatalf("the error must not echo the secret:\n%s", text)
+	}
+	assertNoCanaryInTables(t, rg.db, formSecretCanary)
+}
