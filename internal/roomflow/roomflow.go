@@ -34,6 +34,7 @@ import (
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/formsecret"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -388,7 +389,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		if recoverErr != nil {
 			return Outcome{}, recoverErr
 		}
-		return s.projectTerminal(ctx, recovered, handle)
+		return s.projectTerminal(ctx, recovered, handle, caller.Scope)
 	}
 
 	if presentErr := s.present(roomID, request.presented(), record.ID, caller); presentErr != nil {
@@ -420,7 +421,7 @@ func (s *Service) Run(ctx context.Context, request Request) (Outcome, error) {
 		// AwaitResolution already recorded this caller's retrieval; projecting
 		// from the outcome it returned keeps retrieval one fact per
 		// observation instead of two.
-		return s.projectTerminal(ctx, outcome, handle)
+		return s.projectTerminal(ctx, outcome, handle, caller.Scope)
 	case errors.Is(err, interaction.ErrWaitTimeout),
 		errors.Is(err, context.DeadlineExceeded),
 		errors.Is(err, context.Canceled):
@@ -664,6 +665,7 @@ func (s *Service) projectTerminal(
 	ctx context.Context,
 	outcome interaction.TerminalOutcome,
 	handle Handle,
+	reader string,
 ) (Outcome, error) {
 	record := outcome.Interaction
 	result := Outcome{Handle: handle}
@@ -673,7 +675,19 @@ func (s *Service) projectTerminal(
 			return Outcome{}, fmt.Errorf("roomflow: resolved interaction %q has no resolution", record.ID)
 		}
 		var response envelopes.Response
-		if err := json.Unmarshal(outcome.Resolution.ResponsePayload, &response); err != nil {
+		// A secret-flagged answer was tombstoned before it was stored. The
+		// first caller to read the outcome gets the real value from the
+		// in-memory vault; every later read sees the tombstone.
+		// Only the creating caller is handed the value, and a value that cannot
+		// be handed over is flagged (meta.secret_unavailable), not silent.
+		roomKey := record.LegacyRoomID
+		if roomKey == "" {
+			roomKey = handle.RoomID
+		}
+		stored, _ := formsecret.Deliver(
+			formsecret.Key(roomKey, record.LegacyEnvelopeID), reader, record.CallerScope,
+			outcome.Resolution.ResponsePayload)
+		if err := json.Unmarshal(stored, &response); err != nil {
 			return Outcome{}, fmt.Errorf("roomflow: decode stored response for %q: %w", record.ID, err)
 		}
 		result.Status = StatusResolved

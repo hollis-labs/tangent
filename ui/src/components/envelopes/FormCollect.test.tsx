@@ -158,4 +158,106 @@ describe("FormCollect", () => {
     expectProseRendered("form-section");
     expectProseRendered("form-repeatable");
   });
+
+  describe("secret fields", () => {
+    const SECRET = "SECRETCANARY-5d21b0aa";
+    const secretEnvelope: FormCollectEnvelope = {
+      v: 1,
+      id: "form-secret",
+      type: "tangent.form-collect",
+      data: {
+        form_id: "secret-probe",
+        schema: {
+          fields: [
+            { id: "name", type: "text", label: "Name" },
+            { id: "api_key", type: "text", label: "API key", secret: true },
+          ],
+        },
+      },
+    };
+
+    it("treats a password-typed field as a secret without the flag", () => {
+      vi.useFakeTimers();
+      const passwordEnvelope: FormCollectEnvelope = {
+        v: 1,
+        id: "form-pw",
+        type: "tangent.form-collect",
+        data: {
+          form_id: "pw-probe",
+          schema: { fields: [{ id: "pw", type: "password", label: "Password" }] },
+        },
+      };
+      render(
+        <FormCollect
+          envelope={passwordEnvelope}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          roomID="r"
+        />,
+      );
+      expect(screen.getByTestId("form-collect-input-pw")).toHaveAttribute("type", "password");
+      fireEvent.change(screen.getByTestId("form-collect-input-pw"), { target: { value: SECRET } });
+      vi.advanceTimersByTime(FORM_COLLECT_AUTOSAVE_DEBOUNCE_MS + 50);
+      const stored = window.localStorage.getItem(getFormCollectDraftStorageKey("r", "pw-probe"));
+      expect(stored).toBeTruthy();
+      expect(stored).not.toContain(SECRET);
+    });
+
+    it("renders a secret field masked", () => {
+      render(
+        <FormCollect envelope={secretEnvelope} onSubmit={vi.fn()} onCancel={vi.fn()} roomID="r" />,
+      );
+      expect(screen.getByTestId("form-collect-input-api_key")).toHaveAttribute("type", "password");
+      expect(screen.getByTestId("form-collect-input-name")).not.toHaveAttribute("type", "password");
+    });
+
+    it("never autosaves the secret, in saved drafts, or in templates, but still submits it", () => {
+      vi.useFakeTimers();
+      const onSubmit = vi.fn();
+      const { unmount } = render(
+        <FormCollect
+          envelope={secretEnvelope}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          roomID="room-s"
+        />,
+      );
+      fireEvent.change(screen.getByTestId("form-collect-input-name"), {
+        target: { value: "visible" },
+      });
+      fireEvent.change(screen.getByTestId("form-collect-input-api_key"), {
+        target: { value: SECRET },
+      });
+      fireEvent.change(screen.getByTestId("form-collect-draft-label"), { target: { value: "d1" } });
+      fireEvent.click(screen.getByTestId("form-collect-draft-label-save"));
+      vi.advanceTimersByTime(FORM_COLLECT_AUTOSAVE_DEBOUNCE_MS + 50);
+
+      const stored = window.localStorage.getItem(
+        getFormCollectDraftStorageKey("room-s", "secret-probe"),
+      );
+      expect(stored).toBeTruthy();
+      expect(stored).toContain("visible");
+      expect(stored).not.toContain(SECRET);
+
+      unmount();
+      render(
+        <FormCollect
+          envelope={secretEnvelope}
+          onSubmit={onSubmit}
+          onCancel={vi.fn()}
+          roomID="room-s"
+        />,
+      );
+      expect(screen.getByTestId("form-collect-input-name")).toHaveValue("visible");
+      expect(screen.getByTestId("form-collect-input-api_key")).toHaveValue("");
+
+      fireEvent.change(screen.getByTestId("form-collect-input-api_key"), {
+        target: { value: SECRET },
+      });
+      fireEvent.click(screen.getByTestId("form-collect-submit"));
+      const response = onSubmit.mock.calls[0][0];
+      expect(response.payload.answers.api_key).toBe(SECRET);
+      expect(JSON.stringify(response.payload.saved_drafts)).not.toContain(SECRET);
+    });
+  });
 });

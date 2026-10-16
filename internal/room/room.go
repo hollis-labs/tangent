@@ -37,6 +37,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
+
+	"github.com/hollis-labs/tangent/internal/formsecret"
 )
 
 // ErrPendingExists is returned by Push if the same envelope id is
@@ -1164,6 +1166,11 @@ func (r *Room) HandleDraftFrom(
 	if p == nil || p.settled.Load() || p.disposition == nil {
 		return nil
 	}
+	// A draft never carries a secret: those fields are emptied before the
+	// disposition stores the draft revision.
+	if p.Envelope != nil && p.Envelope.Type == formsecret.FormCollectType {
+		payload = formsecret.FromEnvelopeData(p.Envelope.Data).BlankDraft(payload)
+	}
 	return p.disposition.Draft(r.lifetime, r.ID, p.Envelope, draftRevision, payload)
 }
 
@@ -1222,6 +1229,20 @@ func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending
 		return nil
 	}
 	nextResp := cloneResponse(resp)
+	// Secret-flagged answers leave the response before anything below stores,
+	// transforms or projects it, so no row, state blob or WAL frame ever holds
+	// them. The real values wait in the in-memory vault for the waiting caller.
+	nextResp, secrets := redactSecretAnswers(p.Envelope, nextResp)
+	delivered := false
+	vaultKey := formsecret.Key(r.ID, envelopeID)
+	if len(secrets) > 0 {
+		formsecret.Default.Put(vaultKey, secrets)
+		defer func() {
+			if !delivered {
+				formsecret.Default.Drop(vaultKey)
+			}
+		}()
+	}
 	if p.TransformResponse != nil {
 		transformed, err := p.TransformResponse(nextResp)
 		if err != nil {
@@ -1243,9 +1264,18 @@ func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending
 			return r.retireStalePresentation(envelopeID, p, err)
 		}
 	}
+	delivered = true
 	p.settle(func() {
 		if err := r.persistResolvedEnvelope(envelopeID, nextResp); err != nil {
 			trySendErr(p.ErrCh, fmt.Errorf("room: persist resolved envelope %q: %w", envelopeID, err))
+			return
+		}
+		if !p.durable && len(secrets) > 0 {
+			// A legacy blocked Push caller is the waiting caller: it gets the
+			// real values from this in-memory channel, once, and the vault
+			// entry (which only a durable caller reads) is dropped.
+			formsecret.Default.Drop(vaultKey)
+			trySendResp(p.RespCh, restoreSecretAnswers(nextResp, secrets))
 			return
 		}
 		trySendResp(p.RespCh, nextResp)

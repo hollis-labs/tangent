@@ -29,7 +29,8 @@ export type FormCollectFieldType =
   | "multiselect"
   | "radio"
   | "checkbox"
-  | "number";
+  | "number"
+  | "password";
 
 export type FormCollectCondition = {
   field_id: string;
@@ -52,6 +53,13 @@ export type FormCollectField = {
   help?: string;
   placeholder?: string;
   required?: boolean;
+  /**
+   * A secret field renders masked and is never kept: not in the browser's
+   * autosave, not in saved drafts or templates, and the server replaces its
+   * submitted value with a tombstone before storing anything. The caller gets
+   * the value once.
+   */
+  secret?: boolean;
   default?: unknown;
   options?: FormCollectOption[];
   show_when?: FormCollectCondition;
@@ -253,7 +261,7 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
         formID,
         envelopeId: envelope.id,
         baseSeedKey: seedKey,
-        answers,
+        answers: blankSecretAnswers(schema, answers),
         notes,
         actionID,
         savedDrafts: savedDrafts as Array<Record<string, unknown>>,
@@ -268,6 +276,7 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
     formID,
     envelope.id,
     seedKey,
+    schema,
     answers,
     notes,
     actionID,
@@ -496,7 +505,7 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
               {
                 id: slugify(label, now),
                 label,
-                answers,
+                answers: blankSecretAnswers(schema, answers),
                 notes,
                 saved_at: now,
               },
@@ -527,7 +536,7 @@ export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollec
               {
                 id: slugify(label, String(current.length + 1)),
                 label,
-                answers,
+                answers: blankSecretAnswers(schema, answers),
                 notes,
               },
               ...current.filter((item) => item.label !== label),
@@ -913,6 +922,22 @@ function FieldControl({
     "aria-invalid": invalid,
     "aria-describedby": describedByIDs,
   };
+  // A secret field is masked whatever text-like type the schema gave it.
+  if (isMaskedField(field)) {
+    return (
+      <Input
+        id={controlId}
+        type="password"
+        autoComplete="new-password"
+        spellCheck={false}
+        value={String(value ?? "")}
+        placeholder={field.placeholder}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        {...aria}
+        data-testid={`form-collect-input-${field.id}`}
+      />
+    );
+  }
   switch (field.type) {
     case "textarea":
       return (
@@ -1165,6 +1190,60 @@ function SavedItemsEditor<
   );
 }
 
+/** A secret is a field flagged secret or typed password, whatever else it is. */
+function isSecretField(field: FormCollectField): boolean {
+  return field.secret === true || field.type === "password";
+}
+
+/** Only text-like secrets can be masked; the server refuses secrets of other types. */
+function isMaskedField(field: FormCollectField): boolean {
+  return (
+    isSecretField(field) && (!field.type || ["text", "textarea", "password"].includes(field.type))
+  );
+}
+
+/**
+ * The answers with every secret field emptied: what may be written to
+ * localStorage, a saved draft or a template. A secret is held in component
+ * state only until it is submitted.
+ */
+export function blankSecretAnswers(
+  schema: FormCollectSchema,
+  answers: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...answers };
+  for (const field of schema.fields ?? []) {
+    if (isSecretField(field) && field.id in next) {
+      next[field.id] = "";
+    }
+  }
+  for (const section of schema.sections ?? []) {
+    const secretIDs = section.fields.filter(isSecretField).map((field) => field.id);
+    if (secretIDs.length === 0) {
+      continue;
+    }
+    const blankRow = (row: unknown): unknown => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        return row;
+      }
+      const copy = { ...(row as Record<string, unknown>) };
+      for (const id of secretIDs) {
+        if (id in copy) {
+          copy[id] = "";
+        }
+      }
+      return copy;
+    };
+    const current = next[section.id];
+    if (Array.isArray(current)) {
+      next[section.id] = current.map(blankRow);
+    } else if (current) {
+      next[section.id] = blankRow(current);
+    }
+  }
+  return next;
+}
+
 function normalizeAnswers(
   schema: FormCollectSchema,
   answers: Record<string, unknown>,
@@ -1173,6 +1252,10 @@ function normalizeAnswers(
   for (const field of schema.fields ?? []) {
     if (next[field.id] === undefined) {
       next[field.id] = defaultFieldValue(field);
+    } else if (isSecretField(field) && typeof next[field.id] === "object") {
+      // A stored secret comes back as a redaction tombstone object; the field
+      // shows empty rather than "[object Object]".
+      next[field.id] = "";
     }
   }
   for (const section of schema.sections ?? []) {

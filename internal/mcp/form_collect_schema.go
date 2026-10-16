@@ -24,7 +24,7 @@ var formCollectInputSchemaJSON = []byte(`{
           "properties": {
             "form_id": {"type": "string", "minLength": 1},
             "intent": {"type": "string", "description": "What this form is for. Renders as markdown."},
-            "schema": {"type": "object", "description": "{fields, sections}. Each section description renders as markdown. Field help text does not: it is composed with Tangent\u2019s own \"Required.\"/\"Optional.\" sentence."},
+            "schema": {"type": "object", "description": "{fields, sections}. Each section description renders as markdown. Field help text does not: it is composed with Tangent\u2019s own \"Required.\"/\"Optional.\" sentence. A field with \"secret\": true renders masked and is never stored: the answer is replaced by a redaction tombstone before anything is written, and the value reaches the creating caller once, in the first read of the resolved outcome. A secret field must be type text, textarea or password (type password is always secret) and must not be prefilled. If the value can no longer be delivered (already read, expired, or Tangent restarted) the answer holds the tombstone and the response carries meta.secret_unavailable: re-request it."},
             "answers": {"type": "object"},
             "notes": {"type": "string"},
             "actions": {"type": "array"},

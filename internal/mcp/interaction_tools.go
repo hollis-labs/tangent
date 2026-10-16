@@ -9,6 +9,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
 
+	"github.com/hollis-labs/tangent/internal/formsecret"
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
@@ -213,21 +214,23 @@ func (s *Server) handleInteractionGet(
 	ctx context.Context,
 	input interactionGetInput,
 ) (any, error) {
-	return s.interactionResult(s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
+	outcome, err := s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
 		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
-	}))
+	})
+	return s.interactionResult(deliverFormSecrets(requesterScope(input.RequesterScope), outcome, err))
 }
 
 func (s *Server) handleInteractionAwait(
 	ctx context.Context,
 	input interactionAwaitInput,
 ) (any, error) {
-	return s.interactionResult(s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
+	outcome, err := s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
 		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
 		MaximumWaitMillis:    input.MaximumWaitMillis,
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
-	}))
+	})
+	return s.interactionResult(deliverFormSecrets(requesterScope(input.RequesterScope), outcome, err))
 }
 
 func (s *Server) handleInteractionCancel(
@@ -281,6 +284,23 @@ func (s *Server) retireRoomPresentation(err error, result interaction.Terminaliz
 		return
 	}
 	s.roomflow.RetirePresentation(record.LegacyRoomID, record.LegacyEnvelopeID)
+}
+
+// deliverFormSecrets hands a form-collect secret answer to the first caller
+// that reads the resolved outcome. The stored resolution holds only a
+// tombstone; the real value comes from the in-memory vault, once.
+func deliverFormSecrets(reader string, outcome interaction.TerminalOutcome, err error) (interaction.TerminalOutcome, error) {
+	if err != nil || outcome.Resolution == nil || outcome.Interaction.LegacyEnvelopeID == "" {
+		return outcome, err
+	}
+	key := formsecret.Key(outcome.Interaction.LegacyRoomID, outcome.Interaction.LegacyEnvelopeID)
+	delivered, status := formsecret.Deliver(key, reader, outcome.Interaction.CallerScope, outcome.Resolution.ResponsePayload)
+	if status != formsecret.NotApplicable {
+		resolution := *outcome.Resolution
+		resolution.ResponsePayload = delivered
+		outcome.Resolution = &resolution
+	}
+	return outcome, err
 }
 
 func (s *Server) interactionResult(value any, err error) (any, error) {
