@@ -182,7 +182,7 @@ func reservePort(t *testing.T) int {
 }
 
 // firstPartyPlugins are the plugins Tangent documents as its own. Their code
-// lives in github.com/hollis-labs/tangent-plugins (CW-20260930-0102), one
+// lives in github.com/hollis-labs/plugins, one tangent-<name>
 // module each; the Makefile's PLUGINS names the same three.
 var firstPartyPlugins = []string{"runner", "tesseract", "torque"}
 
@@ -202,7 +202,7 @@ var (
 //
 // It uses normal public `go install ...@<ref>` resolution of the exact source
 // in tangent-plugins.smoke-ref. This compatibility fixture is independent of
-// the operator installation pin, which still has legacy declarations.
+// the operator installation pin in tangent-plugins.version.
 // TANGENT_PLUGINS_SRC names a checkout to build from instead, for changing a
 // plugin and the document that names its tools in the same sitting.
 //
@@ -260,9 +260,9 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 		if source != "" {
 			// #nosec G204 -- the checkout is the developer's own override.
 			build = exec.Command("go", "build", "-o", built, "./cmd/"+binaryName)
-			build.Dir = filepath.Join(source, name)
+			build.Dir = filepath.Join(source, "tangent-"+name)
 		} else {
-			module := "github.com/hollis-labs/tangent-plugins/" + name + "/cmd/" + binaryName
+			module := "github.com/hollis-labs/plugins/tangent-" + name + "/cmd/" + binaryName
 			// #nosec G204 -- a fixed module path at the pinned source commit.
 			build = exec.Command("go", "install", module+"@"+ref)
 			build.Env = append(os.Environ(), "GOBIN="+filepath.Join(dir, "bin"))
@@ -301,7 +301,7 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 // discover it, spawn it, and advertise its tools.
 //
 // The plugins' tools are still documented in Tangent's own documents while they
-// are first-party. A tool rename in a plugin therefore lands as a tangent-plugins
+// are first-party. A tool rename in a plugin therefore lands as a plugins monorepo
 // release plus a Tangent change that advances the installation pin and the
 // documents together. A passing source fixture does not advance that pin.
 func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {

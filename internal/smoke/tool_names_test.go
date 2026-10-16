@@ -14,7 +14,7 @@ import (
 // ^[a-z][a-z0-9_]*$, and no deprecated alias may be advertised by default.
 //
 // The first-party plugins the harness installs contribute tools of their own
-// (github, runner, tesseract, torque). Their names are chosen in tangent-plugins and
+// (github, runner, tesseract, torque). Their names are chosen in the plugins monorepo and
 // are renamed there, so they are reported rather than failed on here; see
 // docs/mcp-tool-names.md. Only that exact set is excused, so a host tool that
 // regressed to a dotted name still fails.
@@ -27,7 +27,7 @@ func TestShippedToolNamesMatchTheCharset(t *testing.T) {
 	}
 	for _, name := range surface.Names {
 		if isPluginOwnedLegacyName(name) {
-			t.Logf("plugin-contributed tool %q still has a legacy name; rename it in tangent-plugins", name)
+			t.Logf("plugin-contributed tool %q still has a legacy name; rename it in the plugins monorepo", name)
 			continue
 		}
 		if !tangentmcp.ToolNamePattern.MatchString(name) {

@@ -109,9 +109,11 @@ deployment — see [`mcp-smoketest.md`](./mcp-smoketest.md).
 The smoke suite fetches and builds the exact public first-party source commit
 in `tangent-plugins.smoke-ref`, including its manifest-v2 declarations. CI uses
 the same default. `TANGENT_PLUGINS_SRC=<checkout>` is an explicit development
-override. This source fixture does not change the separate operator install
-pin in `tangent-plugins.version`, which still names legacy declarations;
-`make install-plugins` requires a compatible release pin before activation.
+override pointing to the `hollis-labs/plugins` monorepo root; each plugin
+builds from `tangent-<name>/`. The operator install pin in
+`tangent-plugins.version` names the same verified source commit.
+`make install-plugins` stages and installs those binaries, preserving existing
+enable intent; newly installed plugins start disabled.
 
 Notable suites:
 

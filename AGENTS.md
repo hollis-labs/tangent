@@ -43,7 +43,7 @@ something new.
 - `internal/pluginhost/` + `internal/plugins/installed.go` — the ADR 0007 §4
   plugin host and the loader for the plugins this Tangent has **installed**.
   There is no compiled-in roster: each plugin is its own
-  program (`cmd/tangent-plugin-*` in tangent-plugins), installed into
+  program (`cmd/tangent-plugin-*` in the plugins monorepo), installed into
   `~/.tangent/plugins/` with `tangent plugin install` (`make install-plugins`
   does the first-party ones), spawned through plugin-host Lifecycle over the
   protocol-2 plugin-sdk wire,
@@ -60,7 +60,7 @@ something new.
 - `pkg/plugin/` — the public surface a plugin is written against, and the only
   Tangent package a plugin imports. The host aliases its types; it must never
   import `internal/` (`TestPublicPluginSurfaceIsALeaf`).
-- [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins)
+- [`hollis-labs/plugins`](https://github.com/hollis-labs/plugins)
   — the first-party plugins (torque, tesseract, runner), one module each,
   pinned by `tangent-plugins.version`; `make install-plugins` installs that
   pinned version and `make smoke` measures it. Nothing in this repository knows Torque

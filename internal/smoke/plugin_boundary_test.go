@@ -9,7 +9,7 @@ import (
 // This test holds the import boundary between Tangent's host and the plugins
 // written against it (CW-20260930-0102). It asserts structure — which packages
 // a closure reaches — not a count and not a file's content. The plugins
-// themselves live in github.com/hollis-labs/tangent-plugins, where Go's
+// themselves live in github.com/hollis-labs/plugins, where Go's
 // internal rule already keeps them out of tangent/internal.
 
 const internalPrefix = "github.com/hollis-labs/tangent/internal/"
