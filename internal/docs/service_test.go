@@ -132,6 +132,24 @@ func TestEnqueue_Idempotency(t *testing.T) {
 	}
 }
 
+func TestEnqueue_IdempotencyConflictOnChangedPayload(t *testing.T) {
+	svc, _ := newTestService(t)
+	ctx := context.Background()
+
+	_, err := svc.Enqueue(ctx, EnqueueInput{
+		Request: docRequestJSON("fe:conflict", "Original", "Body", false), Caller: testCaller("fragments-engine"),
+	})
+	if err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	_, err = svc.Enqueue(ctx, EnqueueInput{
+		Request: docRequestJSON("fe:conflict", "Changed", "Other body", false), Caller: testCaller("fragments-engine"),
+	})
+	if !errors.Is(err, interaction.ErrIdempotencyConflict) {
+		t.Fatalf("changed payload under same key: err = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
 // TestViewingNeverMarksRead is the requirement this package exists to
 // enforce: InspectDoc (what every read/list path calls) must never itself
 // cause a document to become read.

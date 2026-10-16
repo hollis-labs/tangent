@@ -212,7 +212,7 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (DocHandle, e
 		if lookupErr != nil {
 			return DocHandle{}, lookupErr
 		}
-		if found {
+		if found && sameRequest(existing.RequestSnapshot, input.Request) {
 			return itemHandle(existing), nil
 		}
 	}
@@ -608,4 +608,17 @@ func (s *Service) Delete(ctx context.Context, input ArchiveInput) (DocItemView, 
 		return DocItemView{}, err
 	}
 	return current, nil
+}
+
+// sameRequest reports whether two request bodies are semantically equal JSON,
+// so a replay with reordered keys is idempotent but a changed payload under
+// the same idempotency key stays a conflict.
+func sameRequest(a, b json.RawMessage) bool {
+	var av, bv any
+	if json.Unmarshal(a, &av) != nil || json.Unmarshal(b, &bv) != nil {
+		return false
+	}
+	ac, aerr := json.Marshal(av)
+	bc, berr := json.Marshal(bv)
+	return aerr == nil && berr == nil && string(ac) == string(bc)
 }
