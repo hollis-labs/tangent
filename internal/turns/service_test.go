@@ -269,3 +269,30 @@ func TestSessionRepliesAndAck(t *testing.T) {
 		t.Errorf("DeliveryState = %q, want acknowledged", view.DeliveryState)
 	}
 }
+
+// TestElevatedReplySupersedesTheAutoPresentation mirrors the docs case for
+// turns (CW-20261016-0174).
+func TestElevatedReplySupersedesTheAutoPresentation(t *testing.T) {
+	svc, _, database := newTestService(t)
+	ctx := context.Background()
+	h, err := svc.Enqueue(ctx, EnqueueInput{
+		Request: turnRequestJSON("session-elevated", "turn-1", "question", "Which database?", "Postgres or SQLite?"),
+		Caller:  testCaller("tether"),
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	elevated := OperatorParticipant
+	elevated.Assurance = "operator-token"
+	if _, err := svc.Reply(ctx, ReplyInput{
+		ItemID: h.ItemID, ExpectedRevision: h.Revision, Action: "respond",
+		ResponseText: "SQLite", Participant: elevated,
+	}); err != nil {
+		t.Fatalf("Reply: %v", err)
+	}
+	var assurance string
+	if err := database.QueryRow(`SELECT participant_assurance FROM resolutions WHERE interaction_id = ?`,
+		h.ItemID).Scan(&assurance); err != nil || assurance != "operator-token" {
+		t.Fatalf("resolution assurance = %q, %v; want operator-token", assurance, err)
+	}
+}

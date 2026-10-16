@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   short (< 32 bytes) token fails closed. **Deploy prerequisite:** provision
   `TANGENT_OPERATOR_TOKEN` before upgrading, or browser approvals become
   unresolvable (CW-20261016-0174).
+- Assurance-ordered presenter takeover: an `operator-token` participant may
+  resolve an item presented by a lower-assurance identity in the same scope
+  (journaled as `interaction.presenter_superseded`); never the reverse. Items
+  presented before the upgrade, and docs/turns auto-presentations, stay
+  resolvable and record `operator-token` (CW-20261016-0174).
 
 ### Added
 

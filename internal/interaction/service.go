@@ -659,7 +659,7 @@ func (s *Service) ResolveInteraction(
 	if err != nil {
 		return ResolveInteractionResult{}, err
 	}
-	if !actorMatchesParticipant(current, input.Participant) {
+	if !actorMatchesParticipant(current, input.Participant) && !CanSupersedePresenter(current, input.Participant) {
 		return ResolveInteractionResult{}, ErrUnauthorized
 	}
 	if !s.surfaces.Authorize(current.SurfaceID, input.Capability) {

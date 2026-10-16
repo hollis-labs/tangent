@@ -411,3 +411,42 @@ func TestRequesterCannotAnswerItsOwnApproval(t *testing.T) {
 		t.Fatalf("the requester's item is %q after a refused self-approval, want staged", outcome.Item.State)
 	}
 }
+
+// TestElevatedSessionResolvesAnItemPresentedBeforeTheUpgrade covers the live
+// pilot's backlog: items presented by the loopback-unverified operator before
+// elevation existed. An operator-token session takes them over by assurance
+// order, and the resolution records operator-token.
+func TestElevatedSessionResolvesAnItemPresentedBeforeTheUpgrade(t *testing.T) {
+	t.Parallel()
+	app := startGuardedApp(t)
+	handle := app.enqueueApproval(t, "pre-upgrade")
+	// Present it the way the pre-upgrade browser path did: as the historical
+	// loopback-unverified OperatorParticipant.
+	if _, err := app.hitl.Present(t.Context(), hitl.PresentInput{
+		ItemID: handle.ItemID, ExpectedRevision: handle.Revision,
+		PresentedProjectionRevision: handle.Revision, ConnectionID: "legacy",
+	}); err != nil {
+		t.Fatalf("legacy present: %v", err)
+	}
+	cookie := app.openElevatedDocument(t, "/")
+	presented := app.item(t, cookie, handle.ItemID)
+	status, body, _ := app.postJSON(t, "/api/hitl/items/"+handle.ItemID+"/resolve", cookie, resolveBody(presented, "denied"), true)
+	if status != http.StatusOK || body["state"] != "resolved" {
+		t.Fatalf("resolve a pre-upgrade item with an elevated session = %d %v", status, body)
+	}
+	var assurance string
+	var superseded int
+	if err := app.database.QueryRow(`SELECT participant_assurance FROM resolutions WHERE interaction_id = ?`,
+		handle.ItemID).Scan(&assurance); err != nil || assurance != participant.AssuranceOperatorToken {
+		t.Fatalf("resolution assurance = %q, %v", assurance, err)
+	}
+	if err := app.database.QueryRow(`SELECT COUNT(*) FROM interaction_events WHERE interaction_id = ? AND event_type = 'interaction.presenter_superseded'`,
+		handle.ItemID).Scan(&superseded); err != nil || superseded != 1 {
+		t.Fatalf("presenter_superseded events = %d, %v", superseded, err)
+	}
+	// A retry is a terminal conflict, not a second resolution.
+	status, body, _ = app.postJSON(t, "/api/hitl/items/"+handle.ItemID+"/resolve", cookie, resolveBody(presented, "approved"), true)
+	if status != http.StatusConflict {
+		t.Fatalf("retry after takeover = %d %v, want 409", status, body)
+	}
+}
