@@ -10,18 +10,6 @@ import (
 	streamhub "github.com/hollis-labs/libs/ui/ui-go/streamhub"
 )
 
-// stubOutbox creates the agreed event_outbox schema. The real table is
-// migration 0021 (the emitter's); this stub is only for the relay's tests.
-func stubOutbox(t *testing.T, l *Log) {
-	t.Helper()
-	if _, err := l.db.Exec(`CREATE TABLE IF NOT EXISTS event_outbox (
-		event_id TEXT PRIMARY KEY, stream TEXT NOT NULL, kind TEXT NOT NULL,
-		subject_type TEXT, subject_id TEXT, envelope_json TEXT NOT NULL,
-		created_at TEXT NOT NULL, appended_at TEXT)`); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func enqueue(t *testing.T, l *Log, id string) {
 	t.Helper()
 	ev := envelope(id, "approval", "item-"+id)
@@ -44,7 +32,6 @@ func journalCount(t *testing.T, l *Log) int {
 func TestRelayDeliversInOrderAndStampsAppendedAt(t *testing.T) {
 	ctx := context.Background()
 	l, d := newLog(t)
-	stubOutbox(t, l)
 	for i := range 5 {
 		enqueue(t, l, fmt.Sprintf("evt_%d", i))
 	}
@@ -80,7 +67,6 @@ func TestRelayDeliversInOrderAndStampsAppendedAt(t *testing.T) {
 func TestRelayCrashRetryGivesExactlyOneRow(t *testing.T) {
 	ctx := context.Background()
 	l, d := newLog(t)
-	stubOutbox(t, l)
 	enqueue(t, l, "evt_crash")
 	enqueue(t, l, "evt_next")
 
@@ -121,7 +107,6 @@ func TestRelayRunWakesAfterCommit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	l, d := newLog(t)
-	stubOutbox(t, l)
 	wake, unsub := l.Subscribe()
 	defer unsub()
 
