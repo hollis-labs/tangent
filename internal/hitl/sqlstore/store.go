@@ -119,7 +119,9 @@ func (s *Store) load(ctx context.Context, q queryer, where string, args ...any) 
 		created, updated, terminalAt             any
 		cause, reason, policyRef, code, replaceI sql.NullString
 	)
-	err := q.QueryRowContext(ctx, rowSelect+` WHERE `+where, args...).Scan(&rec.ItemID, &rec.CallerScope,
+	// Only this store's surface: interactions also holds docs and turns rows
+	// that must not be reachable (or replayed) through the HITL store.
+	err := q.QueryRowContext(ctx, rowSelect+` WHERE surface_id = ? AND (`+where+`)`, append([]any{s.surfaceID}, args...)...).Scan(&rec.ItemID, &rec.CallerScope,
 		&rec.IdempotencyKey, &request, &policy, &refs, &state, &dbRev, &created, &updated, &terminalAt,
 		&cause, &reason, &policyRef, &code, &replaceI)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -376,7 +378,7 @@ func (s *Store) Swap(ctx context.Context, itemID string, expected int64, next hi
 	var res sql.Result
 	if next.Outcome == nil {
 		res, err = tx.ExecContext(ctx, `UPDATE interactions SET lifecycle_state = ?, revision = ?, updated_at = ?
-WHERE id = ? AND revision = ?`, string(next.State), nextRev, at, itemID, prevRev)
+WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, at, itemID, prevRev, s.surfaceID)
 	} else {
 		var cause, reason, policyRef, code, replacement any
 		switch o := next.Outcome.(type) {
@@ -400,8 +402,8 @@ WHERE id = ? AND revision = ?`, string(next.State), nextRev, at, itemID, prevRev
 		res, err = tx.ExecContext(ctx, `
 UPDATE interactions SET lifecycle_state = ?, revision = ?, updated_at = ?, terminal_at = ?,
   terminal_cause = ?, terminal_reason = ?, terminal_policy_ref = ?, terminal_error_code = ?, replacement_interaction_id = ?
-WHERE id = ? AND revision = ?`, string(next.State), nextRev, at, ts(next.Outcome.OutcomeTime()),
-			cause, reason, policyRef, code, replacement, itemID, prevRev)
+WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, at, ts(next.Outcome.OutcomeTime()),
+			cause, reason, policyRef, code, replacement, itemID, prevRev, s.surfaceID)
 	}
 	if err != nil {
 		return invalid("%v", err)

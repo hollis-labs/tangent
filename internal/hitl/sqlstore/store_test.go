@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -180,5 +181,47 @@ func TestNativeInteractionPathKeepsTheRevisionOffset(t *testing.T) {
 	if r, ok := got.Outcome.(hitl.Resolved); !ok || r.InteractionRevision != 2 || r.Resolution.Response.Decision != "approved" ||
 		r.Resolution.Participant.PrincipalRef != "op" {
 		t.Fatalf("outcome = %#v; want a Resolved rebuilt from the native resolutions row", got.Outcome)
+	}
+}
+
+// TestForeignSurfaceInteractionsAreInvisible checks that interactions on other
+// surfaces (docs, turns) can't be read, swapped or replayed through the store.
+func TestForeignSurfaceInteractionsAreInvisible(t *testing.T) {
+	db, store := newDBStore(t)
+	ctx := context.Background()
+	native := interaction.NewStore(db)
+	docs, err := native.CreateSurface(ctx, interaction.CreateSurfaceParams{ID: "surface_docs", OwnerScope: "operator:local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = native.AdvanceSurface(ctx, interaction.AdvanceSurfaceParams{
+		SurfaceID: docs.ID, ExpectedRevision: docs.Revision, To: interaction.SurfaceStateActive}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = native.CreateInteraction(ctx, interaction.CreateInteractionParams{
+		ID: "docs-1", SurfaceID: docs.ID, CallerScope: "app", CallerAuthority: "a", CallerAssurance: "b", IdempotencyKey: "shared-key",
+		RequestSnapshot: json.RawMessage(`{"kind":"doc"}`),
+		Definition:      interaction.DefinitionBinding{Publisher: "tangent", Kind: "docs", Version: "v1", Revision: 1, Source: "test", Assurance: "x"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Get(ctx, "docs-1"); !errors.Is(err, hitl.ErrNotFound) {
+		t.Fatalf("Get(docs item) = %v, want ErrNotFound", err)
+	}
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	next := hitl.Record{ItemID: "docs-1", CallerScope: "app", IdempotencyKey: "shared-key", Digest: "d", Kind: "approval",
+		Request: []byte(`{"kind":"doc"}`), State: hitl.StateCanceled, Revision: 2, CreatedAt: t0, UpdatedAt: t0,
+		Outcome: hitl.Canceled{ItemID: "docs-1", InteractionRevision: 2, Cause: hitl.CauseCallerWithdrawn, TerminatedAt: t0}}
+	if err = store.Swap(ctx, "docs-1", 1, next); !errors.Is(err, hitl.ErrNotFound) {
+		t.Fatalf("Swap(docs item) = %v, want ErrNotFound", err)
+	}
+	replay := next
+	replay.ItemID, replay.State, replay.Revision, replay.Outcome = "hitl-1", hitl.StatePresented, 1, nil
+	if got, created, createErr := store.Create(ctx, replay); createErr == nil || created || got.ItemID == "docs-1" {
+		t.Fatalf("Create reusing a docs-surface key = %+v, %v, %v; want an error and no replay of the docs row", got, created, createErr)
+	}
+	row, err := native.GetInteraction(ctx, "docs-1")
+	if err != nil || row.State != interaction.InteractionStateStaged || row.Revision != 3 {
+		t.Fatalf("docs interaction changed: %+v, %v", row, err)
 	}
 }
