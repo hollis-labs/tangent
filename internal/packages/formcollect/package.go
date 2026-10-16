@@ -11,6 +11,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
+	"github.com/hollis-labs/tangent/internal/formsecret"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 )
 
@@ -395,6 +396,9 @@ func orAttachmentRefs(next, fallback []AttachmentRef) []AttachmentRef {
 func countAnswers(value any) int {
 	switch typed := value.(type) {
 	case map[string]any:
+		if formsecret.IsTombstone(typed) {
+			return 1 // a redacted secret is one answer, not the five keys of its tombstone
+		}
 		total := 0
 		for _, child := range typed {
 			total += countAnswers(child)

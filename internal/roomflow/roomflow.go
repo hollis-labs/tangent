@@ -34,6 +34,7 @@ import (
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/formsecret"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -673,7 +674,11 @@ func (s *Service) projectTerminal(
 			return Outcome{}, fmt.Errorf("roomflow: resolved interaction %q has no resolution", record.ID)
 		}
 		var response envelopes.Response
-		if err := json.Unmarshal(outcome.Resolution.ResponsePayload, &response); err != nil {
+		// A secret-flagged answer was tombstoned before it was stored. The
+		// first caller to read the outcome gets the real value from the
+		// in-memory vault; every later read sees the tombstone.
+		stored, _ := formsecret.Deliver(record.LegacyEnvelopeID, outcome.Resolution.ResponsePayload)
+		if err := json.Unmarshal(stored, &response); err != nil {
 			return Outcome{}, fmt.Errorf("roomflow: decode stored response for %q: %w", record.ID, err)
 		}
 		result.Status = StatusResolved
