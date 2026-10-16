@@ -70,6 +70,9 @@ type Config struct {
 	// it remains separate from caller-facing MCP and room WebSockets.
 	HITL HITLService
 
+	// HITLEvents optionally adds typed resumable events beside legacy revision pings.
+	HITLEvents *HITLEventStream
+
 	// Turns is the durable agent turns FIFO inbox application service (CW-20260913-0019).
 	// When set, the server mounts its dedicated browser and daemon APIs.
 	Turns TurnsService
@@ -243,6 +246,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Envelope == nil {
 		return nil, fmt.Errorf("server: envelope service is required")
 	}
+	if err := cfg.HITLEvents.validate(); err != nil {
+		return nil, fmt.Errorf("server: hitl events: %w", err)
+	}
 
 	if cfg.PluginHostInstance == "" {
 		epoch, err := driver.NewHostInstance()
@@ -310,6 +316,8 @@ func New(cfg Config) (*Server, error) {
 		// acknowledging a presented projection needs `draft`, and submitting a
 		// terminal response needs `resolve`.
 		hitlHandler := newHITLHTTPHandler(cfg.HITL)
+		hitlHandler.logger = logger
+		hitlHandler.eventStream = cfg.HITLEvents
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
 			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
 		}
