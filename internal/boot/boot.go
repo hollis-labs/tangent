@@ -182,10 +182,15 @@ type ownedCloser struct {
 	// it would leak them silently, which is exactly the class internal/mcp's
 	// goleak tests exist to catch.
 	loopback io.Closer
+	// stopSweeper ends the HITL expiry sweeper, which reads the database.
+	stopSweeper context.CancelFunc
 }
 
 func (c *ownedCloser) Close() error {
 	var errs []error
+	if c.stopSweeper != nil {
+		c.stopSweeper()
+	}
 	if c.plugins != nil {
 		if err := c.plugins.UnloadAll(); err != nil {
 			errs = append(errs, fmt.Errorf("unload plugins: %w", err))
@@ -413,8 +418,9 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		// denies both host-policy and administrator questions — the same
 		// answer the unwired fallback gave, now reached through a
 		// construction that has a call site and a test.
-		interaction.WithPrivilegedActorPolicy(
-			interaction.NewEffectPrivilegedActorPolicy(hostAuthority)),
+		interaction.WithPrivilegedActorPolicy(hitl.ExpiryPolicy{
+			Next: interaction.NewEffectPrivilegedActorPolicy(hostAuthority),
+		}),
 		interaction.WithTelemetry(recorder),
 	)
 	if err != nil {
@@ -424,6 +430,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	if err != nil {
 		return release(fmt.Errorf("build hitl service: %w", err))
 	}
+	sweepCtx, stopSweeper := context.WithCancel(context.Background())
+	closer.stopSweeper = stopSweeper
+	go hitlService.RunExpirySweeper(sweepCtx, time.Second, func(sweepErr error) {
+		logger.Warn("hitl expiry sweep failed", "error", sweepErr)
+	})
 	turnsService, err := turns.NewService(interactionService)
 	if err != nil {
 		return release(fmt.Errorf("build turns service: %w", err))

@@ -1123,6 +1123,7 @@ func newTestServiceAtPath(t *testing.T, databasePath string) (*Service, *interac
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, "hitl-test-host"),
 		interaction.WithAwaitPollInterval(time.Millisecond),
 		interaction.WithSurfaceAccessPolicy(SurfaceAccessPolicy{}),
+		interaction.WithPrivilegedActorPolicy(ExpiryPolicy{}),
 	)
 	if err != nil {
 		t.Fatalf("interaction.NewService: %v", err)

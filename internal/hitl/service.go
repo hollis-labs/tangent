@@ -221,8 +221,12 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 		return ItemHandle{}, schemaErr
 	}
 	if fields.ExpiresAt != "" {
-		if _, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt); parseErr != nil {
+		expiresAt, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt)
+		if parseErr != nil {
 			return ItemHandle{}, fmt.Errorf("%w: expires_at must be an absolute RFC 3339 timestamp", ErrInvalidRequest)
+		}
+		if !expiresAt.After(s.now()) {
+			return ItemHandle{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidRequest)
 		}
 	}
 
@@ -779,6 +783,16 @@ func (s *Service) inspectHITL(
 		// Do not disclose or mutate generic interaction handles through the
 		// specialized HITL service, even when the caller owns both records.
 		return interaction.TerminalOutcome{}, interaction.ErrNotFound
+	}
+	// A deadline that has passed is materialized before any read or write sees
+	// the item, so a late respond or withdraw is refused against the expired
+	// outcome even when no sweep has run yet.
+	if changed, expireErr := s.expireIfDue(ctx, outcome.Interaction); expireErr != nil {
+		return interaction.TerminalOutcome{}, expireErr
+	} else if changed {
+		return s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
+			InteractionID: itemID, RequesterScope: requesterScope, Capability: reservedSurfaceCapability,
+		})
 	}
 	return outcome, nil
 }
