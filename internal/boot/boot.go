@@ -42,6 +42,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/interactionpkg"
 	"github.com/hollis-labs/tangent/internal/mcp"
@@ -81,6 +82,11 @@ type Config struct {
 
 	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
 	MCPCallerTokens string
+	// HITLBackend is the value of TANGENT_HITL_BACKEND (gohitl.EnvBackend):
+	// "gohitl" runs the go-hitl Service over Tangent's tables behind the
+	// tangent_hitl_* tools (CW-20261016-0153); empty or "native" keeps
+	// Tangent's own service. Off by default; an unknown value fails Boot.
+	HITLBackend string
 
 	// Port is the TCP port the constructed server will bind when Listen is
 	// called. Boot does not listen; it only threads Port into the
@@ -437,10 +443,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// Approval lifecycle transitions write their typed-event outbox row in the
 	// same transaction as the journal row (CW-20261016-0143).
 	interactionStore.SetTransitionObserver(hitl.EventObserver{})
+	definitionCatalog := interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion,
+		interaction.WithRetainedMaterialStore(interactionStore))
 	interactionService, err := interaction.NewService(
 		interactionStore,
-		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion,
-			interaction.WithRetainedMaterialStore(interactionStore)),
+		definitionCatalog,
 		interaction.WithSurfaceAccessPolicy(compoundSurfaceAccessPolicy{
 			hitl.SurfaceAccessPolicy{},
 			turns.SurfaceAccessPolicy{},
@@ -647,6 +654,16 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithRetentionReporter(retentionReporter),
 		// tangent_relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
+	}
+	useGoHITL, backendErr := gohitl.Enabled(cfg.HITLBackend)
+	if backendErr != nil {
+		return release(backendErr)
+	}
+	if useGoHITL {
+		// The go-hitl Service over Tangent's own tables behind tangent_hitl_*
+		// (CW-20261016-0153). The operator's inbox and Resolve are unchanged.
+		mcpOptions = append(mcpOptions, mcp.WithHITLWire(gohitl.New(sqlDB, definitionCatalog)))
+		logger.Info("hitl: go-hitl backend enabled behind tangent_hitl_*", "env", gohitl.EnvBackend)
 	}
 	if cfg.ListLegacyToolNames {
 		mcpOptions = append(mcpOptions, mcp.WithLegacyToolNamesListed())

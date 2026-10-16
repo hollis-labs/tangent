@@ -118,6 +118,9 @@ func (s *Server) handleHITLEnqueue(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, s.hitlWire.Enqueue)
+	}
 	source, ok := objectField(input, "source")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: source is required", hitl.ErrInvalidRequest))
@@ -133,6 +136,9 @@ func (s *Server) handleHITLGet(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, s.hitlWire.Get)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -147,6 +153,9 @@ func (s *Server) handleHITLAwait(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, s.hitlWire.Await)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -170,6 +179,9 @@ func (s *Server) handleHITLWithdraw(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, s.hitlWire.Withdraw)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -186,6 +198,32 @@ func (s *Server) handleHITLWithdraw(
 		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(ctx, caller),
 		ExpectedRevision: expected, Reason: stringField(input, "reason"),
 	}))
+}
+
+// viaHITLWire runs one tool call through the go-hitl backend. The tool input is
+// already the go-hitl wire document; the reply is its wire JSON, and a failure
+// carries the go-hitl wire error document as the tool error body.
+func (s *Server) viaHITLWire(
+	ctx context.Context,
+	input map[string]any,
+	call func(context.Context, []byte) ([]byte, error),
+) (any, error) {
+	doc, err := json.Marshal(input)
+	if err != nil {
+		return nil, s.hitlError(fmt.Errorf("%w: %w", hitl.ErrInvalidRequest, err))
+	}
+	reply, callErr := call(ctx, doc)
+	var body map[string]any
+	if decodeErr := json.Unmarshal(reply, &body); decodeErr != nil {
+		if callErr != nil {
+			return nil, s.hitlError(callErr)
+		}
+		return nil, s.hitlError(fmt.Errorf("go-hitl backend returned a non-object reply: %w", decodeErr))
+	}
+	if callErr != nil {
+		return nil, &rawToolError{message: callErr.Error(), body: body}
+	}
+	return body, nil
 }
 
 func (s *Server) hitlResult(value any, err error) (any, error) {
