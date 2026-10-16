@@ -122,7 +122,7 @@ INSERT INTO surface_open_requests (
 INSERT INTO surface_events (
   event_id, surface_id, event_type, actor_ref, authority,
   from_revision, to_revision, metadata, recorded_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			s.id(),
 			id,
 			eventType,
@@ -130,6 +130,7 @@ INSERT INTO surface_events (
 			nullString(params.Authority),
 			fromRevision,
 			revision+1,
+			forwarderAdmissionMetadata(ctx, nil),
 			now,
 		); eventErr != nil {
 			return OpenSurfaceResult{}, fmt.Errorf("insert %s event: %w", eventType, eventErr)

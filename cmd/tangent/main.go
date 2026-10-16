@@ -338,6 +338,7 @@ func run() int {
 		DBPath:                  dbPath,
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
+		MCPTrustedForwarders:    os.Getenv(mcp.EnvTrustedForwarders),
 		ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
 		Port:                    *port,
 		DevFrontendURL:          os.Getenv(envDevFrontendURL),

@@ -15,6 +15,9 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
+// EnvTrustedForwarders opts configured producers into session attribution.
+const EnvTrustedForwarders = "TANGENT_MCP_TRUSTED_FORWARDERS"
+
 // EnvCallerTokens contains comma-separated producer=SHA256(token) entries.
 // The server stores only digests. Operators provision the bearer values separately.
 const EnvCallerTokens = "TANGENT_MCP_TOKENS" // #nosec G101 -- environment variable name, not a credential.
@@ -27,17 +30,19 @@ type callerCredential struct {
 // CallerAuth is an immutable credential set. A nil or empty set permits only
 // unmarked direct loopback callers; remote and proxied requests fail closed.
 type CallerAuth struct {
-	credentials []callerCredential
+	credentials       []callerCredential
+	trustedForwarders map[string]bool
 }
 
 var producerName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // ParseCallerAuth validates configuration without exposing any supplied values
-// in errors. Duplicate names or digests would make identity ambiguous.
-func ParseCallerAuth(config string) (*CallerAuth, error) {
-	auth := &CallerAuth{}
+// in errors. Duplicate names or digests would make identity ambiguous. Trusted
+// forwarders must name configured producers and default to none.
+func ParseCallerAuth(config, forwarders string) (*CallerAuth, error) {
+	auth := &CallerAuth{trustedForwarders: map[string]bool{}}
 	if strings.TrimSpace(config) == "" {
-		return auth, nil
+		return auth, auth.parseTrustedForwarders(forwarders)
 	}
 	names := map[string]bool{}
 	digests := map[[sha256.Size]byte]bool{}
@@ -57,7 +62,7 @@ func ParseCallerAuth(config string) (*CallerAuth, error) {
 		names[name], digests[digest] = true, true
 		auth.credentials = append(auth.credentials, callerCredential{producer: name, digest: digest})
 	}
-	return auth, nil
+	return auth, auth.parseTrustedForwarders(forwarders)
 }
 
 // WithCallerAuth installs the host's verified producer credentials before any
@@ -126,15 +131,34 @@ func (a *CallerAuth) wrap(next func(http.ResponseWriter, *http.Request, string))
 			http.Error(w, "MCP authentication required", http.StatusUnauthorized)
 			return
 		}
+		scope := ""
 		if producer != "" {
-			binding := interaction.ActorBinding{
-				Scope: authz.AuthorityGateway + ":" + producer, Authority: authz.AuthorityGateway,
-				PrincipalRef: producer, Assurance: "adapter-verified",
+			attribution, valid := a.forwardedCaller(r.Header, producer)
+			if !valid {
+				http.Error(w, "Invalid forwarded caller context", http.StatusBadRequest)
+				return
 			}
-			r = r.Clone(context.WithValue(r.Context(), verifiedCallerKey{}, binding))
-			// The SDK and tool adapters need the binding, never the credential.
-			r.Header.Del("Authorization")
+			principal := producer
+			if attribution.SessionID != "" {
+				principal += "/session:" + attribution.SessionID
+			}
+			scope = authz.AuthorityGateway + ":" + principal
+			binding := interaction.ActorBinding{
+				Scope: scope, Authority: authz.AuthorityGateway,
+				PrincipalRef: principal, Assurance: "adapter-verified",
+			}
+			ctx := context.WithValue(r.Context(), verifiedCallerKey{}, binding)
+			if attribution.SessionID != "" {
+				ctx = interaction.WithForwarderAttribution(ctx, attribution)
+			}
+			r = r.Clone(ctx)
+		} else {
+			r = r.Clone(r.Context())
 		}
-		next(w, r, producer)
+		// Downstream consumers receive only host-derived context. Neither
+		// bearer values nor raw identity assertions reach the SDK/plugins.
+		r.Header.Del("Authorization")
+		stripForwardedIdentity(r.Header)
+		next(w, r, scope)
 	})
 }

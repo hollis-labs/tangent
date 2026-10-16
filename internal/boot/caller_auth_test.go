@@ -15,3 +15,13 @@ func TestMalformedCallerAuthFailsBeforeOpeningDatabase(t *testing.T) {
 		t.Fatalf("unsafe configuration diagnostic: %v", err)
 	}
 }
+
+func TestUnknownTrustedForwarderFailsBeforeOpeningDatabase(t *testing.T) {
+	services, server, closer, err := Boot(Config{MCPTrustedForwarders: "unknown-forwarder", DBPath: t.TempDir() + "/unused.db"})
+	if err == nil || services != nil || server != nil || closer != nil {
+		t.Fatalf("misconfigured forwarder did not fail boot: %v", err)
+	}
+	if strings.Contains(err.Error(), "unknown-forwarder") {
+		t.Fatal("configuration value leaked")
+	}
+}

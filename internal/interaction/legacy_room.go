@@ -131,7 +131,7 @@ INSERT INTO surface_events (
   from_revision, to_revision, metadata, recorded_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			s.id(), params.RoomID, eventType, nullString(params.ActorRef), nullString(params.Authority),
-			fromRevision, revision+1, mustJSON(map[string]any{"legacy_room_id": params.RoomID}), now,
+			fromRevision, revision+1, forwarderAdmissionMetadata(ctx, map[string]any{"legacy_room_id": params.RoomID}), now,
 		); eventErr != nil {
 			return SurfaceRecord{}, false, fmt.Errorf("insert %s event: %w", eventType, eventErr)
 		}
