@@ -538,8 +538,7 @@ func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
 	if rec.ExpiresAt != nil {
 		a.ExpiresAt = ts(*rec.ExpiresAt)
 	}
-	_, err := events.Emitter{}.Emit(ctx, tx, a)
-	return err
+	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
 // emitResolved writes the single approval.resolved row for the terminal swap of
@@ -573,8 +572,7 @@ func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error
 	default: // superseded
 		a.Outcome, a.Resolver = events.OutcomeWithdrawn, requester
 	}
-	_, err := events.Emitter{}.Emit(ctx, tx, a)
-	return err
+	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
 func callerPrincipal(scope string) events.Principal {

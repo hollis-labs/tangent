@@ -102,11 +102,77 @@ func TestBuildStampIgnoresPayloadKeysAndFailsClosedEnvelope(t *testing.T) {
 
 func TestVerifiedFollowsRecordedAssurance(t *testing.T) {
 	for assurance, want := range map[string]string{
-		"": "operator-session", "loopback-unverified": "operator-session",
+		"": "none", "loopback-unverified": "claimed",
 		"operator-token": "token", "asserted": "claimed", "anything-else": "claimed",
 	} {
 		if got := Verified(assurance); got != want {
 			t.Errorf("Verified(%q) = %q, want %q", assurance, got, want)
 		}
+	}
+}
+
+func TestSequenceNeverRepeatsAndGenerationIsStable(t *testing.T) {
+	ctx := context.Background()
+	db := openOutbox(t)
+	emit := func() runtimeevents.Event {
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		row, err := Emitter{Host: "h"}.Emit(ctx, tx, Approval{Kind: catalog.KindApprovalRequested, ItemID: "i", Class: "approval"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		var ev runtimeevents.Event
+		if err = json.Unmarshal(row.EnvelopeJSON, &ev); err != nil {
+			t.Fatal(err)
+		}
+		return ev
+	}
+	a, b := emit(), emit()
+	// purge everything, as a retention job would: the next sequence still moves on
+	if _, err := db.Exec(`DELETE FROM event_outbox`); err != nil {
+		t.Fatal(err)
+	}
+	c := emit()
+	if a.Sequence != 1 || b.Sequence != 2 || c.Sequence != 3 {
+		t.Fatalf("sequences = %d %d %d", a.Sequence, b.Sequence, c.Sequence)
+	}
+	if a.Generation == 0 || a.Generation != b.Generation || b.Generation != c.Generation {
+		t.Fatalf("generations = %d %d %d", a.Generation, b.Generation, c.Generation)
+	}
+	if a.Source.Confidence != runtimeevents.ConfidenceExact || a.Source.Channel != Channel {
+		t.Fatalf("source = %+v", a.Source)
+	}
+}
+
+func TestMappingFailureIsSkippedNotFatal(t *testing.T) {
+	ctx := context.Background()
+	db := openOutbox(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	before := MappingFailures()
+	if err = (Emitter{}).EmitOrSkip(ctx, tx, Approval{Kind: catalog.KindApprovalRequested}); err != nil {
+		t.Fatalf("mapping failure must not fail the transaction: %v", err)
+	}
+	if MappingFailures() != before+1 {
+		t.Fatal("mapping failure was not counted")
+	}
+	var n int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM event_outbox`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rows = %d, %v", n, err)
+	}
+	// a database fault still fails the transaction
+	if _, err = tx.Exec(`DROP TABLE event_outbox_state`); err != nil {
+		t.Fatal(err)
+	}
+	if err = (Emitter{}).EmitOrSkip(ctx, tx, Approval{Kind: catalog.KindApprovalRequested, ItemID: "i"}); err == nil {
+		t.Fatal("a database fault must be returned")
 	}
 }

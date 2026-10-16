@@ -55,8 +55,8 @@ func (o EventObserver) ObserveTransition(ctx context.Context, tx *sql.Tx, t inte
 	default:
 		return nil
 	}
-	_, err := o.Emitter.Emit(ctx, tx, approval)
-	return err
+	// A mapping failure must not roll back the approve/deny/withdraw itself.
+	return o.Emitter.EmitOrSkip(ctx, tx, approval)
 }
 
 func requestKind(snapshot json.RawMessage) string {

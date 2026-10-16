@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -30,10 +33,8 @@ const (
 	// visibility for approval detail) is still an owner call, so it lives in
 	// this one constant.
 	Visibility = "operator"
-	// ActorVerified states how the actor was identified. Approvals are not a
-	// security boundary yet (CW-20261016-0174): the actor is whoever held the
-	// operator session or loopback caller, and nothing may gate on these events.
-	ActorVerified = "operator-session"
+	// Channel is the source.channel of every Tangent HITL event.
+	Channel runtimeevents.SourceChannel = "tangent-hitl"
 
 	payloadSchemaRequested = "approval.requested@1"
 	payloadSchemaResolved  = "approval.resolved@1"
@@ -60,16 +61,19 @@ type Principal struct {
 	Assurance string
 }
 
-// Verified maps a recorded assurance to actor.verified, so the envelope says
-// no more than the record does. operator-token (CW-20261016-0174) is the only
-// assurance that earns "token"; the loopback operator session stays the weak
-// "operator-session"; anything else asserted by a caller is "claimed".
+// Verified maps a recorded assurance to actor.verified, whose vocabulary is
+// token, claimed or none (architect ruling on tangent#126). Only operator-token
+// (CW-20261016-0174) earns "token". A loopback operator session and any other
+// caller-asserted assurance is "claimed"; the assurance itself rides in the
+// payload (resolver.assurance, requester_assurance). No recorded assurance is
+// "none". Approvals are not a security boundary yet: nothing may gate on these
+// events.
 func Verified(assurance string) string {
 	switch assurance {
 	case "operator-token":
 		return "token"
-	case "", "loopback-unverified":
-		return ActorVerified
+	case "":
+		return "none"
 	}
 	return "claimed"
 }
@@ -124,9 +128,22 @@ func HasRequested(ctx context.Context, tx Tx, itemID string) (bool, error) {
 	return found, err
 }
 
-// Emit builds the envelope for a and inserts its outbox row in tx. A failure
-// must fail the caller's transaction so the transition and its event stay
-// atomic.
+// MappingError means the transition could not be turned into a valid event: a
+// bug or bad input on the event side, not a database fault.
+type MappingError struct{ Err error }
+
+func (e *MappingError) Error() string { return "events: mapping failed: " + e.Err.Error() }
+func (e *MappingError) Unwrap() error { return e.Err }
+
+var mappingFailures atomic.Int64
+
+// MappingFailures counts transitions whose event was skipped because it could
+// not be mapped.
+func MappingFailures() int64 { return mappingFailures.Load() }
+
+// Emit builds the envelope for a and inserts its outbox row in tx. It returns a
+// *MappingError when the event cannot be built, and any other error for a
+// database fault.
 func (e Emitter) Emit(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	row, err := e.Build(ctx, tx, a)
 	if err != nil {
@@ -138,8 +155,23 @@ func (e Emitter) Emit(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	return row, nil
 }
 
+// EmitOrSkip is Emit for a producer whose transition must not depend on its
+// event. A mapping failure is counted and logged at ERROR and the event is
+// skipped (the transition commits); only a database fault is returned, which
+// fails the transaction.
+func (e Emitter) EmitOrSkip(ctx context.Context, tx Tx, a Approval) error {
+	_, err := e.Emit(ctx, tx, a)
+	var mapping *MappingError
+	if errors.As(err, &mapping) {
+		mappingFailures.Add(1)
+		slog.Error("approval event skipped: mapping failed", "kind", a.Kind, "item_id", a.ItemID, "error", mapping.Err)
+		return nil
+	}
+	return err
+}
+
 // Build mints the evt_ id, sanitizes the payload, stamps the blocks and
-// validates the envelope. The sequence is the next outbox rowid.
+// validates the envelope. Sequence and generation come from event_outbox_state.
 func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	schema := payloadSchemaRequested
 	switch a.Kind {
@@ -147,10 +179,10 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	case catalog.KindApprovalResolved:
 		schema = payloadSchemaResolved
 	default:
-		return Row{}, fmt.Errorf("events: %q is not an approval kind", a.Kind)
+		return Row{}, &MappingError{fmt.Errorf("%q is not an approval kind", a.Kind)}
 	}
 	if a.ItemID == "" {
-		return Row{}, fmt.Errorf("events: approval event needs an item id")
+		return Row{}, &MappingError{errors.New("approval event needs an item id")}
 	}
 	at := a.At
 	if at.IsZero() {
@@ -164,12 +196,15 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	if a.Kind == catalog.KindApprovalRequested {
 		setIf(candidate, "class", a.Class)
 		setIf(candidate, "requester", a.Requester.ID)
+		setIf(candidate, "requester_assurance", a.Requester.Assurance)
 		setIf(candidate, "expires_at", a.ExpiresAt)
 	} else {
 		actor = a.Resolver
 		candidate["outcome"] = a.Outcome
 		if a.Resolver.ID != "" || a.Resolver.Kind != "" {
-			candidate["resolver"] = map[string]any{"kind": a.Resolver.Kind, "id": a.Resolver.ID}
+			resolverBlock := map[string]any{"kind": a.Resolver.Kind, "id": a.Resolver.ID}
+			setIf(resolverBlock, "assurance", a.Resolver.Assurance)
+			candidate["resolver"] = resolverBlock
 		}
 		if a.Outcome == OutcomeExpired {
 			severity = "warning"
@@ -180,10 +215,6 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	}
 	payload, dropped, sanErr := Sanitize(a.Kind, candidate)
 
-	var seq uint64
-	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(rowid), 0) + 1 FROM event_outbox`).Scan(&seq); err != nil {
-		return Row{}, fmt.Errorf("events: next sequence: %w", err)
-	}
 	host := e.Host
 	if host == "" {
 		host, _ = os.Hostname()
@@ -195,9 +226,8 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 		Kind:          runtimeevents.EventKind(a.Kind),
 		Time:          at,
 		App:           App,
-		Sequence:      seq,
-		Generation:    1,
-		Source:        runtimeevents.Source{Channel: runtimeevents.ChannelHook, Confidence: runtimeevents.Confidence("exact")},
+		Sequence:      1, // placeholder for Validate; the real value is assigned below
+		Source:        runtimeevents.Source{Channel: Channel, Confidence: runtimeevents.ConfidenceExact},
 		Subject:       HitlRef(a.ItemID),
 		Payload:       payload,
 		ContentType:   "application/json",
@@ -212,11 +242,17 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 		ev.Actor = &runtimeevents.Actor{URN: actor.URN, Kind: actor.Kind, Role: actor.Role, Verified: Verified(actor.Assurance)}
 	}
 	if err := ev.Validate(); err != nil {
-		return Row{}, err
+		return Row{}, &MappingError{err}
 	}
+	var seq, generation uint64
+	if err := tx.QueryRowContext(ctx, `UPDATE event_outbox_state SET last_sequence = last_sequence + 1 WHERE id = 1
+RETURNING last_sequence, generation`).Scan(&seq, &generation); err != nil {
+		return Row{}, fmt.Errorf("events: next sequence: %w", err)
+	}
+	ev.Sequence, ev.Generation = seq, generation
 	raw, err := json.Marshal(ev)
 	if err != nil {
-		return Row{}, fmt.Errorf("events: marshal envelope: %w", err)
+		return Row{}, &MappingError{err}
 	}
 	return Row{
 		EventID: id, Stream: DefaultStream, Kind: a.Kind, SubjectType: SubjectType, SubjectID: a.ItemID,
@@ -263,12 +299,13 @@ type field struct {
 // value that breaks its bounds drops the whole payload to {"sanitize_error"}.
 var allowlists = map[string]map[string]field{
 	catalog.KindApprovalRequested: {
-		"request_id": {true, boundedString(maxIDLen, nil)},
-		"hitl_ref":   {true, boundedString(maxIDLen+32, nil)},
-		"class":      {false, boundedString(maxIDLen, classVocab)},
-		"requester":  {false, boundedString(maxIDLen, nil)},
-		"subject":    {false, boundedString(maxIDLen+32, nil)},
-		"expires_at": {false, timestamp},
+		"request_id":          {true, boundedString(maxIDLen, nil)},
+		"hitl_ref":            {true, boundedString(maxIDLen+32, nil)},
+		"class":               {false, boundedString(maxIDLen, classVocab)},
+		"requester":           {false, boundedString(maxIDLen, nil)},
+		"requester_assurance": {false, boundedString(maxIDLen, nil)},
+		"subject":             {false, boundedString(maxIDLen+32, nil)},
+		"expires_at":          {false, timestamp},
 	},
 	catalog.KindApprovalResolved: {
 		"request_id": {true, boundedString(maxIDLen, nil)},
@@ -365,7 +402,7 @@ func resolver(v any) (any, string) {
 				return nil, bad
 			}
 			out[key] = cleaned
-		case "id":
+		case "id", "assurance":
 			cleaned, bad := boundedString(maxIDLen, nil)(value)
 			if bad != "" {
 				return nil, bad

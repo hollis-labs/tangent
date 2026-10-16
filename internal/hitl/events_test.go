@@ -192,11 +192,25 @@ func TestApprovalEnvelopeStamp(t *testing.T) {
 			!strings.HasPrefix(c.PayloadSchema, "approval.") || !strings.HasSuffix(c.PayloadSchema, "@1") {
 			t.Fatalf("class = %+v", c)
 		}
-		// requested: the caller was admitted "asserted" -> claimed; resolved: the
-		// loopback operator session -> operator-session (0174 weak).
-		wantVerified := map[string]string{catalog.KindApprovalRequested: "claimed", catalog.KindApprovalResolved: "operator-session"}[string(ev.Kind)]
-		if ev.Actor == nil || ev.Actor.Verified != wantVerified || ev.Actor.URN == "" || ev.Corr.CorrelationID != h.ItemID {
+		// Both the asserted caller and the loopback operator session are "claimed";
+		// the recorded assurance rides in the payload.
+		if ev.Actor == nil || ev.Actor.Verified != "claimed" || ev.Actor.URN == "" || ev.Corr.CorrelationID != h.ItemID {
 			t.Fatalf("actor/corr = %+v / %+v", ev.Actor, ev.Corr)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(ev.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Kind == catalog.KindApprovalRequested && payload["requester_assurance"] != "asserted" {
+			t.Fatalf("requested payload = %v, want requester_assurance asserted", payload)
+		}
+		if ev.Kind == catalog.KindApprovalResolved {
+			if r, _ := payload["resolver"].(map[string]any); r["assurance"] != "loopback-unverified" {
+				t.Fatalf("resolved payload = %v, want resolver.assurance loopback-unverified", payload)
+			}
+		}
+		if ev.Generation == 0 || ev.Source.Confidence != runtimeevents.ConfidenceExact {
+			t.Fatalf("generation/confidence = %d/%q", ev.Generation, ev.Source.Confidence)
 		}
 		if ev.RecordedAt != nil || ev.Cursor != "" {
 			t.Fatal("producer must not set recorded_at or cursor")

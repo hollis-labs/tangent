@@ -13,3 +13,14 @@ CREATE TABLE event_outbox (
 );
 CREATE INDEX event_outbox_pending ON event_outbox (created_at) WHERE appended_at IS NULL;
 CREATE INDEX event_outbox_subject ON event_outbox (subject_id, kind);
+
+-- One row: the producer's restart counter (generation, random and nonzero,
+-- minted here so a restored or recreated database gets a different one) and the
+-- last envelope sequence handed out. A counter, not MAX(rowid), so a sequence is
+-- never reused even if appended rows are purged.
+CREATE TABLE event_outbox_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  generation INTEGER NOT NULL CHECK (generation > 0),
+  last_sequence INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO event_outbox_state (id, generation) VALUES (1, (abs(random()) % 9007199254740990) + 1);
