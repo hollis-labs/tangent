@@ -50,7 +50,7 @@ func (s *Server) handleDocsEnqueue(
 	applicationID, _ := source["application_id"].(string)
 	agentID, _ := source["agent_id"].(string)
 	return s.docsResult(s.docs.Enqueue(ctx, docs.EnqueueInput{
-		Request: rawJSON(input), Caller: directHITLActor(applicationID, agentID),
+		Request: rawJSON(input), Caller: directHITLActor(ctx, applicationID, agentID),
 	}))
 }
 

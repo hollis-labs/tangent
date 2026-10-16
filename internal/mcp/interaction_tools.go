@@ -166,7 +166,7 @@ func (s *Server) handleSurfaceOpen(
 	ctx context.Context,
 	input surfaceOpenInput,
 ) (any, error) {
-	caller := directMCPActor(input.Caller)
+	caller := directMCPActor(ctx, input.Caller)
 	// The owner scope is the caller's own, derived here. A wire-supplied
 	// `owner_scope` used to be accepted unchecked, which let a caller open a
 	// surface owned by any scope it could spell; it is now retained only as an
@@ -184,7 +184,7 @@ func (s *Server) handleSurfaceGet(
 	input surfaceGetInput,
 ) (any, error) {
 	return s.interactionResult(s.interactions.GetSurface(ctx, interaction.GetSurfaceInput{
-		SurfaceID: input.SurfaceID, RequesterScope: requesterScope(input.RequesterScope),
+		SurfaceID: input.SurfaceID, RequesterScope: requesterScope(ctx, input.RequesterScope),
 	}))
 }
 
@@ -194,7 +194,7 @@ func (s *Server) handleSurfaceClose(
 ) (any, error) {
 	return s.interactionResult(s.interactions.CloseSurface(ctx, interaction.CloseSurfaceInput{
 		SurfaceID: input.SurfaceID, ExpectedRevision: input.ExpectedRevision,
-		Requester: directMCPActor(input.Requester), Reason: input.Reason, PolicyRef: input.PolicyRef,
+		Requester: directMCPActor(ctx, input.Requester), Reason: input.Reason, PolicyRef: input.PolicyRef,
 		Metadata: rawJSON(input.Metadata),
 	}))
 }
@@ -204,7 +204,7 @@ func (s *Server) handleInteractionSubmit(
 	input interactionSubmitInput,
 ) (any, error) {
 	return s.interactionResult(s.interactions.SubmitInteraction(ctx, interaction.SubmitInteractionInput{
-		ID: input.InteractionID, SurfaceID: input.SurfaceID, Caller: directMCPActor(input.Caller),
+		ID: input.InteractionID, SurfaceID: input.SurfaceID, Caller: directMCPActor(ctx, input.Caller),
 		IdempotencyKey: input.IdempotencyKey, Definition: input.Definition,
 		Request: rawJSON(input.Request), ExternalRefs: rawJSON(input.ExternalRefs), Policy: rawJSON(input.Policy),
 	}))
@@ -214,23 +214,25 @@ func (s *Server) handleInteractionGet(
 	ctx context.Context,
 	input interactionGetInput,
 ) (any, error) {
+	reader := requesterScope(ctx, input.RequesterScope)
 	outcome, err := s.interactions.GetInteraction(ctx, interaction.GetInteractionInput{
-		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
+		InteractionID: input.InteractionID, RequesterScope: reader,
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	})
-	return s.interactionResult(deliverFormSecrets(requesterScope(input.RequesterScope), outcome, err))
+	return s.interactionResult(deliverFormSecrets(reader, outcome, err))
 }
 
 func (s *Server) handleInteractionAwait(
 	ctx context.Context,
 	input interactionAwaitInput,
 ) (any, error) {
+	reader := requesterScope(ctx, input.RequesterScope)
 	outcome, err := s.interactions.AwaitResolution(ctx, interaction.AwaitResolutionInput{
-		InteractionID: input.InteractionID, RequesterScope: requesterScope(input.RequesterScope),
+		InteractionID: input.InteractionID, RequesterScope: reader,
 		MaximumWaitMillis:    input.MaximumWaitMillis,
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	})
-	return s.interactionResult(deliverFormSecrets(requesterScope(input.RequesterScope), outcome, err))
+	return s.interactionResult(deliverFormSecrets(reader, outcome, err))
 }
 
 func (s *Server) handleInteractionCancel(
@@ -243,7 +245,7 @@ func (s *Server) handleInteractionCancel(
 	}
 	result, err := s.interactions.CancelInteraction(ctx, interaction.CancelInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
-		Requester: directMCPActor(input.Requester), Cause: input.Cause, Reason: input.Reason,
+		Requester: directMCPActor(ctx, input.Requester), Cause: input.Cause, Reason: input.Reason,
 	})
 	s.retireRoomPresentation(err, result)
 	return s.interactionResult(result, err)
@@ -256,7 +258,7 @@ func (s *Server) handleInteractionSupersede(
 	result, err := s.interactions.SupersedeInteraction(ctx, interaction.SupersedeInteractionInput{
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		ReplacementInteractionID: input.ReplacementInteractionID,
-		Requester:                directMCPActor(input.Requester), Reason: input.Reason,
+		Requester:                directMCPActor(ctx, input.Requester), Reason: input.Reason,
 	})
 	s.retireRoomPresentation(err, result)
 	return s.interactionResult(result, err)
@@ -371,6 +373,6 @@ func rawJSON(value any) json.RawMessage {
 // partition half survives; the authority is host-assigned from admission
 // facts. A caller that spells another authority into that field lands in a
 // partition of its own authority, never in the authority it named.
-func directMCPActor(assertion assertedActorInput) interaction.ActorBinding {
-	return declaredCaller(assertion.Scope, assertion.PrincipalRef)
+func directMCPActor(ctx context.Context, assertion assertedActorInput) interaction.ActorBinding {
+	return declaredCaller(ctx, assertion.Scope, assertion.PrincipalRef)
 }

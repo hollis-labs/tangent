@@ -214,7 +214,7 @@ func (s *Server) handleInteractionAcknowledge(
 ) (any, error) {
 	return s.interactionResult(s.interactions.AcknowledgeTerminalOutcome(ctx, interaction.AcknowledgeTerminalOutcomeInput{
 		InteractionID:        input.InteractionID,
-		RequesterScope:       requesterScope(input.RequesterScope),
+		RequesterScope:       requesterScope(ctx, input.RequesterScope),
 		TransportCorrelation: rawJSON(input.TransportCorrelation),
 	}))
 }

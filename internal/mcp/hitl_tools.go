@@ -125,7 +125,7 @@ func (s *Server) handleHITLEnqueue(
 	applicationID, _ := source["application_id"].(string)
 	agentID, _ := source["agent_id"].(string)
 	return s.hitlResult(s.hitl.Enqueue(ctx, hitl.EnqueueInput{
-		Request: rawJSON(input), Caller: directHITLActor(applicationID, agentID),
+		Request: rawJSON(input), Caller: directHITLActor(ctx, applicationID, agentID),
 	}))
 }
 
@@ -138,7 +138,7 @@ func (s *Server) handleHITLGet(
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
 	}
 	return s.hitlResult(s.hitl.Get(ctx, hitl.GetInput{
-		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(caller),
+		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(ctx, caller),
 		TransportCorrelation: directHITLCorrelation("get"),
 	}))
 }
@@ -161,7 +161,7 @@ func (s *Server) handleHITLAwait(
 		wait = &duration
 	}
 	return s.hitlResult(s.hitl.Await(ctx, hitl.AwaitInput{
-		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(caller),
+		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(ctx, caller),
 		Wait: wait, TransportCorrelation: directHITLCorrelation("await"),
 	}))
 }
@@ -183,7 +183,7 @@ func (s *Server) handleHITLWithdraw(
 		expected = &revision
 	}
 	return s.hitlResult(s.hitl.Withdraw(ctx, hitl.WithdrawInput{
-		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(caller),
+		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(ctx, caller),
 		ExpectedRevision: expected, Reason: stringField(input, "reason"),
 	}))
 }
@@ -244,17 +244,17 @@ func (s *Server) hitlError(err error) error {
 // host derives from them changes spelling — `direct-loopback:<app>` becomes
 // the canonical `standalone-local:<app>`, and the old spelling still reads as
 // the same caller through the fixed alias, with no data rewrite.
-func directHITLActor(applicationID, principalRef string) interaction.ActorBinding {
+func directHITLActor(ctx context.Context, applicationID, principalRef string) interaction.ActorBinding {
 	applicationID = strings.TrimSpace(applicationID)
 	principalRef = strings.TrimSpace(principalRef)
 	if principalRef == "" {
 		principalRef = applicationID
 	}
-	return declaredCaller(applicationID, principalRef)
+	return declaredCaller(ctx, applicationID, principalRef)
 }
 
-func directHITLCallerAssertion(caller map[string]any) interaction.ActorBinding {
-	return directHITLActor(stringField(caller, "application_id"), stringField(caller, "principal_ref"))
+func directHITLCallerAssertion(ctx context.Context, caller map[string]any) interaction.ActorBinding {
+	return directHITLActor(ctx, stringField(caller, "application_id"), stringField(caller, "principal_ref"))
 }
 
 func directHITLCorrelation(operation string) json.RawMessage {

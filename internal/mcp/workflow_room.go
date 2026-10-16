@@ -33,7 +33,7 @@ func (s *Server) resolveWorkflowRoom(
 	env *envelopes.Envelope,
 ) (string, error) {
 	if s.roomflow != nil {
-		bound, known, err := s.roomflow.Recognize(ctx, callerIdentity(), env)
+		bound, known, err := s.roomflow.Recognize(ctx, callerIdentity(ctx), env)
 		if err != nil {
 			return "", triageErrorResult(err)
 		}

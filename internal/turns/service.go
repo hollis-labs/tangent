@@ -18,6 +18,7 @@ import (
 
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/pkg/plugin"
@@ -166,15 +167,19 @@ type DismissInput struct {
 }
 
 type AckInput struct {
-	ItemID  string
-	ReplyID string
+	// RequesterScope restricts daemon callers to their authority; empty is the operator API.
+	RequesterScope string
+	ItemID         string
+	ReplyID        string
 }
 
 // AwaitInput asks for the operator replies a session has not yet acknowledged.
 // A nil Wait takes DefaultAwaitWait; zero means look once and return.
 type AwaitInput struct {
-	SessionID string
-	Wait      *time.Duration
+	// RequesterScope restricts daemon callers to their authority; empty is the operator API.
+	RequesterScope string
+	SessionID      string
+	Wait           *time.Duration
 }
 
 // AwaitResult is what Await returns. Replies is never nil, so a timeout
@@ -331,6 +336,10 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (TurnHandle, 
 }
 
 func (s *Service) Inbox(ctx context.Context) (TurnsInbox, error) {
+	return s.inboxForCaller(ctx, "")
+}
+
+func (s *Service) inboxForCaller(ctx context.Context, requesterScope string) (TurnsInbox, error) {
 	result := TurnsInbox{
 		ContractVersion: ContractVersion,
 		SurfaceID:       DefaultSurfaceID,
@@ -367,6 +376,9 @@ func (s *Service) Inbox(ctx context.Context) (TurnsInbox, error) {
 
 	pendingPosition := int64(0)
 	for _, record := range snapshot.Interactions {
+		if requesterScope != "" && !authz.SameAuthority(requesterScope, record.CallerScope) {
+			continue
+		}
 		if record.Definition.Kind != extensions.AgentTurnEnvelopeType {
 			continue
 		}
@@ -560,6 +572,9 @@ func (s *Service) Ack(ctx context.Context, input AckInput) error {
 	if err != nil {
 		return err
 	}
+	if input.RequesterScope != "" && !authz.SameAuthority(input.RequesterScope, current.Interaction.CallerScope) {
+		return ErrNotFound
+	}
 	if current.Interaction.Definition.Kind != extensions.AgentTurnEnvelopeType {
 		return ErrNotFound
 	}
@@ -639,7 +654,7 @@ func (s *Service) Await(ctx context.Context, input AwaitInput) (AwaitResult, err
 	defer ticker.Stop()
 
 	for {
-		replies, err := s.undeliveredReplies(ctx, input.SessionID)
+		replies, err := s.undeliveredReplies(ctx, input.SessionID, input.RequesterScope)
 		if err != nil {
 			return AwaitResult{}, err
 		}
@@ -652,7 +667,7 @@ func (s *Service) Await(ctx context.Context, input AwaitInput) (AwaitResult, err
 		case <-deadline:
 			// One last look, so a reply recorded in the final poll interval is
 			// delivered rather than reported as a timeout.
-			replies, err = s.undeliveredReplies(ctx, input.SessionID)
+			replies, err = s.undeliveredReplies(ctx, input.SessionID, input.RequesterScope)
 			if err != nil {
 				return AwaitResult{}, err
 			}
@@ -684,10 +699,21 @@ func (s *Service) awaitResult(sessionID string, replies []TurnItemView) AwaitRes
 // terminal_failure is excluded along with acknowledged: it records that the
 // runtime confirmed the session gone, and the reply is kept in history rather
 // than offered to whoever asks next.
-func (s *Service) undeliveredReplies(ctx context.Context, sessionID string) ([]TurnItemView, error) {
-	inbox, err := s.Inbox(ctx)
+func (s *Service) undeliveredReplies(ctx context.Context, sessionID, requesterScope string) ([]TurnItemView, error) {
+	inbox, err := s.inboxForCaller(ctx, requesterScope)
 	if err != nil {
 		return nil, err
+	}
+	if requesterScope != "" {
+		ownsSession := false
+		for _, items := range [][]TurnItemView{inbox.Pending, inbox.History} {
+			for _, item := range items {
+				ownsSession = ownsSession || item.SessionID == sessionID
+			}
+		}
+		if !ownsSession {
+			return nil, ErrNotFound
+		}
 	}
 	var out []TurnItemView
 	for _, item := range inbox.History {

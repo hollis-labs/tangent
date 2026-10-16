@@ -47,8 +47,8 @@ func (s *Server) registerInboxReadTools() error {
 	return addInteractionTool(s, "tangent_inbox_get", description+"Read one item and its immutable confirmed response history. Erased content remains a tombstone; hidden/purged items are not found. Does not present, retrieve, deliver or acknowledge an outcome.", s.handleInboxGet)
 }
 
-func inboxReadArguments(input inboxListInput) (interaction.InboxReadInput, error) {
-	result := interaction.InboxReadInput{RequesterScope: requesterScope(input.RequesterScope), Kind: input.Kind, Status: input.Status, Limit: input.Limit, Cursor: input.Cursor}
+func inboxReadArguments(ctx context.Context, input inboxListInput) (interaction.InboxReadInput, error) {
+	result := interaction.InboxReadInput{RequesterScope: requesterScope(ctx, input.RequesterScope), Kind: input.Kind, Status: input.Status, Limit: input.Limit, Cursor: input.Cursor}
 	for _, field := range []struct {
 		name, value string
 		target      **time.Time
@@ -69,7 +69,7 @@ func inboxReadArguments(input inboxListInput) (interaction.InboxReadInput, error
 }
 
 func (s *Server) handleInboxList(ctx context.Context, input inboxListInput) (any, error) {
-	args, err := inboxReadArguments(input)
+	args, err := inboxReadArguments(ctx, input)
 	if err != nil {
 		return nil, s.interactionError(err)
 	}
@@ -77,7 +77,7 @@ func (s *Server) handleInboxList(ctx context.Context, input inboxListInput) (any
 }
 
 func (s *Server) handleInboxSearch(ctx context.Context, input inboxSearchInput) (any, error) {
-	args, err := inboxReadArguments(inboxListInput{RequesterScope: input.RequesterScope, Kind: input.Kind, Status: input.Status, CreatedFrom: input.CreatedFrom, CreatedBefore: input.CreatedBefore, Limit: input.Limit, Cursor: input.Cursor})
+	args, err := inboxReadArguments(ctx, inboxListInput{RequesterScope: input.RequesterScope, Kind: input.Kind, Status: input.Status, CreatedFrom: input.CreatedFrom, CreatedBefore: input.CreatedBefore, Limit: input.Limit, Cursor: input.Cursor})
 	if err != nil {
 		return nil, s.interactionError(err)
 	}
@@ -89,5 +89,5 @@ func (s *Server) handleInboxSearch(ctx context.Context, input inboxSearchInput) 
 }
 
 func (s *Server) handleInboxGet(ctx context.Context, input inboxGetInput) (any, error) {
-	return s.interactionResult(s.interactions.GetInboxItem(ctx, requesterScope(input.RequesterScope), input.ItemID))
+	return s.interactionResult(s.interactions.GetInboxItem(ctx, requesterScope(ctx, input.RequesterScope), input.ItemID))
 }

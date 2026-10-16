@@ -23,7 +23,9 @@ import (
 // spell it.
 //
 // The result of that split, stated plainly so nothing downstream mistakes it:
-// within `standalone-local` a partition prevents accident, not intent. Any
+// Verified HTTP bearer callers use a private context binding that assigns
+// gateway:<producer>. Wire assertions cannot change that scope. For tokenless
+// callers within `standalone-local`, a partition prevents accident, not intent. Any
 // local caller can assert any application id. Isolation is enforced only
 // across authorities, where the prefix is host-assigned.
 
@@ -31,21 +33,27 @@ import (
 //
 // The seventeen workflow tools and the seven `session_*` tools carry no caller
 // argument at all, so they resolve to the anonymous partition of the local
-// authority. That is the honest answer: nothing on those code paths declares
+// authority unless the transport verified a producer. Nothing on the local paths declares
 // an application, and inventing one would manufacture an isolation the product
 // cannot back.
 //
 // When a trusted in-process adapter composes a verified caller binding (ADR
 // 0004 §10.1), this is the one place that binding is read.
-func callerIdentity() interaction.ActorBinding {
+func callerIdentity(ctx context.Context) interaction.ActorBinding {
+	if binding, ok := verifiedCaller(ctx); ok {
+		return binding
+	}
 	return roomflow.DefaultCaller
 }
 
 // declaredCaller derives the caller identity for a tool that does accept a
 // caller assertion, from whatever application id or legacy scope string it
 // supplied.
-func declaredCaller(declared, principalRef string) interaction.ActorBinding {
-	binding := roomflow.CallerFor(declared)
+func declaredCaller(ctx context.Context, declared, principalRef string) interaction.ActorBinding {
+	binding, verified := verifiedCaller(ctx)
+	if !verified {
+		binding = roomflow.CallerFor(declared)
+	}
 	if principalRef != "" {
 		// The principal ref is attribution, never authority: ADR 0004 §1 makes
 		// the caller agent a row of the matrix that holds nothing of its own.
@@ -57,7 +65,10 @@ func declaredCaller(declared, principalRef string) interaction.ActorBinding {
 // requesterScope derives the scope a read is authorized against from a
 // wire-supplied `requester_scope`. The argument survives; its authority does
 // not.
-func requesterScope(declared string) string {
+func requesterScope(ctx context.Context, declared string) string {
+	if binding, ok := verifiedCaller(ctx); ok {
+		return binding.Scope
+	}
 	return authz.CallerScope(declared)
 }
 
@@ -154,4 +165,14 @@ func surfaceMetadataWithAttribution(metadata map[string]any, declaredOwner, decl
 	}
 	labels["declared_by_caller"] = attribution
 	return rawJSON(labels)
+}
+
+// requireLocalMCPCaller fences adapters that cannot preserve a producer binding.
+// Relay identity is still argument-derived, and plugin callbacks use a local
+// session. Neither may turn an authenticated producer into a local deputy.
+func requireLocalMCPCaller(ctx context.Context) error {
+	if _, verified := verifiedCaller(ctx); verified {
+		return toolErrorResult("not_authorized", "this tool requires a direct local caller")
+	}
+	return nil
 }

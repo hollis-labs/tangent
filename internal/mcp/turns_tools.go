@@ -108,7 +108,7 @@ func (s *Server) handleTurnsEnqueue(
 	applicationID, _ := source["application_id"].(string)
 	agentID, _ := source["agent_id"].(string)
 	return s.turnsResult(s.turns.Enqueue(ctx, turns.EnqueueInput{
-		Request: rawJSON(input), Caller: directHITLActor(applicationID, agentID),
+		Request: rawJSON(input), Caller: directHITLActor(ctx, applicationID, agentID),
 	}))
 }
 
@@ -121,14 +121,14 @@ func (s *Server) handleTurnAwait(
 		duration := time.Duration(*input.WaitMillis) * time.Millisecond
 		wait = &duration
 	}
-	return s.turnsResult(s.turns.Await(ctx, turns.AwaitInput{SessionID: input.SessionID, Wait: wait}))
+	return s.turnsResult(s.turns.Await(ctx, turns.AwaitInput{SessionID: input.SessionID, Wait: wait, RequesterScope: turnRequesterScope(ctx)}))
 }
 
 func (s *Server) handleTurnAck(
 	ctx context.Context,
 	input turnAckInput,
 ) (any, error) {
-	if err := s.turns.Ack(ctx, turns.AckInput{ItemID: input.ItemID, ReplyID: input.ReplyID}); err != nil {
+	if err := s.turns.Ack(ctx, turns.AckInput{ItemID: input.ItemID, ReplyID: input.ReplyID, RequesterScope: turnRequesterScope(ctx)}); err != nil {
 		return nil, s.turnsError(err)
 	}
 	// The same body POST /api/turns/items/{id}/ack answers with.
@@ -157,6 +157,8 @@ func (s *Server) turnsError(err error) error {
 		body["code"] = "idempotency_conflict"
 	case errors.Is(err, turns.ErrNotFound), errors.Is(err, interaction.ErrNotFound):
 		body["code"] = "not_found"
+		// Missing IDs and foreign producer IDs must be indistinguishable.
+		body["message"] = turns.ErrNotFound.Error()
 	case errors.Is(err, interaction.ErrUnauthorized):
 		body["code"] = "unauthorized"
 	case errors.Is(err, interaction.ErrDefinitionValidation), errors.Is(err, turns.ErrInvalidRequest):
@@ -164,5 +166,14 @@ func (s *Server) turnsError(err error) error {
 	case errors.Is(err, context.Canceled):
 		body["code"] = "wait_canceled"
 	}
-	return &rawToolError{message: err.Error(), body: body}
+	return &rawToolError{message: body["message"].(string), body: body}
+}
+
+// Phase-1 local runners retain the operator-wide await/ack contract. Only
+// authenticated gateway producers are narrowed; this value never comes from arguments.
+func turnRequesterScope(ctx context.Context) string {
+	if caller, ok := verifiedCaller(ctx); ok {
+		return caller.Scope
+	}
+	return ""
 }
