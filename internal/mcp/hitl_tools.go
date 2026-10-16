@@ -217,7 +217,15 @@ func (s *Server) viaHITLWire(
 		agentID, _ = asserted["principal_ref"].(string)
 	}
 	applicationID, _ := asserted["application_id"].(string)
-	caller := directHITLActor(applicationID, agentID)
+	caller := directHITLActor(ctx, applicationID, agentID)
+	if _, verified := verifiedCaller(ctx); verified {
+		// A verified producer's identity is its token's, never the application
+		// id in the arguments. The lib compares the asserted application id, so
+		// it is replaced by the verified scope before the lib sees the document;
+		// otherwise a producer that asserts another's id could not read its own
+		// items, and the lib's partition would not match the one recorded.
+		input = withApplicationID(input, callerField, caller.Scope)
+	}
 	doc, err := json.Marshal(input)
 	if err != nil {
 		return nil, s.hitlError(fmt.Errorf("%w: %w", hitl.ErrInvalidRequest, err))
@@ -234,6 +242,24 @@ func (s *Server) viaHITLWire(
 		return nil, &rawToolError{message: callErr.Error(), body: body}
 	}
 	return body, nil
+}
+
+// withApplicationID returns a copy of input with input[field].application_id
+// replaced. The caller's map is not modified.
+func withApplicationID(input map[string]any, field, applicationID string) map[string]any {
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	nested := map[string]any{}
+	if existing, ok := input[field].(map[string]any); ok {
+		for key, value := range existing {
+			nested[key] = value
+		}
+	}
+	nested["application_id"] = applicationID
+	out[field] = nested
+	return out
 }
 
 func (s *Server) hitlResult(value any, err error) (any, error) {

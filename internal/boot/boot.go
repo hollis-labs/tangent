@@ -82,6 +82,7 @@ type Config struct {
 
 	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
 	MCPCallerTokens string
+
 	// HITLBackend is the value of TANGENT_HITL_BACKEND (gohitl.EnvBackend):
 	// "gohitl" runs the go-hitl Service over Tangent's tables behind the
 	// tangent_hitl_* tools (CW-20261016-0153); empty or "native" keeps
