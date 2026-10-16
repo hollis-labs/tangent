@@ -3,6 +3,7 @@ package sqlstore_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -126,5 +127,58 @@ func TestDueForExpirySkipsEveryTerminalState(t *testing.T) {
 	got, err := store.DueForExpiry(ctx, t0, 0)
 	if err != nil || len(got) != 1 || got[0].ItemID != "live" {
 		t.Fatalf("DueForExpiry = %v, %v; want only the nonterminal item", got, err)
+	}
+}
+
+// TestNativeInteractionPathKeepsTheRevisionOffset pins the constant offset
+// against the rows Tangent's own store writes (the path tangent_hitl_enqueue
+// takes): staged at revision 3, presented at 4 is lib revision 1, resolved at 5
+// is lib revision 2, and a resolution written natively reads back as a lib
+// Resolved outcome.
+func TestNativeInteractionPathKeepsTheRevisionOffset(t *testing.T) {
+	db, store := newDBStore(t)
+	ctx := context.Background()
+	native := interaction.NewStore(db)
+	surface, err := native.CreateSurface(ctx, interaction.CreateSurfaceParams{ID: sqlstore.DefaultSurfaceID, OwnerScope: "operator:local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = native.AdvanceSurface(ctx, interaction.AdvanceSurfaceParams{
+		SurfaceID: surface.ID, ExpectedRevision: surface.Revision, To: interaction.SurfaceStateActive}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := native.CreateInteraction(ctx, interaction.CreateInteractionParams{
+		ID: "native-1", SurfaceID: surface.ID, CallerScope: "app", CallerAuthority: "a", CallerAssurance: "b", IdempotencyKey: "k",
+		RequestSnapshot: json.RawMessage(`{"kind":"approval"}`), Policy: json.RawMessage(`{"request_digest":"d"}`),
+		Definition: interaction.DefinitionBinding{Publisher: "tangent", Kind: "hitl_item", Version: "v1", Revision: 1, Source: "test", Assurance: "x"},
+	})
+	if err != nil || created.Interaction.Revision != 3 {
+		t.Fatalf("native create = %+v, %v; want staged at revision 3", created.Interaction, err)
+	}
+	presented, err := native.AdvanceInteraction(ctx, interaction.AdvanceInteractionParams{
+		InteractionID: "native-1", ExpectedRevision: 3, To: interaction.InteractionStatePresented, PresentedProjectionRevision: 1,
+		ParticipantScope: "operator:local", ParticipantRef: "op", ParticipantAuthority: "loopback", ParticipantAssurance: "unverified"})
+	if err != nil || presented.Revision != 4 {
+		t.Fatalf("native present = %+v, %v; want revision 4", presented, err)
+	}
+	got, err := store.Get(ctx, "native-1")
+	if err != nil || got.State != hitl.StatePresented || got.Revision != 1 || got.Digest != "d" {
+		t.Fatalf("lib view = %+v, %v; want presented at lib revision 1", got, err)
+	}
+	if _, err = native.ResolveInteraction(ctx, interaction.ResolveInteractionParams{
+		InteractionID: "native-1", ExpectedInteractionRevision: 4, PresentedProjectionRevision: 1,
+		ParticipantScope: "operator:local", ParticipantRef: "op", ParticipantAuthority: "loopback", ParticipantAssurance: "unverified",
+		ResponseKind: "approval", ResponsePayload: json.RawMessage(`{"kind":"approval","decision":"approved"}`),
+		Deliveries: []interaction.ResolutionDeliveryParams{{IdempotencyKey: "d", DestinationBinding: json.RawMessage(`{}`)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.Get(ctx, "native-1")
+	if err != nil || got.State != hitl.StateResolved || got.Revision != 2 {
+		t.Fatalf("lib view = %+v, %v; want resolved at lib revision 2", got, err)
+	}
+	if r, ok := got.Outcome.(hitl.Resolved); !ok || r.InteractionRevision != 2 || r.Resolution.Response.Decision != "approved" ||
+		r.Resolution.Participant.PrincipalRef != "op" {
+		t.Fatalf("outcome = %#v; want a Resolved rebuilt from the native resolutions row", got.Outcome)
 	}
 }
