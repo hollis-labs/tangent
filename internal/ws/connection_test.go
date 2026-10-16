@@ -2,6 +2,7 @@ package ws_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -232,6 +233,63 @@ func TestHandler_RefreshReplacesOnlyItsOwnTab(t *testing.T) {
 	})
 	if err := <-pushDone; err != nil {
 		t.Fatalf("push after refresh: %v", err)
+	}
+}
+
+// TestHandler_SameTabFastReconnectInheritsTheLease is the flaky-wifi case: a tab
+// drops and redials under its own clientID straight away, without waiting for
+// the server to notice the old socket is gone, and must be able to answer. The
+// old connection may be detached before or after the replacement attaches
+// depending on scheduling, so the cycle repeats to cover both orderings; every
+// one must end with the answer accepted and no resolver_lease_held.
+func TestHandler_SameTabFastReconnectInheritsTheLease(t *testing.T) {
+	mgr, base, cleanup := newTestRig(t)
+	defer cleanup()
+	rm := mgr.Create(nil)
+
+	const cycles = 25
+	for cycle := range cycles {
+		envID := fmt.Sprintf("fast-reconnect-%d", cycle)
+		pushDone := make(chan error, 1)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, err := rm.Push(ctx, &envelopes.Envelope{V: 1, ID: envID, Type: "triage"})
+			pushDone <- err
+		}()
+
+		// First connection of the cycle; every cycle starts with no tab attached.
+		first := dialTab(t, base, rm.ID, "flaky-tab")
+		firstFrame := readFrame(t, first, 5*time.Second)
+		if firstFrame["envelopeId"] != envID {
+			t.Fatalf("cycle %d: first frame = %+v", cycle, firstFrame)
+		}
+
+		// The socket dies and the tab redials at once. Nothing waits for the
+		// server to detach the old connection.
+		_ = first.CloseNow()
+		again := dialTab(t, base, rm.ID, "flaky-tab")
+		replayed := readFrame(t, again, 5*time.Second)
+		if replayed["envelopeId"] != envID {
+			t.Fatalf("cycle %d: replayed frame = %+v", cycle, replayed)
+		}
+		writeFrame(t, again, map[string]any{
+			"type": "response", "envelopeId": envID, "revision": replayed["revision"],
+			"response": map[string]any{
+				"v": 1, "envelopeId": envID, "kind": "data", "status": "submitted",
+				"payload": map[string]any{"cycle": cycle},
+			},
+		})
+		select {
+		case err := <-pushDone:
+			if err != nil {
+				t.Fatalf("cycle %d: push after fast reconnect: %v", cycle, err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("cycle %d: answer never settled (lease refused?)", cycle)
+		}
+		_ = again.CloseNow()
+		waitForConnections(t, rm, 0, 5*time.Second)
 	}
 }
 
