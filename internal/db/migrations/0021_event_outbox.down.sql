@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS event_outbox_skipped;
 DROP TABLE IF EXISTS event_outbox_state;
 DROP INDEX IF EXISTS event_outbox_subject;
 DROP INDEX IF EXISTS event_outbox_pending;

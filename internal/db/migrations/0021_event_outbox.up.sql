@@ -24,3 +24,16 @@ CREATE TABLE event_outbox_state (
   last_sequence INTEGER NOT NULL DEFAULT 0
 );
 INSERT INTO event_outbox_state (id, generation) VALUES (1, (random() & 9007199254740991) + 1);
+
+-- A transition whose event could not be mapped still commits; this row, written
+-- in the same transaction, makes the gap repairable. Error class only, never
+-- raw text.
+CREATE TABLE event_outbox_skipped (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  error_class TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  repaired_at TEXT NULL
+);
+CREATE INDEX event_outbox_skipped_open ON event_outbox_skipped (id) WHERE repaired_at IS NULL;
