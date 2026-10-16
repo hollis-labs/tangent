@@ -146,6 +146,7 @@ func TestRelayQuarantinesPoisonRowAndDeliversTheNext(t *testing.T) {
 
 	r := NewRelay(d, l, time.Hour)
 	r.maxFailures = 3
+	r.minSpan = 0
 	for attempt := 1; attempt < 3; attempt++ {
 		n, err := r.Drain(ctx)
 		if err == nil || n != 0 {
@@ -178,5 +179,78 @@ func TestRelayQuarantinesPoisonRowAndDeliversTheNext(t *testing.T) {
 	// Quarantined rows leave the pending set for good.
 	if n, err := r.Drain(ctx); err != nil || n != 0 {
 		t.Fatalf("after quarantine Drain = %d, %v", n, err)
+	}
+}
+
+// Lock contention is not a rejection: a good row that keeps hitting SQLITE_BUSY
+// (far more than maxFailures times, and past the minimum span) is never
+// quarantined, and is delivered once the contention clears.
+func TestRelayDoesNotQuarantineTransientFailures(t *testing.T) {
+	ctx := context.Background()
+	l, d := newLog(t)
+	enqueue(t, l, "evt_busy")
+
+	now := time.Now()
+	r := NewRelay(d, l, time.Hour)
+	r.maxFailures = 3
+	r.minSpan = time.Minute
+	r.clock = func() time.Time { return now }
+	busy := true
+	r.appendHook = func(string) error {
+		if busy {
+			return errors.New("database is locked (5) (SQLITE_BUSY)")
+		}
+		return nil
+	}
+	for i := range 12 {
+		now = now.Add(30 * time.Second) // well past the minimum span
+		if n, err := r.Drain(ctx); err == nil || n != 0 {
+			t.Fatalf("attempt %d: Drain = %d, %v; want a retryable error", i, n, err)
+		}
+	}
+	var skipped int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM event_outbox_skipped`).Scan(&skipped)
+	var open int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM event_outbox WHERE appended_at IS NULL`).Scan(&open)
+	if skipped != 0 || open != 1 {
+		t.Fatalf("skipped=%d open=%d; a transient failure must not quarantine", skipped, open)
+	}
+	busy = false
+	if n, err := r.Drain(ctx); err != nil || n != 1 {
+		t.Fatalf("after contention Drain = %d, %v", n, err)
+	}
+}
+
+// Even a real rejection waits for the minimum span: five fast failures are not
+// enough.
+func TestRelayQuarantineNeedsTheMinimumSpan(t *testing.T) {
+	ctx := context.Background()
+	l, d := newLog(t)
+	if _, err := d.Exec(`INSERT INTO event_outbox (event_id, stream, kind, subject_type, subject_id, envelope_json, created_at)
+		VALUES ('evt_poison', '', 'k', 'approval', 'i', '{}', ?)`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	r := NewRelay(d, l, time.Hour)
+	r.maxFailures = 3
+	r.minSpan = time.Minute
+	r.clock = func() time.Time { return now }
+	for range 6 {
+		if _, err := r.Drain(ctx); err == nil {
+			t.Fatal("poison row should keep failing")
+		}
+	}
+	var skipped int
+	_ = d.QueryRow(`SELECT COUNT(*) FROM event_outbox_skipped`).Scan(&skipped)
+	if skipped != 0 {
+		t.Fatalf("quarantined after %d fast failures", 6)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := r.Drain(ctx); err != nil {
+		t.Fatalf("Drain after the span = %v; want the poison row quarantined", err)
+	}
+	_ = d.QueryRow(`SELECT COUNT(*) FROM event_outbox_skipped`).Scan(&skipped)
+	if skipped != 1 {
+		t.Fatalf("skipped = %d, want 1", skipped)
 	}
 }

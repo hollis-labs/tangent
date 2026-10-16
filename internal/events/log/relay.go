@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	streamhub "github.com/hollis-labs/libs/ui/ui-go/streamhub"
@@ -17,6 +18,11 @@ const DefaultRelayTick = 2 * time.Second
 // DefaultMaxRowFailures is how many consecutive failed deliveries of one
 // outbox row the relay tolerates before it quarantines the row and moves on.
 const DefaultMaxRowFailures = 5
+
+// DefaultMinQuarantineSpan is how long a row must keep failing, measured from
+// its first failure, before it can be quarantined. Short lock contention (a
+// backup, a long writer) must never drop a good row.
+const DefaultMinQuarantineSpan = time.Minute
 
 // Bounded failure classes: only these reach the logs and event_outbox_skipped,
 // never a raw error string (it can echo payload values).
@@ -57,7 +63,12 @@ type Relay struct {
 	logger *slog.Logger
 	// maxFailures consecutive failures on one row quarantine it.
 	maxFailures int
-	failures    map[string]int
+	minSpan     time.Duration
+	failures    map[string]*failState
+	// clock times failure spans; tests replace it.
+	clock func() time.Time
+	// appendHook runs before each Append; tests use it to inject errors.
+	appendHook func(eventID string) error
 	// afterAppend runs between a successful Append and the appended_at stamp;
 	// tests use it to simulate a crash at the worst moment.
 	afterAppend func(eventID string) error
@@ -73,7 +84,8 @@ func NewRelay(db *sql.DB, l *Log, tick time.Duration) *Relay {
 	}
 	return &Relay{
 		db: db, log: l, tick: tick, batch: 256, wakeCh: make(chan struct{}, 1),
-		logger: slog.Default(), maxFailures: DefaultMaxRowFailures, failures: make(map[string]int),
+		logger: slog.Default(), maxFailures: DefaultMaxRowFailures, minSpan: DefaultMinQuarantineSpan,
+		failures: make(map[string]*failState), clock: time.Now,
 	}
 }
 
@@ -110,6 +122,11 @@ func (r *Relay) Run(ctx context.Context) error {
 	}
 }
 
+type failState struct {
+	n     int
+	first time.Time
+}
+
 type outboxRow struct {
 	eventID, stream, kind, subjectType, subjectID string
 	envelope                                      []byte
@@ -132,11 +149,21 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 				if ctx.Err() != nil || errors.Is(err, streamhub.ErrClosed) {
 					return delivered, err
 				}
-				r.failures[row.eventID]++
-				n := r.failures[row.eventID]
+				if !countsTowardQuarantine(err) {
+					// Transient or post-append failures just retry: the row
+					// may be fine, or already delivered.
+					r.logger.Warn("event relay: delivery failed; will retry", "event_id", row.eventID, "class", errClass(err))
+					return delivered, err
+				}
+				st := r.failures[row.eventID]
+				if st == nil {
+					st = &failState{first: r.clock()}
+					r.failures[row.eventID] = st
+				}
+				st.n++
 				r.logger.Warn("event relay: delivery failed", "event_id", row.eventID,
-					"class", errClass(err), "consecutive_failures", n)
-				if n < r.maxFailures {
+					"class", errClass(err), "consecutive_failures", st.n)
+				if st.n < r.maxFailures || r.clock().Sub(st.first) < r.minSpan {
 					// Stop here so order is never skipped; retried next pass.
 					return delivered, err
 				}
@@ -190,6 +217,30 @@ func errClass(err error) string {
 type deliveryError struct {
 	class string
 	err   error
+	// reject marks a real rejection by the Log, as opposed to a transient or
+	// post-append failure.
+	reject bool
+}
+
+// countsTowardQuarantine is true only for an Append the Log genuinely rejected.
+// Lock contention, cancellation, a closed log and a failed appended_at stamp
+// (the append already succeeded) always retry.
+func countsTowardQuarantine(err error) bool {
+	var d *deliveryError
+	return errors.As(err, &d) && d.reject
+}
+
+func isTransient(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, streamhub.ErrClosed) {
+		return true
+	}
+	msg := err.Error()
+	for _, s := range []string{"SQLITE_BUSY", "SQLITE_LOCKED", "database is locked", "database table is locked"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *deliveryError) Error() string { return e.err.Error() }
@@ -226,10 +277,18 @@ func (r *Relay) quarantine(ctx context.Context, row outboxRow) error {
 }
 
 func (r *Relay) deliver(ctx context.Context, row outboxRow) error {
-	if _, err := r.log.AppendMeta(ctx, row.stream, Meta{
-		EventID: row.eventID, SubjectType: row.subjectType, SubjectID: row.subjectID,
-	}, streamhub.Event{Name: row.kind, Data: row.envelope}); err != nil {
-		return &deliveryError{class: classAppendRejected, err: fmt.Errorf("event relay: append %s: %w", row.eventID, err)}
+	var aerr error
+	if r.appendHook != nil {
+		aerr = r.appendHook(row.eventID)
+	}
+	if aerr == nil {
+		_, aerr = r.log.AppendMeta(ctx, row.stream, Meta{
+			EventID: row.eventID, SubjectType: row.subjectType, SubjectID: row.subjectID,
+		}, streamhub.Event{Name: row.kind, Data: row.envelope})
+	}
+	if aerr != nil {
+		return &deliveryError{class: classAppendRejected, reject: !isTransient(aerr),
+			err: fmt.Errorf("event relay: append %s: %w", row.eventID, aerr)}
 	}
 	if r.afterAppend != nil {
 		if err := r.afterAppend(row.eventID); err != nil {
