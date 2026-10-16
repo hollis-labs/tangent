@@ -301,7 +301,7 @@ interactions, and terminal resolutions. Queue positions are derived from that
 same immutable snapshot, avoiding mixed-revision projections without loading
 delivery and audit journals that the operator view does not render.
 
-`GET /api/hitl/events` carries revision hints only. Each hint causes the SPA to
+`GET /api/hitl/events` always carries revision hints. Each hint causes the SPA to
 reload durable state; an event is never treated as the state itself. Lost or
 replaced connections therefore cannot resolve, reorder, or discard work, and a
 stale tab receives an explicit conflict instead of overwriting the winning
@@ -309,6 +309,18 @@ terminal outcome. A failed durable refresh closes the stream so the browser
 reports a degraded connection and retries. This channel is intentionally
 separate from both per-room `/ws` and the four caller-facing
 `tangent_hitl_*` MCP tools.
+
+When `server.Config.HITLEvents` supplies a log, the same endpoint also emits
+typed envelopes with SSE ids of `<epoch>:<seq>`; the envelope's own id stays
+unchanged. `Last-Event-ID` takes precedence over `?after=` for ordered replay,
+while a reader without a cursor starts at the current head. The handler
+subscribes before replay and drains the log on notifications and periodic
+polls. Pruned, foreign-epoch, and ahead-of-head cursors receive a `gap` event
+containing `reason`, `earliest_available`, `high_water`, and `epoch`, then
+continue from the high-water cursor. Malformed query cursors receive HTTP 400;
+malformed reconnect headers receive an `invalid_cursor` gap so EventSource
+can recover. A gap also resets the SSE id to `high_water`. A nil log keeps the
+revision-only behavior, and the SPA continues using revision hints.
 
 ### Durable Docs operator surface
 

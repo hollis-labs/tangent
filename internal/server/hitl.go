@@ -42,6 +42,7 @@ type hitlHTTPHandler struct {
 	service       HITLService
 	eventPoll     time.Duration
 	eventLifetime time.Duration
+	eventStream   *HITLEventStream
 }
 
 type presentCommand struct {
@@ -161,17 +162,32 @@ func canonicalConnectionID(r *http.Request, clientLabel string) string {
 	return "browser-" + hex.EncodeToString(digest[:6])
 }
 
-// events sends only durable revision notifications. The browser always
-// follows a notification with Inbox(), so a dropped/reordered event cannot
-// become an alternate source of state. The bounded stream lifetime stays
-// below the server write timeout; EventSource reconnects automatically.
+// events preserves revision hints for the browser and optionally adds typed
+// replayable events. Neither stream replaces the durable Inbox() projection.
+// The bounded lifetime also covers replay; EventSource reconnects automatically.
 func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	inbox, err := h.service.Inbox(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), h.eventLifetime)
+	defer cancel()
+	stream, err := h.eventStream.open(ctx, r)
+	if err != nil {
+		if errors.Is(err, errHITLEventCursor) {
+			http.Error(w, errHITLEventCursor.Error(), http.StatusBadRequest)
+		} else {
+			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+		}
+		return
+	}
+	defer stream.close()
+	var notify <-chan struct{}
+	if stream != nil {
+		notify = stream.notify
+	}
+	inbox, err := h.service.Inbox(ctx)
 	if err != nil {
 		writeHITLError(w, err)
 		return
@@ -184,37 +200,49 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	flusher.Flush()
+	if err := stream.replay(ctx, w); err != nil {
+		return
+	}
+	flusher.Flush()
 
 	lastRevision := inbox.Revision
 	poll := time.NewTicker(h.eventPoll)
 	keepAlive := time.NewTicker(15 * time.Second)
-	lifetime := time.NewTimer(h.eventLifetime)
 	defer poll.Stop()
 	defer keepAlive.Stop()
-	defer lifetime.Stop()
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
-		case <-lifetime.C:
-			return
+		case _, open := <-notify:
+			if !open {
+				notify = nil
+				continue
+			}
+			if err := stream.replay(ctx, w); err != nil {
+				return
+			}
+			flusher.Flush()
 		case <-keepAlive.C:
 			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()
 		case <-poll.C:
-			current, loadErr := h.service.Inbox(r.Context())
+			current, loadErr := h.service.Inbox(ctx)
 			if loadErr != nil {
 				// Closing the stream makes EventSource surface onerror and retry;
 				// the browser never mistakes stale data for a healthy connection.
 				return
 			}
-			if current.Revision == lastRevision {
-				continue
+			if current.Revision != lastRevision {
+				lastRevision = current.Revision
+				if err := writeHITLRevisionEvent(w, current.Revision); err != nil {
+					return
+				}
 			}
-			lastRevision = current.Revision
-			if err := writeHITLRevisionEvent(w, current.Revision); err != nil {
+			// Polling also catches coalesced/lost wakeups and supports a nil notifier.
+			if err := stream.replay(ctx, w); err != nil {
 				return
 			}
 			flusher.Flush()
