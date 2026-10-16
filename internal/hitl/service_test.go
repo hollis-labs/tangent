@@ -504,22 +504,23 @@ func TestAttentionConcurrentAcknowledgementHasOneImmutableWinner(t *testing.T) {
 			winnerResponse = string(current.outcome.Resolution.Response)
 			continue
 		}
-		var stale *StaleRevisionError
-		if !errors.As(current.err, &stale) || stale.TerminalOutcome == nil ||
-			stale.TerminalOutcome.Resolution == nil {
-			t.Errorf("losing acknowledgement error = %#v", current.err)
+		// Whether the loser read before or after the winner committed, it is
+		// told another terminal outcome won, and is handed that outcome.
+		var conflict *TerminalConflictError
+		if !errors.As(current.err, &conflict) || conflict.Outcome.Resolution == nil {
+			t.Errorf("losing acknowledgement error = %#v, want a TerminalConflictError carrying the winner", current.err)
 			continue
 		}
-		loserResponse = string(stale.TerminalOutcome.Resolution.Response)
+		loserResponse = string(conflict.Outcome.Resolution.Response)
 		if loserResponse == "" {
-			t.Errorf("stale outcome omitted immutable winner response: %#v", stale.TerminalOutcome)
+			t.Errorf("terminal conflict omitted immutable winner response: %#v", conflict.Outcome)
 		}
 	}
 	if successes != 1 {
 		t.Fatalf("attention acknowledgement successes = %d, want 1", successes)
 	}
 	if loserResponse != winnerResponse {
-		t.Fatalf("stale acknowledgement response = %s, want winner %s", loserResponse, winnerResponse)
+		t.Fatalf("conflicting acknowledgement response = %s, want winner %s", loserResponse, winnerResponse)
 	}
 	final, err := service.InspectOperatorItem(context.Background(), handle.ItemID)
 	if err != nil || final.TerminalOutcome == nil || final.TerminalOutcome.Resolution == nil ||
