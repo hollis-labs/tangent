@@ -121,27 +121,139 @@ func TestVaultIsOneShotAndExpires(t *testing.T) {
 	}
 }
 
-func TestDeliverRestoresOnceThenOnlyTombstones(t *testing.T) {
+func storedFrame(t *testing.T, key string) (json.RawMessage, Secrets) {
+	t.Helper()
 	f := FromEnvelopeData(schemaData(t))
 	redacted, secrets := f.Redact(answers(), time.Now(), "a")
-	stored := mustJSON(map[string]any{"v": 1, "payload": map[string]any{"form_id": "f", "answers": redacted}})
-	Default.Put("env-d", secrets)
-	first, ok := Deliver("env-d", stored)
-	if !ok || strings.Count(string(first), canary) != 4 {
-		t.Fatalf("first delivery = %s ok=%v", first, ok)
+	frame := mustJSON(map[string]any{"v": 1, "payload": map[string]any{"form_id": "f", "answers": redacted}})
+	Default.Put(key, secrets)
+	return frame, secrets
+}
+
+func TestDeliverRestoresOnceToTheCreatorThenFlagsUnavailable(t *testing.T) {
+	key := Key("room-1", "env-d")
+	stored, _ := storedFrame(t, key)
+	first, status := Deliver(key, "owner", "owner", stored)
+	if status != Delivered || strings.Count(string(first), canary) != 4 {
+		t.Fatalf("first delivery = %s status=%v", first, status)
 	}
-	second, ok := Deliver("env-d", stored)
-	if ok || strings.Contains(string(second), canary) {
-		t.Fatalf("second delivery must be the tombstones: %s", second)
+	second, status := Deliver(key, "owner", "owner", stored)
+	if status != Unavailable || strings.Contains(string(second), canary) || !strings.Contains(string(second), `"secret_unavailable":true`) {
+		t.Fatalf("second delivery must flag the loss: %s status=%v", second, status)
 	}
 	if strings.Contains(string(stored), canary) {
 		t.Fatal("the stored frame must never be modified")
 	}
 }
 
-func mustJSON(v any) json.RawMessage {
-	raw, _ := json.Marshal(v)
-	return raw
+func TestDeliverRefusesAReaderWhoIsNotTheCreatorAndKeepsTheEntry(t *testing.T) {
+	key := Key("room-1", "env-other")
+	stored, _ := storedFrame(t, key)
+	out, status := Deliver(key, "someone-else", "owner", stored)
+	if status != Unavailable || strings.Contains(string(out), canary) {
+		t.Fatalf("a stranger must not get the secret: %s status=%v", out, status)
+	}
+	if _, status = Deliver(key, "owner", "owner", stored); status != Delivered {
+		t.Fatal("the stranger's read must not have consumed the creator's entry")
+	}
+}
+
+func TestDeliverIsKeyedByRoomAndEnvelopeAndNeverTakesForANonSecretFrame(t *testing.T) {
+	a, b := Key("room-a", "credentials"), Key("room-b", "credentials")
+	storedA, _ := storedFrame(t, a)
+	Default.Put(b, Secrets{"api_key": "OTHER-ROOM-SECRET"})
+	got, status := Deliver(a, "o", "o", storedA)
+	if status != Delivered || strings.Contains(string(got), "OTHER-ROOM-SECRET") {
+		t.Fatalf("room a read must not see room b: %s", got)
+	}
+	// A frame with no tombstones does not consume the entry.
+	plain := mustJSON(map[string]any{"payload": map[string]any{"answers": map[string]any{"name": "x"}}})
+	if _, status = Deliver(b, "o", "o", plain); status != NotApplicable {
+		t.Fatalf("status = %v, want NotApplicable", status)
+	}
+	if _, ok := Default.Take(b); !ok {
+		t.Fatal("a non-secret read destroyed another interaction's entry")
+	}
+}
+
+func TestRestoreSkipsAbsentSlots(t *testing.T) {
+	out := Secrets{"gone": "x", "sec.gone": "y", "rows[3].t": "z"}.Restore(map[string]any{"name": "v"})
+	if len(out) != 1 || out["name"] != "v" {
+		t.Fatalf("restore invented keys: %v", out)
+	}
+}
+
+func TestVaultSweepsOnTakeAndCapsItsSize(t *testing.T) {
+	v := NewVault(time.Minute)
+	v.max = 2
+	now := time.Unix(100, 0)
+	v.now = func() time.Time { return now }
+	v.Put("a", Secrets{"k": "1"})
+	now = now.Add(time.Second)
+	v.Put("b", Secrets{"k": "2"})
+	now = now.Add(time.Second)
+	v.Put("c", Secrets{"k": "3"})
+	if v.Len() != 2 {
+		t.Fatalf("len = %d, want the cap of 2", v.Len())
+	}
+	if _, ok := v.Take("a"); ok {
+		t.Fatal("the oldest entry should have been evicted")
+	}
+	now = now.Add(2 * time.Minute)
+	if v.Len() != 0 {
+		t.Fatal("expired entries must be swept on read, not only on Put")
+	}
+}
+
+func TestPasswordTypedFieldsAreSecretWithoutTheFlag(t *testing.T) {
+	var data map[string]any
+	_ = json.Unmarshal([]byte(`{"schema":{"fields":[{"id":"pw","type":"password"}],"sections":[{"id":"s","fields":[{"id":"t","type":"password"}]}]}}`), &data)
+	f := FromEnvelopeData(data)
+	if !f.Top["pw"] || !f.Sections["s"]["t"] {
+		t.Fatalf("fields = %+v", f)
+	}
+}
+
+func TestNonStringSecretsAreRedactedToo(t *testing.T) {
+	f := FromEnvelopeData(schemaData(t))
+	out, secrets := f.Redact(map[string]any{"api_key": 123456, "one": map[string]any{"pw": []any{"a", "b"}}}, time.Now(), "a")
+	raw := string(mustJSON(out))
+	if strings.Contains(raw, "123456") || strings.Contains(raw, `"a","b"`) || len(secrets) != 2 {
+		t.Fatalf("out=%s secrets=%v", raw, secrets)
+	}
+	back := secrets.Restore(out)
+	if string(mustJSON(back)) != `{"api_key":123456,"one":{"pw":["a","b"]}}` {
+		t.Fatalf("restore = %s", mustJSON(back))
+	}
+}
+
+func TestValidateRefusesSecretsItCannotProtect(t *testing.T) {
+	bad := map[string]string{
+		"number":            `{"schema":{"fields":[{"id":"pin","type":"number","secret":true}]}}`,
+		"select":            `{"schema":{"fields":[{"id":"x","type":"select","secret":true}]}}`,
+		"no id":             `{"schema":{"fields":[{"type":"text","secret":true}]}}`,
+		"anonymous section": `{"schema":{"sections":[{"fields":[{"id":"t","type":"text","secret":true}]}]}}`,
+	}
+	for name, raw := range bad {
+		var data map[string]any
+		_ = json.Unmarshal([]byte(raw), &data)
+		if err := Validate(data); err == nil {
+			t.Errorf("%s: want a refusal", name)
+		}
+	}
+	if err := Validate(schemaData(t)); err != nil {
+		t.Fatalf("a supported schema must pass: %v", err)
+	}
+}
+
+func TestBlankDraftAndCloneFailClosed(t *testing.T) {
+	f := FromEnvelopeData(schemaData(t))
+	if got := f.BlankDraft(json.RawMessage(`{not json`)); string(got) != `{}` {
+		t.Fatalf("an unreadable draft must carry nothing, got %s", got)
+	}
+	if got := cloneMap(map[string]any{"bad": make(chan int)}); len(got) != 0 {
+		t.Fatalf("a failed clone must not alias the original: %v", got)
+	}
 }
 
 func TestTombstoneCarriesNoDigestOfTheSecret(t *testing.T) {
@@ -177,4 +289,9 @@ func TestPrefilledFindsASeededSecretAndNamesOnlyThePath(t *testing.T) {
 			t.Errorf("%s: Prefilled = %q, want none", name, got)
 		}
 	}
+}
+
+func mustJSON(v any) json.RawMessage {
+	raw, _ := json.Marshal(v)
+	return raw
 }

@@ -12,6 +12,7 @@ package formsecret
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,74 @@ type Fields struct {
 // Empty reports whether the schema has no secret field.
 func (f Fields) Empty() bool { return len(f.Top) == 0 && len(f.Sections) == 0 }
 
+// isSecret reports whether a schema field holds a secret: it says so
+// ("secret": true), or it is a password field, which the UI masks and so must
+// not be stored either.
+func isSecret(field map[string]any) bool {
+	if secret, _ := field["secret"].(bool); secret {
+		return true
+	}
+	kind, _ := field["type"].(string)
+	return kind == "password"
+}
+
+// secretTypes are the field types a secret may use: the ones that hold one
+// string the participant typed.
+var secretTypes = map[string]bool{"": true, "text": true, "textarea": true, "password": true}
+
+// Validate refuses a schema this package cannot protect: a secret field of a
+// type that is not a typed string (a secret number, select or checkbox), or a
+// secret field inside a section that has no id to address it by. It names
+// fields by position and id, never by value.
+func Validate(data map[string]any) error {
+	schema, _ := data["schema"].(map[string]any)
+	check := func(where string, raw any) error {
+		list, _ := raw.([]any)
+		for i, item := range list {
+			field, _ := item.(map[string]any)
+			if !isSecret(field) {
+				continue
+			}
+			kind, _ := field["type"].(string)
+			if !secretTypes[kind] {
+				return fmt.Errorf("%s[%d]: a secret field must be type text, textarea or password, not %q", where, i, kind)
+			}
+			if id, _ := field["id"].(string); id == "" {
+				return fmt.Errorf("%s[%d]: a secret field needs an id", where, i)
+			}
+		}
+		return nil
+	}
+	if err := check("schema.fields", schema["fields"]); err != nil {
+		return err
+	}
+	sections, _ := schema["sections"].([]any)
+	for i, raw := range sections {
+		section, _ := raw.(map[string]any)
+		where := fmt.Sprintf("schema.sections[%d].fields", i)
+		if err := check(where, section["fields"]); err != nil {
+			return err
+		}
+		if id, _ := section["id"].(string); id == "" && len(collectIDs(section["fields"])) > 0 {
+			return fmt.Errorf("schema.sections[%d]: a section with a secret field needs an id", i)
+		}
+	}
+	return nil
+}
+
+func collectIDs(raw any) []string {
+	var ids []string
+	list, _ := raw.([]any)
+	for _, item := range list {
+		field, _ := item.(map[string]any)
+		if isSecret(field) {
+			id, _ := field["id"].(string)
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // FromEnvelopeData reads the secret fields from a form-collect envelope's data
 // (the map under "data"), looking at data.schema.fields and
 // data.schema.sections[].fields.
@@ -74,7 +143,7 @@ func FromEnvelopeData(data map[string]any) Fields {
 		list, _ := raw.([]any)
 		for _, item := range list {
 			field, _ := item.(map[string]any)
-			if secret, _ := field["secret"].(bool); secret {
+			if isSecret(field) {
 				if id, _ := field["id"].(string); id != "" {
 					ids[id] = true
 				}
@@ -97,7 +166,7 @@ func FromEnvelopeData(data map[string]any) Fields {
 // Secrets are the values taken out of one answers object, keyed the way the
 // answers were: "field" for a top-level field, "section.field" for a
 // section's, and "section[2].field" for a repeatable section's row.
-type Secrets map[string]string
+type Secrets map[string]any
 
 // Redact returns a deep copy of answers with every secret value replaced by a
 // tombstone, and the removed values. The tombstone carries no digest of the
@@ -106,11 +175,10 @@ func (f Fields) Redact(answers map[string]any, at time.Time, actor string) (map[
 	secrets := Secrets{}
 	out := cloneMap(answers)
 	tomb := func(path string, value any) any {
-		text, _ := value.(string)
-		if text == "" {
+		if isEmptyAnswer(value) {
 			return value // nothing was typed: nothing to hide, and an empty answer stays empty
 		}
-		secrets[path] = text
+		secrets[path] = value
 		return map[string]any{
 			"redacted": true, "policy_ref": PolicyRef, "at": at.UTC().Format(time.RFC3339),
 			"content_digest": NoDigest, "actor_ref": actor,
@@ -141,6 +209,18 @@ func (f Fields) Redact(answers map[string]any, at time.Time, actor string) (map[
 		}
 	}
 	return out, secrets
+}
+
+// isEmptyAnswer reports an answer that holds nothing to protect. Anything else,
+// whatever its JSON type, is a value.
+func isEmptyAnswer(v any) bool {
+	switch typed := v.(type) {
+	case nil:
+		return true
+	case string:
+		return typed == ""
+	}
+	return false
 }
 
 // Blank returns a deep copy of answers with every secret field emptied. It is
@@ -218,7 +298,7 @@ func (f Fields) BlankDraft(draft json.RawMessage) json.RawMessage {
 	}
 	var value map[string]any
 	if json.Unmarshal(draft, &value) != nil {
-		return draft
+		return json.RawMessage(`{}`) // fail closed: an unreadable draft carries nothing
 	}
 	if answers, ok := value["answers"].(map[string]any); ok {
 		value["answers"] = f.Blank(answers)
@@ -235,7 +315,7 @@ func (f Fields) BlankDraft(draft json.RawMessage) json.RawMessage {
 	}
 	raw, err := json.Marshal(value)
 	if err != nil {
-		return draft
+		return json.RawMessage(`{}`)
 	}
 	return raw
 }
@@ -284,6 +364,7 @@ func (f Fields) Prefilled(data map[string]any) string {
 type Vault struct {
 	mu    sync.Mutex
 	ttl   time.Duration
+	max   int
 	now   func() time.Time
 	items map[string]entry
 }
@@ -293,16 +374,21 @@ type entry struct {
 	expires time.Time
 }
 
-// NewVault returns a Vault whose entries expire after ttl.
+// NewVault returns a Vault whose entries expire after ttl and which holds at
+// most max entries (the oldest go first).
 func NewVault(ttl time.Duration) *Vault {
-	return &Vault{ttl: ttl, now: time.Now, items: map[string]entry{}}
+	return &Vault{ttl: ttl, max: 1024, now: time.Now, items: map[string]entry{}}
 }
 
 // Default is the process-wide vault: one Tangent process owns the waiting
 // callers and the participants answering them.
 var Default = NewVault(15 * time.Minute)
 
-// Put parks secrets under key (the envelope id), replacing any earlier entry.
+// Key names a vault entry. Envelope ids are unique only within a room, so the
+// room is part of the key.
+func Key(roomID, envelopeID string) string { return roomID + "\x00" + envelopeID }
+
+// Put parks secrets under key, replacing any earlier entry for the same key.
 func (v *Vault) Put(key string, s Secrets) {
 	if len(s) == 0 {
 		return
@@ -310,6 +396,9 @@ func (v *Vault) Put(key string, s Secrets) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.sweepLocked()
+	for len(v.items) >= v.max {
+		v.evictOldestLocked()
+	}
 	v.items[key] = entry{secrets: s, expires: v.now().Add(v.ttl)}
 }
 
@@ -324,15 +413,21 @@ func (v *Vault) Drop(key string) {
 func (v *Vault) Take(key string) (Secrets, bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.sweepLocked()
 	e, ok := v.items[key]
 	if !ok {
 		return nil, false
 	}
 	delete(v.items, key)
-	if !v.now().Before(e.expires) {
-		return nil, false
-	}
 	return e.secrets, true
+}
+
+// Len reports how many entries are parked.
+func (v *Vault) Len() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.sweepLocked()
+	return len(v.items)
 }
 
 func (v *Vault) sweepLocked() {
@@ -344,6 +439,99 @@ func (v *Vault) sweepLocked() {
 	}
 }
 
+func (v *Vault) evictOldestLocked() {
+	var oldest string
+	var at time.Time
+	for k, e := range v.items {
+		if oldest == "" || e.expires.Before(at) {
+			oldest, at = k, e.expires
+		}
+	}
+	delete(v.items, oldest)
+}
+
+// Status is what Deliver did with a stored response.
+type Status int
+
+const (
+	// NotApplicable: the response holds no secret tombstone; it is unchanged.
+	NotApplicable Status = iota
+	// Delivered: the parked values were put back into the returned response.
+	Delivered
+	// Unavailable: the response holds tombstones but the values cannot be
+	// handed over (already delivered, expired, lost in a restart, or the
+	// reader is not the creating caller). The returned response says so in
+	// meta.secret_unavailable and the caller must re-request.
+	Unavailable
+)
+
+// Deliver puts the parked secrets for key back into a stored response frame
+// ({"payload":{"answers":{...}}}). Only the creating caller gets them: reader
+// and owner are the requester scope of the read and the interaction's caller
+// scope. The entry is taken only after the frame is confirmed to hold secret
+// tombstones and the reader is the owner, so no other read can destroy it.
+func Deliver(key, reader, owner string, response json.RawMessage) (json.RawMessage, Status) {
+	if key == "" || len(response) == 0 {
+		return response, NotApplicable
+	}
+	var frame map[string]any
+	if json.Unmarshal(response, &frame) != nil {
+		return response, NotApplicable
+	}
+	payload, _ := frame["payload"].(map[string]any)
+	answers, _ := payload["answers"].(map[string]any)
+	if answers == nil || !hasTombstone(answers) {
+		return response, NotApplicable
+	}
+	unavailable := func() (json.RawMessage, Status) {
+		meta, _ := frame["meta"].(map[string]any)
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		meta["secret_unavailable"] = true
+		frame["meta"] = meta
+		raw, err := json.Marshal(frame)
+		if err != nil {
+			return response, Unavailable
+		}
+		return raw, Unavailable
+	}
+	if reader == "" || reader != owner {
+		return unavailable()
+	}
+	secrets, ok := Default.Take(key)
+	if !ok {
+		return unavailable()
+	}
+	payload["answers"] = secrets.Restore(answers)
+	raw, err := json.Marshal(frame)
+	if err != nil {
+		return unavailable()
+	}
+	return raw, Delivered
+}
+
+func hasTombstone(v any) bool {
+	switch typed := v.(type) {
+	case map[string]any:
+		if IsTombstone(typed) {
+			return true
+		}
+		for _, child := range typed {
+			if hasTombstone(child) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if hasTombstone(child) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // --- helpers ----------------------------------------------------------------
 
 func cloneMap(in map[string]any) map[string]any {
@@ -352,24 +540,26 @@ func cloneMap(in map[string]any) map[string]any {
 	}
 	raw, err := json.Marshal(in)
 	if err != nil {
-		return in
+		return map[string]any{} // fail closed: never hand back the aliased original
 	}
 	var out map[string]any
 	if json.Unmarshal(raw, &out) != nil {
-		return in
+		return map[string]any{}
 	}
 	return out
 }
 
 // setPath writes value at "field", "section.field" or "section[i].field".
 // Field and section ids are assumed not to contain "." or "[".
-func setPath(answers map[string]any, path, value string) {
+func setPath(answers map[string]any, path string, value any) {
 	if answers == nil {
 		return
 	}
 	section, field, nested := strings.Cut(path, ".")
 	if !nested {
-		answers[path] = value
+		if _, present := answers[path]; present {
+			answers[path] = value
+		}
 		return
 	}
 	if name, rest, repeated := strings.Cut(section, "["); repeated {
@@ -379,41 +569,15 @@ func setPath(answers map[string]any, path, value string) {
 			return
 		}
 		if row, _ := rows[n].(map[string]any); row != nil {
-			row[field] = value
+			if _, present := row[field]; present {
+				row[field] = value
+			}
 		}
 		return
 	}
 	if row, _ := answers[section].(map[string]any); row != nil {
-		row[field] = value
+		if _, present := row[field]; present {
+			row[field] = value
+		}
 	}
-}
-
-// Deliver puts the parked secrets for key back into a stored response frame
-// ({"payload":{"answers":{...}}}) and reports whether it did. It takes the
-// entry, so only the first caller to read the outcome gets the values; every
-// later read sees the stored tombstones. A response with nothing parked is
-// returned unchanged.
-func Deliver(key string, response json.RawMessage) (json.RawMessage, bool) {
-	if key == "" || len(response) == 0 {
-		return response, false
-	}
-	secrets, ok := Default.Take(key)
-	if !ok {
-		return response, false
-	}
-	var frame map[string]any
-	if json.Unmarshal(response, &frame) != nil {
-		return response, false
-	}
-	payload, _ := frame["payload"].(map[string]any)
-	answers, _ := payload["answers"].(map[string]any)
-	if answers == nil {
-		return response, false
-	}
-	payload["answers"] = secrets.Restore(answers)
-	raw, err := json.Marshal(frame)
-	if err != nil {
-		return response, false
-	}
-	return raw, true
 }

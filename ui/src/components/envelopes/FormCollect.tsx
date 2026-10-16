@@ -1190,12 +1190,15 @@ function SavedItemsEditor<
   );
 }
 
+/** A secret is a field flagged secret or typed password, whatever else it is. */
+function isSecretField(field: FormCollectField): boolean {
+  return field.secret === true || field.type === "password";
+}
+
+/** Only text-like secrets can be masked; the server refuses secrets of other types. */
 function isMaskedField(field: FormCollectField): boolean {
-  if (field.type === "password") {
-    return true;
-  }
   return (
-    field.secret === true && (!field.type || field.type === "text" || field.type === "textarea")
+    isSecretField(field) && (!field.type || ["text", "textarea", "password"].includes(field.type))
   );
 }
 
@@ -1210,12 +1213,12 @@ export function blankSecretAnswers(
 ): Record<string, unknown> {
   const next: Record<string, unknown> = { ...answers };
   for (const field of schema.fields ?? []) {
-    if (isMaskedField(field) && field.id in next) {
+    if (isSecretField(field) && field.id in next) {
       next[field.id] = "";
     }
   }
   for (const section of schema.sections ?? []) {
-    const secretIDs = section.fields.filter(isMaskedField).map((field) => field.id);
+    const secretIDs = section.fields.filter(isSecretField).map((field) => field.id);
     if (secretIDs.length === 0) {
       continue;
     }
@@ -1249,6 +1252,10 @@ function normalizeAnswers(
   for (const field of schema.fields ?? []) {
     if (next[field.id] === undefined) {
       next[field.id] = defaultFieldValue(field);
+    } else if (isSecretField(field) && typeof next[field.id] === "object") {
+      // A stored secret comes back as a redaction tombstone object; the field
+      // shows empty rather than "[object Object]".
+      next[field.id] = "";
     }
   }
   for (const section of schema.sections ?? []) {

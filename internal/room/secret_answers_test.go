@@ -73,11 +73,12 @@ func TestSecretAnswersNeverReachTheDispositionOrADraft(t *testing.T) {
 
 	// The vault, not the store, holds the value, and gives it up once.
 	frame := json.RawMessage(raw)
-	first, ok := formsecret.Deliver("form-secret-1", frame)
-	if !ok || !strings.Contains(string(first), secretCanary) {
-		t.Fatalf("first delivery = %s ok=%v", first, ok)
+	key := formsecret.Key(rm.ID, "form-secret-1")
+	first, status := formsecret.Deliver(key, "caller", "caller", frame)
+	if status != formsecret.Delivered || !strings.Contains(string(first), secretCanary) {
+		t.Fatalf("first delivery = %s status=%v", first, status)
 	}
-	if again, ok := formsecret.Deliver("form-secret-1", frame); ok || strings.Contains(string(again), secretCanary) {
+	if again, status := formsecret.Deliver(key, "caller", "caller", frame); status != formsecret.Unavailable || strings.Contains(string(again), secretCanary) {
 		t.Fatalf("second delivery must be tombstones only: %s", again)
 	}
 }

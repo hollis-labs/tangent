@@ -1234,11 +1234,12 @@ func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending
 	// them. The real values wait in the in-memory vault for the waiting caller.
 	nextResp, secrets := redactSecretAnswers(p.Envelope, nextResp)
 	delivered := false
+	vaultKey := formsecret.Key(r.ID, envelopeID)
 	if len(secrets) > 0 {
-		formsecret.Default.Put(envelopeID, secrets)
+		formsecret.Default.Put(vaultKey, secrets)
 		defer func() {
 			if !delivered {
-				formsecret.Default.Drop(envelopeID)
+				formsecret.Default.Drop(vaultKey)
 			}
 		}()
 	}
@@ -1273,7 +1274,7 @@ func (r *Room) settleResponse(ctx context.Context, envelopeID string, p *Pending
 			// A legacy blocked Push caller is the waiting caller: it gets the
 			// real values from this in-memory channel, once, and the vault
 			// entry (which only a durable caller reads) is dropped.
-			formsecret.Default.Drop(envelopeID)
+			formsecret.Default.Drop(vaultKey)
 			trySendResp(p.RespCh, restoreSecretAnswers(nextResp, secrets))
 			return
 		}

@@ -176,6 +176,33 @@ describe("FormCollect", () => {
       },
     };
 
+    it("treats a password-typed field as a secret without the flag", () => {
+      vi.useFakeTimers();
+      const passwordEnvelope: FormCollectEnvelope = {
+        v: 1,
+        id: "form-pw",
+        type: "tangent.form-collect",
+        data: {
+          form_id: "pw-probe",
+          schema: { fields: [{ id: "pw", type: "password", label: "Password" }] },
+        },
+      };
+      render(
+        <FormCollect
+          envelope={passwordEnvelope}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+          roomID="r"
+        />,
+      );
+      expect(screen.getByTestId("form-collect-input-pw")).toHaveAttribute("type", "password");
+      fireEvent.change(screen.getByTestId("form-collect-input-pw"), { target: { value: SECRET } });
+      vi.advanceTimersByTime(FORM_COLLECT_AUTOSAVE_DEBOUNCE_MS + 50);
+      const stored = window.localStorage.getItem(getFormCollectDraftStorageKey("r", "pw-probe"));
+      expect(stored).toBeTruthy();
+      expect(stored).not.toContain(SECRET);
+    });
+
     it("renders a secret field masked", () => {
       render(
         <FormCollect envelope={secretEnvelope} onSubmit={vi.fn()} onCancel={vi.fn()} roomID="r" />,

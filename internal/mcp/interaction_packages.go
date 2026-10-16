@@ -85,6 +85,9 @@ func (s *Server) handlePackagedRoomWorkflow(
 	// A secret field collects a value from the participant; a request must not
 	// seed one (it would be stored in the request and the room's form state).
 	if kind == formsecret.FormCollectType {
+		if schemaErr := formsecret.Validate(args.Envelope.Data); schemaErr != nil {
+			return nil, toolErrorResult(envelopes.ErrorCodeValidationFailed, fmt.Sprintf("%s: %v", kind, schemaErr))
+		}
 		if path := formsecret.FromEnvelopeData(args.Envelope.Data).Prefilled(args.Envelope.Data); path != "" {
 			return nil, toolErrorResult(
 				envelopes.ErrorCodeValidationFailed,
