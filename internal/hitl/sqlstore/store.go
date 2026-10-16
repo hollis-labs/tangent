@@ -35,7 +35,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/events"
+	tangenthitl "github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
@@ -59,13 +61,16 @@ type Store struct {
 	db        *sql.DB
 	surfaces  *interaction.Store
 	surfaceID string
+	catalog   interaction.DefinitionCatalog
 }
 
 var _ hitl.Store = (*Store)(nil)
 
-// New returns a Store over a migrated Tangent database.
-func New(db *sql.DB) *Store {
-	return &Store{db: db, surfaces: interaction.NewStore(db), surfaceID: DefaultSurfaceID}
+// New returns a Store over a migrated Tangent database. catalog resolves the
+// HITL item definition each row is pinned to; without it a row would not be a
+// HITL item to Tangent's inbox and its Resolve path, so Create refuses.
+func New(db *sql.DB, catalog interaction.DefinitionCatalog) *Store {
+	return &Store{db: db, surfaces: interaction.NewStore(db), surfaceID: DefaultSurfaceID, catalog: catalog}
 }
 
 // terminalStatesJSON is a JSON array of the lib's terminal states, derived from
@@ -282,7 +287,20 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 	if !json.Valid(rec.Request) {
 		return hitl.Record{}, false, invalid("request is not JSON")
 	}
-	if err := s.ensureSurface(ctx); err != nil {
+	if s.catalog == nil {
+		return hitl.Record{}, false, errors.New("sqlstore: no definition catalog: rows could not be resolved by Tangent")
+	}
+	binding, err := s.catalog.ResolveInteractionDefinition(ctx, interaction.DefinitionRef{
+		Kind: extensions.HITLItemEnvelopeType, Version: tangenthitl.DefinitionVersion,
+	})
+	if err != nil {
+		return hitl.Record{}, false, fmt.Errorf("sqlstore: resolve hitl item definition: %w", err)
+	}
+	// Retained before the row that pins it exists, as the native path does.
+	if err = s.catalog.RetainDefinitionMaterial(ctx, binding); err != nil {
+		return hitl.Record{}, false, fmt.Errorf("sqlstore: retain hitl item definition: %w", err)
+	}
+	if err = s.ensureSurface(ctx); err != nil {
 		return hitl.Record{}, false, err
 	}
 	policy := map[string]any{"request_digest": rec.Digest}
@@ -313,18 +331,29 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`, now, s.surfaceID, surfaceRev); err != nil {
 		return hitl.Record{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, `
-INSERT INTO interactions (id, surface_id, caller_scope, caller_authority, caller_assurance, idempotency_key,
-  surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ItemID, s.surfaceID, rec.CallerScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
-		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
-		rec.Revision+revisionBase, ts(rec.CreatedAt), now); err != nil {
-		return hitl.Record{}, false, invalid("%v", err)
+	// A row created presented is shown to the operator from the first moment, so
+	// it carries the participant binding and presentation revision the native
+	// Present writes. Tangent's Resolve refuses a row without them
+	// (interaction.ErrNotRespondable). The presentation revision is a constant
+	// 1: it is the value the inbox hands the browser back on resolve.
+	var pScope, pRef, pAuthority, pAssurance, pAt, pRevision any
+	if rec.State == hitl.StatePresented || rec.State == hitl.StateInProgress {
+		op := tangenthitl.OperatorParticipant
+		pScope, pRef, pAuthority, pAssurance = op.Scope, op.PrincipalRef, op.Authority, op.Assurance
+		pAt, pRevision = now, int64(1)
 	}
 	if _, err = tx.ExecContext(ctx, `
-INSERT INTO definition_bindings (interaction_id, publisher, kind, version, revision, source, assurance, bound_at)
-VALUES (?, 'tangent', 'hitl_item', 'v1', '1', 'go-hitl-store', ?, ?)`, rec.ItemID, callerAssurance, now); err != nil {
+INSERT INTO interactions (id, surface_id, caller_scope, caller_authority, caller_assurance, idempotency_key,
+  surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at,
+  presented_projection_revision, participant_scope, participant_ref, participant_authority, participant_assurance, presented_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rec.ItemID, s.surfaceID, rec.CallerScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
+		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
+		rec.Revision+revisionBase, ts(rec.CreatedAt), now,
+		pRevision, pScope, pRef, pAuthority, pAssurance, pAt); err != nil {
+		return hitl.Record{}, false, invalid("%v", err)
+	}
+	if err = interaction.InsertDefinitionBinding(ctx, tx, rec.ItemID, binding, rec.UpdatedAt.UTC()); err != nil {
 		return hitl.Record{}, false, err
 	}
 	if err = insertEvent(ctx, tx, s.surfaceID, rec.ItemID, "interaction."+string(rec.State), nil, rec.Revision+revisionBase, now, `{}`); err != nil {
@@ -418,6 +447,11 @@ WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, 
 	if o, ok := next.Outcome.(hitl.Resolved); ok {
 		if err = insertResolution(ctx, tx, itemID, prevRev, o.Resolution); err != nil {
 			return invalid("resolution: %v", err)
+		}
+	}
+	if next.Outcome != nil {
+		if err = queueDelivery(ctx, tx, itemID, prev.CallerScope, prevRev, next); err != nil {
+			return err
 		}
 	}
 	if err = insertEvent(ctx, tx, surfaceID, itemID, "interaction."+string(next.State), &prevRev, nextRev, at, metadata); err != nil {
@@ -600,4 +634,28 @@ func urnSegment(s string) string {
 		}
 	}
 	return string(out)
+}
+
+// queueDelivery records the durable caller-pull obligation the native terminal
+// paths write with every terminal outcome: a resolution delivery for a
+// resolution, a terminal notification for cancel, expire, supersede or fail.
+func queueDelivery(ctx context.Context, tx *sql.Tx, itemID, callerScope string, prevRev int64, next hitl.Record) error {
+	at := next.Outcome.OutcomeTime().UTC()
+	switch o := next.Outcome.(type) {
+	case hitl.Resolved:
+		return interaction.QueueResolutionDelivery(ctx, tx, itemID, o.Resolution.ResolutionID, callerScope, prevRev, at)
+	case hitl.Canceled:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "cancel",
+			interaction.InteractionStateCanceled, interaction.TerminalCause(o.Cause), prevRev, at)
+	case hitl.Expired:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "expire",
+			interaction.InteractionStateExpired, "", prevRev, at)
+	case hitl.Superseded:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "supersede",
+			interaction.InteractionStateSuperseded, "", prevRev, at)
+	case hitl.Failed:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "fail",
+			interaction.InteractionStateFailed, "", prevRev, at)
+	}
+	return nil
 }

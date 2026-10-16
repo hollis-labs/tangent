@@ -14,6 +14,8 @@ import (
 	"github.com/hollis-labs/libs/mesh/core/hitl/hitltest"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl/sqlstore"
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
@@ -34,7 +36,22 @@ func newDBStore(t *testing.T) (*sql.DB, hitl.Store) {
 	if err := tangentdb.RunMigrations(db); err != nil {
 		t.Fatal(err)
 	}
-	return db, sqlstore.New(db)
+	return db, sqlstore.New(db, newCatalog(t, db))
+}
+
+// newCatalog is the definition catalog the running service uses: it resolves
+// the HITL item definition and retains its material in the same database.
+func newCatalog(t *testing.T, db *sql.DB) interaction.DefinitionCatalog {
+	t.Helper()
+	envelopeService, err := envelope.New(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = extensions.RegisterHITLItem(envelopeService); err != nil {
+		t.Fatal(err)
+	}
+	return interaction.NewEnvelopeDefinitionCatalog(envelopeService, "sqlstore-test-host",
+		interaction.WithRetainedMaterialStore(interaction.NewStore(db)))
 }
 
 func TestStoreContract(t *testing.T) { hitltest.RunStoreContract(t, newStore) }
