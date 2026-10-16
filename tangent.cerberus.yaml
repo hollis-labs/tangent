@@ -22,10 +22,10 @@ resources:
           output: ./tangent
       command:
         - ./tangent
-      dir: /Users/chrispian/dev/hollis-labs/apps/tangent
+      dir: ~/dev/hollis-labs/apps/tangent
       env:
         TANGENT_HTTP_PORT: "7843"
-        TANGENT_DB_PATH: /Users/chrispian/dev/hollis-labs/apps/tangent/.tangent/dev.db
+        TANGENT_DB_PATH: ~/dev/hollis-labs/apps/tangent/.tangent/dev.db
         TANGENT_MANAGED_RESOURCE: tangent-dev
       health: http://127.0.0.1:7843/healthz
       mode: dev_session
