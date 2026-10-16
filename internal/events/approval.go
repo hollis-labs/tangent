@@ -39,13 +39,13 @@ const (
 	payloadSchemaResolved  = "approval.resolved@1"
 )
 
-// Approval outcomes carried by approval.resolved.
+// Approval outcomes carried by approval.resolved (the approval.resolved@1
+// vocabulary; nothing else is emitted).
 const (
 	OutcomeApproved  = "approved"
 	OutcomeDenied    = "denied"
 	OutcomeWithdrawn = "withdrawn"
 	OutcomeExpired   = "expired"
-	OutcomeFailed    = "failed"
 )
 
 // Principal is a requester or resolver. Kind and ID go into payloads (opaque
@@ -109,6 +109,19 @@ type Emitter struct {
 // its existing auth. It is also the event subject.
 func HitlRef(itemID string) string { return "msg://approval/tangent/" + itemID }
 
+// ServicePrincipal is the resolver for a close Tangent itself caused, such as an
+// item that failed.
+var ServicePrincipal = Principal{Kind: "service", ID: "tangent", URN: "msg://service/tangent/tangent", Role: "system", Assurance: "asserted"}
+
+// HasRequested reports whether approval.requested was already emitted for the
+// item, so a resolved event is never emitted for a request nobody was told of.
+func HasRequested(ctx context.Context, tx Tx, itemID string) (bool, error) {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_outbox WHERE kind = ? AND subject_id = ?`,
+		catalog.KindApprovalRequested, itemID).Scan(&n)
+	return n > 0, err
+}
+
 // Emit builds the envelope for a and inserts its outbox row in tx. A failure
 // must fail the caller's transaction so the transition and its event stay
 // atomic.
@@ -156,7 +169,7 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 		if a.Resolver.ID != "" || a.Resolver.Kind != "" {
 			candidate["resolver"] = map[string]any{"kind": a.Resolver.Kind, "id": a.Resolver.ID}
 		}
-		if a.Outcome == OutcomeExpired || a.Outcome == OutcomeFailed {
+		if a.Outcome == OutcomeExpired {
 			severity = "warning"
 		}
 	}
@@ -235,7 +248,7 @@ const (
 
 var (
 	classVocab    = map[string]bool{"approval": true}
-	outcomeVocab  = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true, OutcomeFailed: true}
+	outcomeVocab  = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
 	principalKind = map[string]bool{"operator": true, "agent": true, "service": true}
 )
 

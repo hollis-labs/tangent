@@ -43,6 +43,15 @@ func (o EventObserver) ObserveTransition(ctx context.Context, tx *sql.Tx, t inte
 		approval.Kind = catalog.KindApprovalResolved
 		approval.Outcome = terminalOutcomeName(t.To)
 		approval.Resolver = terminalResolver(t, approval.Requester)
+		if t.To == interaction.InteractionStateFailed {
+			// failed is not in the approval.resolved vocabulary: close it as
+			// withdrawn by the service, and only if the request was announced.
+			approval.Resolver = events.ServicePrincipal
+			announced, err := events.HasRequested(ctx, tx, record.ID)
+			if err != nil || !announced {
+				return err
+			}
+		}
 	default:
 		return nil
 	}
@@ -86,8 +95,6 @@ func terminalOutcomeName(to interaction.InteractionState) string {
 	switch to {
 	case interaction.InteractionStateExpired:
 		return events.OutcomeExpired
-	case interaction.InteractionStateFailed:
-		return events.OutcomeFailed
 	default: // canceled, superseded: the request was closed without a decision
 		return events.OutcomeWithdrawn
 	}

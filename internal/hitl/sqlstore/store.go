@@ -561,7 +561,13 @@ func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error
 		a.Outcome = events.OutcomeExpired
 		a.Resolver = events.Principal{Kind: "service", ID: "hitl-expiry", URN: "msg://service/tangent/hitl-expiry", Role: "system"}
 	case hitl.Failed:
-		a.Outcome, a.Resolver = events.OutcomeFailed, requester
+		// failed is not in the approval.resolved vocabulary: withdrawn by the
+		// service, and only if the request was announced.
+		a.Outcome, a.Resolver = events.OutcomeWithdrawn, events.ServicePrincipal
+		announced, err := events.HasRequested(ctx, tx, prev.ItemID)
+		if err != nil || !announced {
+			return err
+		}
 	case hitl.Canceled:
 		a.Outcome, a.Resolver = events.OutcomeWithdrawn, requester
 	default: // superseded

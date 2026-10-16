@@ -13,6 +13,7 @@ coverage.html
 
 # Frontend
 /ui/dist/
+/ui/node_modules
 /ui/node_modules/
 /ui/.vite/
 /ui/*.tsbuildinfo

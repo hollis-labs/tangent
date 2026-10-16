@@ -288,3 +288,29 @@ func TestApprovalTransitionsWriteOutboxRows(t *testing.T) {
 		t.Fatalf("after resolve: %v", got)
 	}
 }
+
+// TestFailedApprovalClosesAsWithdrawnByService keeps the emitted outcome inside
+// the approval.resolved@1 vocabulary.
+func TestFailedApprovalClosesAsWithdrawnByService(t *testing.T) {
+	db, store := newDBStore(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	rec := hitl.Record{ItemID: "ap-f", CallerScope: "app", IdempotencyKey: "kf", Digest: "d", Kind: "approval",
+		Request: []byte(`{"kind":"approval"}`), State: hitl.StateStaged, Revision: 1, CreatedAt: t0, UpdatedAt: t0}
+	if _, _, err := store.Create(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	next := rec
+	next.State, next.Revision = hitl.StateFailed, 2
+	next.Outcome = hitl.Failed{ItemID: "ap-f", InteractionRevision: 2, ErrorCode: "boom", Message: "MESSAGE-CANARY", TerminatedAt: t0}
+	if err := store.Swap(ctx, "ap-f", 1, next); err != nil {
+		t.Fatal(err)
+	}
+	var env string
+	if err := db.QueryRow(`SELECT envelope_json FROM event_outbox WHERE kind = 'approval.resolved'`).Scan(&env); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(env, `"outcome":"withdrawn"`) || !strings.Contains(env, `"id":"tangent"`) || strings.Contains(env, "CANARY") || strings.Contains(env, "failed") {
+		t.Fatalf("envelope = %s", env)
+	}
+}
