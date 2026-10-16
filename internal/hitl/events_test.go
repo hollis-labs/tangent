@@ -192,7 +192,10 @@ func TestApprovalEnvelopeStamp(t *testing.T) {
 			!strings.HasPrefix(c.PayloadSchema, "approval.") || !strings.HasSuffix(c.PayloadSchema, "@1") {
 			t.Fatalf("class = %+v", c)
 		}
-		if ev.Actor == nil || ev.Actor.Verified != "operator-session" || ev.Actor.URN == "" || ev.Corr.CorrelationID != h.ItemID {
+		// requested: the caller was admitted "asserted" -> claimed; resolved: the
+		// loopback operator session -> operator-session (0174 weak).
+		wantVerified := map[string]string{catalog.KindApprovalRequested: "claimed", catalog.KindApprovalResolved: "operator-session"}[string(ev.Kind)]
+		if ev.Actor == nil || ev.Actor.Verified != wantVerified || ev.Actor.URN == "" || ev.Corr.CorrelationID != h.ItemID {
 			t.Fatalf("actor/corr = %+v / %+v", ev.Actor, ev.Corr)
 		}
 		if ev.RecordedAt != nil || ev.Cursor != "" {

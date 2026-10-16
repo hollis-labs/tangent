@@ -99,3 +99,14 @@ func TestBuildStampIgnoresPayloadKeysAndFailsClosedEnvelope(t *testing.T) {
 		t.Fatalf("rows = %d, %v", n, err)
 	}
 }
+
+func TestVerifiedFollowsRecordedAssurance(t *testing.T) {
+	for assurance, want := range map[string]string{
+		"": "operator-session", "loopback-unverified": "operator-session",
+		"operator-token": "token", "asserted": "claimed", "anything-else": "claimed",
+	} {
+		if got := Verified(assurance); got != want {
+			t.Errorf("Verified(%q) = %q, want %q", assurance, got, want)
+		}
+	}
+}

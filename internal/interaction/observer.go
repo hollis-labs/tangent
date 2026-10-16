@@ -37,6 +37,8 @@ type Transition struct {
 	// ActorRef and Authority are the actor the transition's journal row records.
 	ActorRef  string
 	Authority string
+	// Assurance is the participant assurance recorded for a resolution.
+	Assurance string
 	At        time.Time
 }
 

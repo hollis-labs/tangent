@@ -765,6 +765,7 @@ INSERT INTO resolution_deliveries (
 		Phase: PhaseResolved, Interaction: current, To: InteractionStateResolved,
 		ResponsePayload: payload, At: now,
 		ActorRef: params.ParticipantRef, Authority: params.ParticipantAuthority,
+		Assurance: params.ParticipantAssurance,
 	}); err != nil {
 		return ResolveInteractionResult{}, fmt.Errorf("observe resolve interaction: %w", err)
 	}

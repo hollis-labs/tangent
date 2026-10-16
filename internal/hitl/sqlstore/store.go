@@ -572,7 +572,7 @@ func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error
 }
 
 func callerPrincipal(scope string) events.Principal {
-	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope)}
+	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope), Assurance: callerAssurance}
 }
 
 func participantPrincipal(p hitl.Participant) events.Principal {
@@ -583,7 +583,7 @@ func participantPrincipal(p hitl.Participant) events.Principal {
 	if ref == "" {
 		return events.Principal{}
 	}
-	return events.Principal{Kind: "operator", ID: ref, URN: "msg://user/local/" + urnSegment(ref), Role: "operator"}
+	return events.Principal{Kind: "operator", ID: ref, URN: "msg://user/local/" + urnSegment(ref), Role: "operator", Assurance: p.Assurance}
 }
 
 func urnSegment(s string) string {

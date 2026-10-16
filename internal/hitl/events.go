@@ -38,6 +38,7 @@ func (o EventObserver) ObserveTransition(ctx context.Context, tx *sql.Tx, t inte
 		approval.Kind = catalog.KindApprovalResolved
 		approval.Outcome = decisionOutcome(t.ResponsePayload)
 		approval.Resolver = actorPrincipal(t.ActorRef, t.Authority, "operator")
+		approval.Resolver.Assurance = t.Assurance
 	case interaction.PhaseTerminal:
 		approval.Kind = catalog.KindApprovalResolved
 		approval.Outcome = terminalOutcomeName(t.To)
@@ -95,7 +96,7 @@ func terminalOutcomeName(to interaction.InteractionState) string {
 func terminalResolver(t interaction.Transition, requester events.Principal) events.Principal {
 	switch {
 	case t.To == interaction.InteractionStateExpired:
-		return events.Principal{Kind: "service", ID: ExpiryActor.PrincipalRef, URN: "msg://service/tangent/" + urnSegment(ExpiryActor.PrincipalRef), Role: "system"}
+		return events.Principal{Kind: "service", ID: ExpiryActor.PrincipalRef, URN: "msg://service/tangent/" + urnSegment(ExpiryActor.PrincipalRef), Role: "system", Assurance: ExpiryActor.Assurance}
 	case t.Cause == interaction.TerminalCauseCallerWithdrawn || t.Cause == interaction.TerminalCauseCallerCanceled:
 		return requester
 	}
@@ -107,7 +108,7 @@ func callerPrincipal(record interaction.InteractionRecord) events.Principal {
 	if ref == "" {
 		ref = record.CallerScope
 	}
-	return events.Principal{Kind: "agent", ID: ref, URN: "msg://agent/tangent/" + urnSegment(ref)}
+	return events.Principal{Kind: "agent", ID: ref, URN: "msg://agent/tangent/" + urnSegment(ref), Assurance: record.CallerAssurance}
 }
 
 // actorPrincipal builds a principal from a journal actor. The local operator

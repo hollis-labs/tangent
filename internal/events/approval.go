@@ -55,6 +55,23 @@ type Principal struct {
 	ID   string
 	URN  string
 	Role string // operator or system
+	// Assurance is the recorded participant/caller assurance the actor was
+	// admitted with. It decides actor.verified; see Verified.
+	Assurance string
+}
+
+// Verified maps a recorded assurance to actor.verified, so the envelope says
+// no more than the record does. operator-token (CW-20261016-0174) is the only
+// assurance that earns "token"; the loopback operator session stays the weak
+// "operator-session"; anything else asserted by a caller is "claimed".
+func Verified(assurance string) string {
+	switch assurance {
+	case "operator-token":
+		return "token"
+	case "", "loopback-unverified":
+		return ActorVerified
+	}
+	return "claimed"
 }
 
 // Approval describes one approval lifecycle transition.
@@ -177,7 +194,7 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 		},
 	}
 	if actor.URN != "" && actor.Kind != "" {
-		ev.Actor = &runtimeevents.Actor{URN: actor.URN, Kind: actor.Kind, Role: actor.Role, Verified: ActorVerified}
+		ev.Actor = &runtimeevents.Actor{URN: actor.URN, Kind: actor.Kind, Role: actor.Role, Verified: Verified(actor.Assurance)}
 	}
 	if err := ev.Validate(); err != nil {
 		return Row{}, err
