@@ -37,6 +37,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/buildinfo"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
@@ -124,9 +125,10 @@ type Check struct {
 //
 // `status: ok` is a frozen token, not a Summary: the managed-runtime health
 // probe in ~/.cerberus/projects/tangent.cerberus.yaml reads this endpoint, and
-// changing the body it has always returned would be a silent change to a
-// supervisor's restart decision.
+// changing that token would silently change a supervisor's restart decision.
+// Source provenance is additive and never changes the liveness verdict.
 type LivenessReport struct {
+	buildinfo.Info
 	Status string `json:"status"`
 	Probe  string `json:"probe"`
 }
@@ -134,7 +136,7 @@ type LivenessReport struct {
 // Live builds the liveness answer. It takes no context and no dependency
 // because the ability to return it *is* the thing being proved.
 func Live() LivenessReport {
-	return LivenessReport{Status: "ok", Probe: ProbeLiveness}
+	return LivenessReport{Info: buildinfo.Current(), Status: "ok", Probe: ProbeLiveness}
 }
 
 // ReadinessReport is the whole of readiness.
