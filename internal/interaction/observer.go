@@ -60,3 +60,15 @@ func (s *Store) observe(ctx context.Context, tx *sql.Tx, t Transition) error {
 	}
 	return s.observer.ObserveTransition(ctx, tx, t)
 }
+
+// SetCommitHook installs a callback run after a create, resolve or terminal
+// transaction has committed (never on rollback). It lets a relay wake as soon as
+// an observer's outbox row is durable. It must be cheap and must not block;
+// call it during construction, before the store is shared.
+func (s *Store) SetCommitHook(f func()) { s.afterCommit = f }
+
+func (s *Store) committed() {
+	if s.afterCommit != nil {
+		s.afterCommit()
+	}
+}
