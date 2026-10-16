@@ -23,7 +23,9 @@ var ExpiryActor = interaction.ActorBinding{
 
 // ExpiryPolicy authorizes ExpiryActor for host-policy operations and defers
 // every other question (and administrator authority) to Next.
-type ExpiryPolicy struct{ Next interaction.PrivilegedActorPolicy }
+type ExpiryPolicy struct {
+	Next interaction.PrivilegedActorPolicy
+}
 
 func (p ExpiryPolicy) AuthorizeHostPolicy(actor interaction.ActorBinding) bool {
 	return actor == ExpiryActor || (p.Next != nil && p.Next.AuthorizeHostPolicy(actor))
