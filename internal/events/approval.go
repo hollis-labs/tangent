@@ -169,7 +169,7 @@ func (e Emitter) EmitOrSkip(ctx context.Context, tx Tx, a Approval) error {
 	var mapping *MappingError
 	if errors.As(err, &mapping) {
 		mappingFailures.Add(1)
-		slog.Error("approval event skipped: mapping failed", "kind", a.Kind, "item_id", a.ItemID, "error_class", mapping.Class, "error", mapping.Err)
+		slog.Error("approval event skipped: mapping failed", "kind", a.Kind, "item_id", a.ItemID, "error_class", mapping.Class)
 		// Same transaction as the transition, so the gap is never silent.
 		if _, execErr := tx.ExecContext(ctx, `INSERT INTO event_outbox_skipped (item_id, kind, error_class, created_at) VALUES (?, ?, ?, ?)`,
 			a.ItemID, a.Kind, mapping.Class, time.Now().UTC().Format(timeLayout)); execErr != nil {
