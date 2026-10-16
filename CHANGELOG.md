@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `internal/hitl/sqlstore`: a SQLite implementation of the go-hitl `Store`
+  (`libs/mesh/core/hitl`) over a new `hitl_store_records` table (migration 0021),
+  run against the lib's `hitltest` storecontract and conformance scenarios.
+  Not yet wired into the running service (CW-20261016-0031).
+
 ## [v0.20.0] - 2026-10-16
 
 ### Changed
