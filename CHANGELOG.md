@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `GOPRIVATE`/`GONOSUMDB` or the `GH_PAT` git URL rewrite: every module is
   public, and those settings forced direct git fetches that fail on pre-reorg
   `libs` tags the module proxy still serves. (CW-20261016-0026, #116)
-- Plugin platform currency: `libs/plugin-mcp` v0.1.1 to v0.2.0, `substrate/mesh`
-  v0.1.0 to v0.4.0, `tangent-plugins.version` repointed to the messaging
-  roster/send bridge, and the Go directive is 1.26.9. (CW-20261014-0132)
+- Plugin platform currency: `tangent-plugins.version` repointed to the messaging
+  roster/send bridge and the Go directive is 1.26.9; the SDK and mesh bumps in
+  that change are superseded by the `libs/*` move above. (CW-20261014-0132)
 - **Every MCP tool is renamed to `tangent_<noun>_<verb>`**, matching
   `^[a-z][a-z0-9_]*$` (no dots, no hyphens). OpenAI-style clients such as Codex
   could not call `tangent.docs_enqueue`, and the tether gateway lints and never
@@ -82,7 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   CW-20261016-0083, #118, #120, #121)
 - **`tangent_docs_enqueue`: a changed payload under the same idempotency key is
   an `idempotency_conflict`, not a silent replay of the original item.** A replay
-  now requires semantically equal JSON, matching `tangent_hitl_enqueue`. (#117)
+  now requires semantically equal JSON, matching `tangent_hitl_enqueue`.
+  (CW-20261016-0075, #117)
 - `tangent <word> --help` prints usage and exits 0, and an unknown subcommand
   exits 2, instead of falling through to the serve path and starting a server.
 - Settings page styling: kit-settings sources are registered with Tailwind and
