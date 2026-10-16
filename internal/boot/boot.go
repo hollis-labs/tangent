@@ -399,6 +399,9 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// material lives somewhere the record's own transaction cannot see is
 	// a pin that can go missing.
 	interactionStore := interaction.NewStore(sqlDB)
+	// Approval lifecycle transitions write their typed-event outbox row in the
+	// same transaction as the journal row (CW-20261016-0143).
+	interactionStore.SetTransitionObserver(hitl.EventObserver{})
 	interactionService, err := interaction.NewService(
 		interactionStore,
 		interaction.NewEnvelopeDefinitionCatalog(envSvc, mcp.HostVersion,
