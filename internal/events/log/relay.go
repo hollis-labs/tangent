@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	streamhub "github.com/hollis-labs/libs/ui/ui-go/streamhub"
@@ -12,6 +13,24 @@ import (
 
 // DefaultRelayTick is how often a Relay polls when nothing wakes it.
 const DefaultRelayTick = 2 * time.Second
+
+// DefaultMaxRowFailures is how many consecutive failed deliveries of one
+// outbox row the relay tolerates before it quarantines the row and moves on.
+const DefaultMaxRowFailures = 5
+
+// Bounded failure classes: only these reach the logs and event_outbox_skipped,
+// never a raw error string (it can echo payload values).
+const (
+	classAppendRejected = "append_rejected"
+	classMarkFailed     = "mark_failed"
+	classReadFailed     = "read_failed"
+	// ClassRelayRejected is the event_outbox_skipped.error_class of a
+	// quarantined poison row.
+	ClassRelayRejected = "relay_rejected"
+	// QuarantinedPrefix starts the appended_at value of a quarantined row, so
+	// it leaves the pending set but is never mistaken for a delivered one.
+	QuarantinedPrefix = "quarantined:"
+)
 
 // RetentionAudit is the R-audit window: 400 days, no tombstone.
 const RetentionAudit = 400 * 24 * time.Hour
@@ -34,7 +53,11 @@ type Relay struct {
 	log  *Log
 	tick time.Duration
 	// batch bounds one drain pass.
-	batch int
+	batch  int
+	logger *slog.Logger
+	// maxFailures consecutive failures on one row quarantine it.
+	maxFailures int
+	failures    map[string]int
 	// afterAppend runs between a successful Append and the appended_at stamp;
 	// tests use it to simulate a crash at the worst moment.
 	afterAppend func(eventID string) error
@@ -48,7 +71,10 @@ func NewRelay(db *sql.DB, l *Log, tick time.Duration) *Relay {
 	if tick <= 0 {
 		tick = DefaultRelayTick
 	}
-	return &Relay{db: db, log: l, tick: tick, batch: 256, wakeCh: make(chan struct{}, 1)}
+	return &Relay{
+		db: db, log: l, tick: tick, batch: 256, wakeCh: make(chan struct{}, 1),
+		logger: slog.Default(), maxFailures: DefaultMaxRowFailures, failures: make(map[string]int),
+	}
 }
 
 // Wake asks the relay to drain now. Call it after the transaction that
@@ -67,11 +93,13 @@ func (r *Relay) Run(ctx context.Context) error {
 	defer t.Stop()
 	for {
 		if _, err := r.Drain(ctx); err != nil && ctx.Err() == nil {
-			// A failed row is retried on the next wake or tick; the error is
-			// transient by construction (SQLite busy, log closed).
 			if errors.Is(err, streamhub.ErrClosed) {
 				return err
 			}
+			// Row-level failures are logged with their event id where they
+			// happen (deliver); a poison row is quarantined after
+			// maxFailures consecutive attempts, so this never stalls forever.
+			r.logger.Warn("event relay: drain failed; will retry", "class", errClass(err))
 		}
 		select {
 		case <-ctx.Done():
@@ -101,8 +129,24 @@ func (r *Relay) Drain(ctx context.Context) (int, error) {
 		}
 		for _, row := range rows {
 			if err := r.deliver(ctx, row); err != nil {
-				return delivered, err
+				if ctx.Err() != nil || errors.Is(err, streamhub.ErrClosed) {
+					return delivered, err
+				}
+				r.failures[row.eventID]++
+				n := r.failures[row.eventID]
+				r.logger.Warn("event relay: delivery failed", "event_id", row.eventID,
+					"class", errClass(err), "consecutive_failures", n)
+				if n < r.maxFailures {
+					// Stop here so order is never skipped; retried next pass.
+					return delivered, err
+				}
+				if qerr := r.quarantine(ctx, row); qerr != nil {
+					return delivered, qerr
+				}
+				delete(r.failures, row.eventID)
+				continue
 			}
+			delete(r.failures, row.eventID)
 			delivered++
 		}
 		if len(rows) < r.batch {
@@ -134,11 +178,58 @@ func (r *Relay) pending(ctx context.Context) ([]outboxRow, error) {
 	return out, q.Err()
 }
 
+// errClass maps a delivery error to a bounded class for logs and rows.
+func errClass(err error) string {
+	var d *deliveryError
+	if errors.As(err, &d) {
+		return d.class
+	}
+	return classReadFailed
+}
+
+type deliveryError struct {
+	class string
+	err   error
+}
+
+func (e *deliveryError) Error() string { return e.err.Error() }
+func (e *deliveryError) Unwrap() error { return e.err }
+
+// quarantine takes a poison row out of the pending set: one transaction records
+// it in event_outbox_skipped (class relay_rejected) and stamps appended_at with
+// QuarantinedPrefix, so it is repairable but never retried or purged as
+// delivered.
+func (r *Relay) quarantine(ctx context.Context, row outboxRow) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("event relay: begin quarantine: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := r.log.now().UTC().Format(time.RFC3339Nano)
+	item := row.subjectID
+	if item == "" {
+		item = row.eventID
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO event_outbox_skipped (item_id, kind, error_class, created_at)
+		VALUES (?, ?, ?, ?)`, item, row.kind, ClassRelayRejected, now); err != nil {
+		return fmt.Errorf("event relay: record quarantined %s: %w", row.eventID, err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE event_outbox SET appended_at = ? WHERE event_id = ? AND appended_at IS NULL`,
+		QuarantinedPrefix+now, row.eventID); err != nil {
+		return fmt.Errorf("event relay: stamp quarantined %s: %w", row.eventID, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("event relay: commit quarantine: %w", err)
+	}
+	r.logger.Error("event relay: row quarantined", "event_id", row.eventID, "class", ClassRelayRejected)
+	return nil
+}
+
 func (r *Relay) deliver(ctx context.Context, row outboxRow) error {
 	if _, err := r.log.AppendMeta(ctx, row.stream, Meta{
 		EventID: row.eventID, SubjectType: row.subjectType, SubjectID: row.subjectID,
 	}, streamhub.Event{Name: row.kind, Data: row.envelope}); err != nil {
-		return fmt.Errorf("event relay: append %s: %w", row.eventID, err)
+		return &deliveryError{class: classAppendRejected, err: fmt.Errorf("event relay: append %s: %w", row.eventID, err)}
 	}
 	if r.afterAppend != nil {
 		if err := r.afterAppend(row.eventID); err != nil {
@@ -147,7 +238,7 @@ func (r *Relay) deliver(ctx context.Context, row outboxRow) error {
 	}
 	if _, err := r.db.ExecContext(ctx, `UPDATE event_outbox SET appended_at = ? WHERE event_id = ? AND appended_at IS NULL`,
 		r.log.now().UTC().Format(time.RFC3339Nano), row.eventID); err != nil {
-		return fmt.Errorf("event relay: mark appended %s: %w", row.eventID, err)
+		return &deliveryError{class: classMarkFailed, err: fmt.Errorf("event relay: mark appended %s: %w", row.eventID, err)}
 	}
 	return nil
 }

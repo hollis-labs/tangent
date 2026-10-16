@@ -456,18 +456,21 @@ func (l *Log) Trim(ctx context.Context, stream string, r streamhub.Retention) er
 	}
 	if r.MaxAge > 0 {
 		cutoff := l.now().UTC().Add(-r.MaxAge).Format(recordedLayout)
-		// Only the contiguous old prefix goes, matching the in-memory log.
-		var seq sql.NullInt64
-		if qerr := tx.QueryRowContext(ctx, `SELECT MIN(seq) - 1 FROM stream_log_events
-			WHERE stream = ? AND recorded_at >= ?`, stream, cutoff).Scan(&seq); qerr != nil {
-			return fmt.Errorf("event log: trim by age: %w", qerr)
-		}
-		switch {
-		case seq.Valid:
-			through = max(through, uint64(seq.Int64)) //nolint:gosec // MIN(seq)-1 of stored sequences is >= 0
-		default:
+		// Only the contiguous old prefix goes, matching the in-memory log. The
+		// first row at or after the cutoff is found by walking the (stream, seq)
+		// key from the oldest row, so the scan reads only the expired prefix.
+		// The unary + keeps the planner off idx_stream_log_events_recorded,
+		// which would range-scan every recent row and sort it.
+		var first uint64
+		switch qerr := tx.QueryRowContext(ctx, `SELECT seq FROM stream_log_events
+			WHERE stream = ? AND +recorded_at >= ? ORDER BY seq LIMIT 1`, stream, cutoff).Scan(&first); {
+		case qerr == nil:
+			through = max(through, first-1)
+		case errors.Is(qerr, sql.ErrNoRows):
 			// Nothing is newer than the cutoff: everything is old.
 			through = max(through, latest)
+		default:
+			return fmt.Errorf("event log: trim by age: %w", qerr)
 		}
 	}
 	if through <= pruned {

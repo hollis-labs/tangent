@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -127,5 +128,55 @@ func TestRelayRunWakesAfterCommit(t *testing.T) {
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run returned %v", err)
+	}
+}
+
+// A row the Log rejects forever must not stall the rows behind it: after
+// maxFailures consecutive attempts it is quarantined (event_outbox_skipped,
+// class relay_rejected) and the good row is delivered.
+func TestRelayQuarantinesPoisonRowAndDeliversTheNext(t *testing.T) {
+	ctx := context.Background()
+	l, d := newLog(t)
+	if _, err := d.Exec(`INSERT INTO event_outbox (event_id, stream, kind, subject_type, subject_id, envelope_json, created_at)
+		VALUES ('evt_poison', '', 'approval.requested', 'approval', 'item-poison', '{}', ?)`,
+		time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	enqueue(t, l, "evt_good")
+
+	r := NewRelay(d, l, time.Hour)
+	r.maxFailures = 3
+	for attempt := 1; attempt < 3; attempt++ {
+		n, err := r.Drain(ctx)
+		if err == nil || n != 0 {
+			t.Fatalf("attempt %d: Drain = %d, %v; want a stall on the poison row", attempt, n, err)
+		}
+		if got := journalCount(t, l); got != 0 {
+			t.Fatalf("attempt %d: journal has %d rows, order must not be skipped yet", attempt, got)
+		}
+	}
+	n, err := r.Drain(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("third attempt: Drain = %d, %v; want the good row delivered", n, err)
+	}
+	if got := journalCount(t, l); got != 1 {
+		t.Fatalf("journal rows = %d, want 1", got)
+	}
+
+	var class, kind, item string
+	if err := d.QueryRow(`SELECT error_class, kind, item_id FROM event_outbox_skipped`).Scan(&class, &kind, &item); err != nil {
+		t.Fatal(err)
+	}
+	if class != ClassRelayRejected || kind != "approval.requested" || item != "item-poison" {
+		t.Fatalf("skipped row = %q/%q/%q", class, kind, item)
+	}
+	var stamp string
+	if err := d.QueryRow(`SELECT appended_at FROM event_outbox WHERE event_id = 'evt_poison'`).Scan(&stamp); err != nil ||
+		!strings.HasPrefix(stamp, QuarantinedPrefix) {
+		t.Fatalf("poison appended_at = %q, %v", stamp, err)
+	}
+	// Quarantined rows leave the pending set for good.
+	if n, err := r.Drain(ctx); err != nil || n != 0 {
+		t.Fatalf("after quarantine Drain = %d, %v", n, err)
 	}
 }
