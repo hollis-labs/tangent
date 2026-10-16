@@ -38,8 +38,18 @@ build-ui: check-node ## Build frontend (Vite production build)
 	cd ui && npm run build
 	@touch internal/server/ui_dist/.gitkeep
 
+# Explicit stamps cover toolchains that omit native VCS metadata in worktrees.
+# A source archive stays unstamped; an edited checkout never claims to be clean.
 build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
-	go build -o tangent ./cmd/tangent
+	@set -eu; \
+	commit=$$(git rev-parse --verify HEAD 2>/dev/null || true); dirty=; \
+	if [ -n "$$commit" ]; then \
+		status=$$(git status --porcelain); dirty=false; \
+		if [ -n "$$status" ]; then dirty=true; fi; \
+	fi; \
+	go build -buildvcs=true \
+		-ldflags "-X github.com/hollis-labs/tangent/internal/buildinfo.Commit=$$commit -X github.com/hollis-labs/tangent/internal/buildinfo.Dirty=$$dirty" \
+		-o tangent ./cmd/tangent
 
 # The first-party plugins live in github.com/hollis-labs/tangent-plugins, one
 # module each. tangent-plugins.version pins the module version operators

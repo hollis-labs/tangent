@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/hollis-labs/tangent/internal/buildinfo"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/health"
@@ -111,6 +112,38 @@ func decode(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 		t.Fatalf("decode probe response %q: %v", recorder.Body.String(), err)
 	}
 	return body
+}
+
+func TestLivenessReportsBuildProvenance(t *testing.T) {
+	commit, dirty := buildinfo.Commit, buildinfo.Dirty
+	t.Cleanup(func() { buildinfo.Commit, buildinfo.Dirty = commit, dirty })
+	for _, test := range []struct {
+		name, commit, dirty string
+	}{
+		{name: "unstamped"},
+		{name: "clean", commit: "1234567890abcdef1234567890abcdef12345678", dirty: "false"},
+		{name: "modified", commit: "1234567890abcdef1234567890abcdef12345678", dirty: "true"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			buildinfo.Commit, buildinfo.Dirty = test.commit, test.dirty
+			response := get(t, probeMux(nil), "/healthz")
+			if response.Code != http.StatusOK {
+				t.Fatalf("GET /healthz = %d, want 200", response.Code)
+			}
+			body := decode(t, response)
+			if value, present := body["commit"]; !present || value != test.commit {
+				t.Fatalf("commit = %v (present %t), want %q", value, present, test.commit)
+			}
+			value, present := body["dirty"]
+			if test.dirty == "" {
+				if present {
+					t.Fatalf("unstamped build claims dirty = %v", value)
+				}
+			} else if !present || value != (test.dirty == "true") {
+				t.Fatalf("dirty = %v (present %t), want %s", value, present, test.dirty)
+			}
+		})
+	}
 }
 
 // TestLivenessKeepsAnsweringWhenEverythingUnderItHasFailed is the separation
