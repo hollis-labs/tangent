@@ -12,3 +12,4 @@ CREATE TABLE event_outbox (
   appended_at TEXT NULL
 );
 CREATE INDEX event_outbox_pending ON event_outbox (created_at) WHERE appended_at IS NULL;
+CREATE INDEX event_outbox_subject ON event_outbox (subject_id, kind);

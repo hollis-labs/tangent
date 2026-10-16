@@ -115,11 +115,13 @@ var ServicePrincipal = Principal{Kind: "service", ID: "tangent", URN: "msg://ser
 
 // HasRequested reports whether approval.requested was already emitted for the
 // item, so a resolved event is never emitted for a request nobody was told of.
+// It reads event_outbox, so any purge of appended rows must keep the requested
+// row of every item that is not yet resolved.
 func HasRequested(ctx context.Context, tx Tx, itemID string) (bool, error) {
-	var n int
-	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_outbox WHERE kind = ? AND subject_id = ?`,
-		catalog.KindApprovalRequested, itemID).Scan(&n)
-	return n > 0, err
+	var found bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM event_outbox WHERE subject_id = ? AND kind = ? LIMIT 1)`,
+		itemID, catalog.KindApprovalRequested).Scan(&found)
+	return found, err
 }
 
 // Emit builds the envelope for a and inserts its outbox row in tx. A failure
