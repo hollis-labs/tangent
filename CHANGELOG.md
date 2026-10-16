@@ -7,20 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **Chat: a message you send now appears in the conversation.** A message sent
-  from the composer (starting a chat with an idle agent, or the next turn of an
-  idle session) never showed in the stream, because the stream was built only
-  from inbox items. Each send is now recorded per browser (agent, text,
-  timestamp, idempotency key, delivery status) and merged into the stream in
-  time order, so it shows at once, stays after the agent replies and after a
-  reload, and is not doubled when it also arrives as a reply resolution. A
-  failed send stays in the stream as "Not sent" with a Retry that reuses the
-  same idempotency key. (CW-20261013-0021)
+## [v0.20.0] - 2026-10-16
 
 ### Changed
 
+- **BREAKING (Go module paths): Tangent now requires the `libs` monorepo
+  module paths, a clean break with no shims.** `github.com/hollis-labs/libs/plugin-mcp`
+  v0.2.0 is now `github.com/hollis-labs/libs/mcp/plugin-mcp` v0.3.0,
+  `libs/ui-go` is `libs/ui/ui-go` v0.1.0, and `substrate/mesh` v0.4.0 is
+  `libs/mesh/core` v0.4.0. Anything that imports the plugin SDK through Tangent's
+  packages, or builds plugins against this host, must move to the new paths.
+  The archived `go-ssekit` indirect dependency is gone. CI no longer sets
+  `GOPRIVATE`/`GONOSUMDB` or the `GH_PAT` git URL rewrite: every module is
+  public, and those settings forced direct git fetches that fail on pre-reorg
+  `libs` tags the module proxy still serves. (CW-20261016-0026, #116)
+- Plugin platform currency: `tangent-plugins.version` repointed to the messaging
+  roster/send bridge and the Go directive is 1.26.9; the SDK and mesh bumps in
+  that change are superseded by the `libs/*` move above. (CW-20261014-0132)
 - **Every MCP tool is renamed to `tangent_<noun>_<verb>`**, matching
   `^[a-z][a-z0-9_]*$` (no dots, no hyphens). OpenAI-style clients such as Codex
   could not call `tangent.docs_enqueue`, and the tether gateway lints and never
@@ -38,6 +41,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`tangent_hitl_*` conforms to the shared go-hitl contract.** The shared
+  conformance suite from `libs/mesh/core/hitl` runs against the real MCP tools
+  (all 17 scenarios, none skipped, with the expiry and caller-isolation
+  capabilities). Resolving an already-terminal item returns `terminal_conflict`
+  carrying the outcome, and an out-of-range `wait_ms` on `tangent_hitl_await`
+  gets the typed `validation_failed` body. (CW-20261016-0030, #121)
+- **`/healthz` and the MCP liveness probe report the source `commit` and a
+  `dirty` flag**, retained through linker flags when Go omits VCS metadata for a
+  worktree build. The health verdict and release version are unchanged.
+  (CW-20261016-0071, #119)
+- Performance: conditional `/api/inbox` and a cheap revision-polled event stream
+  (no steady polling), a summary list payload with the full item loaded on
+  select and server-side search, a keyed read for opening one Inbox item,
+  visibility-paused pollers on a shared hub, route and renderer code-splitting,
+  and cache headers with ETags for the embedded SPA (hashed assets immutable,
+  `index.html` revalidates with 304).
 - Docs: a **Copy object id** icon in the document actions bar copies the
   document's `item_id` (the id the docs and inbox MCP tools use) with a brief
   "Object id copied" confirmation.
@@ -51,6 +70,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   nothing is pending (`/api/plugins/messaging/chat/send`), is disabled while the
   agent is mid-turn, and shows "Chat roster unavailable" when the plugin or
   Tether does not offer a roster. Replying to a pending item is unchanged.
+
+### Fixed
+
+- **HITL `expires_at` is enforced and fails closed to `expired`.** A 1s sweeper
+  and a lazy check on any item access materialize expiry, so a late withdraw or
+  resolve is refused against the expired outcome and `tangent_hitl_await` returns
+  it; a racing non-terminal write cannot let a due item slip through, and a
+  failing item does not stop the sweep. A past `expires_at` at enqueue creates
+  the item already expired, per the go-hitl contract. (CW-20261016-0074,
+  CW-20261016-0083, #118, #120, #121)
+- **`tangent_docs_enqueue`: a changed payload under the same idempotency key is
+  an `idempotency_conflict`, not a silent replay of the original item.** A replay
+  now requires semantically equal JSON, matching `tangent_hitl_enqueue`.
+  (CW-20261016-0075, #117)
+- `tangent <word> --help` prints usage and exits 0, and an unknown subcommand
+  exits 2, instead of falling through to the serve path and starting a server.
+- Settings page styling: kit-settings sources are registered with Tailwind and
+  the plugin lifecycle and scope controls use design-components.
+- **Chat: a message you send now appears in the conversation.** A message sent
+  from the composer (starting a chat with an idle agent, or the next turn of an
+  idle session) never showed in the stream, because the stream was built only
+  from inbox items. Each send is now recorded per browser (agent, text,
+  timestamp, idempotency key, delivery status) and merged into the stream in
+  time order, so it shows at once, stays after the agent replies and after a
+  reload, and is not doubled when it also arrives as a reply resolution. A
+  failed send stays in the stream as "Not sent" with a Retry that reuses the
+  same idempotency key. (CW-20261013-0021)
 
 ## [v0.19.0] - 2026-10-09
 
@@ -1491,7 +1537,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.20.0...HEAD
+[v0.20.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.18.0
 [v0.17.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.17.0
