@@ -81,7 +81,7 @@ func Pending(ctx context.Context, q Queryer, limit int) ([]Row, error) {
 	}
 	rows, err := q.QueryContext(ctx, `SELECT event_id, stream, kind, COALESCE(subject_type, ''),
 COALESCE(subject_id, ''), envelope_json, created_at FROM event_outbox
-WHERE appended_at IS NULL ORDER BY created_at, rowid LIMIT ?`, limit)
+WHERE appended_at IS NULL ORDER BY rowid LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("events: list pending: %w", err)
 	}
