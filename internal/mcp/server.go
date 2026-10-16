@@ -257,15 +257,16 @@ func WithHITLService(service *hitl.Service) Option {
 }
 
 // HITLWire is the go-hitl backend behind tangent_hitl_enqueue/get/await/withdraw
-// (internal/hitl/gohitl). Each method takes the tool's JSON document and
-// returns the go-hitl wire JSON; on error the bytes are the go-hitl wire error
+// (internal/hitl/gohitl). Each method takes the caller scope Tangent derived
+// for the call (the one the native tools persist) and the tool's JSON document,
+// and returns the go-hitl wire JSON; on error the bytes are the go-hitl wire error
 // document. When set it replaces Tangent's own service behind those four tools;
 // the operator's inbox and Resolve path are unchanged.
 type HITLWire interface {
-	Enqueue(ctx context.Context, doc []byte) ([]byte, error)
-	Get(ctx context.Context, doc []byte) ([]byte, error)
-	Await(ctx context.Context, doc []byte) ([]byte, error)
-	Withdraw(ctx context.Context, doc []byte) ([]byte, error)
+	Enqueue(ctx context.Context, scope string, doc []byte) ([]byte, error)
+	Get(ctx context.Context, scope string, doc []byte) ([]byte, error)
+	Await(ctx context.Context, scope string, doc []byte) ([]byte, error)
+	Withdraw(ctx context.Context, scope string, doc []byte) ([]byte, error)
 }
 
 // WithHITLWire selects the go-hitl backend for the tangent_hitl_* tools. It

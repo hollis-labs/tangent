@@ -217,7 +217,7 @@ func TestForeignSurfaceInteractionsAreInvisible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = native.CreateInteraction(ctx, interaction.CreateInteractionParams{
-		ID: "docs-1", SurfaceID: docs.ID, CallerScope: "app", CallerAuthority: "a", CallerAssurance: "b", IdempotencyKey: "shared-key",
+		ID: "docs-1", SurfaceID: docs.ID, CallerScope: "standalone-local:app", CallerAuthority: "a", CallerAssurance: "b", IdempotencyKey: "shared-key",
 		RequestSnapshot: json.RawMessage(`{"kind":"doc"}`),
 		Definition:      interaction.DefinitionBinding{Publisher: "tangent", Kind: "docs", Version: "v1", Revision: 1, Source: "test", Assurance: "x"},
 	}); err != nil {

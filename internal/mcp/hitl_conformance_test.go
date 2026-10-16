@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -36,6 +37,7 @@ type mcpHITLAdapter struct {
 	// outcome. (The operator's response goes to the browser, never to the
 	// agent caller, so nothing in the product compares them.)
 	libRevisions bool
+	db           *sql.DB
 }
 
 var _ hitltest.Adapter = (*mcpHITLAdapter)(nil)
@@ -229,7 +231,7 @@ func newConformanceAdapterFor(t *testing.T, goHITL bool) *mcpHITLAdapter {
 		t.Fatalf("client.Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Close(); _ = serverSession.Close() })
-	return &mcpHITLAdapter{server: server, client: client, service: hitlService, libRevisions: goHITL}
+	return &mcpHITLAdapter{server: server, client: client, service: hitlService, libRevisions: goHITL, db: database}
 }
 
 // TestHITLToolsPassLibraryConformance runs the shared go-hitl conformance
@@ -246,4 +248,35 @@ func TestHITLToolsPassLibraryConformance(t *testing.T) {
 func TestHITLToolsPassLibraryConformanceOnTheGoHITLBackend(t *testing.T) {
 	hitltest.RunConformance(t, newConformanceAdapterFor(t, true),
 		hitltest.CapCallerIsolation, hitltest.CapExpiry)
+}
+
+// The same caller must land in the same partition whichever backend serves the
+// tools: the vault's creator check and caller isolation compare caller_scope.
+func TestHITLCallerScopeIsIdenticalOnBothBackends(t *testing.T) {
+	scopes := map[string]string{}
+	for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
+		adapter := newConformanceAdapterFor(t, goHITL)
+		doc, _ := json.Marshal(map[string]any{
+			"contract_version": hitl.ContractVersion, "kind": "approval", "idempotency_key": "scope-1", "title": "T",
+			"summary": "S", "request": "Approve?", "source": map[string]any{"application_id": "Scope-App", "agent_id": "agent-1"},
+		})
+		reply, err := adapter.Enqueue(context.Background(), doc)
+		if err != nil {
+			t.Fatalf("%s enqueue: %v (%s)", name, err, reply)
+		}
+		var handle struct {
+			ItemID string `json:"item_id"`
+		}
+		if err = json.Unmarshal(reply, &handle); err != nil || handle.ItemID == "" {
+			t.Fatalf("%s handle = %s (%v)", name, reply, err)
+		}
+		var scope string
+		if err = adapter.db.QueryRow(`SELECT caller_scope FROM interactions WHERE id = ?`, handle.ItemID).Scan(&scope); err != nil {
+			t.Fatalf("%s caller_scope: %v", name, err)
+		}
+		scopes[name] = scope
+	}
+	if scopes["native"] == "" || scopes["native"] != scopes["gohitl"] {
+		t.Fatalf("caller_scope differs between backends: native=%q gohitl=%q", scopes["native"], scopes["gohitl"])
+	}
 }

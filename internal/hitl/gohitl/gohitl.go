@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,32 +53,43 @@ func Enabled(value string) (bool, error) {
 // the tool's JSON document and returns the wire JSON, exactly as the lib's own
 // conformance adapter does, so the tool contract is the go-hitl wire.
 type Wire struct {
-	svc *libhitl.Service
+	svc   *libhitl.Service
+	store *sqlstore.Store
 }
 
 // New returns a Wire over a migrated Tangent database. catalog resolves the
 // HITL item definition each row is pinned to.
 func New(db *sql.DB, catalog interaction.DefinitionCatalog) *Wire {
-	return &Wire{svc: libhitl.NewService(sqlstore.New(db, catalog), libhitl.Options{})}
+	store := sqlstore.New(db, catalog)
+	return &Wire{svc: libhitl.NewService(store, libhitl.Options{}), store: store}
 }
 
 // Service exposes the underlying lib Service (for tests and the sweeper).
 func (w *Wire) Service() *libhitl.Service { return w.svc }
 
+// The methods take scope: the caller scope Tangent derived for this call, the
+// same one the native tools persist (standalone-local:<app>, or the verified
+// gateway:<producer>). Rows are partitioned by it, and a read or withdraw by a
+// caller whose scope is not the row's owner is a not_found, exactly as in the
+// lib, even if the lib's own application-id check would pass.
+
 // Enqueue implements the tangent_hitl_enqueue wire.
-func (w *Wire) Enqueue(ctx context.Context, doc []byte) ([]byte, error) {
+func (w *Wire) Enqueue(ctx context.Context, scope string, doc []byte) ([]byte, error) {
 	var req libhitl.EnqueueRequest
 	if err := json.Unmarshal(doc, &req); err != nil {
 		return reply(nil, libhitl.NewInvalidRequest(err))
 	}
-	handle, err := w.svc.Enqueue(ctx, req)
+	handle, err := w.svc.Enqueue(sqlstore.WithCallerScope(ctx, scope), req)
 	return reply(handle, err)
 }
 
 // Get implements the tangent_hitl_get wire.
-func (w *Wire) Get(ctx context.Context, doc []byte) ([]byte, error) {
+func (w *Wire) Get(ctx context.Context, scope string, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeGetCommand(doc)
 	if err != nil {
+		return reply(nil, err)
+	}
+	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
 		return reply(nil, err)
 	}
 	result, err := w.svc.Get(ctx, cmd)
@@ -85,9 +97,12 @@ func (w *Wire) Get(ctx context.Context, doc []byte) ([]byte, error) {
 }
 
 // Await implements the tangent_hitl_await wire.
-func (w *Wire) Await(ctx context.Context, doc []byte) ([]byte, error) {
+func (w *Wire) Await(ctx context.Context, scope string, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeAwaitCommand(doc)
 	if err != nil {
+		return reply(nil, err)
+	}
+	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
 		return reply(nil, err)
 	}
 	result, err := w.svc.Await(ctx, cmd)
@@ -95,13 +110,32 @@ func (w *Wire) Await(ctx context.Context, doc []byte) ([]byte, error) {
 }
 
 // Withdraw implements the tangent_hitl_withdraw wire.
-func (w *Wire) Withdraw(ctx context.Context, doc []byte) ([]byte, error) {
+func (w *Wire) Withdraw(ctx context.Context, scope string, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeWithdrawCommand(doc)
 	if err != nil {
 		return reply(nil, err)
 	}
+	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
+		return reply(nil, err)
+	}
 	outcome, err := w.svc.Withdraw(ctx, cmd)
 	return reply(outcome, err)
+}
+
+// owned refuses an item whose derived scope is not the caller's. An unknown id
+// falls through to the lib's own not_found.
+func (w *Wire) owned(ctx context.Context, scope, itemID string) error {
+	owner, err := w.store.OwnerScope(ctx, itemID)
+	if errors.Is(err, libhitl.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if scope == "" || owner != scope {
+		return libhitl.ErrNotFound // do not disclose another caller's item
+	}
+	return nil
 }
 
 // reply encodes a result, or the error as the go-hitl wire error document.

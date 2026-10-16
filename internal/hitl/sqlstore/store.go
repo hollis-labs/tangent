@@ -30,11 +30,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 
+	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/events"
 	tangenthitl "github.com/hollis-labs/tangent/internal/hitl"
@@ -55,6 +57,27 @@ const (
 	callerAssurance = "asserted"
 	timeLayout      = time.RFC3339Nano
 )
+
+type scopeKey struct{}
+
+// WithCallerScope carries the caller scope Tangent derived for this call (the
+// scope the native tools persist: standalone-local:<app>, or the verified
+// gateway:<producer>) to Create. The lib only knows the asserted application
+// id; this is the scope the row is partitioned by, so both backends partition
+// identically and the vault/isolation checks compare like with like.
+func WithCallerScope(ctx context.Context, scope string) context.Context {
+	return context.WithValue(ctx, scopeKey{}, scope)
+}
+
+// callerScopeFor is the caller_scope column for a row created for the lib's
+// asserted application id: the derived scope on the context, or the canonical
+// scope of the application id when the caller passed none.
+func callerScopeFor(ctx context.Context, applicationID string) string {
+	if scope, _ := ctx.Value(scopeKey{}).(string); scope != "" {
+		return scope
+	}
+	return authz.CallerScope(applicationID)
+}
 
 // Store is a hitl.Store backed by the interactions tables.
 type Store struct {
@@ -160,12 +183,31 @@ func (s *Store) load(ctx context.Context, q queryer, where string, args ...any) 
 		rec.ExpiresAt = &t
 	}
 	var r struct {
-		Kind string `json:"hitl_kind"`
+		Kind          string `json:"hitl_kind"`
+		ApplicationID string `json:"caller_application_id"`
 	}
 	if err = json.Unmarshal([]byte(refs), &r); err != nil {
 		return hitl.Record{}, 0, fmt.Errorf("sqlstore: external_refs: %w", err)
 	}
 	rec.Kind = r.Kind
+	if r.ApplicationID != "" {
+		// The lib knows the caller by the application id it asserted; the
+		// column holds the derived scope.
+		rec.CallerScope = r.ApplicationID
+	} else if bare, ok := strings.CutPrefix(rec.CallerScope, authz.AuthorityStandaloneLocal+":"); ok {
+		// A row the native path wrote: best effort, the partition half of the
+		// derived scope is the application id for ordinary ids.
+		rec.CallerScope = bare
+	}
+	if rec.Kind == "" {
+		// A row the native path wrote carries its kind in the request only.
+		var native struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal([]byte(request), &native) == nil {
+			rec.Kind = native.Kind
+		}
+	}
 	if rec.State.IsTerminal() {
 		at := rec.UpdatedAt
 		if terminalAt != nil {
@@ -310,14 +352,15 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 		policy["policy_ref"] = "request.expires_at"
 	}
 	policyJSON, _ := json.Marshal(policy)
-	refsJSON, _ := json.Marshal(map[string]string{"hitl_kind": rec.Kind})
+	dbScope := callerScopeFor(ctx, rec.CallerScope)
+	refsJSON, _ := json.Marshal(map[string]string{"hitl_kind": rec.Kind, "caller_application_id": rec.CallerScope})
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return hitl.Record{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if existing, _, getErr := s.load(ctx, tx, `caller_scope = ? AND idempotency_key = ?`, rec.CallerScope, rec.IdempotencyKey); getErr == nil {
+	if existing, _, getErr := s.load(ctx, tx, `caller_scope = ? AND idempotency_key = ?`, dbScope, rec.IdempotencyKey); getErr == nil {
 		return existing, false, nil
 	} else if !errors.Is(getErr, hitl.ErrNotFound) {
 		return hitl.Record{}, false, getErr
@@ -347,7 +390,7 @@ INSERT INTO interactions (id, surface_id, caller_scope, caller_authority, caller
   surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at,
   presented_projection_revision, participant_scope, participant_ref, participant_authority, participant_assurance, presented_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ItemID, s.surfaceID, rec.CallerScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
+		rec.ItemID, s.surfaceID, dbScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
 		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
 		rec.Revision+revisionBase, ts(rec.CreatedAt), now,
 		pRevision, pScope, pRef, pAuthority, pAssurance, pAt); err != nil {
@@ -450,7 +493,11 @@ WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, 
 		}
 	}
 	if next.Outcome != nil {
-		if err = queueDelivery(ctx, tx, itemID, prev.CallerScope, prevRev, next); err != nil {
+		var ownerScope string
+		if err = tx.QueryRowContext(ctx, `SELECT caller_scope FROM interactions WHERE id = ?`, itemID).Scan(&ownerScope); err != nil {
+			return err
+		}
+		if err = queueDelivery(ctx, tx, itemID, ownerScope, prevRev, next); err != nil {
 			return err
 		}
 	}
@@ -658,4 +705,17 @@ func queueDelivery(ctx context.Context, tx *sql.Tx, itemID, callerScope string, 
 			interaction.InteractionStateFailed, "", prevRev, at)
 	}
 	return nil
+}
+
+// OwnerScope returns the derived caller scope a row is partitioned by, or
+// hitl.ErrNotFound. The wire layer compares it with the caller's scope before
+// the lib answers, so isolation holds across derived scopes, not only across
+// the asserted application ids the lib sees.
+func (s *Store) OwnerScope(ctx context.Context, itemID string) (string, error) {
+	var scope string
+	err := s.db.QueryRowContext(ctx, `SELECT caller_scope FROM interactions WHERE id = ? AND surface_id = ?`, itemID, s.surfaceID).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", hitl.ErrNotFound
+	}
+	return scope, err
 }

@@ -119,7 +119,7 @@ func (s *Server) handleHITLEnqueue(
 	input map[string]any,
 ) (any, error) {
 	if s.hitlWire != nil {
-		return s.viaHITLWire(ctx, input, s.hitlWire.Enqueue)
+		return s.viaHITLWire(ctx, input, "source", s.hitlWire.Enqueue)
 	}
 	source, ok := objectField(input, "source")
 	if !ok {
@@ -137,7 +137,7 @@ func (s *Server) handleHITLGet(
 	input map[string]any,
 ) (any, error) {
 	if s.hitlWire != nil {
-		return s.viaHITLWire(ctx, input, s.hitlWire.Get)
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Get)
 	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
@@ -154,7 +154,7 @@ func (s *Server) handleHITLAwait(
 	input map[string]any,
 ) (any, error) {
 	if s.hitlWire != nil {
-		return s.viaHITLWire(ctx, input, s.hitlWire.Await)
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Await)
 	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
@@ -180,7 +180,7 @@ func (s *Server) handleHITLWithdraw(
 	input map[string]any,
 ) (any, error) {
 	if s.hitlWire != nil {
-		return s.viaHITLWire(ctx, input, s.hitlWire.Withdraw)
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Withdraw)
 	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
@@ -206,13 +206,23 @@ func (s *Server) handleHITLWithdraw(
 func (s *Server) viaHITLWire(
 	ctx context.Context,
 	input map[string]any,
-	call func(context.Context, []byte) ([]byte, error),
+	callerField string,
+	call func(context.Context, string, []byte) ([]byte, error),
 ) (any, error) {
+	// The scope is derived exactly as the native handlers derive it
+	// (directHITLActor), so both backends partition a caller identically.
+	asserted, _ := objectField(input, callerField)
+	agentID, _ := asserted["agent_id"].(string)
+	if callerField == "caller" {
+		agentID, _ = asserted["principal_ref"].(string)
+	}
+	applicationID, _ := asserted["application_id"].(string)
+	scope := directHITLActor(applicationID, agentID).Scope
 	doc, err := json.Marshal(input)
 	if err != nil {
 		return nil, s.hitlError(fmt.Errorf("%w: %w", hitl.ErrInvalidRequest, err))
 	}
-	reply, callErr := call(ctx, doc)
+	reply, callErr := call(ctx, scope, doc)
 	var body map[string]any
 	if decodeErr := json.Unmarshal(reply, &body); decodeErr != nil {
 		if callErr != nil {
