@@ -54,6 +54,15 @@ func (s *Server) registerHITLTools() error {
 		if err != nil {
 			return fmt.Errorf("build %s input schema: %w", tool.name, err)
 		}
+		if tool.name == "tangent_hitl_await" {
+			// The handler rejects an out-of-range wait_ms with the typed
+			// validation_failed wire error the shared contract requires; the
+			// SDK's own schema check would otherwise answer first with an
+			// untyped protocol message.
+			if waitMs := schema.Properties["wait_ms"]; waitMs != nil {
+				waitMs.Minimum, waitMs.Maximum = nil, nil
+			}
+		}
 		outputSchema, err := buildHITLOutputSchema(tool.output)
 		if err != nil {
 			return fmt.Errorf("build %s output schema: %w", tool.name, err)
