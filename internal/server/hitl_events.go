@@ -16,6 +16,7 @@ import (
 
 // HITLEventNotifier supplies per-subscriber wakeups after durable appends.
 // Wakeups may coalesce: the Log, not the notification channel, owns the records.
+// Subscribe must return a buffered channel; publishers must send without blocking.
 // The returned function releases the subscription when the request ends.
 type HITLEventNotifier interface {
 	Subscribe() (<-chan struct{}, func())
@@ -45,13 +46,14 @@ type hitlEventSession struct {
 	notify      <-chan struct{}
 	unsubscribe func()
 	initialGap  *hitlEventGap
+	checkpoint  string
 }
 
 var errHITLEventCursor = errors.New("invalid event cursor: expected <epoch>:<seq>")
 
 func parseHITLEventCursor(raw string) (string, streamhub.Seq, error) {
 	epoch, sequence, ok := strings.Cut(raw, ":")
-	if !ok || epoch == "" || strings.ContainsAny(epoch, "\r\n") || sequence == "" || strings.Trim(sequence, "0123456789") != "" {
+	if !ok || epoch == "" || strings.ContainsAny(epoch, "\x00\r\n") || sequence == "" || strings.Trim(sequence, "0123456789") != "" {
 		return "", 0, errHITLEventCursor
 	}
 	n, err := strconv.ParseUint(sequence, 10, 64)
@@ -65,12 +67,19 @@ func hitlEventID(epoch string, sequence streamhub.Seq) string {
 	return fmt.Sprintf("%s:%d", epoch, sequence)
 }
 
+func (s *HITLEventStream) validate() error {
+	if s == nil || s.Log == nil {
+		return nil
+	}
+	if s.Epoch == "" || strings.ContainsAny(s.Epoch, ":\x00\r\n") || s.Stream == "" {
+		return errors.New("incomplete event stream configuration")
+	}
+	return nil
+}
+
 func (s *HITLEventStream) open(ctx context.Context, r *http.Request) (*hitlEventSession, error) {
 	if s == nil || s.Log == nil {
 		return nil, nil
-	}
-	if s.Epoch == "" || strings.ContainsAny(s.Epoch, ":\r\n") || s.Stream == "" {
-		return nil, errors.New("incomplete event stream configuration")
 	}
 	raw := r.Header.Get("Last-Event-ID")
 	fromHeader := raw != ""
@@ -96,7 +105,13 @@ func (s *HITLEventStream) open(ctx context.Context, r *http.Request) (*hitlEvent
 	head, err := s.Log.Head(ctx, s.Stream)
 	if err != nil {
 		session.close()
-		return nil, err
+		// Keep an existing cursor across a revision-only fallback. Otherwise
+		// its first revision frame would clear EventSource's reconnect id.
+		fallback := &hitlEventSession{}
+		if hasCursor && cursorErr == nil {
+			fallback.checkpoint = raw
+		}
+		return fallback, err
 	}
 	switch {
 	case cursorErr != nil:
@@ -108,6 +123,9 @@ func (s *HITLEventStream) open(ctx context.Context, r *http.Request) (*hitlEvent
 		session.after = head.Latest
 		session.initialGap = session.gap("foreign_epoch", head.PrunedThrough+1, head.Latest)
 	}
+	// Establish the initial id on every connection, before any revision hint.
+	// The SSE parser starts each response with an empty last-event-id buffer.
+	session.checkpoint = hitlEventID(s.Epoch, session.after)
 	return session, nil
 }
 
@@ -149,8 +167,16 @@ func writeHITLTypedEvent(w io.Writer, epoch string, record streamhub.Record) err
 	return err
 }
 
+func (s *hitlEventSession) writeCheckpoint(w io.Writer) error {
+	if s == nil || s.checkpoint == "" {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "id: %s\n\n", s.checkpoint)
+	return err
+}
+
 func (s *hitlEventSession) replay(ctx context.Context, w io.Writer) error {
-	if s == nil {
+	if s == nil || s.source == nil {
 		return nil
 	}
 	if s.initialGap != nil {

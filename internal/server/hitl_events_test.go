@@ -82,6 +82,7 @@ func readTestSSEFrame(t *testing.T, reader *bufio.Reader) testSSEFrame {
 			if frame.kind != "" {
 				return frame
 			}
+			frame = testSSEFrame{}
 			continue
 		}
 		field, value, _ := strings.Cut(line, ": ")
@@ -98,11 +99,21 @@ func readTestSSEFrame(t *testing.T, reader *bufio.Reader) testSSEFrame {
 
 func openTestEventStream(t *testing.T, source *HITLEventStream, header, query string) *bufio.Reader {
 	t.Helper()
+	reader, _, _ := openTestEventConnection(t, source, header, query)
+	return reader
+}
+
+func openTestEventConnection(t *testing.T, source *HITLEventStream, header, query string) (*bufio.Reader, func(), string) {
+	t.Helper()
 	handler := newHITLHTTPHandler(&fakeHITLService{inbox: hitl.OperatorInbox{Revision: "revision-1"}})
 	handler.eventStream = source
 	handler.eventPoll = time.Hour
 	handler.eventLifetime = 10 * time.Second
-	server := httptest.NewServer(http.HandlerFunc(handler.events))
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(done)
+		handler.events(w, r)
+	}))
 	t.Cleanup(server.Close)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
@@ -117,7 +128,12 @@ func openTestEventStream(t *testing.T, source *HITLEventStream, header, query st
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = response.Body.Close() })
+	closeConnection := func() {
+		_ = response.Body.Close()
+		cancel()
+		<-done
+	}
+	t.Cleanup(closeConnection)
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
 	}
@@ -125,11 +141,27 @@ func openTestEventStream(t *testing.T, source *HITLEventStream, header, query st
 		t.Fatalf("headers = %v", response.Header)
 	}
 	reader := bufio.NewReader(response.Body)
+	checkpoint := ""
+	if source != nil && source.Log != nil {
+		checkpoint = readTestCheckpoint(t, reader)
+	}
 	legacy := readTestSSEFrame(t, reader)
 	if legacy.id != "" || legacy.kind != "revision" || legacy.data != `{"revision":"revision-1"}` {
 		t.Fatalf("legacy revision ping changed: %+v", legacy)
 	}
-	return reader
+	return reader, closeConnection, checkpoint
+}
+
+func readTestCheckpoint(t *testing.T, reader *bufio.Reader) string {
+	t.Helper()
+	line, err := reader.ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "id: ") {
+		t.Fatalf("initial cursor = %q, %v", line, err)
+	}
+	if blank, err := reader.ReadString('\n'); err != nil || blank != "\n" {
+		t.Fatalf("checkpoint must be id-only: %q, %v", blank, err)
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(line, "id: "), "\n")
 }
 
 func TestHITLTypedEventFramePreservesEnvelopeID(t *testing.T) {
@@ -181,6 +213,117 @@ func TestHITLTypedEventsWithoutCursorStartAtHead(t *testing.T) {
 	appendTestEvent(t, log, notify, 2)
 	if frame := readTestSSEFrame(t, reader); frame.id != "epoch-test:2" {
 		t.Fatalf("fresh stream replayed history: %+v", frame)
+	}
+}
+
+func TestHITLTypedEventsIdleReconnectReplaysInterveningAppend(t *testing.T) {
+	log := streamhub.NewMemoryLog()
+	defer log.Close()
+	notify := &testEventNotifier{}
+	source := &HITLEventStream{Log: log, Notify: notify, Epoch: testEventEpoch, Stream: testEventStream}
+	_, disconnect, cursor := openTestEventConnection(t, source, "", "")
+	if cursor != "epoch-test:0" {
+		t.Fatalf("initial checkpoint = %q", cursor)
+	}
+	disconnect()
+	// A second idle connection must keep the cursor too: an initial revision
+	// without a preceding checkpoint would clear EventSource's remembered id.
+	_, disconnect, cursor = openTestEventConnection(t, source, cursor, "")
+	if cursor != "epoch-test:0" {
+		t.Fatalf("idle reconnect checkpoint = %q", cursor)
+	}
+	disconnect()
+	notify.mu.Lock()
+	subscribers := len(notify.subs)
+	notify.mu.Unlock()
+	if subscribers != 0 {
+		t.Fatalf("disconnect leaked %d subscriptions", subscribers)
+	}
+	appendTestEvent(t, log, notify, 1)
+	// EventSource uses the id-only checkpoint even though no typed event was
+	// received on the first connection.
+	reader := openTestEventStream(t, source, cursor, "")
+	appendTestEvent(t, log, notify, 2)
+	for i := 1; i <= 2; i++ {
+		if frame := readTestSSEFrame(t, reader); frame.id != fmt.Sprintf("epoch-test:%d", i) {
+			t.Fatalf("idle reconnect skipped an event: %+v", frame)
+		}
+	}
+}
+
+func TestHITLTypedEventsRejectInvalidConfigurationAtStartup(t *testing.T) {
+	envelopes, err := envelope.New(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := streamhub.NewMemoryLog()
+	defer log.Close()
+	for _, source := range []*HITLEventStream{
+		{Log: log, Stream: testEventStream},
+		{Log: log, Epoch: testEventEpoch},
+		{Log: log, Epoch: "bad:epoch", Stream: testEventStream},
+		{Log: log, Epoch: "bad\nepoch", Stream: testEventStream},
+		{Log: log, Epoch: "bad\x00epoch", Stream: testEventStream},
+	} {
+		if _, err := New(Config{Envelope: envelopes, HITLEvents: source}); err == nil {
+			t.Fatalf("invalid typed config accepted: %+v", source)
+		}
+	}
+	if _, err := New(Config{Envelope: envelopes, HITLEvents: &HITLEventStream{}}); err != nil {
+		t.Fatalf("nil log must leave typed stream disabled: %v", err)
+	}
+}
+
+type failingHeadLog struct{ streamhub.Log }
+
+func (l failingHeadLog) Head(context.Context, string) (streamhub.Head, error) {
+	return streamhub.Head{}, errors.New("head unavailable")
+}
+
+type cancelAfterRefreshService struct {
+	*fakeHITLService
+	cancel context.CancelFunc
+}
+
+func (s cancelAfterRefreshService) Inbox(ctx context.Context) (hitl.OperatorInbox, error) {
+	inbox, err := s.fakeHITLService.Inbox(ctx)
+	if inbox.Revision == "revision-2" {
+		s.cancel()
+	}
+	return inbox, err
+}
+
+func TestHITLTypedEventsHeadFailurePreservesRevisionHints(t *testing.T) {
+	log := streamhub.NewMemoryLog()
+	defer log.Close()
+	notify := &testEventNotifier{}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	service := cancelAfterRefreshService{&fakeHITLService{inbox: hitl.OperatorInbox{Revision: "revision-1"}}, cancel}
+	handler := newHITLHTTPHandler(service)
+	handler.eventStream = &HITLEventStream{Log: failingHeadLog{log}, Notify: notify, Epoch: testEventEpoch, Stream: testEventStream}
+	handler.eventPoll = time.Millisecond
+	handler.eventLifetime = 10 * time.Second
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/hitl/events", nil).WithContext(ctx)
+	request.Header.Set("Last-Event-ID", "epoch-test:7")
+	handler.events(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("head failure disabled legacy SSE: %d %v", response.Code, response.Header())
+	}
+	reader := bufio.NewReader(response.Body)
+	if cursor := readTestCheckpoint(t, reader); cursor != "epoch-test:7" {
+		t.Fatalf("fallback lost reconnect cursor: %q", cursor)
+	}
+	for _, revision := range []string{"revision-1", "revision-2"} {
+		if frame := readTestSSEFrame(t, reader); frame.kind != "revision" || frame.data != fmt.Sprintf(`{"revision":%q}`, revision) {
+			t.Fatalf("head failure lost revision hint: %+v", frame)
+		}
+	}
+	notify.mu.Lock()
+	defer notify.mu.Unlock()
+	if len(notify.subs) != 0 {
+		t.Fatal("head failure leaked subscription")
 	}
 }
 

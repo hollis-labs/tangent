@@ -246,6 +246,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Envelope == nil {
 		return nil, fmt.Errorf("server: envelope service is required")
 	}
+	if err := cfg.HITLEvents.validate(); err != nil {
+		return nil, fmt.Errorf("server: hitl events: %w", err)
+	}
 
 	if cfg.PluginHostInstance == "" {
 		epoch, err := driver.NewHostInstance()

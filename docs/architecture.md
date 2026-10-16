@@ -313,14 +313,20 @@ separate from both per-room `/ws` and the four caller-facing
 When `server.Config.HITLEvents` supplies a log, the same endpoint also emits
 typed envelopes with SSE ids of `<epoch>:<seq>`; the envelope's own id stays
 unchanged. `Last-Event-ID` takes precedence over `?after=` for ordered replay,
-while a reader without a cursor starts at the current head. The handler
+while a reader without a cursor starts at the current head. Each typed
+connection begins with an id-only checkpoint before its first revision hint,
+so idle reconnects preserve the cursor. The handler
 subscribes before replay and drains the log on notifications and periodic
 polls. Pruned, foreign-epoch, and ahead-of-head cursors receive a `gap` event
 containing `reason`, `earliest_available`, `high_water`, and `epoch`, then
-continue from the high-water cursor. Malformed query cursors receive HTTP 400;
+continue from the high-water cursor, skipping retained history and requiring
+the consumer to reload durable state. Malformed query cursors receive HTTP 400;
 malformed reconnect headers receive an `invalid_cursor` gap so EventSource
 can recover. A gap also resets the SSE id to `high_water`. A nil log keeps the
-revision-only behavior, and the SPA continues using revision hints.
+revision-only behavior, and the SPA continues using revision hints. Invalid
+typed-stream configuration fails at startup. A failed log Head read degrades
+that connection to revision hints while preserving any valid supplied cursor,
+retrying typed setup on reconnect.
 
 ### Durable Docs operator surface
 

@@ -177,10 +177,10 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, errHITLEventCursor) {
 			http.Error(w, errHITLEventCursor.Error(), http.StatusBadRequest)
-		} else {
-			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+			return
 		}
-		return
+		// A failed typed log must not disable legacy revision hints. Retry
+		// opening it when this bounded stream ends and EventSource reconnects.
 	}
 	defer stream.close()
 	var notify <-chan struct{}
@@ -195,6 +195,9 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	if err := stream.writeCheckpoint(w); err != nil {
+		return
+	}
 	w.Header().Set("X-Accel-Buffering", "no")
 	if err := writeHITLRevisionEvent(w, inbox.Revision); err != nil {
 		return
