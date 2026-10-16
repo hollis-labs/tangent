@@ -168,11 +168,38 @@ func TestMappingFailureIsSkippedNotFatal(t *testing.T) {
 	if err = tx.QueryRow(`SELECT COUNT(*) FROM event_outbox`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("rows = %d, %v", n, err)
 	}
+	var class, kind string
+	if err = tx.QueryRow(`SELECT error_class, kind FROM event_outbox_skipped`).Scan(&class, &kind); err != nil || class != "item" || kind != catalog.KindApprovalRequested {
+		t.Fatalf("skipped row = %q/%q, %v; want a bounded class, no raw text", class, kind, err)
+	}
 	// a database fault still fails the transaction
 	if _, err = tx.Exec(`DROP TABLE event_outbox_state`); err != nil {
 		t.Fatal(err)
 	}
 	if err = (Emitter{}).EmitOrSkip(ctx, tx, Approval{Kind: catalog.KindApprovalRequested, ItemID: "i"}); err == nil {
 		t.Fatal("a database fault must be returned")
+	}
+}
+
+func TestAssuranceDetailUsesClosedVocabulary(t *testing.T) {
+	ctx := context.Background()
+	for in, want := range map[string]string{"asserted": "asserted", "operator-token": "operator-token", "future-thing": "other"} {
+		db := openOutbox(t)
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		row, err := Emitter{}.Emit(ctx, tx, Approval{Kind: catalog.KindApprovalRequested, ItemID: "i", Class: "approval", Requester: Principal{Kind: "agent", ID: "a", Assurance: in}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = tx.Rollback()
+		var ev runtimeevents.Event
+		if err = json.Unmarshal(row.EnvelopeJSON, &ev); err != nil || !strings.Contains(string(ev.Payload), `"requester_assurance":"`+want+`"`) {
+			t.Fatalf("%s: payload = %s (%v)", in, ev.Payload, err)
+		}
+	}
+	if _, _, bad := Sanitize(catalog.KindApprovalRequested, map[string]any{"request_id": "i", "hitl_ref": "r", "requester_assurance": "free text"}); bad != "vocabulary" {
+		t.Fatalf("out-of-vocabulary assurance must fail closed, got %q", bad)
 	}
 }
