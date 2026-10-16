@@ -156,7 +156,7 @@ func requireParticipant(
 		session, err := gate.Resolve(r)
 		if err != nil {
 			writeParticipantRefusal(w)
-			reportObjectAccessDenial(r.Context(), recorder, capability, "browser-api")
+			reportObjectAccessDenial(r.Context(), recorder, capability)
 			return
 		}
 		// Through the matrix, not just the session's own grant set. A
@@ -169,11 +169,11 @@ func requireParticipant(
 			// the fixed message that names nothing.
 			if errors.Is(authErr, participant.ErrAssuranceInsufficient) {
 				writeAssuranceRefusal(w)
-				reportObjectAccessDenialCode(r.Context(), recorder, capability, "browser-api", codeAssuranceInsufficient)
+				reportObjectAccessDenialCode(r.Context(), recorder, capability, codeAssuranceInsufficient)
 				return
 			}
 			writeParticipantRefusal(w)
-			reportObjectAccessDenial(r.Context(), recorder, capability, "browser-api")
+			reportObjectAccessDenial(r.Context(), recorder, capability)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(participant.WithSession(r.Context(), session)))

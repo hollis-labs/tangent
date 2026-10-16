@@ -114,7 +114,7 @@ func revokeSessions(args []string, dbPath string, stdout, stderr io.Writer) int 
 		return 2
 	}
 	for _, prefix := range prefixes {
-		if !validRevokePrefix(prefix) {
+		if !participant.ValidRevokePrefix(prefix) {
 			_, _ = fmt.Fprintf(stderr, "tangent: --id-prefix must be at least %d hex digits\n",
 				participant.MinRevokePrefixLength)
 			return 2
@@ -148,19 +148,6 @@ func revokeSessions(args []string, dbPath string, stdout, stderr io.Writer) int 
 	}
 	_, _ = fmt.Fprintf(stdout, "revoked %d session(s)\n", total)
 	return 0
-}
-
-func validRevokePrefix(prefix string) bool {
-	prefix = strings.ToLower(strings.TrimSpace(prefix))
-	if len(prefix) < participant.MinRevokePrefixLength {
-		return false
-	}
-	for _, r := range prefix {
-		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') && r != '-' {
-			return false
-		}
-	}
-	return true
 }
 
 func listSessions(dbPath string, stdout, stderr io.Writer) int {

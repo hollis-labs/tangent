@@ -164,7 +164,7 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logg
 		session, err := gate.Resolve(r)
 		if err != nil {
 			writeParticipantRefusal(w)
-			reportObjectAccessDenial(r.Context(), recorder, authz.View, "browser-api")
+			reportObjectAccessDenial(r.Context(), recorder, authz.View)
 			return
 		}
 		writeHITLJSON(w, http.StatusOK, sessionStatus{
@@ -178,7 +178,7 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logg
 		session, err := gate.Resolve(r)
 		if err != nil {
 			writeParticipantRefusal(w)
-			reportObjectAccessDenial(r.Context(), recorder, authz.Resolve, "browser-api")
+			reportObjectAccessDenial(r.Context(), recorder, authz.Resolve)
 			return
 		}
 		attempt, admitted, flood := limiter.admit(session.ID)
@@ -187,13 +187,13 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logg
 			// threshold: never a token, a session, or a candidate.
 			logger.Warn("operator elevation: failure rate above alert threshold",
 				"threshold_per_minute", elevationFloodThreshold)
-			reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, "browser-api", codeElevationFlood)
+			reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, codeElevationFlood)
 		}
 		if !admitted {
 			writeHITLJSON(w, http.StatusTooManyRequests, map[string]any{
 				"code": codeElevationRateLimited, "message": elevationRateLimitedMessage,
 			})
-			reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, "browser-api", codeElevationRateLimited)
+			reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, codeElevationRateLimited)
 			return
 		}
 		candidate, decodeErr := decodeElevateCommand(w, r)
@@ -229,7 +229,7 @@ func refuseElevation(w http.ResponseWriter, r *http.Request, recorder *telemetry
 	writeHITLJSON(w, http.StatusForbidden, map[string]any{
 		"code": codeElevationRefused, "message": elevationRefusedMessage,
 	})
-	reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, "browser-api", codeElevationRefused)
+	reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, codeElevationRefused)
 }
 
 // decodeElevateCommand reads exactly one small JSON object carrying the token.

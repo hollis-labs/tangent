@@ -30,14 +30,21 @@ import (
 // hold. ADR 0004 §6.5 fixes the *message* a refusal may carry for exactly the
 // reason ADR 0002 §8 fixes what telemetry may carry, and the two rules meet
 // here.
+//
+// Every caller is the browser API gate, so the transport attribute is fixed
+// at "browser-api" rather than threaded through as a parameter; internal/ws
+// and internal/mcp record their own denials.
 func reportObjectAccessDenial(
 	ctx context.Context,
 	recorder *telemetry.Recorder,
 	capability authz.Capability,
-	transport string,
 ) {
-	reportObjectAccessDenialCode(ctx, recorder, capability, transport, "forbidden")
+	reportObjectAccessDenialCode(ctx, recorder, capability, "forbidden")
 }
+
+// browserAPITransport is the transport attribute every browser-gate denial
+// carries.
+const browserAPITransport = "browser-api"
 
 // reportObjectAccessDenialCode is reportObjectAccessDenial with a refusal
 // code from the telemetry package's closed vocabulary: `forbidden`,
@@ -47,7 +54,6 @@ func reportObjectAccessDenialCode(
 	ctx context.Context,
 	recorder *telemetry.Recorder,
 	capability authz.Capability,
-	transport string,
 	code string,
 ) {
 	recorder.Emit(ctx, telemetry.Event{
@@ -67,7 +73,7 @@ func reportObjectAccessDenialCode(
 		Attrs: []telemetry.Attr{
 			telemetry.String(telemetry.AttrNamespace, "object-access"),
 			telemetry.String(telemetry.AttrCapability, string(capability)),
-			telemetry.String(telemetry.AttrTransport, transport),
+			telemetry.String(telemetry.AttrTransport, browserAPITransport),
 		},
 	})
 }

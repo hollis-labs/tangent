@@ -14,7 +14,7 @@ package interaction
 // assurance, in the same participant scope, may supersede the presenter. A
 // lower or equal assurance never may, so an unverified session cannot steal
 // an item an operator presented, and two distinct identities at the same
-// assurance keep the original single-presenter behaviour. The takeover is
+// assurance keep the original single-presenter behavior. The takeover is
 // journaled as EventPresenterSuperseded with both participant refs.
 
 // EventPresenterSuperseded is the interaction_events type recorded when a

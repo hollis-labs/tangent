@@ -37,12 +37,12 @@ export function OperatorTokenPrompt() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 p-4">
       <form
         role="dialog"
         aria-modal="true"
         aria-labelledby="operator-token-title"
-        className="w-full max-w-sm space-y-3 rounded-md border border-zinc-700 bg-zinc-950 p-4 text-zinc-100 shadow"
+        className="w-full max-w-sm space-y-3 rounded-md border border-border bg-bg-elevated p-4 text-fg shadow"
         onSubmit={submit}
         onKeyDown={(event) => {
           if (event.key === "Escape") cancelOperatorElevation();
@@ -51,7 +51,7 @@ export function OperatorTokenPrompt() {
         <h2 id="operator-token-title" className="text-sm font-medium">
           Enter operator token
         </h2>
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs text-fg-muted">
           Deciding requires operator elevation. The token is sent once and not stored.
         </p>
         <Input
@@ -65,7 +65,7 @@ export function OperatorTokenPrompt() {
           onChange={(event) => setToken(event.target.value)}
         />
         {prompt.error ? (
-          <p role="alert" className="text-xs text-red-400">
+          <p role="alert" className="text-xs text-danger">
             {prompt.error}
           </p>
         ) : null}

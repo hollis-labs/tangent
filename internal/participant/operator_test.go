@@ -67,12 +67,12 @@ func TestElevateRotatesToOperatorAssuranceOnlyWithTheToken(t *testing.T) {
 	}
 
 	// Not configured: even the right value is refused.
-	if _, err := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken); !errors.Is(err, ErrElevationRefused) {
-		t.Fatalf("elevation with no token configured = %v, want refused", err)
+	if _, elevateErr := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken); !errors.Is(elevateErr, ErrElevationRefused) {
+		t.Fatalf("elevation with no token configured = %v, want refused", elevateErr)
 	}
 	gate.ConfigureOperatorToken(fixtureOperatorToken, nil)
-	if _, err := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken+"x"); !errors.Is(err, ErrElevationRefused) {
-		t.Fatalf("elevation with a wrong token = %v, want refused", err)
+	if _, elevateErr := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken+"x"); !errors.Is(elevateErr, ErrElevationRefused) {
+		t.Fatalf("elevation with a wrong token = %v, want refused", elevateErr)
 	}
 
 	recorder := httptest.NewRecorder()
@@ -87,15 +87,15 @@ func TestElevateRotatesToOperatorAssuranceOnlyWithTheToken(t *testing.T) {
 	if len(cookies) != 1 || cookies[0].Name != CookieName || cookies[0].Value == "" {
 		t.Fatalf("elevation set cookies %v", cookies)
 	}
-	if err := gate.Authorize(elevated, LocalSurfaces(), authz.Resolve); err != nil {
-		t.Fatalf("an elevated session cannot resolve: %v", err)
+	if authErr := gate.Authorize(elevated, LocalSurfaces(), authz.Resolve); authErr != nil {
+		t.Fatalf("an elevated session cannot resolve: %v", authErr)
 	}
-	if err := gate.Authorize(minted, LocalSurfaces(), authz.Resolve); !errors.Is(err, ErrAssuranceInsufficient) {
-		t.Fatalf("a minted session resolving = %v, want ErrAssuranceInsufficient", err)
+	if authErr := gate.Authorize(minted, LocalSurfaces(), authz.Resolve); !errors.Is(authErr, ErrAssuranceInsufficient) {
+		t.Fatalf("a minted session resolving = %v, want ErrAssuranceInsufficient", authErr)
 	}
 	// The predecessor cannot be elevated again: it was revoked.
-	if _, err := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken); !errors.Is(err, ErrElevationRefused) {
-		t.Fatalf("re-elevating a rotated session = %v, want refused", err)
+	if _, elevateErr := gate.Elevate(ctx, httptest.NewRecorder(), minted, fixtureOperatorToken); !errors.Is(elevateErr, ErrElevationRefused) {
+		t.Fatalf("re-elevating a rotated session = %v, want refused", elevateErr)
 	}
 	assertValueAbsentFromDatabase(t, database, fixtureOperatorToken)
 

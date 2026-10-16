@@ -19,8 +19,8 @@ func TestSessionRevokeCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if err := tangentdb.RunMigrations(database); err != nil {
-		t.Fatalf("migrate: %v", err)
+	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
+		t.Fatalf("migrate: %v", migrateErr)
 	}
 	store, err := participant.NewStore(database)
 	if err != nil {

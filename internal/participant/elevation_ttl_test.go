@@ -41,8 +41,8 @@ func TestElevationLapsesAfterTwelveHoursWithoutRefreshingTheSession(t *testing.T
 	cookie := recorder.Result().Cookies()[0].Value
 
 	clock = clock.Add(ElevatedLifetime - time.Minute)
-	if current, err := store.Lookup(ctx, cookie); err != nil || !current.Elevated() {
-		t.Fatalf("inside the window: %+v, %v; want elevated", current, err)
+	if current, lookupErr := store.Lookup(ctx, cookie); lookupErr != nil || !current.Elevated() {
+		t.Fatalf("inside the window: %+v, %v; want elevated", current, lookupErr)
 	}
 	clock = clock.Add(2 * time.Minute)
 	lapsed, err := store.Lookup(ctx, cookie)
@@ -52,8 +52,8 @@ func TestElevationLapsesAfterTwelveHoursWithoutRefreshingTheSession(t *testing.T
 	if lapsed.Elevated() || lapsed.Holds(authz.Resolve) {
 		t.Fatalf("lapsed session = %+v, want minted assurance without resolve", lapsed)
 	}
-	if err := gate.Authorize(lapsed, LocalSurfaces(), authz.Resolve); !errors.Is(err, ErrAssuranceInsufficient) {
-		t.Fatalf("lapsed resolve = %v, want ErrAssuranceInsufficient", err)
+	if authErr := gate.Authorize(lapsed, LocalSurfaces(), authz.Resolve); !errors.Is(authErr, ErrAssuranceInsufficient) {
+		t.Fatalf("lapsed resolve = %v, want ErrAssuranceInsufficient", authErr)
 	}
 	byID, err := store.LookupByID(ctx, elevated.ID)
 	if err != nil || byID.Elevated() {

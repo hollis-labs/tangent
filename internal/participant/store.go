@@ -268,18 +268,31 @@ const MinRevokePrefixLength = 8
 // ErrInvalidPrefix means a revocation prefix was too short or not hex.
 var ErrInvalidPrefix = errors.New("participant: session id prefix must be at least 8 hex digits")
 
+// ValidRevokePrefix reports whether prefix is at least MinRevokePrefixLength
+// characters of lowercase hex (UUID hyphens allowed), so it can never carry a
+// LIKE wildcard or sweep up sessions by accident.
+func ValidRevokePrefix(prefix string) bool {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if len(prefix) < MinRevokePrefixLength {
+		return false
+	}
+	for _, r := range prefix {
+		isDigit := r >= '0' && r <= '9'
+		isHexLetter := r >= 'a' && r <= 'f'
+		if !isDigit && !isHexLetter && r != '-' {
+			return false
+		}
+	}
+	return true
+}
+
 // RevokeByIDPrefix ends every live session whose id starts with prefix, and
 // returns how many it ended. The prefix is validated as lowercase hex (with
 // the UUID hyphens allowed) so it can never carry a LIKE wildcard.
 func (s *Store) RevokeByIDPrefix(ctx context.Context, prefix, reason string) (int64, error) {
 	prefix = strings.ToLower(strings.TrimSpace(prefix))
-	if len(prefix) < MinRevokePrefixLength {
+	if !ValidRevokePrefix(prefix) {
 		return 0, ErrInvalidPrefix
-	}
-	for _, r := range prefix {
-		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'f') && r != '-' {
-			return 0, ErrInvalidPrefix
-		}
 	}
 	result, err := s.db.ExecContext(ctx, `
 UPDATE participant_sessions SET revoked_at = ?, revoked_reason = ?

@@ -28,7 +28,7 @@ func (app *guardedApp) dialRoom(t *testing.T, roomID string, cookie *http.Cookie
 }
 
 // errorFrames reads a socket for the rest of the test and forwards the code
-// of every error frame. A single long-lived reader matters: cancelling a read
+// of every error frame. A single long-lived reader matters: canceling a read
 // closes a coder/websocket connection.
 func errorFrames(t *testing.T, conn *websocket.Conn) <-chan string {
 	t.Helper()
