@@ -51,13 +51,13 @@ build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
 		-ldflags "-X github.com/hollis-labs/tangent/internal/buildinfo.Commit=$$commit -X github.com/hollis-labs/tangent/internal/buildinfo.Dirty=$$dirty" \
 		-o tangent ./cmd/tangent
 
-# The first-party plugins live in github.com/hollis-labs/tangent-plugins, one
-# module each. tangent-plugins.version pins the module version operators
-# install; smoke tests use tangent-plugins.smoke-ref separately.
-# install-plugins runs go install at the pinned module version, lets the binary emit
+# The first-party plugins live in github.com/hollis-labs/plugins, one
+# tangent-<name> module each. tangent-plugins.version pins the source commit
+# operators install; smoke tests use tangent-plugins.smoke-ref separately.
+# install-plugins runs go install at that commit, lets the binary emit
 # its plugin.yaml, and `tangent plugin install` the result.
 #
-# TANGENT_PLUGINS_SRC=/path/to/tangent-plugins builds from that checkout
+# TANGENT_PLUGINS_SRC=/path/to/plugins builds from that checkout
 # instead, for changing a plugin and Tangent in the same sitting.
 PLUGINS = runner tesseract torque
 TANGENT_PLUGINS_VERSION := $(shell cat tangent-plugins.version)
@@ -67,9 +67,9 @@ install-plugins: build-go ## Install the pinned first-party plugins (tangent-plu
 	for p in $(PLUGINS); do \
 		dir="$$stage/tangent.plugin.$$p"; mkdir -p "$$dir/bin"; \
 		if [ -n "$$TANGENT_PLUGINS_SRC" ]; then \
-			(cd "$$TANGENT_PLUGINS_SRC/$$p" && go build -o "$$dir/bin/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p); \
+			(cd "$$TANGENT_PLUGINS_SRC/tangent-$$p" && go build -o "$$dir/bin/tangent-plugin-$$p" ./cmd/tangent-plugin-$$p); \
 		else \
-			GOBIN="$$dir/bin" go install github.com/hollis-labs/tangent-plugins/$$p/cmd/tangent-plugin-$$p@$(TANGENT_PLUGINS_VERSION); \
+			GOBIN="$$dir/bin" go install github.com/hollis-labs/plugins/tangent-$$p/cmd/tangent-plugin-$$p@$(TANGENT_PLUGINS_VERSION); \
 		fi; \
 		"$$dir/bin/tangent-plugin-$$p" --manifest > "$$dir/plugin.yaml"; \
 		./tangent plugin install "$$dir"; \

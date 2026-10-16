@@ -10,14 +10,9 @@ jobs:
     name: Go (lint + build + test)
     runs-on: ubuntu-latest
     env:
-      # No GOPRIVATE: every hollis-labs module Tangent resolves is public
-      # (libs monorepo, tangent-plugins), and the smoke helper's plugin build
-      # still pulls pre-reorg libs versions whose tags were removed from git
-      # but remain on the module proxy. GOPRIVATE would force a direct git
-      # fetch and fail with "unknown revision". The former GH_PAT git URL
-      # rewrite is gone for the same reason: nothing here is private.
-      # The smoke helper fetches the same public source pin in local and CI runs.
-      # tangent-plugins.version remains the separate operator installation pin.
+      # All hollis-labs modules are public and resolve through the module proxy.
+      # The smoke helper fetches the plugins monorepo source pin used locally;
+      # tangent-plugins.version separately controls operator installation.
       TANGENT_SMOKE_EXTRA_PLUGINS: github
     steps:
       - uses: actions/checkout@v4

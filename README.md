@@ -74,7 +74,7 @@ features: the Torque plugin syncs a Tangent board to a Torque board through
 Torque's own client and authority, and the Tesseract plugin does the same for
 review write-back. Tangent's own binary knows nothing about either domain — a
 plugin is the only thing that does, and the first-party plugins live in their
-own repository, [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins).
+own repository, [`hollis-labs/plugins`](https://github.com/hollis-labs/plugins).
 
 ## Roadmap
 
