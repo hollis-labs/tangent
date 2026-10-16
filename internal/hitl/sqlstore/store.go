@@ -51,7 +51,6 @@ const (
 	callerAuthority = "go-hitl-store"
 	callerAssurance = "asserted"
 	timeLayout      = time.RFC3339Nano
-	terminalStates  = `'resolved', 'canceled', 'expired', 'failed', 'superseded'`
 )
 
 // Store is a hitl.Store backed by the interactions tables.
@@ -67,6 +66,19 @@ var _ hitl.Store = (*Store)(nil)
 func New(db *sql.DB) *Store {
 	return &Store{db: db, surfaces: interaction.NewStore(db), surfaceID: DefaultSurfaceID}
 }
+
+// terminalStatesJSON is a JSON array of the lib's terminal states, derived from
+// hitl.AllStates so a lib change can't leave the expiry scan behind.
+var terminalStatesJSON = func() string {
+	var states []string
+	for _, state := range hitl.AllStates() {
+		if state.IsTerminal() {
+			states = append(states, string(state))
+		}
+	}
+	raw, _ := json.Marshal(states)
+	return string(raw)
+}()
 
 func ts(t time.Time) string { return t.UTC().Format(timeLayout) }
 
@@ -460,18 +472,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return err
 }
 
+// limitOrAll maps the Store contract's "no limit" (limit <= 0) to SQLite's -1.
+func limitOrAll(limit int) int {
+	if limit > 0 {
+		return limit
+	}
+	return -1
+}
+
 // DueForExpiry implements hitl.Store.
 func (s *Store) DueForExpiry(ctx context.Context, now time.Time, limit int) ([]hitl.Record, error) {
-	q := `SELECT id FROM interactions
-WHERE lifecycle_state NOT IN (` + terminalStates + `) AND surface_id = ?
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM interactions
+WHERE lifecycle_state NOT IN (SELECT value FROM json_each(?)) AND surface_id = ?
   AND json_extract(policy, '$.expires_at_ns') IS NOT NULL AND json_extract(policy, '$.expires_at_ns') <= ?
-ORDER BY json_extract(policy, '$.expires_at_ns'), id`
-	args := []any{s.surfaceID, now.UnixNano()}
-	if limit > 0 {
-		q += ` LIMIT ?`
-		args = append(args, limit)
-	}
-	rows, err := s.db.QueryContext(ctx, q, args...)
+ORDER BY json_extract(policy, '$.expires_at_ns'), id
+LIMIT ?`, terminalStatesJSON, s.surfaceID, now.UnixNano(), limitOrAll(limit))
 	if err != nil {
 		return nil, err
 	}

@@ -83,3 +83,48 @@ func TestRowsAreTangentInteractions(t *testing.T) {
 		t.Fatalf("outcome = %#v; want the responder kind to round-trip", got.Outcome)
 	}
 }
+
+// TestDueForExpirySkipsEveryTerminalState checks the expiry scan against the
+// lib's own terminal states rather than a copied list.
+func TestDueForExpirySkipsEveryTerminalState(t *testing.T) {
+	_, store := newDBStore(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	due := t0.Add(-time.Hour)
+	mk := func(id string) hitl.Record {
+		return hitl.Record{ItemID: id, CallerScope: "app", IdempotencyKey: id, Digest: "d", Kind: "approval",
+			Request: []byte(`{"kind":"approval"}`), State: hitl.StatePresented, Revision: 1, CreatedAt: t0, UpdatedAt: t0, ExpiresAt: &due}
+	}
+	outcomes := map[hitl.State]func(id string) hitl.Outcome{
+		hitl.StateResolved: func(id string) hitl.Outcome {
+			return hitl.Resolved{ItemID: id, InteractionRevision: 2, Resolution: hitl.ResolutionRecord{ResolutionID: "r-" + id,
+				Response: hitl.Response{Kind: "approval", Decision: "approved"}, Participant: hitl.Participant{PrincipalRef: "p", Assurance: "asserted"},
+				ResolvedAt: t0, InteractionRevision: 2}}
+		},
+		hitl.StateCanceled: func(id string) hitl.Outcome {
+			return hitl.Canceled{ItemID: id, InteractionRevision: 2, Cause: hitl.CauseCallerWithdrawn, TerminatedAt: t0}
+		},
+		hitl.StateExpired: func(id string) hitl.Outcome {
+			return hitl.Expired{ItemID: id, InteractionRevision: 2, PolicyRef: "request.expires_at", TerminatedAt: t0}
+		},
+	}
+	if _, _, err := store.Create(ctx, mk("live")); err != nil {
+		t.Fatal(err)
+	}
+	for state, outcome := range outcomes {
+		id := string(state)
+		rec := mk(id)
+		if _, _, err := store.Create(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+		next := rec
+		next.State, next.Revision, next.Outcome = state, 2, outcome(id)
+		if err := store.Swap(ctx, id, 1, next); err != nil {
+			t.Fatalf("%s: %v", state, err)
+		}
+	}
+	got, err := store.DueForExpiry(ctx, t0, 0)
+	if err != nil || len(got) != 1 || got[0].ItemID != "live" {
+		t.Fatalf("DueForExpiry = %v, %v; want only the nonterminal item", got, err)
+	}
+}
