@@ -71,6 +71,9 @@ type sessionRigOptions struct {
 	// disabledPackages turns named packages off after registration, the
 	// runtime toggle rather than the removal.
 	disabledPackages []string
+	// participant installs a ws participant resolver, which is how a test
+	// attaches as a specific session binding (an elevated one, say).
+	participant tangentws.ParticipantResolver
 }
 
 func newSessionRig(t *testing.T) *sessionRig {
@@ -177,6 +180,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 
 	wsHandler := tangentws.New(mgr, logger)
 	wsHandler.SetOriginPatterns([]string{"*"})
+	if options.participant != nil {
+		wsHandler.SetParticipantResolver(options.participant)
+	}
 	wsSrv := httptest.NewServer(wsHandler)
 
 	// Telemetry is wired exactly as production wires it, over the same database

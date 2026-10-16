@@ -154,6 +154,14 @@ func (g *Gate) ResolveBinding(r *http.Request) (room.ParticipantBinding, error) 
 	if err != nil {
 		return room.ParticipantBinding{}, err
 	}
+	return g.binding(session), nil
+}
+
+// binding projects a session into the room-facing binding. Revalidate closes
+// over the row id so a socket can re-read its session before an
+// authority-bearing frame without the id ever riding in the binding.
+func (g *Gate) binding(session Session) room.ParticipantBinding {
+	sessionID := session.ID
 	return room.ParticipantBinding{
 		Scope:        session.Scope,
 		PrincipalRef: session.Ref,
@@ -162,5 +170,12 @@ func (g *Gate) ResolveBinding(r *http.Request) (room.ParticipantBinding, error) 
 		// Effective, not stored: an unelevated session's binding never carries
 		// `resolve`, so a room frame that needs it is refused the same way.
 		Capabilities: authz.FormatCapabilities(effectiveCapabilities(session)),
-	}, nil
+		Revalidate: func(ctx context.Context) (room.ParticipantBinding, error) {
+			current, err := g.store.LookupByID(ctx, sessionID)
+			if err != nil {
+				return room.ParticipantBinding{}, err
+			}
+			return g.binding(current), nil
+		},
+	}
 }

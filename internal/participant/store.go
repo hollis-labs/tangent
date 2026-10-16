@@ -89,40 +89,63 @@ func (s *Store) Lookup(ctx context.Context, value string) (Session, error) {
 		return Session{}, ErrNoSession
 	}
 	hash := HashCookie(value)
+	session, storedHash, err := s.load(ctx, `cookie_sha256 = ?`, hash)
+	if err != nil {
+		return Session{}, err
+	}
+	if !constantTimeEqual(storedHash, hash) {
+		return Session{}, ErrSessionInvalid
+	}
+	return session, nil
+}
+
+// LookupByID re-reads a live session by its row id. It is the cheap primary
+// key read a long-lived transport uses to notice that the session behind it
+// was revoked, expired, or lost its elevation (CW-20261016-0174).
+func (s *Store) LookupByID(ctx context.Context, sessionID string) (Session, error) {
+	if sessionID == "" {
+		return Session{}, ErrSessionInvalid
+	}
+	session, _, err := s.load(ctx, `id = ?`, sessionID)
+	return session, err
+}
+
+// load reads one session row by a fixed predicate, refusing a revoked or
+// expired one, and applies the elevation window.
+func (s *Store) load(ctx context.Context, predicate string, arg string) (Session, string, error) {
 	var (
 		session    Session
 		storedHash string
 		grantsJSON string
 		revokedAt  sql.NullTime
 	)
+	//nolint:gosec // G202: predicate is one of two fixed literals in this file.
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, cookie_sha256, participant_scope, participant_ref,
        participant_authority, participant_assurance, capabilities,
        created_at, last_seen_at, expires_at, revoked_at
 FROM participant_sessions
-WHERE cookie_sha256 = ?`, hash).Scan(
+WHERE `+predicate, arg).Scan(
 		&session.ID, &storedHash, &session.Scope, &session.Ref,
 		&session.Authority, &session.Assurance, &grantsJSON,
 		&session.CreatedAt, &session.LastSeenAt, &session.ExpiresAt, &revokedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Session{}, ErrSessionInvalid
+		return Session{}, "", ErrSessionInvalid
 	}
 	if err != nil {
-		return Session{}, fmt.Errorf("participant: load session: %w", err)
+		return Session{}, "", fmt.Errorf("participant: load session: %w", err)
 	}
-	if !constantTimeEqual(storedHash, hash) {
-		return Session{}, ErrSessionInvalid
-	}
-	if revokedAt.Valid || !s.now().Before(session.ExpiresAt) {
-		return Session{}, ErrSessionInvalid
+	now := s.now()
+	if revokedAt.Valid || !now.Before(session.ExpiresAt) {
+		return Session{}, "", ErrSessionInvalid
 	}
 	var granted []string
 	if err := json.Unmarshal([]byte(grantsJSON), &granted); err != nil {
-		return Session{}, fmt.Errorf("participant: decode capabilities: %w", err)
+		return Session{}, "", fmt.Errorf("participant: decode capabilities: %w", err)
 	}
 	session.Grants = authz.ParseCapabilities(granted)
-	return session, nil
+	return applyElevationWindow(session, now), storedHash, nil
 }
 
 // Touch records that a session was used. It moves last_seen_at only: there is
@@ -156,6 +179,21 @@ func (s *Store) Rotate(ctx context.Context, sessionID string, next Session) (Ses
 		return Session{}, "", err
 	}
 	now := s.now()
+	// The successor inherits the predecessor's absolute expiry: an assurance
+	// change is not a reason to extend a session's life, and an elevation in
+	// particular must not refresh the 30-day clock (CW-20261016-0174).
+	var predecessorExpiry time.Time
+	switch scanErr := transaction.QueryRowContext(ctx,
+		`SELECT expires_at FROM participant_sessions WHERE id = ? AND revoked_at IS NULL`, sessionID,
+	).Scan(&predecessorExpiry); {
+	case errors.Is(scanErr, sql.ErrNoRows):
+		return Session{}, "", ErrSessionInvalid
+	case scanErr != nil:
+		return Session{}, "", fmt.Errorf("participant: load predecessor: %w", scanErr)
+	}
+	if !now.Before(predecessorExpiry) {
+		return Session{}, "", ErrSessionInvalid
+	}
 	successor := Session{
 		ID:         uuid.NewString(),
 		Scope:      next.Scope,
@@ -165,7 +203,7 @@ func (s *Store) Rotate(ctx context.Context, sessionID string, next Session) (Ses
 		Grants:     append([]authz.Capability(nil), next.Grants...),
 		CreatedAt:  now,
 		LastSeenAt: now,
-		ExpiresAt:  now.Add(MaximumLifetime),
+		ExpiresAt:  predecessorExpiry,
 	}
 	if insertErr := s.insert(ctx, transaction, successor, hash); insertErr != nil {
 		return Session{}, "", insertErr

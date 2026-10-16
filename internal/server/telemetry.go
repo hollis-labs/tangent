@@ -41,7 +41,8 @@ func reportObjectAccessDenial(
 
 // reportObjectAccessDenialCode is reportObjectAccessDenial with a refusal
 // code from the telemetry package's closed vocabulary: `forbidden`,
-// `assurance_insufficient`, `elevation_refused`, or `elevation_rate_limited`.
+// `assurance_insufficient`, `elevation_refused`, `elevation_rate_limited`, or
+// `elevation_flood`.
 func reportObjectAccessDenialCode(
 	ctx context.Context,
 	recorder *telemetry.Recorder,

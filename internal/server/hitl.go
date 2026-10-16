@@ -323,7 +323,16 @@ func writeHITLError(w http.ResponseWriter, err error) {
 		"message":          err.Error(),
 	}
 	var stale *hitl.StaleRevisionError
+	var terminal *hitl.TerminalConflictError
 	switch {
+	case errors.As(err, &terminal):
+		// Another terminal outcome won before this request looked: the
+		// contract's terminal_conflict, carrying the winner, exactly as the
+		// MCP adapter reports it. It previously fell through to the generic
+		// "conflict", which is what the browser/withdraw race test caught.
+		status = http.StatusConflict
+		response["code"] = "terminal_conflict"
+		response["terminal_outcome"] = terminal.Outcome
 	case errors.Is(err, errHITLContentType):
 		status = http.StatusUnsupportedMediaType
 		response["code"] = "unsupported_media_type"

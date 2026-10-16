@@ -23,7 +23,9 @@ import (
 // not take the single-writer ownership lock: each is one UPDATE (or one
 // SELECT) under SQLite's own locking, with no trigger suspension and no
 // schema change, which is the hazard the lock exists for. A revoked session is
-// refused on its very next request, since every request looks the session up.
+// refused on its very next HTTP request, since every request looks the
+// session up, and on the next answer frame of any WebSocket it opened, since
+// the socket re-reads its session before each authority-bearing frame.
 //
 // Output is counts only for revoke. list prints the first eight characters of
 // each session id (the prefix revoke takes), never a cookie or its hash.

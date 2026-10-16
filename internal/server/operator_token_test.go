@@ -317,17 +317,32 @@ func TestElevationRateLimit(t *testing.T) {
 			t.Fatal("a fresh session could not elevate")
 		}
 	})
-	t.Run("global", func(t *testing.T) {
+	t.Run("flood alerts but never locks the operator out", func(t *testing.T) {
 		t.Parallel()
 		app := startGuardedApp(t)
-		// An attacker minting a fresh session per guess hits the global
-		// ceiling.
-		for attempt := range 10 {
-			status, body, _ := app.elevate(t, app.openDocument(t, "/"), fmt.Sprintf("guess-%d", attempt))
-			assertCode(t, "wrong guess", status, body, http.StatusForbidden, "elevation_refused")
+		// A local agent minting a fresh session per guess: every guess is
+		// refused, the process-wide rate raises one alert, and nobody else is
+		// locked out by it.
+		var guesses []string
+		for attempt := range 25 {
+			guess := fmt.Sprintf("flood-guess-%02d", attempt)
+			guesses = append(guesses, guess)
+			status, body, _ := app.elevate(t, app.openDocument(t, "/"), guess)
+			assertCode(t, "flood guess", status, body, http.StatusForbidden, "elevation_refused")
 		}
-		status, body, _ := app.elevate(t, app.openDocument(t, "/"), testOperatorToken)
-		assertCode(t, "attempt past the global limit", status, body, http.StatusTooManyRequests, "elevation_rate_limited")
+		status, body, rotated := app.elevate(t, app.openDocument(t, "/"), testOperatorToken)
+		if status != http.StatusOK || rotated == nil {
+			t.Fatalf("the real operator was locked out by a flood: %d %v", status, body)
+		}
+		logs := app.logs.String()
+		if strings.Count(logs, "failure rate above alert threshold") != 1 {
+			t.Fatalf("want exactly one rate-limited flood alert line, logs:\n%s", logs)
+		}
+		for _, secret := range append(guesses, testOperatorToken) {
+			if strings.Contains(logs, secret) {
+				t.Fatal("a candidate or the token reached the log")
+			}
+		}
 	})
 }
 

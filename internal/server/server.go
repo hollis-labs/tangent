@@ -296,7 +296,7 @@ func New(cfg Config) (*Server, error) {
 
 	// Operator elevation (CW-20261016-0174): the only way a browser session
 	// acquires `resolve`.
-	registerOperatorElevation(mux, cfg)
+	registerOperatorElevation(mux, cfg, logger)
 
 	if cfg.Inbox != nil {
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))

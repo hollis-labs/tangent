@@ -258,10 +258,15 @@ func awaitObservations(t *testing.T, rg *sessionRig, envelopeID string) []teleme
 		if err != nil {
 			t.Fatalf("query observations: %v", err)
 		}
+		// Both are needed: the resolved observation is emitted after the
+		// resolution commits, which can land after the delivery observation.
+		var delivered, resolved bool
 		for _, record := range records {
-			if record.Name == telemetry.EventDeliveryRecorded {
-				return records
-			}
+			delivered = delivered || record.Name == telemetry.EventDeliveryRecorded
+			resolved = resolved || record.Name == telemetry.EventInteractionResolved
+		}
+		if delivered && resolved {
+			return records
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("no delivery observation within the deadline (saw %d observations)", len(records))

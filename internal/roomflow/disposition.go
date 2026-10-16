@@ -142,7 +142,7 @@ func (d *roomDisposition) Resolve(
 		InteractionID:               record.ID,
 		ExpectedInteractionRevision: record.Revision,
 		PresentedProjectionRevision: presented,
-		Participant:                 Participant,
+		Participant:                 resolverParticipant(ctx),
 		ResponseKind:                responseKind,
 		ResponsePayload:             payload,
 		ResponseBody:                body,
@@ -397,5 +397,21 @@ func (d *roomDisposition) Draft(
 		d.reportDispositionRefusal(ctx, correlation,
 			telemetry.CodeForError(err, interactionErrorCodes))
 		return err
+	}
+}
+
+// resolverParticipant is the identity a room resolution records: the
+// participant binding of the connection that answered, when the room attached
+// one (CW-20261016-0174), so an elevated socket records `operator-token` and
+// supersedes the fixed loopback-unverified presentation by assurance order.
+// Without a complete binding it is the historical fixed Participant.
+func resolverParticipant(ctx context.Context) interaction.ActorBinding {
+	binding, ok := room.ResolverFrom(ctx)
+	if !ok || !binding.Complete() {
+		return Participant
+	}
+	return interaction.ActorBinding{
+		Scope: binding.Scope, PrincipalRef: binding.PrincipalRef,
+		Authority: binding.Authority, Assurance: binding.Assurance,
 	}
 }

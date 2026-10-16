@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   short (< 32 bytes) token fails closed. **Deploy prerequisite:** provision
   `TANGENT_OPERATOR_TOKEN` before upgrading, or browser approvals become
   unresolvable (CW-20261016-0174).
+  Elevation lasts 12 hours; live WebSockets re-check their session before
+  each answer, so revocation reaches open tabs. Failed attempts are limited
+  per session; a process-wide flood only raises an alert. **Threat model:**
+  this stops principals limited to loopback HTTP/WS (agents, scripts,
+  proxied devices). It does not stop a same-user process with a shell, which
+  can edit the SQLite session rows, read the token from
+  `/proc/<pid>/environ`, or run `tangent session revoke`.
 - Assurance-ordered presenter takeover: an `operator-token` participant may
   resolve an item presented by a lower-assurance identity in the same scope
   (journaled as `interaction.presenter_superseded`); never the reverse. Items

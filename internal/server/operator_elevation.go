@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"sync"
@@ -36,14 +37,16 @@ const (
 
 	elevationWindow            = time.Minute
 	elevationFailuresPerWindow = 5
-	// The global ceiling is what stops an attacker who mints a fresh session
-	// per guess. It is deliberately not much larger than the per-session
-	// one: a 32-byte token is not guessable at any rate, so the limit exists
-	// to bound noise and make an attack loud, not to protect entropy.
-	elevationGlobalFailuresPerWindow = 10
+	// elevationFloodThreshold is an alert, not a refusal. A process-wide
+	// refusal would let any local agent minting free sessions keep the real
+	// operator locked out indefinitely, and it buys nothing: a 32+ byte
+	// random token is not guessable at any rate. Crossing it emits one
+	// telemetry event and one log line per window, and refuses nobody.
+	elevationFloodThreshold = 10
 
 	codeElevationRefused     = "elevation_refused"
 	codeElevationRateLimited = "elevation_rate_limited"
+	codeElevationFlood       = "elevation_flood"
 
 	elevationRefusedMessage     = "operator elevation refused"
 	elevationRateLimitedMessage = "too many failed elevation attempts; wait a minute and try again"
@@ -59,15 +62,20 @@ type sessionStatus struct {
 	OperatorTokenConfigured bool   `json:"operator_token_configured"`
 }
 
-// elevationLimiter counts failed elevation attempts in a sliding window, per
-// session and across the process. It is in-process on purpose: Tangent is a
-// single process, and a restart clearing the counters costs an attacker a
-// service restart they cannot cause.
+// elevationLimiter counts elevation attempts in a sliding window. The
+// per-session limit refuses; the process-wide count only raises a flood alert.
+// It is in-process on purpose: Tangent is a single process.
+//
+// An attempt is admitted and recorded as a failure in one critical section,
+// before the token is examined, and a success removes its own record. That
+// makes the check and the record atomic: N concurrent requests from one
+// session cannot all pass the check before any of them is counted.
 type elevationLimiter struct {
-	mu         sync.Mutex
-	now        func() time.Time
-	global     []time.Time
-	perSession map[string][]time.Time
+	mu          sync.Mutex
+	now         func() time.Time
+	global      []time.Time
+	perSession  map[string][]time.Time
+	lastFloodAt time.Time
 }
 
 func newElevationLimiter() *elevationLimiter {
@@ -84,12 +92,22 @@ func pruneWindow(events []time.Time, cutoff time.Time) []time.Time {
 	return kept
 }
 
-// limited reports whether another attempt from this session must be refused
-// unexamined.
-func (l *elevationLimiter) limited(sessionID string) bool {
+// elevationAttempt is one admitted attempt, provisionally counted as a
+// failure until succeed removes it.
+type elevationAttempt struct {
+	sessionID string
+	at        time.Time
+}
+
+// admit decides whether an attempt from this session may be examined and, if
+// so, records it as a failure in the same critical section. flood is true
+// once per window when the process-wide failure count crosses the alert
+// threshold.
+func (l *elevationLimiter) admit(sessionID string) (attempt elevationAttempt, ok bool, flood bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	cutoff := l.now().Add(-elevationWindow)
+	now := l.now()
+	cutoff := now.Add(-elevationWindow)
 	l.global = pruneWindow(l.global, cutoff)
 	for id, events := range l.perSession {
 		if events = pruneWindow(events, cutoff); len(events) == 0 {
@@ -98,22 +116,43 @@ func (l *elevationLimiter) limited(sessionID string) bool {
 			l.perSession[id] = events
 		}
 	}
-	return len(l.global) >= elevationGlobalFailuresPerWindow ||
-		len(l.perSession[sessionID]) >= elevationFailuresPerWindow
+	if len(l.perSession[sessionID]) >= elevationFailuresPerWindow {
+		return elevationAttempt{}, false, false
+	}
+	l.global = append(l.global, now)
+	l.perSession[sessionID] = append(l.perSession[sessionID], now)
+	if len(l.global) >= elevationFloodThreshold && !now.Before(l.lastFloodAt.Add(elevationWindow)) {
+		l.lastFloodAt = now
+		flood = true
+	}
+	return elevationAttempt{sessionID: sessionID, at: now}, true, flood
 }
 
-func (l *elevationLimiter) recordFailure(sessionID string) {
+// succeed removes an admitted attempt's provisional failure record.
+func (l *elevationLimiter) succeed(attempt elevationAttempt) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	at := l.now()
-	l.global = append(l.global, at)
-	l.perSession[sessionID] = append(l.perSession[sessionID], at)
+	l.global = removeOnce(l.global, attempt.at)
+	if events := removeOnce(l.perSession[attempt.sessionID], attempt.at); len(events) == 0 {
+		delete(l.perSession, attempt.sessionID)
+	} else {
+		l.perSession[attempt.sessionID] = events
+	}
+}
+
+func removeOnce(events []time.Time, at time.Time) []time.Time {
+	for i := range events {
+		if events[i].Equal(at) {
+			return append(events[:i], events[i+1:]...)
+		}
+	}
+	return events
 }
 
 // registerOperatorElevation mounts the elevation and status routes behind the
 // same same-origin guard as every browser API route. Both require a live
 // session — minted is enough, since elevating one is the point.
-func registerOperatorElevation(mux *http.ServeMux, cfg Config) {
+func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logger) {
 	gate := cfg.Participants
 	if gate == nil {
 		return
@@ -142,7 +181,15 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config) {
 			reportObjectAccessDenial(r.Context(), recorder, authz.Resolve, "browser-api")
 			return
 		}
-		if limiter.limited(session.ID) {
+		attempt, admitted, flood := limiter.admit(session.ID)
+		if flood {
+			// One line and one event per window, naming nothing but the
+			// threshold: never a token, a session, or a candidate.
+			logger.Warn("operator elevation: failure rate above alert threshold",
+				"threshold_per_minute", elevationFloodThreshold)
+			reportObjectAccessDenialCode(r.Context(), recorder, authz.Resolve, "browser-api", codeElevationFlood)
+		}
+		if !admitted {
 			writeHITLJSON(w, http.StatusTooManyRequests, map[string]any{
 				"code": codeElevationRateLimited, "message": elevationRateLimitedMessage,
 			})
@@ -151,24 +198,25 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config) {
 		}
 		candidate, decodeErr := decodeElevateCommand(w, r)
 		if decodeErr != nil {
-			// A malformed body is a failed attempt like any other: counting
-			// it keeps the limiter from being a free oracle on body shape.
-			limiter.recordFailure(session.ID)
+			// A malformed body is a failed attempt like any other (it stays
+			// counted), which keeps the limiter from being a free oracle on
+			// body shape.
 			refuseElevation(w, r, recorder)
 			return
 		}
 		elevated, err := gate.Elevate(r.Context(), w, session, candidate)
 		if err != nil {
 			if !errors.Is(err, participant.ErrElevationRefused) {
+				limiter.succeed(attempt)
 				writeHITLJSON(w, http.StatusInternalServerError, map[string]any{
 					"code": "internal_error", "message": "operator elevation could not be recorded",
 				})
 				return
 			}
-			limiter.recordFailure(session.ID)
 			refuseElevation(w, r, recorder)
 			return
 		}
+		limiter.succeed(attempt)
 		writeHITLJSON(w, http.StatusOK, sessionStatus{
 			Assurance:               elevated.Assurance,
 			Elevated:                elevated.Elevated(),

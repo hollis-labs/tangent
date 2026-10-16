@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/hollis-labs/tangent/internal/authz"
 )
@@ -32,6 +33,26 @@ import (
 // is not `operator-token`, whatever its stored grant set says. That matters for
 // sessions minted before this change: their rows still list `resolve`, and the
 // assurance check is what stops them using it.
+//
+// # Threat model: what this does and does not stop
+//
+// The guarantee holds against a principal whose only reach into Tangent is
+// loopback HTTP and WebSocket: an agent driving MCP tools, a script with curl,
+// another tailnet device behind the reverse proxy. Such a principal can mint
+// a session but cannot elevate it without the token, so it cannot approve its
+// own request.
+//
+// It is NOT protection against a process running as the same OS user with a
+// shell. That process can:
+//
+//   - write participant_assurance = 'operator-token' into a
+//     participant_sessions row directly in SQLite — Lookup trusts the row;
+//   - read TANGENT_OPERATOR_TOKEN from /proc/<pid>/environ of the service;
+//   - run `tangent session revoke` (or anything else) against the database.
+//
+// Defending against a same-user shell needs OS-level separation (a dedicated
+// service user, a token outside the environment, a database the agent cannot
+// open), which is outside this package.
 
 const (
 	// EnvOperatorToken names the environment variable the operator token is
@@ -71,8 +92,30 @@ var OperatorTemplate = Session{
 	Grants:    authz.DefaultParticipantCapabilities(),
 }
 
+// ElevatedLifetime bounds operator authority. An elevated session is
+// operator-token for this long after the elevation that created it; after
+// that it reads as a minted `loopback-unverified` session until it is
+// elevated again, and the UI's operator-token prompt handles the refusal.
+// The row's absolute expiry is inherited from the session it rotated from.
+const ElevatedLifetime = 12 * time.Hour
+
 // Elevated reports whether a session carries operator assurance.
 func (s Session) Elevated() bool { return s.Assurance == AssuranceOperatorToken }
+
+// EffectiveGrants is the grant set this session may exercise: its stored
+// grants minus anything that needs operator assurance it does not hold.
+func (s Session) EffectiveGrants() []authz.Capability { return effectiveCapabilities(s) }
+
+// applyElevationWindow downgrades an operator-token session whose elevation
+// is older than ElevatedLifetime. The successor of an elevation is created at
+// the moment of elevation, so CreatedAt is the elevation time.
+func applyElevationWindow(session Session, now time.Time) Session {
+	if session.Elevated() && !now.Before(session.CreatedAt.Add(ElevatedLifetime)) {
+		session.Assurance = AssuranceLoopbackUnverified
+		session.Grants = authz.MintedParticipantCapabilities()
+	}
+	return session
+}
 
 // requiresOperatorAssurance names the capabilities only an elevated session may
 // exercise. `resolve` is the terminal decision — approving, denying, replying,

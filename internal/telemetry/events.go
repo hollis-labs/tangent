@@ -158,6 +158,7 @@ var knownCodes = map[string]bool{
 	"assurance_insufficient": true,
 	"elevation_refused":      true,
 	"elevation_rate_limited": true,
+	"elevation_flood":        true,
 
 	// internal/interaction store and service sentinels.
 	"revision_conflict":    true,
