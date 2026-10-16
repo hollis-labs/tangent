@@ -96,7 +96,7 @@ which uses React Router to pick up the ID and connect over WS.
 
 ### MCP server (Streamable HTTP + SSE)
 
-`internal/mcp/` — built on `github.com/hollis-labs/libs/plugin-mcp/go-mcp`, the portfolio's
+`internal/mcp/` — built on `github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp`, the portfolio's
 shared MCP library, itself a thin wrapper around the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable
 HTTP) and `/sse` (legacy SSE) on the same port as the SPA. Runs in
@@ -679,7 +679,7 @@ the payload-bounded diagnostics surface.
 ### Plugin host
 
 `internal/pluginhost/` implements the portfolio plugin framework's `Host`
-contract (`github.com/hollis-labs/libs/plugin-mcp/plugin-sdk`), and it is how a new interaction
+contract (`github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk`), and it is how a new interaction
 kind can arrive without editing Tangent's own registration table.
 [ADR 0007](adr/0007-collaboration-surface-plugin-host-and-view-state.md) §4 is
 the boundary decision and [ADR 0008](adr/0008-the-plugin-model.md) is the model
@@ -729,7 +729,7 @@ The first-party plugins live in
 [`hollis-labs/tangent-plugins`](https://github.com/hollis-labs/tangent-plugins),
 written against `pkg/plugin` and selected by `tangent-plugins.version`.
 The SDK, lifecycle driver and MCP transports come from the released
-`github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1. Its finite forward
+`github.com/hollis-labs/libs/mcp/plugin-mcp` module at v0.1.1. Its finite forward
 calls carry a protocol-2 `context` budget, so plugins must use an SDK that
 accepts that field. The first-party installation pin remains a separate
 pseudo-version; adopting the module does not rebuild or install those binaries.
@@ -958,7 +958,7 @@ combination rather than trusting a reviewer to catch it.
 
 ### go-envelopes registry
 
-`github.com/hollis-labs/libs/ui-go/envelopes` (module `ui-go/v0.1.0`) — the Go side of the shared
+`github.com/hollis-labs/libs/ui/ui-go/envelopes` (module `ui-go/v0.1.0`) — the Go side of the shared
 envelope catalog. Tangent loads the go-envelopes core definitions, then
 registers its own extensions—including the non-renderer `tangent.hitl-item`
 interaction definition. Extensions use the plugin API rather than forking the

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/registry"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/registry"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
 

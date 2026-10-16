@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode"
 
-	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
+	driver "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-host"
 )
 
 func TestDiagnosticRedactionExpandedFormats(t *testing.T) {

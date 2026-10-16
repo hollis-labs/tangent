@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strconv"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 )
 
 var keyName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.-]*$`)

@@ -10,7 +10,7 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 	_ "modernc.org/sqlite" // Register the private SQLite config database driver.
 )
 

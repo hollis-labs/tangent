@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	plugin "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/tangent/internal/pluginintent"
 )
 

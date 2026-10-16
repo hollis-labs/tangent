@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
+	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 )
 
 // stubDisposition stands in for the canonical authority so the connection

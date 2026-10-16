@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
-	manifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/capability"
+	manifest "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 )
 

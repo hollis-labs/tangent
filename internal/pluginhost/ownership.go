@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"sync"
 
-	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
+	"github.com/hollis-labs/tangent/internal/pluginconfig"
+
+	plugin "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/capability"
 )
 
 // ToolRegistry is the live MCP surface. Hooks run under the registration lock;

@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
-	capHost "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability/host"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/capability"
+	capHost "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/capability/host"
 )
 
 const (

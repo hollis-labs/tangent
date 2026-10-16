@@ -33,7 +33,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 
-	sdkplugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	sdkplugin "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/pluginhost"

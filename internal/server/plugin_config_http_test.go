@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
-	manifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
+	manifest "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"github.com/hollis-labs/tangent/internal/pluginhost"

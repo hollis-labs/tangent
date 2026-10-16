@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hollis-labs/libs/ui-go/envelopes/envelopestest"
+	"github.com/hollis-labs/libs/ui/ui-go/envelopes/envelopestest"
 	"github.com/hollis-labs/tangent/internal/envelope"
 )
 

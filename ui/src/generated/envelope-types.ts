@@ -6,7 +6,7 @@
 // Coverage: 40 registered kinds — 18 go-envelopes core,
 // 22 Tangent-owned (internal/envelope/extensions).
 //
-// Sources of truth: github.com/hollis-labs/libs/ui-go/envelopes (core catalog)
+// Sources of truth: github.com/hollis-labs/libs/ui/ui-go/envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
 // Pipeline: cmd/tangent-dump-types -> scripts/generate-envelope-types.mjs
 
