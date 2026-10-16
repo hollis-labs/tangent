@@ -57,7 +57,7 @@ func getDoc(app, itemID string) []byte {
 func TestVerifiedProducersAssertingTheSameAppIDAreIsolated(t *testing.T) {
 	ctx := context.Background()
 	wire := newWire(t)
-	replyA, err := wire.Enqueue(ctx, "gateway:producer-a", enqueueDoc("shared-app", "k1"))
+	replyA, err := wire.Enqueue(ctx, gateway("producer-a"), enqueueDoc("shared-app", "k1"))
 	if err != nil {
 		t.Fatalf("enqueue a: %v (%s)", err, replyA)
 	}
@@ -66,20 +66,20 @@ func TestVerifiedProducersAssertingTheSameAppIDAreIsolated(t *testing.T) {
 	}
 	_ = json.Unmarshal(replyA, &a)
 
-	if _, err = wire.Get(ctx, "gateway:producer-a", getDoc("shared-app", a.ItemID)); err != nil {
+	if _, err = wire.Get(ctx, gateway("producer-a"), getDoc("shared-app", a.ItemID)); err != nil {
 		t.Fatalf("the owner must read its item: %v", err)
 	}
-	body, err := wire.Get(ctx, "gateway:producer-b", getDoc("shared-app", a.ItemID))
+	body, err := wire.Get(ctx, gateway("producer-b"), getDoc("shared-app", a.ItemID))
 	if err == nil || !strings.Contains(string(body), "not_found") {
 		t.Fatalf("producer b read producer a's item: err=%v body=%s", err, body)
 	}
-	if _, err = wire.Withdraw(ctx, "gateway:producer-b", mustJSON(map[string]any{
+	if _, err = wire.Withdraw(ctx, gateway("producer-b"), mustJSON(map[string]any{
 		"contract_version": "1.0", "item_id": a.ItemID, "caller": map[string]any{"application_id": "shared-app", "principal_ref": "agent"},
 	})); err == nil {
 		t.Fatal("producer b withdrew producer a's item")
 	}
 
-	replyB, err := wire.Enqueue(ctx, "gateway:producer-b", enqueueDoc("shared-app", "k1"))
+	replyB, err := wire.Enqueue(ctx, gateway("producer-b"), enqueueDoc("shared-app", "k1"))
 	if err != nil {
 		t.Fatalf("enqueue b: %v (%s)", err, replyB)
 	}
@@ -90,6 +90,11 @@ func TestVerifiedProducersAssertingTheSameAppIDAreIsolated(t *testing.T) {
 	if b.ItemID == "" || b.ItemID == a.ItemID {
 		t.Fatalf("the same idempotency key from another verified producer must be its own item, got %q vs %q", b.ItemID, a.ItemID)
 	}
+}
+
+// gateway is the binding a verified gateway producer carries.
+func gateway(producer string) interaction.ActorBinding {
+	return interaction.ActorBinding{Scope: "gateway:" + producer, PrincipalRef: producer, Authority: "gateway", Assurance: "token"}
 }
 
 func mustJSON(v any) []byte {

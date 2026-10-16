@@ -207,7 +207,7 @@ func (s *Server) viaHITLWire(
 	ctx context.Context,
 	input map[string]any,
 	callerField string,
-	call func(context.Context, string, []byte) ([]byte, error),
+	call func(context.Context, interaction.ActorBinding, []byte) ([]byte, error),
 ) (any, error) {
 	// The scope is derived exactly as the native handlers derive it
 	// (directHITLActor), so both backends partition a caller identically.
@@ -217,12 +217,12 @@ func (s *Server) viaHITLWire(
 		agentID, _ = asserted["principal_ref"].(string)
 	}
 	applicationID, _ := asserted["application_id"].(string)
-	scope := directHITLActor(applicationID, agentID).Scope
+	caller := directHITLActor(applicationID, agentID)
 	doc, err := json.Marshal(input)
 	if err != nil {
 		return nil, s.hitlError(fmt.Errorf("%w: %w", hitl.ErrInvalidRequest, err))
 	}
-	reply, callErr := call(ctx, scope, doc)
+	reply, callErr := call(ctx, caller, doc)
 	var body map[string]any
 	if decodeErr := json.Unmarshal(reply, &body); decodeErr != nil {
 		if callErr != nil {

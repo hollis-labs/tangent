@@ -250,33 +250,43 @@ func TestHITLToolsPassLibraryConformanceOnTheGoHITLBackend(t *testing.T) {
 		hitltest.CapCallerIsolation, hitltest.CapExpiry)
 }
 
-// The same caller must land in the same partition whichever backend serves the
-// tools: the vault's creator check and caller isolation compare caller_scope.
-func TestHITLCallerScopeIsIdenticalOnBothBackends(t *testing.T) {
-	scopes := map[string]string{}
-	for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
-		adapter := newConformanceAdapterFor(t, goHITL)
-		doc, _ := json.Marshal(map[string]any{
-			"contract_version": hitl.ContractVersion, "kind": "approval", "idempotency_key": "scope-1", "title": "T",
-			"summary": "S", "request": "Approve?", "source": map[string]any{"application_id": "Scope-App", "agent_id": "agent-1"},
-		})
-		reply, err := adapter.Enqueue(context.Background(), doc)
-		if err != nil {
-			t.Fatalf("%s enqueue: %v (%s)", name, err, reply)
+// The same caller must be recorded identically whichever backend serves the
+// tools (scope, authority, assurance): the vault's creator check and caller
+// isolation compare caller_scope, and an asserted authority prefix must never
+// become an authority.
+func TestHITLCallerIsRecordedIdenticallyOnBothBackends(t *testing.T) {
+	type recorded struct{ scope, authority, assurance string }
+	for _, app := range []string{"Scope-App", "gateway:prodA"} {
+		seen := map[string]recorded{}
+		for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
+			adapter := newConformanceAdapterFor(t, goHITL)
+			doc, _ := json.Marshal(map[string]any{
+				"contract_version": hitl.ContractVersion, "kind": "approval", "idempotency_key": "scope-1", "title": "T",
+				"summary": "S", "request": "Approve?", "source": map[string]any{"application_id": app, "agent_id": "agent-1"},
+			})
+			reply, err := adapter.Enqueue(context.Background(), doc)
+			if err != nil {
+				t.Fatalf("%s %s enqueue: %v (%s)", name, app, err, reply)
+			}
+			var handle struct {
+				ItemID string `json:"item_id"`
+			}
+			if err = json.Unmarshal(reply, &handle); err != nil || handle.ItemID == "" {
+				t.Fatalf("%s handle = %s (%v)", name, reply, err)
+			}
+			var got recorded
+			if err = adapter.db.QueryRow(
+				`SELECT caller_scope, caller_authority, caller_assurance FROM interactions WHERE id = ?`, handle.ItemID,
+			).Scan(&got.scope, &got.authority, &got.assurance); err != nil {
+				t.Fatalf("%s caller columns: %v", name, err)
+			}
+			seen[name] = got
 		}
-		var handle struct {
-			ItemID string `json:"item_id"`
+		if seen["native"] != seen["gohitl"] {
+			t.Fatalf("%s: caller recorded differently: native=%+v gohitl=%+v", app, seen["native"], seen["gohitl"])
 		}
-		if err = json.Unmarshal(reply, &handle); err != nil || handle.ItemID == "" {
-			t.Fatalf("%s handle = %s (%v)", name, reply, err)
+		if seen["gohitl"].authority != "standalone-local" {
+			t.Fatalf("%s: an asserted application id must not become an authority: %+v", app, seen["gohitl"])
 		}
-		var scope string
-		if err = adapter.db.QueryRow(`SELECT caller_scope FROM interactions WHERE id = ?`, handle.ItemID).Scan(&scope); err != nil {
-			t.Fatalf("%s caller_scope: %v", name, err)
-		}
-		scopes[name] = scope
-	}
-	if scopes["native"] == "" || scopes["native"] != scopes["gohitl"] {
-		t.Fatalf("caller_scope differs between backends: native=%q gohitl=%q", scopes["native"], scopes["gohitl"])
 	}
 }

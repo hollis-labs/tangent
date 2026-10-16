@@ -54,29 +54,32 @@ const (
 
 	ownerScope      = "operator:local"
 	callerAuthority = "go-hitl-store"
-	callerAssurance = "asserted"
 	timeLayout      = time.RFC3339Nano
 )
 
-type scopeKey struct{}
+type callerKey struct{}
 
-// WithCallerScope carries the caller scope Tangent derived for this call (the
-// scope the native tools persist: standalone-local:<app>, or the verified
-// gateway:<producer>) to Create. The lib only knows the asserted application
-// id; this is the scope the row is partitioned by, so both backends partition
-// identically and the vault/isolation checks compare like with like.
-func WithCallerScope(ctx context.Context, scope string) context.Context {
-	return context.WithValue(ctx, scopeKey{}, scope)
+// WithCaller carries the caller binding Tangent derived for this call (the
+// binding the native tools persist: standalone-local:<app> with its authority
+// and assurance, or the verified gateway:<producer>) to Create. The lib only
+// knows the asserted application id; this is what the row is partitioned and
+// attributed by, so both backends record a caller identically and the vault and
+// isolation checks compare like with like.
+func WithCaller(ctx context.Context, caller interaction.ActorBinding) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller)
 }
 
-// callerScopeFor is the caller_scope column for a row created for the lib's
-// asserted application id: the derived scope on the context, or the canonical
-// scope of the application id when the caller passed none.
-func callerScopeFor(ctx context.Context, applicationID string) string {
-	if scope, _ := ctx.Value(scopeKey{}).(string); scope != "" {
-		return scope
+// callerFor is the binding a row created for the lib's asserted application id
+// is recorded under: the one on the context, or the loopback binding of the
+// application id when the caller passed none.
+func callerFor(ctx context.Context, applicationID string) interaction.ActorBinding {
+	if caller, ok := ctx.Value(callerKey{}).(interaction.ActorBinding); ok && caller.Scope != "" {
+		return caller
 	}
-	return authz.CallerScope(applicationID)
+	return interaction.ActorBinding{
+		Scope: authz.CallerScope(applicationID), PrincipalRef: applicationID,
+		Authority: authz.AuthorityStandaloneLocal, Assurance: "loopback-unverified",
+	}
 }
 
 // Store is a hitl.Store backed by the interactions tables.
@@ -352,7 +355,8 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 		policy["policy_ref"] = "request.expires_at"
 	}
 	policyJSON, _ := json.Marshal(policy)
-	dbScope := callerScopeFor(ctx, rec.CallerScope)
+	caller := callerFor(ctx, rec.CallerScope)
+	dbScope := caller.Scope
 	refsJSON, _ := json.Marshal(map[string]string{"hitl_kind": rec.Kind, "caller_application_id": rec.CallerScope})
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -386,11 +390,11 @@ revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`, now, s.s
 		pAt, pRevision = now, int64(1)
 	}
 	if _, err = tx.ExecContext(ctx, `
-INSERT INTO interactions (id, surface_id, caller_scope, caller_authority, caller_assurance, idempotency_key,
+INSERT INTO interactions (id, surface_id, caller_scope, caller_principal_ref, caller_authority, caller_assurance, idempotency_key,
   surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at,
   presented_projection_revision, participant_scope, participant_ref, participant_authority, participant_assurance, presented_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ItemID, s.surfaceID, dbScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rec.ItemID, s.surfaceID, dbScope, nullable(caller.PrincipalRef), caller.Authority, caller.Assurance, rec.IdempotencyKey,
 		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
 		rec.Revision+revisionBase, ts(rec.CreatedAt), now,
 		pRevision, pScope, pRef, pAuthority, pAssurance, pAt); err != nil {
@@ -445,7 +449,9 @@ func (s *Store) Swap(ctx context.Context, itemID string, expected int64, next hi
 		return err
 	}
 	var surfaceID string
-	if err = tx.QueryRowContext(ctx, `SELECT surface_id FROM interactions WHERE id = ?`, itemID).Scan(&surfaceID); err != nil {
+	var rowOwner owner
+	if err = tx.QueryRowContext(ctx, `SELECT surface_id, caller_scope, caller_assurance FROM interactions WHERE id = ?`, itemID).
+		Scan(&surfaceID, &rowOwner.scope, &rowOwner.assurance); err != nil {
 		return err
 	}
 	at := ts(next.UpdatedAt)
@@ -493,18 +499,14 @@ WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, 
 		}
 	}
 	if next.Outcome != nil {
-		var ownerScope string
-		if err = tx.QueryRowContext(ctx, `SELECT caller_scope FROM interactions WHERE id = ?`, itemID).Scan(&ownerScope); err != nil {
-			return err
-		}
-		if err = queueDelivery(ctx, tx, itemID, ownerScope, prevRev, next); err != nil {
+		if err = queueDelivery(ctx, tx, itemID, rowOwner.scope, prevRev, next); err != nil {
 			return err
 		}
 	}
 	if err = insertEvent(ctx, tx, surfaceID, itemID, "interaction."+string(next.State), &prevRev, nextRev, at, metadata); err != nil {
 		return err
 	}
-	if err = emitResolved(ctx, tx, prev, next); err != nil {
+	if err = emitResolved(ctx, tx, prev, next, rowOwner); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -614,7 +616,7 @@ func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
 	}
 	a := events.Approval{
 		Kind: "approval.requested", ItemID: rec.ItemID, Class: approvalKind, At: rec.UpdatedAt,
-		Requester: callerPrincipal(rec.CallerScope),
+		Requester: callerPrincipal(callerFor(ctx, rec.CallerScope).Scope, callerFor(ctx, rec.CallerScope).Assurance),
 	}
 	if rec.ExpiresAt != nil {
 		a.ExpiresAt = ts(*rec.ExpiresAt)
@@ -622,13 +624,16 @@ func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
 	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
+// owner is the caller scope and assurance recorded on a row.
+type owner struct{ scope, assurance string }
+
 // emitResolved writes the single approval.resolved row for the terminal swap of
 // an approval. Nonterminal swaps (presentation) emit nothing.
-func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error {
+func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record, owner owner) error {
 	if prev.Kind != approvalKind || next.Outcome == nil {
 		return nil
 	}
-	requester := callerPrincipal(prev.CallerScope)
+	requester := callerPrincipal(owner.scope, owner.assurance)
 	a := events.Approval{Kind: "approval.resolved", ItemID: prev.ItemID, At: next.Outcome.OutcomeTime()}
 	switch o := next.Outcome.(type) {
 	case hitl.Resolved:
@@ -656,8 +661,8 @@ func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error
 	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
-func callerPrincipal(scope string) events.Principal {
-	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope), Assurance: callerAssurance}
+func callerPrincipal(scope, assurance string) events.Principal {
+	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope), Assurance: assurance}
 }
 
 func participantPrincipal(p hitl.Participant) events.Principal {

@@ -8,6 +8,15 @@
 // path (the operator, elevated per CW-20261016-0174) resolves them. The lib
 // Service sees every outcome because its store reads the same rows.
 //
+// Flipping the flag with items in flight: the rows are native and the caller
+// scopes agree, so pre-flip items are visible, withdrawable and resolvable on
+// both sides, and the approval events come out once. What changes is wire
+// numbering: the lib reports revisions as interactions.revision - 3 and
+// derives its own idempotency digest, so a caller retrying a pre-flip enqueue
+// gets idempotency_conflict, and an expected_revision taken from a native
+// handle is stale against the lib. Drain the queue (or accept those retries
+// failing once) before flipping.
+//
 // Off by default. TANGENT_HITL_BACKEND=gohitl turns it on; unset or "native"
 // keeps Tangent's own internal/hitl.Service behind the tools. Rollback is
 // unsetting the variable and restarting: no data moves, the rows are native.
@@ -64,32 +73,34 @@ func New(db *sql.DB, catalog interaction.DefinitionCatalog) *Wire {
 	return &Wire{svc: libhitl.NewService(store, libhitl.Options{}), store: store}
 }
 
-// Service exposes the underlying lib Service (for tests and the sweeper).
+// Service exposes the underlying lib Service for tests. Expiry is not run from
+// here: the native sweeper expires store rows (it reads policy.expires_at) and
+// the lib materializes a lapsed deadline on any read or write.
 func (w *Wire) Service() *libhitl.Service { return w.svc }
 
-// The methods take scope: the caller scope Tangent derived for this call, the
-// same one the native tools persist (standalone-local:<app>, or the verified
-// gateway:<producer>). Rows are partitioned by it, and a read or withdraw by a
+// The methods take caller: the binding Tangent derived for this call, the same
+// one the native tools persist (standalone-local:<app> with its authority and
+// assurance, or the verified gateway:<producer>). Rows are partitioned by it, and a read or withdraw by a
 // caller whose scope is not the row's owner is a not_found, exactly as in the
 // lib, even if the lib's own application-id check would pass.
 
 // Enqueue implements the tangent_hitl_enqueue wire.
-func (w *Wire) Enqueue(ctx context.Context, scope string, doc []byte) ([]byte, error) {
+func (w *Wire) Enqueue(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error) {
 	var req libhitl.EnqueueRequest
 	if err := json.Unmarshal(doc, &req); err != nil {
 		return reply(nil, libhitl.NewInvalidRequest(err))
 	}
-	handle, err := w.svc.Enqueue(sqlstore.WithCallerScope(ctx, scope), req)
+	handle, err := w.svc.Enqueue(sqlstore.WithCaller(ctx, caller), req)
 	return reply(handle, err)
 }
 
 // Get implements the tangent_hitl_get wire.
-func (w *Wire) Get(ctx context.Context, scope string, doc []byte) ([]byte, error) {
+func (w *Wire) Get(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeGetCommand(doc)
 	if err != nil {
 		return reply(nil, err)
 	}
-	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
+	if err = w.owned(ctx, caller.Scope, cmd.ItemID); err != nil {
 		return reply(nil, err)
 	}
 	result, err := w.svc.Get(ctx, cmd)
@@ -97,12 +108,12 @@ func (w *Wire) Get(ctx context.Context, scope string, doc []byte) ([]byte, error
 }
 
 // Await implements the tangent_hitl_await wire.
-func (w *Wire) Await(ctx context.Context, scope string, doc []byte) ([]byte, error) {
+func (w *Wire) Await(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeAwaitCommand(doc)
 	if err != nil {
 		return reply(nil, err)
 	}
-	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
+	if err = w.owned(ctx, caller.Scope, cmd.ItemID); err != nil {
 		return reply(nil, err)
 	}
 	result, err := w.svc.Await(ctx, cmd)
@@ -110,12 +121,12 @@ func (w *Wire) Await(ctx context.Context, scope string, doc []byte) ([]byte, err
 }
 
 // Withdraw implements the tangent_hitl_withdraw wire.
-func (w *Wire) Withdraw(ctx context.Context, scope string, doc []byte) ([]byte, error) {
+func (w *Wire) Withdraw(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error) {
 	cmd, err := libhitl.DecodeWithdrawCommand(doc)
 	if err != nil {
 		return reply(nil, err)
 	}
-	if err = w.owned(ctx, scope, cmd.ItemID); err != nil {
+	if err = w.owned(ctx, caller.Scope, cmd.ItemID); err != nil {
 		return reply(nil, err)
 	}
 	outcome, err := w.svc.Withdraw(ctx, cmd)
