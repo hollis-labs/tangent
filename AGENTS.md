@@ -214,8 +214,9 @@ presentation sandboxing (`docs/renderer-trust-classes.md`) are the shipped
 isolation model; they are not a plugin system.
 
 The `hollis-labs` Go modules are public and resolve from a clean clone with no
-`replace` directives; CI still sets `GOPRIVATE`/`GONOSUMDB` and a `GH_PAT` URL
-rewrite from when `go-envelopes` was private. Frontend dependencies stay
+`replace` directives; CI sets no `GOPRIVATE`/`GONOSUMDB` and no `GH_PAT` URL
+rewrite (removed in CW-20261016-0026; they forced direct git fetches that fail
+on pre-reorg libs tags the module proxy still serves). Frontend dependencies stay
 minimal — editor, chart and DnD libraries get added when a real workflow needs
 one, not preemptively. The top-level `LICENSE` is sufficient; do not add
 per-file license headers.
