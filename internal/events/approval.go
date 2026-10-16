@@ -130,7 +130,12 @@ func HasRequested(ctx context.Context, tx Tx, itemID string) (bool, error) {
 
 // MappingError means the transition could not be turned into a valid event: a
 // bug or bad input on the event side, not a database fault.
-type MappingError struct{ Err error }
+type MappingError struct {
+	// Class is a bounded error class (kind, item, invalid, marshal), safe to
+	// store: never raw error text.
+	Class string
+	Err   error
+}
 
 func (e *MappingError) Error() string { return "events: mapping failed: " + e.Err.Error() }
 func (e *MappingError) Unwrap() error { return e.Err }
@@ -164,7 +169,12 @@ func (e Emitter) EmitOrSkip(ctx context.Context, tx Tx, a Approval) error {
 	var mapping *MappingError
 	if errors.As(err, &mapping) {
 		mappingFailures.Add(1)
-		slog.Error("approval event skipped: mapping failed", "kind", a.Kind, "item_id", a.ItemID, "error", mapping.Err)
+		slog.Error("approval event skipped: mapping failed", "kind", a.Kind, "item_id", a.ItemID, "error_class", mapping.Class, "error", mapping.Err)
+		// Same transaction as the transition, so the gap is never silent.
+		if _, execErr := tx.ExecContext(ctx, `INSERT INTO event_outbox_skipped (item_id, kind, error_class, created_at) VALUES (?, ?, ?, ?)`,
+			a.ItemID, a.Kind, mapping.Class, time.Now().UTC().Format(timeLayout)); execErr != nil {
+			return fmt.Errorf("events: record skipped event: %w", execErr)
+		}
 		return nil
 	}
 	return err
@@ -179,10 +189,10 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 	case catalog.KindApprovalResolved:
 		schema = payloadSchemaResolved
 	default:
-		return Row{}, &MappingError{fmt.Errorf("%q is not an approval kind", a.Kind)}
+		return Row{}, &MappingError{"kind", fmt.Errorf("%q is not an approval kind", a.Kind)}
 	}
 	if a.ItemID == "" {
-		return Row{}, &MappingError{errors.New("approval event needs an item id")}
+		return Row{}, &MappingError{"item", errors.New("approval event needs an item id")}
 	}
 	at := a.At
 	if at.IsZero() {
@@ -242,7 +252,7 @@ func (e Emitter) Build(ctx context.Context, tx Tx, a Approval) (Row, error) {
 		ev.Actor = &runtimeevents.Actor{URN: actor.URN, Kind: actor.Kind, Role: actor.Role, Verified: Verified(actor.Assurance)}
 	}
 	if err := ev.Validate(); err != nil {
-		return Row{}, &MappingError{err}
+		return Row{}, &MappingError{"invalid", err}
 	}
 	var seq, generation uint64
 	if err := tx.QueryRowContext(ctx, `UPDATE event_outbox_state SET last_sequence = last_sequence + 1 WHERE id = 1
@@ -252,7 +262,7 @@ RETURNING last_sequence, generation`).Scan(&seq, &generation); err != nil {
 	ev.Sequence, ev.Generation = seq, generation
 	raw, err := json.Marshal(ev)
 	if err != nil {
-		return Row{}, &MappingError{err}
+		return Row{}, &MappingError{"marshal", err}
 	}
 	return Row{
 		EventID: id, Stream: DefaultStream, Kind: a.Kind, SubjectType: SubjectType, SubjectID: a.ItemID,

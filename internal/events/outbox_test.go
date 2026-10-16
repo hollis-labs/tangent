@@ -22,6 +22,9 @@ func openOutbox(t *testing.T) *sql.DB {
   subject_type TEXT, subject_id TEXT, envelope_json TEXT NOT NULL, created_at TEXT NOT NULL, appended_at TEXT NULL)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = db.Exec(`CREATE TABLE event_outbox_skipped (id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, kind TEXT NOT NULL, error_class TEXT NOT NULL, created_at TEXT NOT NULL, repaired_at TEXT NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec(`CREATE TABLE event_outbox_state (id INTEGER PRIMARY KEY CHECK (id = 1), generation INTEGER NOT NULL CHECK (generation > 0), last_sequence INTEGER NOT NULL DEFAULT 0);
 		INSERT INTO event_outbox_state (id, generation) VALUES (1, (random() & 9007199254740991) + 1)`); err != nil {
 		t.Fatal(err)
