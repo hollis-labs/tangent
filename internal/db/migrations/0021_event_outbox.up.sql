@@ -23,4 +23,4 @@ CREATE TABLE event_outbox_state (
   generation INTEGER NOT NULL CHECK (generation > 0),
   last_sequence INTEGER NOT NULL DEFAULT 0
 );
-INSERT INTO event_outbox_state (id, generation) VALUES (1, (abs(random()) % 9007199254740990) + 1);
+INSERT INTO event_outbox_state (id, generation) VALUES (1, (random() & 9007199254740991) + 1);
