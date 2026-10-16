@@ -10,11 +10,12 @@ jobs:
     name: Go (lint + build + test)
     runs-on: ubuntu-latest
     env:
-      # hollis-labs/go-envelopes is a private module. GOPRIVATE skips the
-      # public module proxy + sumdb; GH_PAT (classic PAT with `repo` scope,
-      # set as a repo secret) authenticates `git` against github.com.
-      GOPRIVATE: "github.com/hollis-labs/*"
-      GONOSUMDB: "github.com/hollis-labs/*"
+      # No GOPRIVATE: every hollis-labs module Tangent resolves is public
+      # (libs monorepo, tangent-plugins), and the smoke helper's plugin build
+      # still pulls pre-reorg libs versions whose tags were removed from git
+      # but remain on the module proxy. GOPRIVATE would force a direct git
+      # fetch and fail with "unknown revision". GH_PAT (repo secret)
+      # authenticates `git` against github.com if a private module returns.
       # The smoke helper fetches the same public source pin in local and CI runs.
       # tangent-plugins.version remains the separate operator installation pin.
       TANGENT_SMOKE_EXTRA_PLUGINS: github
@@ -103,12 +104,10 @@ jobs:
   go-desktop:
     name: Go desktop shell (macOS)
     runs-on: macos-latest
-    env:
-      # See the "go" job's "Determine server-only Go packages" step for why
-      # these two packages need their own runner: Wails v3's macOS backend
-      # is the one it actually ships for, unlike the Linux backend above.
-      GOPRIVATE: "github.com/hollis-labs/*"
-      GONOSUMDB: "github.com/hollis-labs/*"
+    # See the "go" job's "Determine server-only Go packages" step for why
+    # these two packages need their own runner: Wails v3's macOS backend
+    # is the one it actually ships for, unlike the Linux backend above.
+    # No GOPRIVATE here either; see the "go" job's env comment.
     steps:
       - uses: actions/checkout@v4
 
