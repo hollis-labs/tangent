@@ -220,14 +220,13 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 	if schemaErr := s.validateRequest(request); schemaErr != nil {
 		return ItemHandle{}, schemaErr
 	}
+	var expiresAt time.Time
 	if fields.ExpiresAt != "" {
-		expiresAt, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt)
+		parsed, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt)
 		if parseErr != nil {
 			return ItemHandle{}, fmt.Errorf("%w: expires_at must be an absolute RFC 3339 timestamp", ErrInvalidRequest)
 		}
-		if !expiresAt.After(s.now()) {
-			return ItemHandle{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidRequest)
-		}
+		expiresAt = parsed
 	}
 
 	existing, found, err := s.interactions.FindInteractionByIdempotency(
@@ -248,6 +247,11 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 			}
 		}
 		return s.itemHandle(ctx, existing)
+	}
+	// Checked after the idempotency lookup so a legitimate retry that arrives
+	// past the deadline gets the original item, not validation_failed.
+	if fields.ExpiresAt != "" && !expiresAt.After(s.now()) {
+		return ItemHandle{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidRequest)
 	}
 	if surfaceErr := s.ensureDefaultSurface(ctx); surfaceErr != nil {
 		return ItemHandle{}, surfaceErr

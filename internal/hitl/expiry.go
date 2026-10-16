@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/interaction"
@@ -47,25 +48,42 @@ func itemExpiry(record interaction.InteractionRecord) (time.Time, bool) {
 	return at, err == nil
 }
 
+// maxExpiryAttempts bounds the re-read loop in expireIfDue.
+const maxExpiryAttempts = 5
+
 // expireIfDue compare-and-sets a nonterminal item whose expires_at has been
-// reached (now >= expires_at) to expired. It reports whether this call, or a
-// concurrent writer, left the item terminal.
+// reached (now >= expires_at) to expired. It reports whether the item is
+// terminal afterwards. When another writer wins the compare-and-set with a
+// non-terminal write (for example a presentation ack), it re-reads and retries,
+// so a due item is never reported as live.
 func (s *Service) expireIfDue(ctx context.Context, record interaction.InteractionRecord) (bool, error) {
-	if isTerminal(record.State) {
-		return false, nil
+	for attempt := 0; attempt < maxExpiryAttempts; attempt++ {
+		if isTerminal(record.State) {
+			return attempt > 0, nil
+		}
+		at, ok := itemExpiry(record)
+		if !ok || s.now().Before(at) {
+			return false, nil
+		}
+		_, err := s.interactions.ExpireInteraction(ctx, interaction.ExpireInteractionInput{
+			InteractionID: record.ID, ExpectedRevision: record.Revision,
+			PolicyRef: expiryPolicyRef, Actor: ExpiryActor, Capability: reservedSurfaceCapability,
+		})
+		if err == nil {
+			return true, nil
+		}
+		if !errors.Is(err, interaction.ErrRevisionConflict) && !errors.Is(err, interaction.ErrTerminal) {
+			return false, err
+		}
+		latest, readErr := s.interactions.InspectInteraction(ctx, interaction.GetInteractionInput{
+			InteractionID: record.ID, RequesterScope: OperatorParticipant.Scope, Capability: reservedSurfaceCapability,
+		})
+		if readErr != nil {
+			return false, readErr
+		}
+		record = latest.Interaction
 	}
-	at, ok := itemExpiry(record)
-	if !ok || s.now().Before(at) {
-		return false, nil
-	}
-	_, err := s.interactions.ExpireInteraction(ctx, interaction.ExpireInteractionInput{
-		InteractionID: record.ID, ExpectedRevision: record.Revision,
-		PolicyRef: expiryPolicyRef, Actor: ExpiryActor, Capability: reservedSurfaceCapability,
-	})
-	if errors.Is(err, interaction.ErrRevisionConflict) || errors.Is(err, interaction.ErrTerminal) {
-		return true, nil // another writer won; the caller re-reads the winner
-	}
-	return err == nil, err
+	return false, fmt.Errorf("hitl: item %q kept changing while expiring", record.ID)
 }
 
 // ExpireDue expires every pending HITL item whose deadline has passed and
@@ -81,19 +99,22 @@ func (s *Service) ExpireDue(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	expired := 0
+	var errs []error
 	for _, record := range snapshot.Interactions {
 		if !isHITLRecord(record) {
 			continue
 		}
 		done, expireErr := s.expireIfDue(ctx, record)
 		if expireErr != nil {
-			return expired, expireErr
+			// One failing item must not stop the rest from expiring.
+			errs = append(errs, expireErr)
+			continue
 		}
 		if done {
 			expired++
 		}
 	}
-	return expired, nil
+	return expired, errors.Join(errs...)
 }
 
 // RunExpirySweeper calls ExpireDue every interval until ctx is done. Errors are
