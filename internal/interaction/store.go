@@ -27,9 +27,10 @@ var (
 
 // Store persists canonical records without imposing transport behavior.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
-	id  func() string
+	db       *sql.DB
+	now      func() time.Time
+	id       func() string
+	observer TransitionObserver
 }
 
 func NewStore(db *sql.DB) *Store {
@@ -358,6 +359,19 @@ INSERT INTO interaction_events (
 		); err != nil {
 			return CreateInteractionResult{}, fmt.Errorf("insert %s event: %w", eventType, err)
 		}
+	}
+	if err := s.observe(ctx, tx, Transition{
+		Phase: PhaseCreated, To: InteractionStateStaged, At: now,
+		ActorRef: params.ActorRef, Authority: params.Authority,
+		Interaction: InteractionRecord{
+			ID: id, SurfaceID: params.SurfaceID, CallerScope: params.CallerScope,
+			CallerPrincipalRef: params.CallerPrincipalRef, CallerAuthority: params.CallerAuthority,
+			CallerAssurance: params.CallerAssurance, IdempotencyKey: params.IdempotencyKey,
+			Definition: params.Definition, RequestSnapshot: request, ExternalRefs: externalRefs,
+			Policy: policy, State: InteractionStateStaged, Revision: stagedRevision,
+		},
+	}); err != nil {
+		return CreateInteractionResult{}, fmt.Errorf("observe create interaction: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("commit create interaction: %w", err)
@@ -747,6 +761,13 @@ INSERT INTO resolution_deliveries (
 			return ResolveInteractionResult{}, err
 		}
 	}
+	if err := s.observe(ctx, tx, Transition{
+		Phase: PhaseResolved, Interaction: current, To: InteractionStateResolved,
+		ResponsePayload: payload, At: now,
+		ActorRef: params.ParticipantRef, Authority: params.ParticipantAuthority,
+	}); err != nil {
+		return ResolveInteractionResult{}, fmt.Errorf("observe resolve interaction: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return ResolveInteractionResult{}, fmt.Errorf("commit resolve interaction: %w", err)
 	}
@@ -931,6 +952,12 @@ INSERT INTO terminal_notifications (
 		); err != nil {
 			return TerminalizeInteractionResult{}, err
 		}
+	}
+	if err := s.observe(ctx, tx, Transition{
+		Phase: PhaseTerminal, Interaction: current, To: params.To, Cause: params.Cause, At: now,
+		ActorRef: params.ActorRef, Authority: params.Authority,
+	}); err != nil {
+		return TerminalizeInteractionResult{}, fmt.Errorf("observe terminal disposition: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return TerminalizeInteractionResult{}, fmt.Errorf("commit terminal disposition: %w", err)

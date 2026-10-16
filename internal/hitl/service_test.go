@@ -1103,6 +1103,14 @@ func newTestService(t *testing.T, filename string) (*Service, *interaction.Servi
 
 func newTestServiceAtPath(t *testing.T, databasePath string) (*Service, *interaction.Service, *sql.DB, *envelope.Service) {
 	t.Helper()
+	service, interactions, database, envelopeService, _ := newTestServiceStore(t, databasePath)
+	return service, interactions, database, envelopeService
+}
+
+// newTestServiceStore also returns the interaction store so a test can swap its
+// transition observer. The approval event observer is installed by default.
+func newTestServiceStore(t *testing.T, databasePath string) (*Service, *interaction.Service, *sql.DB, *envelope.Service, *interaction.Store) {
+	t.Helper()
 	database, err := tangentdb.Open(databasePath)
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
@@ -1118,8 +1126,10 @@ func newTestServiceAtPath(t *testing.T, databasePath string) (*Service, *interac
 	if registrationErr := extensions.RegisterHITLItem(envelopeService); registrationErr != nil {
 		t.Fatalf("RegisterHITLItem: %v", registrationErr)
 	}
+	store := interaction.NewStore(database)
+	store.SetTransitionObserver(EventObserver{})
 	interactions, err := interaction.NewService(
-		interaction.NewStore(database),
+		store,
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, "hitl-test-host"),
 		interaction.WithAwaitPollInterval(time.Millisecond),
 		interaction.WithSurfaceAccessPolicy(SurfaceAccessPolicy{}),
@@ -1132,7 +1142,7 @@ func newTestServiceAtPath(t *testing.T, databasePath string) (*Service, *interac
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	return service, interactions, database, envelopeService
+	return service, interactions, database, envelopeService, store
 }
 
 func hitlRequest(applicationID, agentID, key, title string) json.RawMessage {

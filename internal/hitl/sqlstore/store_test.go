@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -223,5 +224,67 @@ func TestForeignSurfaceInteractionsAreInvisible(t *testing.T) {
 	row, err := native.GetInteraction(ctx, "docs-1")
 	if err != nil || row.State != interaction.InteractionStateStaged || row.Revision != 3 {
 		t.Fatalf("docs interaction changed: %+v, %v", row, err)
+	}
+}
+
+// TestApprovalTransitionsWriteOutboxRows pins the typed-event rows the store
+// writes in the same transaction as its journal rows: requested on create,
+// resolved on the terminal swap, nothing on a presentation swap, a repeated
+// create, or a non-approval kind.
+func TestApprovalTransitionsWriteOutboxRows(t *testing.T) {
+	db, store := newDBStore(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	kinds := func() []string {
+		rows, err := db.Query(`SELECT kind FROM event_outbox ORDER BY rowid`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var k string
+			if err = rows.Scan(&k); err != nil {
+				t.Fatal(err)
+			}
+			out = append(out, k)
+		}
+		return out
+	}
+	rec := hitl.Record{ItemID: "ap-1", CallerScope: "app", IdempotencyKey: "k", Digest: "d", Kind: "approval",
+		Request: []byte(`{"kind":"approval"}`), State: hitl.StatePresented, Revision: 1, CreatedAt: t0, UpdatedAt: t0}
+	if _, _, err := store.Create(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := store.Create(ctx, rec); err != nil || created {
+		t.Fatalf("repeat create = %v, %v", created, err)
+	}
+	other := rec
+	other.ItemID, other.IdempotencyKey, other.Kind = "att-1", "k2", "attention"
+	if _, _, err := store.Create(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(); len(got) != 1 || got[0] != "approval.requested" {
+		t.Fatalf("after creates: %v", got)
+	}
+	next := rec
+	next.State, next.Revision, next.Outcome = hitl.StateResolved, 2, hitl.Resolved{ItemID: "ap-1", InteractionRevision: 2,
+		Resolution: hitl.ResolutionRecord{ResolutionID: "r1", Response: hitl.Response{Kind: "approval", Decision: "denied", Note: "NOTE-CANARY"},
+			Participant: hitl.Participant{PrincipalRef: "local-operator", Assurance: "asserted"}, ResolvedAt: t0, InteractionRevision: 2}}
+	if err := store.Swap(ctx, "ap-1", 1, next); err != nil {
+		t.Fatal(err)
+	}
+	var env string
+	if err := db.QueryRow(`SELECT envelope_json FROM event_outbox WHERE kind = 'approval.resolved'`).Scan(&env); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(env, `"outcome":"denied"`) || strings.Contains(env, "CANARY") {
+		t.Fatalf("resolved envelope = %s", env)
+	}
+	if err := store.Swap(ctx, "ap-1", 2, next); err == nil {
+		t.Fatal("a second terminal swap must fail")
+	}
+	if got := kinds(); len(got) != 2 {
+		t.Fatalf("after resolve: %v", got)
 	}
 }

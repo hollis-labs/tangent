@@ -35,6 +35,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 
+	"github.com/hollis-labs/tangent/internal/events"
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
@@ -329,6 +330,9 @@ VALUES (?, 'tangent', 'hitl_item', 'v1', '1', 'go-hitl-store', ?, ?)`, rec.ItemI
 	if err = insertEvent(ctx, tx, s.surfaceID, rec.ItemID, "interaction."+string(rec.State), nil, rec.Revision+revisionBase, now, `{}`); err != nil {
 		return hitl.Record{}, false, err
 	}
+	if err = emitRequested(ctx, tx, rec); err != nil {
+		return hitl.Record{}, false, err
+	}
 	if err = tx.Commit(); err != nil {
 		return hitl.Record{}, false, err
 	}
@@ -417,6 +421,9 @@ WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, 
 		}
 	}
 	if err = insertEvent(ctx, tx, surfaceID, itemID, "interaction."+string(next.State), &prevRev, nextRev, at, metadata); err != nil {
+		return err
+	}
+	if err = emitResolved(ctx, tx, prev, next); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -513,4 +520,80 @@ LIMIT ?`, terminalStatesJSON, s.surfaceID, now.UnixNano(), limitOrAll(limit))
 		due = append(due, rec)
 	}
 	return due, rows.Err()
+}
+
+// approvalKind is the go-hitl item kind that maps to approval.* events.
+const approvalKind = "approval"
+
+// emitRequested writes the approval.requested outbox row for a newly created
+// approval, in the creating transaction.
+func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
+	if rec.Kind != approvalKind {
+		return nil
+	}
+	a := events.Approval{
+		Kind: "approval.requested", ItemID: rec.ItemID, Class: approvalKind, At: rec.UpdatedAt,
+		Requester: callerPrincipal(rec.CallerScope),
+	}
+	if rec.ExpiresAt != nil {
+		a.ExpiresAt = ts(*rec.ExpiresAt)
+	}
+	_, err := events.Emitter{}.Emit(ctx, tx, a)
+	return err
+}
+
+// emitResolved writes the single approval.resolved row for the terminal swap of
+// an approval. Nonterminal swaps (presentation) emit nothing.
+func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error {
+	if prev.Kind != approvalKind || next.Outcome == nil {
+		return nil
+	}
+	requester := callerPrincipal(prev.CallerScope)
+	a := events.Approval{Kind: "approval.resolved", ItemID: prev.ItemID, At: next.Outcome.OutcomeTime()}
+	switch o := next.Outcome.(type) {
+	case hitl.Resolved:
+		a.Outcome = events.OutcomeDenied
+		if o.Resolution.Response.Decision == "approved" {
+			a.Outcome = events.OutcomeApproved
+		}
+		a.Resolver = participantPrincipal(o.Resolution.Participant)
+	case hitl.Expired:
+		a.Outcome = events.OutcomeExpired
+		a.Resolver = events.Principal{Kind: "service", ID: "hitl-expiry", URN: "msg://service/tangent/hitl-expiry", Role: "system"}
+	case hitl.Failed:
+		a.Outcome, a.Resolver = events.OutcomeFailed, requester
+	case hitl.Canceled:
+		a.Outcome, a.Resolver = events.OutcomeWithdrawn, requester
+	default: // superseded
+		a.Outcome, a.Resolver = events.OutcomeWithdrawn, requester
+	}
+	_, err := events.Emitter{}.Emit(ctx, tx, a)
+	return err
+}
+
+func callerPrincipal(scope string) events.Principal {
+	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope)}
+}
+
+func participantPrincipal(p hitl.Participant) events.Principal {
+	ref := p.PrincipalRef
+	if ref == "" && p.Responder != nil {
+		ref = p.Responder.Ref
+	}
+	if ref == "" {
+		return events.Principal{}
+	}
+	return events.Principal{Kind: "operator", ID: ref, URN: "msg://user/local/" + urnSegment(ref), Role: "operator"}
+}
+
+func urnSegment(s string) string {
+	out := []rune(s)
+	for i, r := range out {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.', r == ':':
+		default:
+			out[i] = '_'
+		}
+	}
+	return string(out)
 }
