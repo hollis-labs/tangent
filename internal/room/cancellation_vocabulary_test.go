@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
+	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/room"

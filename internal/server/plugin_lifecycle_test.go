@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/server"

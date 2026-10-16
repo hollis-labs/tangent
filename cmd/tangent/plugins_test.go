@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	manifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	manifest "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent/internal/pluginintent"
 	public "github.com/hollis-labs/tangent/pkg/plugin"
 )

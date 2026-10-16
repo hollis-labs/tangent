@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	driver "github.com/hollis-labs/libs/plugin-mcp/plugin-host"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/capability"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	driver "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-host"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/capability"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 )
 
 func echoedIncarnation(t *testing.T, child *ChildPlugin) capability.RuntimeIdentity {

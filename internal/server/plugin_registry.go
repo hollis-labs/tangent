@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/registry"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/registry"
 )
 
 // registerPluginRegistryRoute mounts GET /api/plugins/registry.

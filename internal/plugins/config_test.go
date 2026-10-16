@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	manifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	manifest "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"github.com/hollis-labs/tangent/pkg/plugin"

@@ -1,7 +1,7 @@
 package room
 
 import (
-	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
+	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 )
 
 type InterviewQuestionChoice struct {

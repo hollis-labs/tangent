@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	gmcpserver "github.com/hollis-labs/libs/plugin-mcp/go-mcp/server"
+	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
 	"github.com/hollis-labs/tangent/internal/uicommand"
 )
 

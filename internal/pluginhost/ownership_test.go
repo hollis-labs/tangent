@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	plugin "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	plugin "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 )
 
 type owningPlugin struct {

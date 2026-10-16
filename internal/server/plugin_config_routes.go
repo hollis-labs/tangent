@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	sdkmanifest "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	sdkmanifest "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 )

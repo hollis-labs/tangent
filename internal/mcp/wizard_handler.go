@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
+	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/manifest"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 )
 
 func TestProjectionUsesTypedDefaultsAndWriteOnlySecretPresence(t *testing.T) {

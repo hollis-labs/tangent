@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	sdk "github.com/hollis-labs/libs/plugin-mcp/plugin-sdk"
+	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 )
 

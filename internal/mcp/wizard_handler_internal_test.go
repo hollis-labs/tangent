@@ -1,8 +1,9 @@
 package mcp
 
 import (
-	envelopes "github.com/hollis-labs/libs/ui-go/envelopes"
 	"testing"
+
+	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/room"
 )

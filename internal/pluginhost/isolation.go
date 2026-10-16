@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/hollis-labs/libs/plugin-mcp/plugin-sdk/subprocess"
+	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 )
 
 // Dispatch guards bound callers and contain panics. Owned registrations trip

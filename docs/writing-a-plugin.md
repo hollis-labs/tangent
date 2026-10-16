@@ -313,7 +313,7 @@ Configuration and capability requests are declarations only. Tangent keeps the
 existing environment and local-MCP callback path, sends a detached reviewed
 Init.Config snapshot and empty grants, and does not offer reverse host callbacks
 or broker-secret capabilities. The SDK comes from the released
-`github.com/hollis-labs/libs/plugin-mcp` module at v0.1.1. Plugin entrypoints
+`github.com/hollis-labs/libs/mcp/plugin-mcp` module at v0.1.1. Plugin entrypoints
 import `plugin-sdk/subprocess` and `plugin-sdk/manifest` under that module.
 The SDK accepts finite forward-call `context` budgets, including Init; strict
 older protocol-2 decoders that reject that field need rebuilding. This source

@@ -39,7 +39,7 @@ import (
 	"fmt"
 	"os"
 
-	gmcpclient "github.com/hollis-labs/libs/plugin-mcp/go-mcp/client"
+	gmcpclient "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/pkg/plugin"
