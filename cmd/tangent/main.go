@@ -24,6 +24,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/server"
 )
 
 const (
@@ -337,6 +338,7 @@ func run() int {
 		DBPath:                  dbPath,
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
+		ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
 		Port:                    *port,
 		DevFrontendURL:          os.Getenv(envDevFrontendURL),
 		ManagedResource:         os.Getenv(envManagedResource),

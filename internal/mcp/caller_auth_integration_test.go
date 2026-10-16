@@ -423,3 +423,25 @@ func TestCallerAuthRoomInteractionAndInboxOwnership(t *testing.T) {
 		})
 	}
 }
+
+// Caddy adds forwarding headers even before an explicit X-Tangent-Via marker
+// is deployed. Installing auth therefore requires provisioning clients first.
+func TestCallerAuthRefusesCaddyForwardingWithoutMarker(t *testing.T) {
+	server, _ := newCallerAuthServer(t)
+	for path, handler := range map[string]http.Handler{"/mcp": server.HTTPHandler(), "/sse": server.SSEHandler()} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			request := httptest.NewRequest(method, "http://127.0.0.1"+path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
+			request.RemoteAddr = "127.0.0.1:1234"
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json, text/event-stream")
+			request.Header.Set("X-Forwarded-For", "100.74.49.44")
+			request.Header.Set("X-Forwarded-Proto", "https")
+			request.Header.Set("X-Forwarded-Host", "tangent.hub.nanite.cloud")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") == "" {
+				t.Fatalf("unmarked Caddy %s %s = %d, challenge=%q", method, path, response.Code, response.Header().Get("WWW-Authenticate"))
+			}
+		}
+	}
+}

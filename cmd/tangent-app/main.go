@@ -18,6 +18,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/boot"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/server"
 )
 
 const (
@@ -41,6 +42,7 @@ func main() {
 			DBPath:                  os.Getenv(envDBPath),
 			OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 			MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
+			ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
 			Port:                    resolvePort(),
 			DevFrontendURL:          os.Getenv(envDevFrontendURL),
 			ManagedResource:         os.Getenv(envManagedResource),

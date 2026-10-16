@@ -82,6 +82,9 @@ type Config struct {
 	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
 	MCPCallerTokens string
 
+	// ProxiedHTTPAddr is the optional always-proxied loopback listener address.
+	ProxiedHTTPAddr string
+
 	// Port is the TCP port the constructed server will bind when Listen is
 	// called. Boot does not listen; it only threads Port into the
 	// constructed server.Config and the room URL base the MCP tool surface
@@ -725,6 +728,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 
 	srv, err := server.New(server.Config{
 		Port:               cfg.Port,
+		ProxiedHTTPAddr:    cfg.ProxiedHTTPAddr,
 		DevFrontendURL:     cfg.DevFrontendURL,
 		Logger:             logger,
 		Envelope:           envSvc,
