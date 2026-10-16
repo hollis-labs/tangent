@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `internal/hitl/sqlstore`: a go-hitl `Store` (`libs/mesh/core/hitl`) over
+  Tangent's `interactions` tables (no migration), run against the lib's
+  `hitltest` storecontract and conformance scenarios. Not yet wired into the
+  running service (CW-20261016-0031).
+
 ## [v0.20.0] - 2026-10-16
 
 ### Changed
