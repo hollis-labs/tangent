@@ -24,13 +24,19 @@ func expiringRequest(t *testing.T, key string, expiresAt time.Time) json.RawMess
 	return raw
 }
 
-func TestEnqueueRejectsPastExpiry(t *testing.T) {
+func TestEnqueueAcceptsPastExpiryAndItemIsBornExpired(t *testing.T) {
 	svc, _, _, _ := newTestService(t, "expiry-past.db")
-	_, err := svc.Enqueue(context.Background(), EnqueueInput{
-		Request: expiringRequest(t, "past", time.Now().Add(-time.Minute)), Caller: directTestCaller("app", "agent"),
+	ctx := context.Background()
+	caller := directTestCaller("app", "agent")
+	handle, err := svc.Enqueue(ctx, EnqueueInput{
+		Request: expiringRequest(t, "past", time.Now().Add(-time.Minute)), Caller: caller,
 	})
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("past expires_at: err = %v, want ErrInvalidRequest", err)
+	if err != nil {
+		t.Fatalf("past expires_at must be accepted (CONTRACT s6): %v", err)
+	}
+	got, err := svc.Get(ctx, GetInput{ItemID: handle.ItemID, Caller: caller})
+	if err != nil || got.Item.State != interaction.InteractionStateExpired {
+		t.Fatalf("Get = %#v, %v; want born expired", got, err)
 	}
 }
 

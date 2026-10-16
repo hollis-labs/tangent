@@ -220,13 +220,12 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 	if schemaErr := s.validateRequest(request); schemaErr != nil {
 		return ItemHandle{}, schemaErr
 	}
-	var expiresAt time.Time
+	// A past expires_at is accepted: the item is born expired and the first
+	// access or sweep materializes it (go-hitl CONTRACT s6, hitltest CapExpiry).
 	if fields.ExpiresAt != "" {
-		parsed, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt)
-		if parseErr != nil {
+		if _, parseErr := time.Parse(time.RFC3339, fields.ExpiresAt); parseErr != nil {
 			return ItemHandle{}, fmt.Errorf("%w: expires_at must be an absolute RFC 3339 timestamp", ErrInvalidRequest)
 		}
-		expiresAt = parsed
 	}
 
 	existing, found, err := s.interactions.FindInteractionByIdempotency(
@@ -247,11 +246,6 @@ func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (ItemHandle, 
 			}
 		}
 		return s.itemHandle(ctx, existing)
-	}
-	// Checked after the idempotency lookup so a legitimate retry that arrives
-	// past the deadline gets the original item, not validation_failed.
-	if fields.ExpiresAt != "" && !expiresAt.After(s.now()) {
-		return ItemHandle{}, fmt.Errorf("%w: expires_at must be in the future", ErrInvalidRequest)
 	}
 	if surfaceErr := s.ensureDefaultSurface(ctx); surfaceErr != nil {
 		return ItemHandle{}, surfaceErr
@@ -677,6 +671,15 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (TerminalOutc
 	current, err := s.inspectHITL(ctx, input.ItemID, OperatorParticipant.Scope)
 	if err != nil {
 		return TerminalOutcome{}, err
+	}
+	if isTerminal(current.Interaction.State) {
+		// Another terminal outcome already won: answer with the contract's
+		// terminal_conflict carrying it, not a generic "not respondable".
+		projected, projectionErr := terminalOutcome(current)
+		if projectionErr != nil {
+			return TerminalOutcome{}, projectionErr
+		}
+		return TerminalOutcome{}, &TerminalConflictError{Outcome: *projected}
 	}
 	if input.ExpectedRevision != current.Interaction.Revision {
 		return TerminalOutcome{}, staleError("resolve", input.ItemID, input.ExpectedRevision, current)
