@@ -186,7 +186,7 @@ func TestGapsForPrunedForeignEpochAndAheadCursors(t *testing.T) {
 	if err != nil || frame == nil {
 		t.Fatalf("pruned frame = %+v, %v (after err %v)", frame, err, perr)
 	}
-	if *frame != (GapFrame{Reason: GapPruned, EarliestAvailable: 7, HighWater: 10, Epoch: epoch}) {
+	if *frame != (GapFrame{Reason: GapPruned, EarliestAvailable: FormatCursor(epoch, 7), HighWater: FormatCursor(epoch, 10), Epoch: epoch}) {
 		t.Fatalf("pruned frame = %+v", *frame)
 	}
 
@@ -196,20 +196,20 @@ func TestGapsForPrunedForeignEpochAndAheadCursors(t *testing.T) {
 		break
 	}
 	frame, _ = l.FrameForError(ctx, "s", perr)
-	if frame == nil || frame.Reason != GapCursorAhead || frame.HighWater != 10 || frame.EarliestAvailable != 7 {
+	if frame == nil || frame.Reason != GapCursorAhead || frame.HighWater != FormatCursor(epoch, 10) || frame.EarliestAvailable != FormatCursor(epoch, 7) {
 		t.Fatalf("ahead frame = %+v", frame)
 	}
 	if !errors.Is(perr, streamhub.ErrCursorAhead) {
 		t.Fatalf("ahead err = %v", perr)
 	}
 
-	// foreign epoch and unparsable cursors
-	for _, c := range []string{"deadbeefdeadbeef:8", "garbage"} {
+	// foreign epoch (foreign_epoch) and unparsable (invalid_cursor) cursors
+	for c, reason := range map[string]string{"deadbeefdeadbeef:8": GapForeignEpoch, "garbage": GapInvalidCursor} {
 		after, g, rerr := l.Resolve(ctx, "s", c)
 		if rerr != nil || g == nil || after != 0 {
 			t.Fatalf("Resolve(%q) = %d, %+v, %v", c, after, g, rerr)
 		}
-		if *g != (GapFrame{Reason: GapForeignEpoch, EarliestAvailable: 7, HighWater: 10, Epoch: epoch}) {
+		if *g != (GapFrame{Reason: reason, EarliestAvailable: FormatCursor(epoch, 7), HighWater: FormatCursor(epoch, 10), Epoch: epoch}) {
 			t.Fatalf("Resolve(%q) frame = %+v", c, *g)
 		}
 	}
