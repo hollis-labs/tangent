@@ -13,7 +13,7 @@ import (
 func TestCallerAuthConfiguration(t *testing.T) {
 	digest := fmt.Sprintf("%x", sha256.Sum256([]byte("test-only-token")))
 	for _, config := range []string{"", "tether=" + digest} {
-		if _, err := ParseCallerAuth(config); err != nil {
+		if _, err := ParseCallerAuth(config, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -21,7 +21,7 @@ func TestCallerAuthConfiguration(t *testing.T) {
 		"secret-value", "gateway:tether=" + digest, "tether=secret-value", "tether=" + digest + ",",
 		"tether=" + digest + ",tether=" + digest, "tether=" + digest + ",another=" + digest,
 	} {
-		if _, err := ParseCallerAuth(config); err == nil || strings.Contains(err.Error(), config) || strings.Contains(err.Error(), "secret-value") {
+		if _, err := ParseCallerAuth(config, ""); err == nil || strings.Contains(err.Error(), config) || strings.Contains(err.Error(), "secret-value") {
 			t.Fatalf("invalid configuration did not yield a redacted error: %v", err)
 		}
 	}
@@ -29,7 +29,7 @@ func TestCallerAuthConfiguration(t *testing.T) {
 
 func TestCallerAuthAdmissionAndBoundIdentity(t *testing.T) {
 	const token = "test-only-tether-credential"
-	auth, err := ParseCallerAuth(fmt.Sprintf("tether=%x", sha256.Sum256([]byte(token))))
+	auth, err := ParseCallerAuth(fmt.Sprintf("tether=%x", sha256.Sum256([]byte(token))), "")
 	if err != nil {
 		t.Fatal(err)
 	}

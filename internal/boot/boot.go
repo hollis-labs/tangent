@@ -88,6 +88,8 @@ type Config struct {
 	// tangent_hitl_* tools (CW-20261016-0153); empty or "native" keeps
 	// Tangent's own service. Off by default; an unknown value fails Boot.
 	HITLBackend string
+	// MCPTrustedForwarders names configured producers trusted to assert sessions.
+	MCPTrustedForwarders string
 
 	// ProxiedHTTPAddr is the optional always-proxied loopback listener address.
 	ProxiedHTTPAddr string
@@ -266,7 +268,7 @@ func (c *ownedCloser) Close() error {
 // already holds this database; that is the fact cmd/tangent-app's
 // adopt-or-boot decision is built on.
 func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
-	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens)
+	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens, cfg.MCPTrustedForwarders)
 	if err != nil {
 		return nil, nil, nil, err
 	}

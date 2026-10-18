@@ -43,6 +43,7 @@ func main() {
 			DBPath:                  os.Getenv(envDBPath),
 			OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 			MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
+			MCPTrustedForwarders:    os.Getenv(mcp.EnvTrustedForwarders),
 			ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
 			HITLBackend:             os.Getenv(gohitl.EnvBackend),
 			Port:                    resolvePort(),

@@ -1352,7 +1352,10 @@ trusting it.
   authentication under CW-20261016-0208. Raw TCP ingress must target the
   optional always-proxied listener (`TANGENT_PROXIED_HTTP_ADDR`,
   CW-20261016-0229); targeting the main listener still admits header-free
-  forwarded traffic as tokenless loopback. Relay and plugin tools refuse
+  forwarded traffic as tokenless loopback. Opt-in trusted forwarders can
+  attest per-session scopes; these are disjoint from their parent producer
+  scope, with attribution retained separately in admission audit events.
+  Relay and plugin tools refuse
   authenticated producers until they can preserve caller authority end to end;
   direct local callers retain them. Local turns await/ack is operator-wide,
   and shared telemetry may expose producer identifiers. See the

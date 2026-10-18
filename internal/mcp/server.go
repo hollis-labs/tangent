@@ -445,21 +445,10 @@ func (s *Server) HTTPHandler() http.Handler {
 // streamable-HTTP) connect here; the SDK manages the long-lived event
 // stream.
 func (s *Server) SSEHandler() http.Handler {
-	// The SDK keys POSTs only by session ID. Separate registries prevent a
-	// different producer (including tokenless local callers) from using it.
-	newHandler := func() http.Handler {
+	return scopedSSEHandler(s.callerAuth, func() http.Handler {
 		return mcpsdk.NewSSEHandler(func(*http.Request) *mcpsdk.Server {
 			return s.mcp.SDKServer()
 		}, nil)
-	}
-	handlers := map[string]http.Handler{"": newHandler()}
-	if s.callerAuth != nil {
-		for _, credential := range s.callerAuth.credentials {
-			handlers[credential.producer] = newHandler()
-		}
-	}
-	return s.callerAuth.wrap(func(w http.ResponseWriter, r *http.Request, producer string) {
-		handlers[producer].ServeHTTP(w, r)
 	})
 }
 
