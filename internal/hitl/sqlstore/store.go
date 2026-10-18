@@ -30,12 +30,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 
+	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/events"
+	tangenthitl "github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
@@ -50,22 +54,49 @@ const (
 
 	ownerScope      = "operator:local"
 	callerAuthority = "go-hitl-store"
-	callerAssurance = "asserted"
 	timeLayout      = time.RFC3339Nano
 )
+
+type callerKey struct{}
+
+// WithCaller carries the caller binding Tangent derived for this call (the
+// binding the native tools persist: standalone-local:<app> with its authority
+// and assurance, or the verified gateway:<producer>) to Create. The lib only
+// knows the asserted application id; this is what the row is partitioned and
+// attributed by, so both backends record a caller identically and the vault and
+// isolation checks compare like with like.
+func WithCaller(ctx context.Context, caller interaction.ActorBinding) context.Context {
+	return context.WithValue(ctx, callerKey{}, caller)
+}
+
+// callerFor is the binding a row created for the lib's asserted application id
+// is recorded under: the one on the context, or the loopback binding of the
+// application id when the caller passed none.
+func callerFor(ctx context.Context, applicationID string) interaction.ActorBinding {
+	if caller, ok := ctx.Value(callerKey{}).(interaction.ActorBinding); ok && caller.Scope != "" {
+		return caller
+	}
+	return interaction.ActorBinding{
+		Scope: authz.CallerScope(applicationID), PrincipalRef: applicationID,
+		Authority: authz.AuthorityStandaloneLocal, Assurance: "loopback-unverified",
+	}
+}
 
 // Store is a hitl.Store backed by the interactions tables.
 type Store struct {
 	db        *sql.DB
 	surfaces  *interaction.Store
 	surfaceID string
+	catalog   interaction.DefinitionCatalog
 }
 
 var _ hitl.Store = (*Store)(nil)
 
-// New returns a Store over a migrated Tangent database.
-func New(db *sql.DB) *Store {
-	return &Store{db: db, surfaces: interaction.NewStore(db), surfaceID: DefaultSurfaceID}
+// New returns a Store over a migrated Tangent database. catalog resolves the
+// HITL item definition each row is pinned to; without it a row would not be a
+// HITL item to Tangent's inbox and its Resolve path, so Create refuses.
+func New(db *sql.DB, catalog interaction.DefinitionCatalog) *Store {
+	return &Store{db: db, surfaces: interaction.NewStore(db), surfaceID: DefaultSurfaceID, catalog: catalog}
 }
 
 // terminalStatesJSON is a JSON array of the lib's terminal states, derived from
@@ -155,12 +186,31 @@ func (s *Store) load(ctx context.Context, q queryer, where string, args ...any) 
 		rec.ExpiresAt = &t
 	}
 	var r struct {
-		Kind string `json:"hitl_kind"`
+		Kind          string `json:"hitl_kind"`
+		ApplicationID string `json:"caller_application_id"`
 	}
 	if err = json.Unmarshal([]byte(refs), &r); err != nil {
 		return hitl.Record{}, 0, fmt.Errorf("sqlstore: external_refs: %w", err)
 	}
 	rec.Kind = r.Kind
+	if r.ApplicationID != "" {
+		// The lib knows the caller by the application id it asserted; the
+		// column holds the derived scope.
+		rec.CallerScope = r.ApplicationID
+	} else if bare, ok := strings.CutPrefix(rec.CallerScope, authz.AuthorityStandaloneLocal+":"); ok {
+		// A row the native path wrote: best effort, the partition half of the
+		// derived scope is the application id for ordinary ids.
+		rec.CallerScope = bare
+	}
+	if rec.Kind == "" {
+		// A row the native path wrote carries its kind in the request only.
+		var native struct {
+			Kind string `json:"kind"`
+		}
+		if json.Unmarshal([]byte(request), &native) == nil {
+			rec.Kind = native.Kind
+		}
+	}
 	if rec.State.IsTerminal() {
 		at := rec.UpdatedAt
 		if terminalAt != nil {
@@ -282,7 +332,20 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 	if !json.Valid(rec.Request) {
 		return hitl.Record{}, false, invalid("request is not JSON")
 	}
-	if err := s.ensureSurface(ctx); err != nil {
+	if s.catalog == nil {
+		return hitl.Record{}, false, errors.New("sqlstore: no definition catalog: rows could not be resolved by Tangent")
+	}
+	binding, err := s.catalog.ResolveInteractionDefinition(ctx, interaction.DefinitionRef{
+		Kind: extensions.HITLItemEnvelopeType, Version: tangenthitl.DefinitionVersion,
+	})
+	if err != nil {
+		return hitl.Record{}, false, fmt.Errorf("sqlstore: resolve hitl item definition: %w", err)
+	}
+	// Retained before the row that pins it exists, as the native path does.
+	if err = s.catalog.RetainDefinitionMaterial(ctx, binding); err != nil {
+		return hitl.Record{}, false, fmt.Errorf("sqlstore: retain hitl item definition: %w", err)
+	}
+	if err = s.ensureSurface(ctx); err != nil {
 		return hitl.Record{}, false, err
 	}
 	policy := map[string]any{"request_digest": rec.Digest}
@@ -292,14 +355,16 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 		policy["policy_ref"] = "request.expires_at"
 	}
 	policyJSON, _ := json.Marshal(policy)
-	refsJSON, _ := json.Marshal(map[string]string{"hitl_kind": rec.Kind})
+	caller := callerFor(ctx, rec.CallerScope)
+	dbScope := caller.Scope
+	refsJSON, _ := json.Marshal(map[string]string{"hitl_kind": rec.Kind, "caller_application_id": rec.CallerScope})
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return hitl.Record{}, false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if existing, _, getErr := s.load(ctx, tx, `caller_scope = ? AND idempotency_key = ?`, rec.CallerScope, rec.IdempotencyKey); getErr == nil {
+	if existing, _, getErr := s.load(ctx, tx, `caller_scope = ? AND idempotency_key = ?`, dbScope, rec.IdempotencyKey); getErr == nil {
 		return existing, false, nil
 	} else if !errors.Is(getErr, hitl.ErrNotFound) {
 		return hitl.Record{}, false, getErr
@@ -313,18 +378,29 @@ func (s *Store) Create(ctx context.Context, rec hitl.Record) (hitl.Record, bool,
 revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?`, now, s.surfaceID, surfaceRev); err != nil {
 		return hitl.Record{}, false, err
 	}
-	if _, err = tx.ExecContext(ctx, `
-INSERT INTO interactions (id, surface_id, caller_scope, caller_authority, caller_assurance, idempotency_key,
-  surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		rec.ItemID, s.surfaceID, rec.CallerScope, callerAuthority, callerAssurance, rec.IdempotencyKey,
-		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
-		rec.Revision+revisionBase, ts(rec.CreatedAt), now); err != nil {
-		return hitl.Record{}, false, invalid("%v", err)
+	// A row created presented is shown to the operator from the first moment, so
+	// it carries the participant binding and presentation revision the native
+	// Present writes. Tangent's Resolve refuses a row without them
+	// (interaction.ErrNotRespondable). The presentation revision is a constant
+	// 1: it is the value the inbox hands the browser back on resolve.
+	var pScope, pRef, pAuthority, pAssurance, pAt, pRevision any
+	if rec.State == hitl.StatePresented || rec.State == hitl.StateInProgress {
+		op := tangenthitl.OperatorParticipant
+		pScope, pRef, pAuthority, pAssurance = op.Scope, op.PrincipalRef, op.Authority, op.Assurance
+		pAt, pRevision = now, int64(1)
 	}
 	if _, err = tx.ExecContext(ctx, `
-INSERT INTO definition_bindings (interaction_id, publisher, kind, version, revision, source, assurance, bound_at)
-VALUES (?, 'tangent', 'hitl_item', 'v1', '1', 'go-hitl-store', ?, ?)`, rec.ItemID, callerAssurance, now); err != nil {
+INSERT INTO interactions (id, surface_id, caller_scope, caller_principal_ref, caller_authority, caller_assurance, idempotency_key,
+  surface_sequence, request_snapshot, external_refs, policy, lifecycle_state, revision, created_at, updated_at,
+  presented_projection_revision, participant_scope, participant_ref, participant_authority, participant_assurance, presented_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		rec.ItemID, s.surfaceID, dbScope, nullable(caller.PrincipalRef), caller.Authority, caller.Assurance, rec.IdempotencyKey,
+		sequence, string(rec.Request), string(refsJSON), string(policyJSON), string(rec.State),
+		rec.Revision+revisionBase, ts(rec.CreatedAt), now,
+		pRevision, pScope, pRef, pAuthority, pAssurance, pAt); err != nil {
+		return hitl.Record{}, false, invalid("%v", err)
+	}
+	if err = interaction.InsertDefinitionBinding(ctx, tx, rec.ItemID, binding, rec.UpdatedAt.UTC()); err != nil {
 		return hitl.Record{}, false, err
 	}
 	if err = insertEvent(ctx, tx, s.surfaceID, rec.ItemID, "interaction."+string(rec.State), nil, rec.Revision+revisionBase, now, `{}`); err != nil {
@@ -373,7 +449,9 @@ func (s *Store) Swap(ctx context.Context, itemID string, expected int64, next hi
 		return err
 	}
 	var surfaceID string
-	if err = tx.QueryRowContext(ctx, `SELECT surface_id FROM interactions WHERE id = ?`, itemID).Scan(&surfaceID); err != nil {
+	var rowOwner owner
+	if err = tx.QueryRowContext(ctx, `SELECT surface_id, caller_scope, caller_assurance FROM interactions WHERE id = ?`, itemID).
+		Scan(&surfaceID, &rowOwner.scope, &rowOwner.assurance); err != nil {
 		return err
 	}
 	at := ts(next.UpdatedAt)
@@ -420,10 +498,15 @@ WHERE id = ? AND revision = ? AND surface_id = ?`, string(next.State), nextRev, 
 			return invalid("resolution: %v", err)
 		}
 	}
+	if next.Outcome != nil {
+		if err = queueDelivery(ctx, tx, itemID, rowOwner.scope, prevRev, next); err != nil {
+			return err
+		}
+	}
 	if err = insertEvent(ctx, tx, surfaceID, itemID, "interaction."+string(next.State), &prevRev, nextRev, at, metadata); err != nil {
 		return err
 	}
-	if err = emitResolved(ctx, tx, prev, next); err != nil {
+	if err = emitResolved(ctx, tx, prev, next, rowOwner); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {
@@ -533,7 +616,7 @@ func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
 	}
 	a := events.Approval{
 		Kind: "approval.requested", ItemID: rec.ItemID, Class: approvalKind, At: rec.UpdatedAt,
-		Requester: callerPrincipal(rec.CallerScope),
+		Requester: callerPrincipal(callerFor(ctx, rec.CallerScope).Scope, callerFor(ctx, rec.CallerScope).Assurance),
 	}
 	if rec.ExpiresAt != nil {
 		a.ExpiresAt = ts(*rec.ExpiresAt)
@@ -541,13 +624,16 @@ func emitRequested(ctx context.Context, tx *sql.Tx, rec hitl.Record) error {
 	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
+// owner is the caller scope and assurance recorded on a row.
+type owner struct{ scope, assurance string }
+
 // emitResolved writes the single approval.resolved row for the terminal swap of
 // an approval. Nonterminal swaps (presentation) emit nothing.
-func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error {
+func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record, owner owner) error {
 	if prev.Kind != approvalKind || next.Outcome == nil {
 		return nil
 	}
-	requester := callerPrincipal(prev.CallerScope)
+	requester := callerPrincipal(owner.scope, owner.assurance)
 	a := events.Approval{Kind: "approval.resolved", ItemID: prev.ItemID, At: next.Outcome.OutcomeTime()}
 	switch o := next.Outcome.(type) {
 	case hitl.Resolved:
@@ -575,8 +661,8 @@ func emitResolved(ctx context.Context, tx *sql.Tx, prev, next hitl.Record) error
 	return events.Emitter{}.EmitOrSkip(ctx, tx, a)
 }
 
-func callerPrincipal(scope string) events.Principal {
-	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope), Assurance: callerAssurance}
+func callerPrincipal(scope, assurance string) events.Principal {
+	return events.Principal{Kind: "agent", ID: scope, URN: "msg://agent/tangent/" + urnSegment(scope), Assurance: assurance}
 }
 
 func participantPrincipal(p hitl.Participant) events.Principal {
@@ -600,4 +686,41 @@ func urnSegment(s string) string {
 		}
 	}
 	return string(out)
+}
+
+// queueDelivery records the durable caller-pull obligation the native terminal
+// paths write with every terminal outcome: a resolution delivery for a
+// resolution, a terminal notification for cancel, expire, supersede or fail.
+func queueDelivery(ctx context.Context, tx *sql.Tx, itemID, callerScope string, prevRev int64, next hitl.Record) error {
+	at := next.Outcome.OutcomeTime().UTC()
+	switch o := next.Outcome.(type) {
+	case hitl.Resolved:
+		return interaction.QueueResolutionDelivery(ctx, tx, itemID, o.Resolution.ResolutionID, callerScope, prevRev, at)
+	case hitl.Canceled:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "cancel",
+			interaction.InteractionStateCanceled, interaction.TerminalCause(o.Cause), prevRev, at)
+	case hitl.Expired:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "expire",
+			interaction.InteractionStateExpired, "", prevRev, at)
+	case hitl.Superseded:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "supersede",
+			interaction.InteractionStateSuperseded, "", prevRev, at)
+	case hitl.Failed:
+		return interaction.QueueTerminalNotification(ctx, tx, itemID, callerScope, "fail",
+			interaction.InteractionStateFailed, "", prevRev, at)
+	}
+	return nil
+}
+
+// OwnerScope returns the derived caller scope a row is partitioned by, or
+// hitl.ErrNotFound. The wire layer compares it with the caller's scope before
+// the lib answers, so isolation holds across derived scopes, not only across
+// the asserted application ids the lib sees.
+func (s *Store) OwnerScope(ctx context.Context, itemID string) (string, error) {
+	var scope string
+	err := s.db.QueryRowContext(ctx, `SELECT caller_scope FROM interactions WHERE id = ? AND surface_id = ?`, itemID, s.surfaceID).Scan(&scope)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", hitl.ErrNotFound
+	}
+	return scope, err
 }

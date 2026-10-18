@@ -118,6 +118,9 @@ func (s *Server) handleHITLEnqueue(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, "source", s.hitlWire.Enqueue)
+	}
 	source, ok := objectField(input, "source")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: source is required", hitl.ErrInvalidRequest))
@@ -133,6 +136,9 @@ func (s *Server) handleHITLGet(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Get)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -147,6 +153,9 @@ func (s *Server) handleHITLAwait(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Await)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -170,6 +179,9 @@ func (s *Server) handleHITLWithdraw(
 	ctx context.Context,
 	input map[string]any,
 ) (any, error) {
+	if s.hitlWire != nil {
+		return s.viaHITLWire(ctx, input, "caller", s.hitlWire.Withdraw)
+	}
 	caller, ok := objectField(input, "caller")
 	if !ok {
 		return nil, s.hitlError(fmt.Errorf("%w: caller is required", hitl.ErrInvalidRequest))
@@ -186,6 +198,68 @@ func (s *Server) handleHITLWithdraw(
 		ItemID: stringField(input, "item_id"), Caller: directHITLCallerAssertion(ctx, caller),
 		ExpectedRevision: expected, Reason: stringField(input, "reason"),
 	}))
+}
+
+// viaHITLWire runs one tool call through the go-hitl backend. The tool input is
+// already the go-hitl wire document; the reply is its wire JSON, and a failure
+// carries the go-hitl wire error document as the tool error body.
+func (s *Server) viaHITLWire(
+	ctx context.Context,
+	input map[string]any,
+	callerField string,
+	call func(context.Context, interaction.ActorBinding, []byte) ([]byte, error),
+) (any, error) {
+	// The scope is derived exactly as the native handlers derive it
+	// (directHITLActor), so both backends partition a caller identically.
+	asserted, _ := objectField(input, callerField)
+	agentID, _ := asserted["agent_id"].(string)
+	if callerField == "caller" {
+		agentID, _ = asserted["principal_ref"].(string)
+	}
+	applicationID, _ := asserted["application_id"].(string)
+	caller := directHITLActor(ctx, applicationID, agentID)
+	if _, verified := verifiedCaller(ctx); verified {
+		// A verified producer's identity is its token's, never the application
+		// id in the arguments. The lib compares the asserted application id, so
+		// it is replaced by the verified scope before the lib sees the document;
+		// otherwise a producer that asserts another's id could not read its own
+		// items, and the lib's partition would not match the one recorded.
+		input = withApplicationID(input, callerField, caller.Scope)
+	}
+	doc, err := json.Marshal(input)
+	if err != nil {
+		return nil, s.hitlError(fmt.Errorf("%w: %w", hitl.ErrInvalidRequest, err))
+	}
+	reply, callErr := call(ctx, caller, doc)
+	var body map[string]any
+	if decodeErr := json.Unmarshal(reply, &body); decodeErr != nil {
+		if callErr != nil {
+			return nil, s.hitlError(callErr)
+		}
+		return nil, s.hitlError(fmt.Errorf("go-hitl backend returned a non-object reply: %w", decodeErr))
+	}
+	if callErr != nil {
+		return nil, &rawToolError{message: callErr.Error(), body: body}
+	}
+	return body, nil
+}
+
+// withApplicationID returns a copy of input with input[field].application_id
+// replaced. The caller's map is not modified.
+func withApplicationID(input map[string]any, field, applicationID string) map[string]any {
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		out[key] = value
+	}
+	nested := map[string]any{}
+	if existing, ok := input[field].(map[string]any); ok {
+		for key, value := range existing {
+			nested[key] = value
+		}
+	}
+	nested["application_id"] = applicationID
+	out[field] = nested
+	return out
 }
 
 func (s *Server) hitlResult(value any, err error) (any, error) {
