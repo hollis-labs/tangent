@@ -22,6 +22,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/boot"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -339,6 +340,7 @@ func run() int {
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
 		ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
+		HITLBackend:             os.Getenv(gohitl.EnvBackend),
 		Port:                    *port,
 		DevFrontendURL:          os.Getenv(envDevFrontendURL),
 		ManagedResource:         os.Getenv(envManagedResource),

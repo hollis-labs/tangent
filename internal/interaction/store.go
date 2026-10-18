@@ -307,31 +307,8 @@ INSERT INTO interactions (
 	); err != nil {
 		return CreateInteractionResult{}, fmt.Errorf("insert interaction: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO definition_bindings (
-  interaction_id, publisher, kind, version, revision, digest, source,
-  schema_identity, schema_digest, host_version, assurance, bound_at,
-  manifest_digest, contract_digest, response_schema_digest,
-  package_id, package_version, ownership_class, compatibility_class,
-  renderer_id, renderer_class, renderer_trust_class,
-  required_capabilities, granted_capabilities, materialization_state
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, params.Definition.Publisher, params.Definition.Kind,
-		params.Definition.Version, strconv.FormatInt(params.Definition.Revision, 10),
-		nullString(params.Definition.Digest), params.Definition.Source,
-		nullString(params.Definition.SchemaIdentity), nullString(params.Definition.SchemaDigest),
-		nullString(params.Definition.HostVersion), params.Definition.Assurance, now,
-		nullString(params.Definition.ManifestDigest), nullString(params.Definition.ContractDigest),
-		nullString(params.Definition.ResponseSchemaDigest),
-		nullString(params.Definition.PackageID), nullString(params.Definition.PackageVersion),
-		nullString(params.Definition.OwnershipClass), nullString(params.Definition.CompatibilityClass),
-		nullString(params.Definition.RendererID), nullString(params.Definition.RendererClass),
-		nullString(params.Definition.RendererIsolation),
-		nullString(string(params.Definition.RequiredCapabilities)),
-		nullString(string(params.Definition.GrantedCapabilities)),
-		nullString(params.Definition.MaterializationState),
-	); err != nil {
-		return CreateInteractionResult{}, fmt.Errorf("insert definition binding: %w", err)
+	if err := insertDefinitionBinding(ctx, tx, id, params.Definition, now); err != nil {
+		return CreateInteractionResult{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO surface_events (
@@ -380,6 +357,37 @@ INSERT INTO interaction_events (
 	s.committed()
 	record, getErr := s.GetInteraction(ctx, id)
 	return CreateInteractionResult{Interaction: record, Created: true}, getErr
+}
+
+// insertDefinitionBinding pins the definition an interaction was cut from.
+func insertDefinitionBinding(ctx context.Context, tx *sql.Tx, id string, d DefinitionBinding, now time.Time) error {
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO definition_bindings (
+  interaction_id, publisher, kind, version, revision, digest, source,
+  schema_identity, schema_digest, host_version, assurance, bound_at,
+  manifest_digest, contract_digest, response_schema_digest,
+  package_id, package_version, ownership_class, compatibility_class,
+  renderer_id, renderer_class, renderer_trust_class,
+  required_capabilities, granted_capabilities, materialization_state
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, d.Publisher, d.Kind,
+		d.Version, strconv.FormatInt(d.Revision, 10),
+		nullString(d.Digest), d.Source,
+		nullString(d.SchemaIdentity), nullString(d.SchemaDigest),
+		nullString(d.HostVersion), d.Assurance, now,
+		nullString(d.ManifestDigest), nullString(d.ContractDigest),
+		nullString(d.ResponseSchemaDigest),
+		nullString(d.PackageID), nullString(d.PackageVersion),
+		nullString(d.OwnershipClass), nullString(d.CompatibilityClass),
+		nullString(d.RendererID), nullString(d.RendererClass),
+		nullString(d.RendererIsolation),
+		nullString(string(d.RequiredCapabilities)),
+		nullString(string(d.GrantedCapabilities)),
+		nullString(d.MaterializationState),
+	); err != nil {
+		return fmt.Errorf("insert definition binding: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) GetInteraction(ctx context.Context, id string) (InteractionRecord, error) {

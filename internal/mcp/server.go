@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -57,6 +58,7 @@ type Server struct {
 	roomURLBase  string
 	interactions *interaction.Service
 	hitl         *hitl.Service
+	hitlWire     HITLWire
 	docs         *docs.Service
 	turns        *turns.Service
 	roomflow     *roomflow.Service
@@ -250,6 +252,32 @@ func WithHITLService(service *hitl.Service) Option {
 			return fmt.Errorf("mcp: hitl service is nil")
 		}
 		server.hitl = service
+		return nil
+	}
+}
+
+// HITLWire is the go-hitl backend behind tangent_hitl_enqueue/get/await/withdraw
+// (internal/hitl/gohitl). Each method takes the caller binding Tangent derived
+// for the call (the one the native tools persist) and the tool's JSON document,
+// and returns the go-hitl wire JSON; on error the bytes are the go-hitl wire error
+// document. When set it replaces Tangent's own service behind those four tools;
+// the operator's inbox and Resolve path are unchanged.
+type HITLWire interface {
+	Enqueue(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error)
+	Get(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error)
+	Await(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error)
+	Withdraw(ctx context.Context, caller interaction.ActorBinding, doc []byte) ([]byte, error)
+}
+
+// WithHITLWire selects the go-hitl backend for the tangent_hitl_* tools. It
+// requires WithHITLService (the operator surface still reads Tangent's own
+// service).
+func WithHITLWire(wire HITLWire) Option {
+	return func(server *Server) error {
+		if wire == nil {
+			return fmt.Errorf("mcp: hitl wire is nil")
+		}
+		server.hitlWire = wire
 		return nil
 	}
 }

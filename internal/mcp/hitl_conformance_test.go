@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
+	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 )
@@ -28,6 +30,14 @@ type mcpHITLAdapter struct {
 	server  *Server
 	client  *mcpsdk.ClientSession
 	service *hitl.Service
+	// libRevisions is true when the go-hitl backend serves the tools. Its
+	// revisions are interactions.revision - 3; the operator's native Resolve
+	// answers in interactions revisions, so the adapter states them in the
+	// lib's numbering before the kit compares the two observations of one
+	// outcome. (The operator's response goes to the browser, never to the
+	// agent caller, so nothing in the product compares them.)
+	libRevisions bool
+	db           *sql.DB
 }
 
 var _ hitltest.Adapter = (*mcpHITLAdapter)(nil)
@@ -74,7 +84,7 @@ func (a *mcpHITLAdapter) ParticipantResolve(ctx context.Context, itemID string, 
 		var wire *rawToolError
 		if herr := a.server.hitlError(err); errors.As(herr, &wire) {
 			body, _ := json.Marshal(wire.body)
-			return body, err
+			return a.inLibRevisions(body), err
 		}
 		return nil, err
 	}
@@ -83,7 +93,9 @@ func (a *mcpHITLAdapter) ParticipantResolve(ctx context.Context, itemID string, 
 		return fail(err)
 	}
 	projection := int64(1)
-	if view.TerminalOutcome == nil { // a terminal item cannot be presented
+	// A terminal item cannot be presented; a row the go-hitl store created is
+	// already presented, with its participant binding.
+	if view.TerminalOutcome == nil && view.State == interaction.InteractionStateStaged {
 		if _, presentErr := a.service.Present(ctx, hitl.PresentInput{
 			ItemID: itemID, ExpectedRevision: view.Revision,
 			PresentedProjectionRevision: projection, ConnectionID: "conformance",
@@ -94,6 +106,8 @@ func (a *mcpHITLAdapter) ParticipantResolve(ctx context.Context, itemID string, 
 		if err != nil || view.PresentedProjectionRevision == nil {
 			return fail(err)
 		}
+	}
+	if view.PresentedProjectionRevision != nil {
 		projection = *view.PresentedProjectionRevision
 	}
 	outcome, err := a.service.Resolve(ctx, hitl.ResolveInput{
@@ -103,7 +117,43 @@ func (a *mcpHITLAdapter) ParticipantResolve(ctx context.Context, itemID string, 
 	if err != nil {
 		return fail(err)
 	}
-	return json.Marshal(outcome)
+	body, err := json.Marshal(outcome)
+	return a.inLibRevisions(body), err
+}
+
+// inLibRevisions rewrites every interaction_revision in body from Tangent's
+// numbering to the go-hitl lib's (minus the staged-row offset of 3).
+func (a *mcpHITLAdapter) inLibRevisions(body []byte) []byte {
+	if !a.libRevisions {
+		return body
+	}
+	var value any
+	if json.Unmarshal(body, &value) != nil {
+		return body
+	}
+	var shift func(any)
+	shift = func(v any) {
+		switch typed := v.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if number, ok := child.(float64); ok && key == "interaction_revision" {
+					typed[key] = number - 3
+					continue
+				}
+				shift(child)
+			}
+		case []any:
+			for _, child := range typed {
+				shift(child)
+			}
+		}
+	}
+	shift(value)
+	out, err := json.Marshal(value)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 func (a *mcpHITLAdapter) ExpireDue(ctx context.Context) error {
@@ -112,6 +162,14 @@ func (a *mcpHITLAdapter) ExpireDue(ctx context.Context) error {
 }
 
 func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
+	t.Helper()
+	return newConformanceAdapterFor(t, false)
+}
+
+// newConformanceAdapterFor builds the adapter over Tangent's own HITL service
+// (goHITL false) or with the go-hitl Service behind the tools (goHITL true).
+// The operator's resolve path is Tangent's own in both.
+func newConformanceAdapterFor(t *testing.T, goHITL bool) *mcpHITLAdapter {
 	t.Helper()
 	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "conformance.db"))
 	if err != nil {
@@ -133,9 +191,12 @@ func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
 			t.Fatalf("Register %s: %v", name, registrationErr)
 		}
 	}
+	interactionStore := interaction.NewStore(database)
+	catalog := interaction.NewEnvelopeDefinitionCatalog(envelopeService, HostVersion,
+		interaction.WithRetainedMaterialStore(interactionStore))
 	interactions, err := interaction.NewService(
-		interaction.NewStore(database),
-		interaction.NewEnvelopeDefinitionCatalog(envelopeService, HostVersion),
+		interactionStore,
+		catalog,
 		interaction.WithAwaitPollInterval(time.Millisecond),
 		interaction.WithSurfaceAccessPolicy(hitl.SurfaceAccessPolicy{}),
 		interaction.WithPrivilegedActorPolicy(hitl.ExpiryPolicy{}),
@@ -147,9 +208,13 @@ func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
 	if err != nil {
 		t.Fatalf("hitl.NewService: %v", err)
 	}
+	options := []Option{WithInteractionService(interactions), WithHITLService(hitlService)}
+	if goHITL {
+		options = append(options, WithHITLWire(gohitl.New(database, catalog)))
+	}
 	server, err := New(
 		envelopeService, envelope.NewDispatcher(envelopeService), room.NewManager(nil), "",
-		WithInteractionService(interactions), WithHITLService(hitlService),
+		options...,
 	)
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
@@ -166,7 +231,7 @@ func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
 		t.Fatalf("client.Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Close(); _ = serverSession.Close() })
-	return &mcpHITLAdapter{server: server, client: client, service: hitlService}
+	return &mcpHITLAdapter{server: server, client: client, service: hitlService, libRevisions: goHITL, db: database}
 }
 
 // TestHITLToolsPassLibraryConformance runs the shared go-hitl conformance
@@ -174,4 +239,54 @@ func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
 func TestHITLToolsPassLibraryConformance(t *testing.T) {
 	hitltest.RunConformance(t, newConformanceAdapter(t),
 		hitltest.CapCallerIsolation, hitltest.CapExpiry)
+}
+
+// TestHITLToolsPassLibraryConformanceOnTheGoHITLBackend is the same suite with
+// TANGENT_HITL_BACKEND=gohitl: the go-hitl Service over Tangent's tables behind
+// the tools, with Tangent's own Resolve as the participant. 17/17 must hold on
+// both backends.
+func TestHITLToolsPassLibraryConformanceOnTheGoHITLBackend(t *testing.T) {
+	hitltest.RunConformance(t, newConformanceAdapterFor(t, true),
+		hitltest.CapCallerIsolation, hitltest.CapExpiry)
+}
+
+// The same caller must be recorded identically whichever backend serves the
+// tools (scope, authority, assurance): the vault's creator check and caller
+// isolation compare caller_scope, and an asserted authority prefix must never
+// become an authority.
+func TestHITLCallerIsRecordedIdenticallyOnBothBackends(t *testing.T) {
+	type recorded struct{ scope, authority, assurance string }
+	for _, app := range []string{"Scope-App", "gateway:prodA"} {
+		seen := map[string]recorded{}
+		for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
+			adapter := newConformanceAdapterFor(t, goHITL)
+			doc, _ := json.Marshal(map[string]any{
+				"contract_version": hitl.ContractVersion, "kind": "approval", "idempotency_key": "scope-1", "title": "T",
+				"summary": "S", "request": "Approve?", "source": map[string]any{"application_id": app, "agent_id": "agent-1"},
+			})
+			reply, err := adapter.Enqueue(context.Background(), doc)
+			if err != nil {
+				t.Fatalf("%s %s enqueue: %v (%s)", name, app, err, reply)
+			}
+			var handle struct {
+				ItemID string `json:"item_id"`
+			}
+			if err = json.Unmarshal(reply, &handle); err != nil || handle.ItemID == "" {
+				t.Fatalf("%s handle = %s (%v)", name, reply, err)
+			}
+			var got recorded
+			if err = adapter.db.QueryRow(
+				`SELECT caller_scope, caller_authority, caller_assurance FROM interactions WHERE id = ?`, handle.ItemID,
+			).Scan(&got.scope, &got.authority, &got.assurance); err != nil {
+				t.Fatalf("%s caller columns: %v", name, err)
+			}
+			seen[name] = got
+		}
+		if seen["native"] != seen["gohitl"] {
+			t.Fatalf("%s: caller recorded differently: native=%+v gohitl=%+v", app, seen["native"], seen["gohitl"])
+		}
+		if seen["gohitl"].authority != "standalone-local" {
+			t.Fatalf("%s: an asserted application id must not become an authority: %+v", app, seen["gohitl"])
+		}
+	}
 }
