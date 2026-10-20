@@ -1074,9 +1074,24 @@ participant allowed to resolve it — requires an `operator-token` session.
 `TANGENT_OPERATOR_TOKEN` (constant-time, on SHA-256 digests; 5 failures per
 session per minute, with a process-wide flood *alert* — never a refusal — above
 10 per minute) and rotates the session to `operator-token` assurance, which
-resolutions then record as `participant_assurance`. Operator authority lasts
-12 hours from elevation; the session then reads as minted again and keeps its
-original absolute expiry. A live WebSocket re-reads its session before every
+resolutions then record as `participant_assurance`. How long operator
+authority lasts is `TANGENT_ELEVATION_TTL` (CW-20261020-0033): `always` (the
+default) does not lapse by time, `never` lasts one minute, `<N>d` lasts N days.
+When it lapses the session reads as minted again and keeps its original
+absolute expiry. Every mode is bounded by the 30-day browser session, which an
+elevation never extends, so `always` means *until revoked or until the session
+ends, whichever comes first*. `POST /api/session/de-elevate` revokes an
+elevation at any time (it rotates the session back to the minted template).
+`GET /api/session` reports `elevation_ttl` and, while elevated,
+`elevation_expires_at`. The end of an elevation is stamped when it is granted
+(`participant_sessions.elevated_until`: the earlier of the session's expiry and
+the elevation moment plus the lifetime in force then). Reading a session applies
+the earlier of that stamp and the elevation moment plus the *current* lifetime:
+shortening the setting takes effect on the next request, and lengthening it
+applies to new elevations only, so a lapsed elevation never revives. At startup
+a shorter lifetime is also written onto the elevations still live, so shortening
+and then lengthening across restarts cannot bring one back. An elevation
+granted before stamping existed keeps the 12 hours it was granted under. A live WebSocket re-reads its session before every
 answer frame, so revocation, expiry, and a lapsed elevation reach open tabs.
 A higher-assurance participant may resolve an item a lower-assurance identity
 presented (journaled as `interaction.presenter_superseded`); never the reverse.

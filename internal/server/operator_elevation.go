@@ -32,6 +32,8 @@ const (
 	ElevatePath = "/api/session/elevate"
 	// SessionStatusPath reports the browser's elevation state.
 	SessionStatusPath = "/api/session"
+	// DeElevatePath ends operator elevation for the browser's session.
+	DeElevatePath = "/api/session/de-elevate"
 
 	elevateMaxBodyBytes = 4 * 1024
 
@@ -60,6 +62,30 @@ type sessionStatus struct {
 	Assurance               string `json:"assurance"`
 	Elevated                bool   `json:"elevated"`
 	OperatorTokenConfigured bool   `json:"operator_token_configured"`
+	// ElevationTTL is the configured lifetime of an elevation (TANGENT_ELEVATION_TTL):
+	// "always", "never" or "<N>d". "always" lasts until revoked or until the
+	// browser session itself ends.
+	ElevationTTL string `json:"elevation_ttl"`
+	// ElevationExpiresAt is when this session stops reading as elevated: the
+	// elevation window's end or the session's own absolute expiry, whichever
+	// comes first. Present only while elevated.
+	ElevationExpiresAt *time.Time `json:"elevation_expires_at,omitempty"`
+}
+
+// newSessionStatus describes a session under the gate's elevation policy.
+func newSessionStatus(gate *participant.Gate, session participant.Session, tokenConfigured bool) sessionStatus {
+	policy := gate.ElevationPolicy()
+	status := sessionStatus{
+		Assurance:               session.Assurance,
+		Elevated:                session.Elevated(),
+		OperatorTokenConfigured: tokenConfigured,
+		ElevationTTL:            policy.String(),
+	}
+	if session.Elevated() {
+		end := session.ElevationEnd(policy).UTC()
+		status.ElevationExpiresAt = &end
+	}
+	return status
 }
 
 // elevationLimiter counts elevation attempts in a sliding window. The
@@ -167,11 +193,27 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logg
 			reportObjectAccessDenial(r.Context(), recorder, authz.View)
 			return
 		}
-		writeHITLJSON(w, http.StatusOK, sessionStatus{
-			Assurance:               session.Assurance,
-			Elevated:                session.Elevated(),
-			OperatorTokenConfigured: gate.OperatorTokenConfigured(),
-		})
+		writeHITLJSON(w, http.StatusOK, newSessionStatus(gate, session, gate.OperatorTokenConfigured()))
+	})))
+
+	// De-elevation needs a live session and nothing else: ending authority is
+	// always safe to grant to whoever holds the cookie, and the same-origin
+	// guard keeps a foreign page from doing it to a browser that visits it.
+	mux.Handle("POST "+DeElevatePath, hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		session, err := gate.Resolve(r)
+		if err != nil {
+			writeParticipantRefusal(w)
+			reportObjectAccessDenial(r.Context(), recorder, authz.View)
+			return
+		}
+		minted, err := gate.DeElevate(r.Context(), w, session)
+		if err != nil {
+			writeHITLJSON(w, http.StatusInternalServerError, map[string]any{
+				"code": "internal_error", "message": "operator elevation could not be ended",
+			})
+			return
+		}
+		writeHITLJSON(w, http.StatusOK, newSessionStatus(gate, minted, gate.OperatorTokenConfigured()))
 	})))
 
 	mux.Handle("POST "+ElevatePath, hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -217,11 +259,7 @@ func registerOperatorElevation(mux *http.ServeMux, cfg Config, logger *slog.Logg
 			return
 		}
 		limiter.succeed(attempt)
-		writeHITLJSON(w, http.StatusOK, sessionStatus{
-			Assurance:               elevated.Assurance,
-			Elevated:                elevated.Elevated(),
-			OperatorTokenConfigured: true,
-		})
+		writeHITLJSON(w, http.StatusOK, newSessionStatus(gate, elevated, true))
 	})))
 }
 

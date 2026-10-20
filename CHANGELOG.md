@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Operator elevation lifetime is a setting (CW-20261020-0033, CW-20261019-0043).
+  `TANGENT_ELEVATION_TTL` is `always` (default), `never` (one minute) or `<N>d`;
+  an invalid value stops startup, naming the variable. It replaces the fixed
+  12 hours, so the default no longer lapses after 12 hours. Every mode is
+  bounded by the 30-day browser session, which elevation still does not extend
+  (CW-20261016-0174): `always` is until revoked or the session ends.
+  `POST /api/session/de-elevate` revokes an elevation (same-origin, needs a live
+  session) by rotating it back to a minted session, and `GET /api/session`
+  additionally reports `elevation_ttl` and `elevation_expires_at`. The end of an
+  elevation is stamped when it is granted (migration 0023, `elevated_until`);
+  lengthening the lifetime later applies to new elevations only and never
+  revives one that lapsed, shortening is immediate and is persisted onto live
+  elevations at startup, and an elevation granted before stamping keeps its
+  12 hours.
+
 ### Security
 
 - A browser session minted from loopback admission no longer holds `resolve`:
@@ -18,7 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   short (< 32 bytes) token fails closed. **Deploy prerequisite:** provision
   `TANGENT_OPERATOR_TOKEN` before upgrading, or browser approvals become
   unresolvable (CW-20261016-0174).
-  Elevation lasts 12 hours; live WebSockets re-check their session before
+  Elevation lifetime is `TANGENT_ELEVATION_TTL` (see Added; this entry first
+  shipped it as a fixed 12 hours); live WebSockets re-check their session before
   each answer, so revocation reaches open tabs. Failed attempts are limited
   per session; a process-wide flood only raises an alert. **Threat model:**
   this stops principals limited to loopback HTTP/WS (agents, scripts,

@@ -1,0 +1,13 @@
+-- Operator elevation is stamped at grant time (CW-20261020-0033).
+--
+-- elevated_until is the instant an elevation ends, written when the session is
+-- elevated: the earlier of the session's own expiry and the elevation moment
+-- plus the lifetime TANGENT_ELEVATION_TTL gave it then. A later, longer TTL
+-- never moves it later, so an elevation that lapsed stays lapsed; a shorter TTL
+-- is applied on read and persisted at startup (participant.Store.
+-- ApplyElevationPolicy), so it cannot be undone by lengthening it again.
+--
+-- NULL on an operator-token row is an elevation granted before this column
+-- existed: it keeps the 12 hour lifetime it was granted under. NULL on a minted
+-- row means nothing, since a minted session is not elevated.
+ALTER TABLE participant_sessions ADD COLUMN elevated_until DATETIME;

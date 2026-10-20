@@ -338,6 +338,7 @@ func run() int {
 	_, srv, closer, bootErr := boot.Boot(boot.Config{
 		DBPath:                  dbPath,
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
+		ElevationTTL:            os.Getenv(participant.EnvElevationTTL),
 		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
 		MCPTrustedForwarders:    os.Getenv(mcp.EnvTrustedForwarders),
 		ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),
