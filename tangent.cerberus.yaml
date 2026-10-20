@@ -14,6 +14,9 @@ resources:
     type: process
     project: tangent
     connector: local
+    env: dev
+    owner: self
+    admin: self
     config:
       build_strategy:
         kind: make_standard
