@@ -968,6 +968,12 @@ approve, deny, reply, or acknowledge. Set `TANGENT_OPERATOR_TOKEN` (at least
 elevates its session through `POST /api/session/elevate`. Without it, browser
 approvals cannot be resolved at all.
 
+**Elevation lifetime.** `TANGENT_ELEVATION_TTL` sets how long an elevation
+lasts: `always` (default; until the operator revokes it with
+`POST /api/session/de-elevate` or the 30-day browser session ends), `never`
+(one minute, long enough for the decision it was made for) or `<N>d` (N whole
+days). An invalid value stops startup. It cannot outlast the browser session.
+
 ## Troubleshooting
 
 - **`/ws` returns 403 / "the upgrade was refused".** The client presented no

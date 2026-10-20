@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,6 +23,8 @@ import (
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+	// elevation is how long an elevation lasts; nil means ElevationAlways.
+	elevation atomic.Pointer[ElevationPolicy]
 }
 
 // NewStore constructs a Store over the shared Tangent handle.
@@ -30,6 +33,19 @@ func NewStore(db *sql.DB) (*Store, error) {
 		return nil, fmt.Errorf("participant: database handle is required")
 	}
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC() }}, nil
+}
+
+// SetElevationPolicy installs the elevation lifetime. Call it before the store
+// serves requests; it is safe to call later (a change applies to the next
+// read).
+func (s *Store) SetElevationPolicy(p ElevationPolicy) { s.elevation.Store(&p) }
+
+// ElevationPolicy is the lifetime currently applied to elevations.
+func (s *Store) ElevationPolicy() ElevationPolicy {
+	if p := s.elevation.Load(); p != nil {
+		return *p
+	}
+	return ElevationAlways()
 }
 
 // Mint creates a session from a template and returns it with the one and only
@@ -145,7 +161,7 @@ WHERE `+predicate, arg).Scan(
 		return Session{}, "", fmt.Errorf("participant: decode capabilities: %w", err)
 	}
 	session.Grants = authz.ParseCapabilities(granted)
-	return applyElevationWindow(session, now), storedHash, nil
+	return applyElevationWindow(session, now, s.ElevationPolicy()), storedHash, nil
 }
 
 // Touch records that a session was used. It moves last_seen_at only: there is

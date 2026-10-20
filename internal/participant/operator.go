@@ -92,12 +92,10 @@ var OperatorTemplate = Session{
 	Grants:    authz.DefaultParticipantCapabilities(),
 }
 
-// ElevatedLifetime bounds operator authority. An elevated session is
-// operator-token for this long after the elevation that created it; after
-// that it reads as a minted `loopback-unverified` session until it is
-// elevated again, and the UI's operator-token prompt handles the refusal.
-// The row's absolute expiry is inherited from the session it rotated from.
-const ElevatedLifetime = 12 * time.Hour
+// The lifetime of an elevation is an ElevationPolicy (elevation.go). After it
+// lapses a session reads as a minted `loopback-unverified` one until it is
+// elevated again, and the UI's operator-token prompt handles the refusal. The
+// row's absolute expiry is inherited from the session it rotated from.
 
 // Elevated reports whether a session carries operator assurance.
 func (s Session) Elevated() bool { return s.Assurance == AssuranceOperatorToken }
@@ -107,10 +105,16 @@ func (s Session) Elevated() bool { return s.Assurance == AssuranceOperatorToken 
 func (s Session) EffectiveGrants() []authz.Capability { return effectiveCapabilities(s) }
 
 // applyElevationWindow downgrades an operator-token session whose elevation
-// is older than ElevatedLifetime. The successor of an elevation is created at
-// the moment of elevation, so CreatedAt is the elevation time.
-func applyElevationWindow(session Session, now time.Time) Session {
-	if session.Elevated() && !now.Before(session.CreatedAt.Add(ElevatedLifetime)) {
+// is older than the policy's window. The successor of an elevation is created
+// at the moment of elevation, so CreatedAt is the elevation time. A policy that
+// does not lapse by time never downgrades; the session's own expiry still ends
+// it.
+func applyElevationWindow(session Session, now time.Time, policy ElevationPolicy) Session {
+	if !session.Elevated() {
+		return session
+	}
+	window, finite := policy.Window()
+	if finite && !now.Before(session.CreatedAt.Add(window)) {
 		session.Assurance = AssuranceLoopbackUnverified
 		session.Grants = authz.MintedParticipantCapabilities()
 	}
@@ -186,6 +190,31 @@ func (g *Gate) Elevate(ctx context.Context, w http.ResponseWriter, current Sessi
 		if errors.Is(err, ErrSessionInvalid) {
 			return Session{}, ErrElevationRefused
 		}
+		return Session{}, err
+	}
+	http.SetCookie(w, NewCookie(value, successor.ExpiresAt))
+	return successor, nil
+}
+
+// ElevationPolicy is how long an elevation lasts (TANGENT_ELEVATION_TTL).
+func (g *Gate) ElevationPolicy() ElevationPolicy { return g.store.ElevationPolicy() }
+
+// DeElevate ends operator authority for the session this request carries: it
+// rotates the session to the minted template (a new session id and cookie, the
+// predecessor revoked in the same transaction) so the browser reads as
+// `loopback-unverified` again and must present the operator token to elevate.
+//
+// It always rotates, even when the session already reads as minted. A session
+// whose elevation merely lapsed still has operator assurance on its row, and
+// leaving that row alone would let a later, longer TANGENT_ELEVATION_TTL
+// revive it. The successor inherits the predecessor's absolute expiry, as every
+// rotation does.
+func (g *Gate) DeElevate(ctx context.Context, w http.ResponseWriter, current Session) (Session, error) {
+	if current.ID == "" {
+		return Session{}, ErrSessionInvalid
+	}
+	successor, value, err := g.store.Rotate(ctx, current.ID, DefaultTemplate)
+	if err != nil {
 		return Session{}, err
 	}
 	http.SetCookie(w, NewCookie(value, successor.ExpiresAt))

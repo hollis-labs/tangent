@@ -42,6 +42,7 @@ func main() {
 		Config: boot.Config{
 			DBPath:                  os.Getenv(envDBPath),
 			OperatorToken:           os.Getenv(participant.EnvOperatorToken),
+			ElevationTTL:            os.Getenv(participant.EnvElevationTTL),
 			MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),
 			MCPTrustedForwarders:    os.Getenv(mcp.EnvTrustedForwarders),
 			ProxiedHTTPAddr:         os.Getenv(server.EnvProxiedHTTPAddr),

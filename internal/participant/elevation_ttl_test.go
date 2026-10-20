@@ -10,15 +10,19 @@ import (
 	"github.com/hollis-labs/tangent/internal/authz"
 )
 
-// TestElevationLapsesAfterTwelveHoursWithoutRefreshingTheSession: operator
-// authority lasts ElevatedLifetime from the elevation, the rotated session
+// TestElevationLapsesAfterTheWindowWithoutRefreshingTheSession: operator
+// authority lasts the policy's window from the elevation, the rotated session
 // keeps its predecessor's absolute expiry, and a lapsed session reads as a
-// minted one (so the UI's elevation prompt handles it).
-func TestElevationLapsesAfterTwelveHoursWithoutRefreshingTheSession(t *testing.T) {
+// minted one (so the UI's elevation prompt handles it). The window here is the
+// 12 hours this package used to hard-code, which the operator setting cannot
+// express (it counts whole days), so the test installs it directly.
+func TestElevationLapsesAfterTheWindowWithoutRefreshingTheSession(t *testing.T) {
 	t.Parallel()
 	store, _ := openTestStore(t)
 	clock := time.Now().UTC()
 	store.now = func() time.Time { return clock }
+	const window = 12 * time.Hour
+	store.SetElevationPolicy(ElevationFor(window))
 	gate, err := NewGate(store)
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +44,7 @@ func TestElevationLapsesAfterTwelveHoursWithoutRefreshingTheSession(t *testing.T
 	}
 	cookie := recorder.Result().Cookies()[0].Value
 
-	clock = clock.Add(ElevatedLifetime - time.Minute)
+	clock = clock.Add(window - time.Minute)
 	if current, lookupErr := store.Lookup(ctx, cookie); lookupErr != nil || !current.Elevated() {
 		t.Fatalf("inside the window: %+v, %v; want elevated", current, lookupErr)
 	}

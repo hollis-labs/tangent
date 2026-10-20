@@ -80,6 +80,13 @@ type Config struct {
 	// naming the variable. Only a digest is retained.
 	OperatorToken string
 
+	// ElevationTTL is the value of TANGENT_ELEVATION_TTL
+	// (participant.EnvElevationTTL): how long an operator elevation lasts.
+	// "always" (the default when empty) lasts until the operator revokes it
+	// or the 30 day browser session ends; "never" lasts one minute; "<N>d"
+	// lasts N days. Any other value fails Boot, naming the variable.
+	ElevationTTL string
+
 	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
 	MCPCallerTokens string
 
@@ -269,6 +276,12 @@ func (c *ownedCloser) Close() error {
 // adopt-or-boot decision is built on.
 func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens, cfg.MCPTrustedForwarders)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// Validated before the database is touched, like the caller auth above: a
+	// typo in the elevation lifetime must stop startup, not pick a lifetime.
+	elevationPolicy, err := participant.ParseElevationTTL(cfg.ElevationTTL)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -535,6 +548,12 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	participantStore, err := participant.NewStore(sqlDB)
 	if err != nil {
 		return release(fmt.Errorf("build participant session store: %w", err))
+	}
+	participantStore.SetElevationPolicy(elevationPolicy)
+	logger.Info("operator elevation lifetime", "ttl", elevationPolicy.String(), "env", participant.EnvElevationTTL)
+	if elevationPolicy.ExceedsSessionCap() {
+		logger.Warn("operator elevation lifetime is longer than a browser session; the session's own expiry ends it",
+			"ttl", elevationPolicy.String(), "session_cap_days", int(participant.MaximumLifetime/(24*time.Hour)), "env", participant.EnvElevationTTL)
 	}
 	participantGate, err := participant.NewGate(participantStore)
 	if err != nil {
