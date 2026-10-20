@@ -17,7 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (CW-20261016-0174): `always` is until revoked or the session ends.
   `POST /api/session/de-elevate` revokes an elevation (same-origin, needs a live
   session) by rotating it back to a minted session, and `GET /api/session`
-  additionally reports `elevation_ttl` and `elevation_expires_at`.
+  additionally reports `elevation_ttl` and `elevation_expires_at`. The end of an
+  elevation is stamped when it is granted (migration 0023, `elevated_until`);
+  lengthening the lifetime later applies to new elevations only and never
+  revives one that lapsed, shortening is immediate and is persisted onto live
+  elevations at startup, and an elevation granted before stamping keeps its
+  12 hours.
 
 ### Security
 

@@ -143,3 +143,33 @@ func TestDeElevateRefusesWithoutASessionOrFromAnotherSite(t *testing.T) {
 		t.Fatal("a refused de-elevate changed the session")
 	}
 }
+
+// Archie's ruling on #139: the end of an elevation is stamped when it is
+// granted, so a lapsed one never revives when the lifetime is lengthened, and
+// the status the browser sees agrees.
+func TestStatusAgreesThatALapsedElevationStaysLapsedWhenTheLifetimeGrows(t *testing.T) {
+	t.Parallel()
+	app := startGuardedApp(t)
+	app.sessions.SetElevationPolicy(participant.ElevationFor(2 * time.Second))
+	elevated := app.openElevatedDocument(t, "/")
+
+	live := app.status(t, elevated)
+	if !live.Elevated || live.ElevationExpiresAt == nil || time.Until(*live.ElevationExpiresAt) > 3*time.Second {
+		t.Fatalf("a 2s elevation reports %+v", live)
+	}
+	// A longer lifetime now must not stretch the stamped end of this elevation.
+	app.sessions.SetElevationPolicy(participant.ElevationAlways())
+	if probe := app.status(t, elevated); probe.ElevationExpiresAt == nil || time.Until(*probe.ElevationExpiresAt) > 3*time.Second {
+		t.Fatalf("lengthening moved the end of an existing elevation: %+v", probe)
+	}
+	time.Sleep(2500 * time.Millisecond)
+	if probe := app.status(t, elevated); probe.Elevated || probe.ElevationExpiresAt != nil {
+		t.Fatalf("a lapsed elevation revived under a longer lifetime: %+v", probe)
+	}
+
+	// New elevations do get the longer lifetime.
+	fresh := app.openElevatedDocument(t, "/")
+	if probe := app.status(t, fresh); !probe.Elevated || probe.ElevationExpiresAt == nil || time.Until(*probe.ElevationExpiresAt) < 24*time.Hour {
+		t.Fatalf("a new elevation under 'always' reports %+v", probe)
+	}
+}

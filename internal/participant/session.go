@@ -73,6 +73,11 @@ type Session struct {
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time
+	// ElevatedUntil is when an elevation ends, stamped when the session was
+	// elevated (see elevation.go). Zero on a session that was not elevated, and
+	// on an elevation granted before the column existed (which keeps
+	// LegacyElevationWindow).
+	ElevatedUntil time.Time
 }
 
 // Holds reports whether this session was granted a capability.

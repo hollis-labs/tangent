@@ -82,13 +82,7 @@ func newSessionStatus(gate *participant.Gate, session participant.Session, token
 		ElevationTTL:            policy.String(),
 	}
 	if session.Elevated() {
-		end := session.ExpiresAt
-		if window, finite := policy.Window(); finite {
-			if lapse := session.CreatedAt.Add(window); lapse.Before(end) {
-				end = lapse
-			}
-		}
-		end = end.UTC()
+		end := session.ElevationEnd(policy).UTC()
 		status.ElevationExpiresAt = &end
 	}
 	return status

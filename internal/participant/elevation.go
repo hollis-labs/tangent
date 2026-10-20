@@ -26,10 +26,14 @@ import (
 // "until revoked or until the session ends, whichever comes first", and an
 // elevation made on day 29 has one day left whatever the setting.
 //
-// The policy is evaluated when a session is read, not stamped on the row.
-// Shortening it takes effect on the next request; lengthening it also extends
-// elevations that were made earlier and have not been revoked, as long as the
-// session behind them is still live.
+// The end of an elevation is stamped when it is granted: Session.ElevatedUntil
+// is the earlier of the session's own expiry and the elevation moment plus the
+// lifetime in force then. Reading a session applies min(that stamp, elevation
+// moment plus the current lifetime), so shortening the setting takes effect on
+// the next request, and lengthening it applies to new elevations only: an
+// elevation that has lapsed never revives. At startup Store.ApplyElevationPolicy
+// persists a shortened lifetime onto the elevations still live, so shortening
+// and then lengthening again across restarts cannot revive one either.
 const (
 	// EnvElevationTTL names the environment variable the policy is read from.
 	EnvElevationTTL = "TANGENT_ELEVATION_TTL"
@@ -42,6 +46,10 @@ const (
 	// maxElevationDays keeps N*24h far from overflowing a Duration. Anything
 	// above MaximumLifetime is already clipped by the session itself.
 	maxElevationDays = 3650
+
+	// LegacyElevationWindow is the lifetime of an elevation granted before
+	// elevations were stamped (the fixed 12 hours this package used to apply).
+	LegacyElevationWindow = 12 * time.Hour
 
 	elevationModeAlways = "always"
 	elevationModeNever  = "never"
@@ -112,3 +120,41 @@ func (p ElevationPolicy) Window() (time.Duration, bool) { return p.window, p.fin
 // ExceedsSessionCap reports whether the window is longer than the browser
 // session itself can live, so the cap, not the policy, will end it.
 func (p ElevationPolicy) ExceedsSessionCap() bool { return p.finite && p.window > MaximumLifetime }
+
+// elevationEnd is when an elevation granted at createdAt, stamped until (zero =
+// legacy), ends under policy: the stamp, tightened by the current lifetime.
+func elevationEnd(createdAt, until time.Time, policy ElevationPolicy) time.Time {
+	end := until
+	if end.IsZero() {
+		end = createdAt.Add(LegacyElevationWindow)
+	}
+	if window, finite := policy.Window(); finite {
+		if tightened := createdAt.Add(window); tightened.Before(end) {
+			end = tightened
+		}
+	}
+	return end
+}
+
+// grantEnd is the stamp for an elevation granted at now on a session that
+// expires at sessionExpiry: the lifetime in force now, never past the session.
+func grantEnd(now, sessionExpiry time.Time, policy ElevationPolicy) time.Time {
+	end := sessionExpiry
+	if window, finite := policy.Window(); finite {
+		if granted := now.Add(window); granted.Before(end) {
+			end = granted
+		}
+	}
+	return end
+}
+
+// ElevationEnd is when this session stops reading as elevated under policy: the
+// stamped end, tightened by the policy, and never later than the session
+// itself. Meaningful only for an elevated session.
+func (s Session) ElevationEnd(policy ElevationPolicy) time.Time {
+	end := elevationEnd(s.CreatedAt, s.ElevatedUntil, policy)
+	if s.ExpiresAt.Before(end) {
+		end = s.ExpiresAt
+	}
+	return end
+}

@@ -549,7 +549,9 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	if err != nil {
 		return release(fmt.Errorf("build participant session store: %w", err))
 	}
-	participantStore.SetElevationPolicy(elevationPolicy)
+	if applyErr := participantStore.ApplyElevationPolicy(context.Background(), elevationPolicy); applyErr != nil {
+		return release(fmt.Errorf("apply operator elevation lifetime: %w", applyErr))
+	}
 	logger.Info("operator elevation lifetime", "ttl", elevationPolicy.String(), "env", participant.EnvElevationTTL)
 	if elevationPolicy.ExceedsSessionCap() {
 		logger.Warn("operator elevation lifetime is longer than a browser session; the session's own expiry ends it",

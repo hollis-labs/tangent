@@ -2,6 +2,7 @@ package participant
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,7 @@ func TestElevationPolicyWindows(t *testing.T) {
 type policyHarness struct {
 	t     *testing.T
 	store *Store
+	db    *sql.DB
 	gate  *Gate
 	clock time.Time
 	ctx   context.Context
@@ -68,8 +70,8 @@ type policyHarness struct {
 
 func newPolicyHarness(t *testing.T, policy *ElevationPolicy) *policyHarness {
 	t.Helper()
-	store, _ := openTestStore(t)
-	h := &policyHarness{t: t, store: store, clock: time.Now().UTC(), ctx: context.Background()}
+	store, db := openTestStore(t)
+	h := &policyHarness{t: t, store: store, db: db, clock: time.Now().UTC(), ctx: context.Background()}
 	store.now = func() time.Time { return h.clock }
 	if policy != nil {
 		store.SetElevationPolicy(*policy)
@@ -177,24 +179,130 @@ func TestUnsetPolicyIsAlways(t *testing.T) {
 	}
 }
 
-func TestChangingThePolicyAppliesToExistingElevations(t *testing.T) {
+// Archie's ruling on #139: an elevation's end is stamped when it is granted. A
+// lapsed elevation never revives when the lifetime is lengthened; lengthening
+// applies to new elevations only; shortening is immediate.
+func TestLengtheningTheLifetimeNeverRevivesALapsedElevation(t *testing.T) {
 	t.Parallel()
 	never := ElevationNever()
 	h := newPolicyHarness(t, &never)
 	_, cookie := h.elevate()
-	h.clock = h.clock.Add(time.Hour)
-	if s, _ := h.lookup(cookie); s.Elevated() {
-		t.Fatal("elevated beyond the never window")
+	if s, err := h.lookup(cookie); err != nil || !s.Elevated() {
+		t.Fatalf("setup: not elevated inside the one minute window: %+v, %v", s, err)
 	}
-	// Documented: the policy is read, not stamped. Lengthening revives an
-	// unrevoked elevation inside a live session; shortening ends it at once.
-	h.store.SetElevationPolicy(ElevationAlways())
+	h.clock = h.clock.Add(2 * time.Minute)
+	if s, err := h.lookup(cookie); err != nil || s.Elevated() {
+		t.Fatalf("setup: still elevated after the window: %+v, %v", s, err)
+	}
+	lapsedAt := h.clock
+	for _, longer := range []ElevationPolicy{ElevationAlways(), ElevationDays(30), ElevationFor(48 * time.Hour)} {
+		h.store.SetElevationPolicy(longer)
+		for _, later := range []time.Duration{0, time.Hour, 20 * 24 * time.Hour} {
+			h.clock = lapsedAt.Add(later)
+			if s, err := h.lookup(cookie); err != nil || s.Elevated() || s.Holds(authz.Resolve) {
+				t.Fatalf("policy %s after the lapse: a lapsed elevation revived: %+v, %v", longer, s, err)
+			}
+		}
+	}
+}
+
+func TestLengtheningAppliesToNewElevationsOnly(t *testing.T) {
+	t.Parallel()
+	never := ElevationNever()
+	h := newPolicyHarness(t, &never)
+	_, old := h.elevate()
+	h.store.SetElevationPolicy(ElevationDays(7))
+	_, fresh := h.elevate() // granted under the longer lifetime
+	h.clock = h.clock.Add(2 * time.Hour)
+	if s, _ := h.lookup(old); s.Elevated() {
+		t.Fatal("the elevation granted under 'never' was extended by a later, longer lifetime")
+	}
+	if s, err := h.lookup(fresh); err != nil || !s.Elevated() {
+		t.Fatalf("the new elevation should last under the longer lifetime: %+v, %v", s, err)
+	}
+	h.clock = h.clock.Add(7 * 24 * time.Hour)
+	if s, _ := h.lookup(fresh); s.Elevated() {
+		t.Fatal("the new elevation outlived its 7 day lifetime")
+	}
+}
+
+func TestShorteningTheLifetimeIsImmediate(t *testing.T) {
+	t.Parallel()
+	always := ElevationAlways()
+	h := newPolicyHarness(t, &always)
+	_, cookie := h.elevate()
+	h.clock = h.clock.Add(23 * time.Hour)
+	h.store.SetElevationPolicy(ElevationDays(1))
 	if s, _ := h.lookup(cookie); !s.Elevated() {
-		t.Fatal("lengthened policy should apply to the existing elevation")
+		t.Fatal("23h into a 1 day window should still be elevated")
 	}
-	h.store.SetElevationPolicy(ElevationNever())
+	h.clock = h.clock.Add(2 * time.Hour)
 	if s, _ := h.lookup(cookie); s.Elevated() {
-		t.Fatal("shortened policy must take effect immediately")
+		t.Fatal("the shortened lifetime did not end the elevation at once")
+	}
+}
+
+// A shorter lifetime written at startup caps live elevations on disk, so a
+// later restart with a longer one cannot bring one back, even when nothing read
+// the session in between.
+func TestShorteningIsPersistedAcrossRestarts(t *testing.T) {
+	t.Parallel()
+	always := ElevationAlways()
+	h := newPolicyHarness(t, &always)
+	_, cookie := h.elevate()
+	db := h.db
+
+	// Restart 1 with 'never': persists the cap.
+	restart := func(policy ElevationPolicy) *Store {
+		store, err := NewStore(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		store.now = func() time.Time { return h.clock }
+		if err := store.ApplyElevationPolicy(h.ctx, policy); err != nil {
+			t.Fatalf("ApplyElevationPolicy(%s): %v", policy, err)
+		}
+		return store
+	}
+	restart(ElevationNever())
+	h.clock = h.clock.Add(2 * time.Minute) // lapses; nobody reads the session
+
+	// Restart 2 with 'always'.
+	store := restart(ElevationAlways())
+	if s, err := store.Lookup(h.ctx, cookie); err != nil || s.Elevated() {
+		t.Fatalf("an elevation ended by the shorter lifetime revived after a restart with a longer one: %+v, %v", s, err)
+	}
+}
+
+// An elevation granted before stamping existed keeps the 12 hours it was
+// granted under, whatever the lifetime is now.
+func TestAnElevationGrantedBeforeStampingKeepsItsTwelveHours(t *testing.T) {
+	t.Parallel()
+	always := ElevationAlways()
+	h := newPolicyHarness(t, &always)
+	legacy := OperatorTemplate
+	legacy.ID = "legacy-elevation"
+	legacy.CreatedAt, legacy.LastSeenAt = h.clock.Add(-11*time.Hour), h.clock.Add(-11*time.Hour)
+	legacy.ExpiresAt = h.clock.Add(10 * 24 * time.Hour)
+	// No ElevatedUntil: the row is what a pre-stamping database holds.
+	if err := h.store.insert(h.ctx, h.store.db, legacy, HashCookie("legacy-cookie")); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := h.lookup("legacy-cookie"); err != nil || !s.Elevated() {
+		t.Fatalf("11h into a legacy elevation: %+v, %v", s, err)
+	}
+	h.clock = h.clock.Add(2 * time.Hour)
+	if s, err := h.lookup("legacy-cookie"); err != nil || s.Elevated() {
+		t.Fatalf("a legacy elevation outlived its 12 hours under 'always': %+v, %v", s, err)
+	}
+	// ApplyElevationPolicy stamps it so the bound is on disk.
+	h.clock = h.clock.Add(-2 * time.Hour)
+	if err := h.store.ApplyElevationPolicy(h.ctx, ElevationDays(30)); err != nil {
+		t.Fatal(err)
+	}
+	var stamped any
+	if err := h.db.QueryRow(`SELECT elevated_until FROM participant_sessions WHERE id = 'legacy-elevation'`).Scan(&stamped); err != nil || stamped == nil {
+		t.Fatalf("the legacy elevation was not stamped: %v, %v", stamped, err)
 	}
 }
 

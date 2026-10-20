@@ -1083,9 +1083,15 @@ elevation never extends, so `always` means *until revoked or until the session
 ends, whichever comes first*. `POST /api/session/de-elevate` revokes an
 elevation at any time (it rotates the session back to the minted template).
 `GET /api/session` reports `elevation_ttl` and, while elevated,
-`elevation_expires_at`. The policy is read when a session is read, not stamped
-on the row: shortening it takes effect on the next request, lengthening it also
-extends unrevoked elevations inside a live session. A live WebSocket re-reads its session before every
+`elevation_expires_at`. The end of an elevation is stamped when it is granted
+(`participant_sessions.elevated_until`: the earlier of the session's expiry and
+the elevation moment plus the lifetime in force then). Reading a session applies
+the earlier of that stamp and the elevation moment plus the *current* lifetime:
+shortening the setting takes effect on the next request, and lengthening it
+applies to new elevations only, so a lapsed elevation never revives. At startup
+a shorter lifetime is also written onto the elevations still live, so shortening
+and then lengthening across restarts cannot bring one back. An elevation
+granted before stamping existed keeps the 12 hours it was granted under. A live WebSocket re-reads its session before every
 answer frame, so revocation, expiry, and a lapsed elevation reach open tabs.
 A higher-assurance participant may resolve an item a lower-assurance identity
 presented (journaled as `interaction.presenter_superseded`); never the reverse.

@@ -35,10 +35,76 @@ func NewStore(db *sql.DB) (*Store, error) {
 	return &Store{db: db, now: func() time.Time { return time.Now().UTC() }}, nil
 }
 
-// SetElevationPolicy installs the elevation lifetime. Call it before the store
-// serves requests; it is safe to call later (a change applies to the next
-// read).
+// SetElevationPolicy installs the elevation lifetime in memory. It applies to
+// the next read and to elevations granted from now on; it persists nothing.
+// Startup uses ApplyElevationPolicy.
 func (s *Store) SetElevationPolicy(p ElevationPolicy) { s.elevation.Store(&p) }
+
+// ApplyElevationPolicy installs the elevation lifetime and, when it is finite,
+// persists it as a cap on every live elevation: each one's stamped end becomes
+// the earlier of what it had and its elevation moment plus the new lifetime
+// (an elevation granted before stamping gets its legacy 12 hours first). That
+// is what makes shortening durable: after a restart with a longer lifetime, an
+// elevation that the shorter one ended is still ended. A lifetime that does not
+// lapse by time changes nothing on disk.
+func (s *Store) ApplyElevationPolicy(ctx context.Context, p ElevationPolicy) error {
+	s.SetElevationPolicy(p)
+	window, finite := p.Window()
+	if !finite {
+		return nil
+	}
+	transaction, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("participant: begin elevation cap: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	rows, err := transaction.QueryContext(ctx, `
+SELECT id, created_at, elevated_until
+FROM participant_sessions
+WHERE participant_assurance = ? AND revoked_at IS NULL`, AssuranceOperatorToken)
+	if err != nil {
+		return fmt.Errorf("participant: list elevations: %w", err)
+	}
+	type capUpdate struct {
+		id    string
+		until time.Time
+	}
+	var updates []capUpdate
+	for rows.Next() {
+		var (
+			id      string
+			created time.Time
+			until   sql.NullTime
+		)
+		if scanErr := rows.Scan(&id, &created, &until); scanErr != nil {
+			_ = rows.Close()
+			return fmt.Errorf("participant: read elevation: %w", scanErr)
+		}
+		current := until.Time
+		if !until.Valid {
+			current = created.Add(LegacyElevationWindow)
+		}
+		if capped := created.Add(window); capped.Before(current) || !until.Valid {
+			if capped.After(current) {
+				capped = current
+			}
+			updates = append(updates, capUpdate{id: id, until: capped})
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("participant: list elevations: %w", err)
+	}
+	for _, u := range updates {
+		if _, err := transaction.ExecContext(ctx,
+			`UPDATE participant_sessions SET elevated_until = ? WHERE id = ?`, u.until, u.id); err != nil {
+			return fmt.Errorf("participant: cap elevation: %w", err)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("participant: commit elevation cap: %w", err)
+	}
+	return nil
+}
 
 // ElevationPolicy is the lifetime currently applied to elevations.
 func (s *Store) ElevationPolicy() ElevationPolicy {
@@ -79,15 +145,19 @@ func (s *Store) insert(ctx context.Context, exec sqlExecutor, session Session, h
 	if err != nil {
 		return fmt.Errorf("participant: encode capabilities: %w", err)
 	}
+	var untilArg any // NULL unless this row is an elevation
+	if !session.ElevatedUntil.IsZero() {
+		untilArg = session.ElevatedUntil
+	}
 	_, err = exec.ExecContext(ctx, `
 INSERT INTO participant_sessions (
   id, cookie_sha256, participant_scope, participant_ref,
   participant_authority, participant_assurance, capabilities,
-  created_at, last_seen_at, expires_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  created_at, last_seen_at, expires_at, elevated_until
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		session.ID, hash, session.Scope, session.Ref,
 		session.Authority, session.Assurance, string(grants),
-		session.CreatedAt, session.LastSeenAt, session.ExpiresAt,
+		session.CreatedAt, session.LastSeenAt, session.ExpiresAt, untilArg,
 	)
 	if err != nil {
 		return fmt.Errorf("participant: insert session: %w", err)
@@ -134,17 +204,18 @@ func (s *Store) load(ctx context.Context, predicate string, arg string) (Session
 		storedHash string
 		grantsJSON string
 		revokedAt  sql.NullTime
+		until      sql.NullTime
 	)
 	//nolint:gosec // G202: predicate is one of two fixed literals in this file.
 	err := s.db.QueryRowContext(ctx, `
 SELECT id, cookie_sha256, participant_scope, participant_ref,
        participant_authority, participant_assurance, capabilities,
-       created_at, last_seen_at, expires_at, revoked_at
+       created_at, last_seen_at, expires_at, revoked_at, elevated_until
 FROM participant_sessions
 WHERE `+predicate, arg).Scan(
 		&session.ID, &storedHash, &session.Scope, &session.Ref,
 		&session.Authority, &session.Assurance, &grantsJSON,
-		&session.CreatedAt, &session.LastSeenAt, &session.ExpiresAt, &revokedAt,
+		&session.CreatedAt, &session.LastSeenAt, &session.ExpiresAt, &revokedAt, &until,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, "", ErrSessionInvalid
@@ -161,6 +232,9 @@ WHERE `+predicate, arg).Scan(
 		return Session{}, "", fmt.Errorf("participant: decode capabilities: %w", err)
 	}
 	session.Grants = authz.ParseCapabilities(granted)
+	if until.Valid {
+		session.ElevatedUntil = until.Time
+	}
 	return applyElevationWindow(session, now, s.ElevationPolicy()), storedHash, nil
 }
 
@@ -220,6 +294,10 @@ func (s *Store) Rotate(ctx context.Context, sessionID string, next Session) (Ses
 		CreatedAt:  now,
 		LastSeenAt: now,
 		ExpiresAt:  predecessorExpiry,
+	}
+	if successor.Assurance == AssuranceOperatorToken {
+		// Stamp the end of this elevation now, under the lifetime in force now.
+		successor.ElevatedUntil = grantEnd(now, predecessorExpiry, s.ElevationPolicy())
 	}
 	if insertErr := s.insert(ctx, transaction, successor, hash); insertErr != nil {
 		return Session{}, "", insertErr

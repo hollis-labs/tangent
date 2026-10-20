@@ -1115,3 +1115,39 @@ func assertScalar(t *testing.T, database *sql.DB, query, want, what string) {
 		t.Fatalf("%s = %q, want %q", what, got, want)
 	}
 }
+
+// CW-20261020-0033: elevated_until is stamped at grant time; the column is
+// nullable and a database migrated from before it keeps its rows.
+func TestParticipantSessionsGainElevatedUntilWithoutLosingRows(t *testing.T) {
+	t.Parallel()
+	database, err := Open(filepath.Join(t.TempDir(), "elevation.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrateTo(database, 22); err != nil {
+		t.Fatalf("migrate to 22: %v", err)
+	}
+	if _, err := database.Exec(`INSERT INTO participant_sessions (
+  id, cookie_sha256, participant_scope, participant_ref, participant_authority, participant_assurance,
+  created_at, last_seen_at, expires_at) VALUES ('pre', 'h', 's', 'r', 'a', 'operator-token', datetime('now'), datetime('now'), datetime('now', '+1 day'))`); err != nil {
+		t.Fatalf("seed a pre-stamping elevation: %v", err)
+	}
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	var until sql.NullTime
+	if err := database.QueryRow(`SELECT elevated_until FROM participant_sessions WHERE id = 'pre'`).Scan(&until); err != nil {
+		t.Fatalf("elevated_until is missing after the migration: %v", err)
+	}
+	if until.Valid {
+		t.Fatalf("a pre-stamping elevation must have no stamp (it keeps its legacy window), got %v", until.Time)
+	}
+	if err := migrateTo(database, 22); err != nil {
+		t.Fatalf("the migration does not roll back: %v", err)
+	}
+	var kept int
+	if err := database.QueryRow(`SELECT COUNT(*) FROM participant_sessions WHERE id = 'pre'`).Scan(&kept); err != nil || kept != 1 {
+		t.Fatalf("rows after rollback: %d, %v", kept, err)
+	}
+}

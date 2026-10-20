@@ -105,16 +105,16 @@ func (s Session) Elevated() bool { return s.Assurance == AssuranceOperatorToken 
 func (s Session) EffectiveGrants() []authz.Capability { return effectiveCapabilities(s) }
 
 // applyElevationWindow downgrades an operator-token session whose elevation
-// is older than the policy's window. The successor of an elevation is created
-// at the moment of elevation, so CreatedAt is the elevation time. A policy that
-// does not lapse by time never downgrades; the session's own expiry still ends
-// it.
+// has ended: the end stamped when it was granted, tightened by the current
+// policy (elevationEnd). The successor of an elevation is created at the moment
+// of elevation, so CreatedAt is the elevation time. A lapsed session reads as
+// minted and can only be elevated again with the operator token; a longer
+// policy later does not revive it.
 func applyElevationWindow(session Session, now time.Time, policy ElevationPolicy) Session {
 	if !session.Elevated() {
 		return session
 	}
-	window, finite := policy.Window()
-	if finite && !now.Before(session.CreatedAt.Add(window)) {
+	if !now.Before(elevationEnd(session.CreatedAt, session.ElevatedUntil, policy)) {
 		session.Assurance = AssuranceLoopbackUnverified
 		session.Grants = authz.MintedParticipantCapabilities()
 	}
