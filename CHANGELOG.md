@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- Go toolchain 1.26.10 (`go` directive and CI pin) for GO-2026-6809 (crypto/x509); no behavior change.
 - A browser session minted from loopback admission no longer holds `resolve`:
   any local process (or anything a reverse proxy forwards with a loopback
   Host) could mint one and approve its own HITL request. Resolving, and
