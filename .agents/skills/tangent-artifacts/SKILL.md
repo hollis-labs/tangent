@@ -24,6 +24,33 @@ Design: `docs/adr/0015-artifact-inbox-kind.md`.
 
 Text types go in `content`, binary types in `content_base64`.
 
+### Content formats and limits
+
+| Type | Send |
+|---|---|
+| `html` | One complete HTML document. |
+| `markdown` | Markdown text. |
+| `image` | PNG, JPEG, GIF or WebP as base64 in `content_base64`; SVG as text in `content`. |
+| `excalidraw` | JSON `{"elements": [...]}`, an Excalidraw scene. |
+| `flow` | JSON `{"direction": "LR"\|"TB", "nodes": [{"id", "label", "kind"?}], "edges": [{"source", "target", "label"?}]}`. `kind` is trigger, action, condition, output or note. At most 500 nodes and 2000 edges; every edge joins two node ids. |
+| `mermaid` | Mermaid source. |
+| `d2` | D2 source. No `@file` imports; the diagram must compile or the call is refused with d2's message. |
+| `vega-lite` | A Vega-Lite spec with inline `data.values`. A `url` anywhere in the spec is refused. |
+| `pdf` | Bytes as base64. |
+| `video` | mp4 or webm bytes as base64. |
+| `figma` | A figma.com URL. |
+
+Limits: 5 MiB for text types, 25 MiB for binary types. The same text is in the
+`type` field's description on `tangent_artifact_create`; the server is the authority.
+
+### Calls and privacy
+
+- `idempotency_key` is yours; repeating it returns the original item without comparing the content.
+- Follow-up calls need the same `source.application_id`. Artifacts are private to that
+  application (or to the verified gateway identity); `agent_id` is only the author shown to the operator.
+- `requires_signoff: true` asks the operator to approve. Approve resolves the item; Request changes
+  leaves it open and arrives as a message (read it with `tangent_artifact_get` or wait with `tangent_artifact_await`).
+
 ## shadcn/ui mocks
 
 An `html` artifact runs in a sandboxed iframe: scripts, styles, fonts and images may load
