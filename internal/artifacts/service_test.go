@@ -200,6 +200,13 @@ func TestTypeValidation(t *testing.T) {
 		{"neither field", "html", map[string]any{}, "exactly one"},
 		{"bad json", "excalidraw", map[string]any{"content": "{nope"}, "valid JSON"},
 		{"figma wrong host", "figma", map[string]any{"content": "https://example.com/file/abc"}, "figma.com"},
+		{"excalidraw needs elements", "excalidraw", map[string]any{"content": `{"type":"excalidraw"}`}, "elements array"},
+		{"flow duplicate id", "flow", map[string]any{"content": `{"nodes":[{"id":"a","label":"A"},{"id":"a","label":"B"}]}`}, "used twice"},
+		{"flow dangling edge", "flow", map[string]any{"content": `{"nodes":[{"id":"a","label":"A"}],"edges":[{"source":"a","target":"zzz"}]}`}, "both must be node ids"},
+		{"flow bad kind", "flow", map[string]any{"content": `{"nodes":[{"id":"a","label":"A","kind":"banana"}]}`}, "banana"},
+		{"vega may not load a url", "vega-lite", map[string]any{"content": `{"data":{"url":"https://x/y.csv"},"mark":"bar"}`}, "inline"},
+		{"empty mermaid", "mermaid", map[string]any{"content": "   "}, "empty"},
+		{"tldraw is not a type", "tldraw", map[string]any{"content": "{}"}, "unsupported artifact type"},
 		{"media mismatch", "html", map[string]any{"content": "<p>x</p>", "media_type": "image/png"}, "does not match"},
 	}
 	for i, tc := range cases {
@@ -344,5 +351,24 @@ func TestPathTraversalIsRefused(t *testing.T) {
 	if _, f, err := svc.OpenRevision(ctx, h.ItemID, 1); err == nil {
 		_ = f.Close()
 		t.Fatal("a stored path outside the artifact dir was opened")
+	}
+}
+
+func TestStructuredTypesAccepted(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	good := map[string]string{
+		"excalidraw": `{"type":"excalidraw","elements":[{"type":"rectangle","x":0,"y":0,"width":100,"height":50}]}`,
+		"flow":       `{"direction":"LR","nodes":[{"id":"a","label":"Start","kind":"trigger"},{"id":"b","label":"Do it"}],"edges":[{"source":"a","target":"b","label":"go"}]}`,
+		"mermaid":    "graph TD; A-->B",
+		"vega-lite":  `{"data":{"values":[{"a":1,"b":2}]},"mark":"bar","encoding":{"x":{"field":"a"},"y":{"field":"b"}}}`,
+		"d2":         "a -> b",
+		"markdown":   "# Hi",
+		"figma":      "https://www.figma.com/design/abc/Mock",
+	}
+	for typ, content := range good {
+		if _, err := svc.Create(ctx, CreateInput{Request: createJSON("good-"+typ, typ, map[string]any{"content": content}), Caller: caller("designer")}); err != nil {
+			t.Errorf("%s: %v", typ, err)
+		}
 	}
 }

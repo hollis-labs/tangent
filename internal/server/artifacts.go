@@ -178,6 +178,11 @@ const artifactHTMLPolicy = "sandbox allow-scripts allow-popups allow-popups-to-e
 // loads, and the file can only be framed by Tangent itself.
 const artifactPassivePolicy = "sandbox; default-src 'none'; img-src data:; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'"
 
+// artifactPDFPolicy is the passive policy without `sandbox`: the browser's built-in
+// PDF viewer does not run inside a sandboxed document, and a PDF's own scripts run in
+// that viewer's isolated process, not in Tangent's origin.
+const artifactPDFPolicy = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'"
+
 // content serves one revision's bytes. It overrides the document-wide security
 // headers, which forbid framing, with the narrower policy the artifact needs.
 func (h *artifactsHTTPHandler) content(w http.ResponseWriter, r *http.Request) {
@@ -194,8 +199,11 @@ func (h *artifactsHTTPHandler) content(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = file.Close() }()
 	header := w.Header()
 	policy := artifactPassivePolicy
-	if rev.MediaType == "text/html" {
+	switch rev.MediaType {
+	case "text/html":
 		policy = artifactHTMLPolicy
+	case "application/pdf":
+		policy = artifactPDFPolicy
 	}
 	header.Set("Content-Security-Policy", policy)
 	header.Set("X-Frame-Options", "SAMEORIGIN")

@@ -68,7 +68,6 @@ var typeSpecs = map[string]typeSpec{
 	"mermaid":    {defaultFilename: "artifact.mmd", defaultMedia: "text/plain"},
 	"d2":         {defaultFilename: "artifact.d2", defaultMedia: "text/plain"},
 	"vega-lite":  {json: true, defaultFilename: "artifact.vl.json", defaultMedia: "application/json"},
-	"tldraw":     {json: true, defaultFilename: "artifact.tldraw", defaultMedia: "application/json"},
 	"figma":      {defaultFilename: "figma-link.txt", defaultMedia: "text/uri-list"},
 	"image": {
 		binary: true, defaultFilename: "image", defaultMedia: "image/png",
@@ -83,6 +82,16 @@ var typeSpecs = map[string]typeSpec{
 		allowed: []string{"video/mp4", "video/webm"},
 	},
 }
+
+// supportedOrder is the order types are advertised in. The packaged request
+// schema still lists "tldraw" because it shipped in contract 1.0 and a moved
+// contract needs a version bump; Tangent does not support it and says so.
+var supportedOrder = []string{
+	"html", "image", "markdown", "excalidraw", "flow", "mermaid", "d2", "vega-lite", "pdf", "video", "figma",
+}
+
+// SupportedTypes lists the artifact types this build accepts.
+func SupportedTypes() []string { return append([]string(nil), supportedOrder...) }
 
 // KnownType reports whether the type has a spec.
 func KnownType(name string) bool {
@@ -132,6 +141,9 @@ func BuildFile(artifactType, content, contentBase64, filename, mediaType, note s
 		}
 		if spec.json && !json.Valid(data) {
 			return FileInput{}, fmt.Errorf("%w: %s content is not valid JSON", ErrInvalidRequest, artifactType)
+		}
+		if err := validateStructured(artifactType, data); err != nil {
+			return FileInput{}, err
 		}
 	}
 	if len(data) == 0 {
@@ -273,4 +285,105 @@ type Message struct {
 	Body      string    `json:"body"`
 	Revision  int       `json:"revision,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// Limits on the structured types, so one artifact cannot make the viewer hang.
+const (
+	maxFlowNodes = 500
+	maxFlowEdges = 2000
+)
+
+var flowKinds = map[string]bool{"trigger": true, "action": true, "condition": true, "output": true, "note": true}
+
+// validateStructured checks what the viewer will need, so a malformed diagram
+// is refused at create time with a specific reason, not shown as a broken preview.
+func validateStructured(artifactType string, data []byte) error {
+	switch artifactType {
+	case "excalidraw":
+		var scene struct {
+			Elements *[]json.RawMessage `json:"elements"`
+		}
+		if err := json.Unmarshal(data, &scene); err != nil || scene.Elements == nil {
+			return fmt.Errorf("%w: excalidraw content must be a JSON object with an elements array", ErrInvalidRequest)
+		}
+	case "flow":
+		return validateFlow(data)
+	case "vega-lite":
+		var spec map[string]any
+		if err := json.Unmarshal(data, &spec); err != nil {
+			return fmt.Errorf("%w: vega-lite content must be a JSON object", ErrInvalidRequest)
+		}
+		if hasKey(spec, "url") {
+			return fmt.Errorf("%w: vega-lite data must be inline (values); a chart may not load a url", ErrInvalidRequest)
+		}
+	case "mermaid", "d2":
+		if strings.TrimSpace(string(data)) == "" {
+			return fmt.Errorf("%w: %s content is empty", ErrInvalidRequest, artifactType)
+		}
+	}
+	return nil
+}
+
+func hasKey(value any, key string) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for k, v := range typed {
+			if k == key || hasKey(v, key) {
+				return true
+			}
+		}
+	case []any:
+		for _, v := range typed {
+			if hasKey(v, key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validateFlow(data []byte) error {
+	var flow struct {
+		Direction string `json:"direction"`
+		Nodes     []struct {
+			ID    string `json:"id"`
+			Label string `json:"label"`
+			Kind  string `json:"kind"`
+		} `json:"nodes"`
+		Edges []struct {
+			Source string `json:"source"`
+			Target string `json:"target"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(data, &flow); err != nil {
+		return fmt.Errorf("%w: flow content must be a JSON object: %w", ErrInvalidRequest, err)
+	}
+	if flow.Direction != "" && flow.Direction != "LR" && flow.Direction != "TB" {
+		return fmt.Errorf("%w: flow direction must be LR or TB", ErrInvalidRequest)
+	}
+	if len(flow.Nodes) == 0 || len(flow.Nodes) > maxFlowNodes {
+		return fmt.Errorf("%w: flow needs between 1 and %d nodes", ErrInvalidRequest, maxFlowNodes)
+	}
+	if len(flow.Edges) > maxFlowEdges {
+		return fmt.Errorf("%w: flow has more than %d edges", ErrInvalidRequest, maxFlowEdges)
+	}
+	ids := make(map[string]bool, len(flow.Nodes))
+	for i, node := range flow.Nodes {
+		if node.ID == "" || node.Label == "" {
+			return fmt.Errorf("%w: flow node %d needs an id and a label", ErrInvalidRequest, i)
+		}
+		if ids[node.ID] {
+			return fmt.Errorf("%w: flow node id %q is used twice", ErrInvalidRequest, node.ID)
+		}
+		ids[node.ID] = true
+		if node.Kind != "" && !flowKinds[node.Kind] {
+			return fmt.Errorf("%w: flow node %q has kind %q; use trigger, action, condition, output or note", ErrInvalidRequest, node.ID, node.Kind)
+		}
+	}
+	for i, edge := range flow.Edges {
+		if !ids[edge.Source] || !ids[edge.Target] {
+			return fmt.Errorf("%w: flow edge %d joins %q to %q, and both must be node ids", ErrInvalidRequest, i, edge.Source, edge.Target)
+		}
+	}
+	return nil
 }

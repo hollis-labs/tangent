@@ -461,11 +461,28 @@ operator has time to review it ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
 ```
 
 `type` is one of `html`, `image`, `markdown`, `excalidraw`, `flow`, `mermaid`,
-`d2`, `vega-lite`, `tldraw`, `pdf`, `video` or `figma`. Send text types in
+`d2`, `vega-lite`, `pdf`, `video` or `figma`. Send text types in
 `content` and binary types (`image`, `pdf`, `video`) as base64 in
-`content_base64`; `excalidraw`, `flow`, `vega-lite` and `tldraw` content is JSON,
+`content_base64`; `excalidraw`, `flow` and `vega-lite` content is JSON,
 and `figma` content is a `figma.com` URL. Text is limited to 5 MiB and binary to
 25 MiB. The content is checked against the bytes, not the declared media type.
+
+What each type expects in `content`:
+
+- `html`, `markdown`: the text itself. HTML runs in a sandboxed frame.
+- `image`: base64 PNG, JPEG, GIF, WebP or SVG in `content_base64`. The type is detected from the bytes.
+- `excalidraw`: a JSON scene, `{"elements": [...]}`. Elements may be full Excalidraw elements or the short form
+  (`{"type":"rectangle","id":"a","x":0,"y":0,"width":200,"height":80,"label":{"text":"Browser"}}`); an arrow
+  binds with `"start":{"id":"a"},"end":{"id":"b"}`. Put text in a shape's `label`: a loose `text` element can
+  render a little narrow unless you give it a `width`. Shown read-only, with pan and zoom.
+- `flow`: `{"direction":"LR","nodes":[{"id","label","kind","description"}],"edges":[{"source","target","label"}]}`.
+  `kind` is `trigger`, `action`, `condition`, `output` or `note`; `direction` is `LR` or `TB`. Positions are
+  optional (`"position":{"x","y"}`): nodes without one are laid out for you. Node ids must be unique and every edge
+  must join two of them.
+- `mermaid`: Mermaid text.
+- `vega-lite`: a Vega-Lite spec with its data inline (`data.values`). A spec that names a `url` is refused.
+- `d2`: D2 text. It is stored and shown as source for now; a rendered preview is not available yet.
+- `pdf`, `video`, `figma`: accepted today and shown as source or a download until their viewers land.
 
 The call returns `item_id`, `inbox_path` (open it at `/inbox/items/<item_id>`)
 and `artifact_revision`. Repeating an `idempotency_key` returns the original item

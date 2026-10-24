@@ -14,7 +14,6 @@ export type ArtifactType =
   | "mermaid"
   | "d2"
   | "vega-lite"
-  | "tldraw"
   | "pdf"
   | "video"
   | "figma";

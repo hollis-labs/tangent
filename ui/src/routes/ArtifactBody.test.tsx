@@ -218,11 +218,11 @@ it("closes the thread once the artifact is finished", async () => {
 
 it("shows the source for a type that has no rendered preview yet", async () => {
   current = artifact({
-    type: "excalidraw",
+    type: "d2",
     revisions: [
       {
         revision: 1,
-        filename: "a.excalidraw",
+        filename: "a.d2",
         media_type: "application/json",
         size_bytes: 3,
         sha256: "a",
@@ -234,7 +234,7 @@ it("shows the source for a type that has no rendered preview yet", async () => {
     "fetch",
     vi.fn(async (url: string) =>
       url.endsWith("/content")
-        ? new Response('{"elements":[]}')
+        ? new Response("a -> b")
         : new Response(JSON.stringify(current), {
             headers: { "Content-Type": "application/json" },
           }),
@@ -244,5 +244,5 @@ it("shows the source for a type that has no rendered preview yet", async () => {
   expect(
     await screen.findByText(/rendered preview for this type is not available/),
   ).toBeInTheDocument();
-  expect(await screen.findByText('{"elements":[]}')).toBeInTheDocument();
+  expect(await screen.findByText("a -> b")).toBeInTheDocument();
 });

@@ -68,9 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tangent_artifact_get` and `tangent_artifact_await`. Files live on disk under
   `TANGENT_ARTIFACT_DIR` (default: `artifacts` beside the database); revisions
   and messages are in migration `0024`. HTML runs in a sandboxed frame with no
-  network access of its own. Other types (`excalidraw`, `flow`, `mermaid`, `d2`,
-  `vega-lite`, `tldraw`, `pdf`, `video`, `figma`) are accepted and show their
-  source until their renderers land.
+  network access of its own. `excalidraw`, `flow` (React Flow, auto-laid-out),
+  `mermaid` and `vega-lite` artifacts render in the Inbox; `d2`, `pdf`, `video`
+  and `figma` are accepted and show their source until their viewers land.
 
 ## [v0.20.0] - 2026-10-16
 

@@ -1,20 +1,32 @@
-import { useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense } from "react";
 import { Markdown } from "@/components/markdown";
-import { type ArtifactType, artifactContentURL, fetchArtifactText } from "@/lib/artifacts-api";
+import { type ArtifactType, artifactContentURL } from "@/lib/artifacts-api";
+import { useArtifactText } from "./useArtifactText";
+import type { ViewerProps } from "./viewer-types";
 
-/** How an artifact's current revision is shown. One entry per type; a new type is one entry. */
-export interface ViewerProps {
-  itemID: string;
-  revision: number;
-  title: string;
-  /** Pixel width the preview is held to, or 0 for the full width. */
-  width: number;
-  /** Bumped by the Reload button to remount the frame. */
-  reloadKey: number;
-}
+export type { ViewerProps } from "./viewer-types";
 
 /** Sandbox without allow-same-origin: the frame gets an opaque origin (ADR 0015 §6). */
 export const ARTIFACT_FRAME_SANDBOX = "allow-scripts allow-popups allow-popups-to-escape-sandbox";
+
+/** Where Excalidraw finds its fonts. They are served by Tangent, never a CDN (see vite.config.ts). */
+const EXCALIDRAW_ASSET_PATH = "/excalidraw-assets/";
+
+declare global {
+  interface Window {
+    EXCALIDRAW_ASSET_PATH?: string;
+  }
+}
+
+// The heavy viewers load on first use, so an inbox with none of them costs nothing.
+const ExcalidrawView = lazy(() => {
+  window.EXCALIDRAW_ASSET_PATH = EXCALIDRAW_ASSET_PATH;
+  return import("./ExcalidrawView");
+});
+const FigmaView = lazy(() => import("./FigmaView"));
+const FlowView = lazy(() => import("./FlowView"));
+const MermaidView = lazy(() => import("./MermaidView"));
+const VegaView = lazy(() => import("./VegaView"));
 
 const TEXT_TYPES: ArtifactType[] = [
   "markdown",
@@ -23,7 +35,6 @@ const TEXT_TYPES: ArtifactType[] = [
   "mermaid",
   "d2",
   "vega-lite",
-  "tldraw",
   "figma",
 ];
 
@@ -61,23 +72,8 @@ function ImageView({ itemID, revision, title }: ViewerProps) {
   );
 }
 
-function useText(itemID: string, revision: number) {
-  const [state, setState] = useState<{ text?: string; error?: string }>({});
-  useEffect(() => {
-    let live = true;
-    setState({});
-    fetchArtifactText(itemID, revision)
-      .then((text) => live && setState({ text }))
-      .catch((reason: Error) => live && setState({ error: reason.message }));
-    return () => {
-      live = false;
-    };
-  }, [itemID, revision]);
-  return state;
-}
-
 function MarkdownView({ itemID, revision }: ViewerProps) {
-  const { text, error } = useText(itemID, revision);
+  const { text, error } = useArtifactText(itemID, revision);
   return (
     <div className="h-full overflow-auto p-4">
       {error ? (
@@ -93,7 +89,7 @@ function MarkdownView({ itemID, revision }: ViewerProps) {
 
 /** Types whose rich preview is not built yet still show their source, never a blank pane. */
 function SourceView({ itemID, revision }: ViewerProps) {
-  const { text, error } = useText(itemID, revision);
+  const { text, error } = useArtifactText(itemID, revision);
   return (
     <div className="h-full overflow-auto p-4">
       <p className="mb-2 text-xs text-fg-muted">
@@ -135,15 +131,30 @@ function VideoView({ itemID, revision }: ViewerProps) {
   );
 }
 
-const VIEWERS: Partial<Record<ArtifactType, (props: ViewerProps) => React.ReactNode>> = {
+const VIEWERS: Partial<Record<ArtifactType, (props: ViewerProps) => ReactNode>> = {
   html: (p) => <Frame {...p} />,
   image: (p) => <ImageView {...p} />,
   markdown: (p) => <MarkdownView {...p} />,
+  excalidraw: (p) => <ExcalidrawView {...p} />,
+  flow: (p) => <FlowView {...p} />,
+  mermaid: (p) => <MermaidView {...p} />,
+  "vega-lite": (p) => <VegaView {...p} />,
+  figma: (p) => <FigmaView {...p} />,
   pdf: (p) => <PDFView {...p} />,
   video: (p) => <VideoView {...p} />,
 };
 
 export function ArtifactViewer({ type, ...props }: ViewerProps & { type: ArtifactType }) {
   const render = VIEWERS[type];
-  return <>{render ? render(props) : <SourceView {...props} />}</>;
+  return (
+    <Suspense
+      fallback={
+        <p role="status" className="p-4">
+          Loading viewer…
+        </p>
+      }
+    >
+      {render ? render(props) : <SourceView {...props} />}
+    </Suspense>
+  );
 }

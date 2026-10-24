@@ -98,6 +98,35 @@ func TestArtifactContentOtherTypesRunNothing(t *testing.T) {
 	}
 }
 
+func TestArtifactContentPDFIsNotSandboxed(t *testing.T) {
+	path := writeTemp(t, "a.pdf", "%PDF-1.4\n")
+	rec := contentRequest(t, fakeArtifacts{
+		rev:  artifacts.Revision{Revision: 1, Filename: "a.pdf", MediaType: "application/pdf", CreatedAt: time.Now()},
+		path: path,
+	}, "")
+	csp := rec.Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "sandbox") || !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "frame-ancestors 'self'") {
+		t.Fatalf("pdf CSP = %q", csp)
+	}
+}
+
+func TestArtifactContentServesByteRangesForVideo(t *testing.T) {
+	path := writeTemp(t, "v.mp4", "0123456789")
+	handler := newArtifactsHTTPHandler(fakeArtifacts{
+		rev:  artifacts.Revision{Revision: 1, Filename: "v.mp4", MediaType: "video/mp4", CreatedAt: time.Now()},
+		path: path,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.SetPathValue("itemID", "abc")
+	req.SetPathValue("revision", "1")
+	req.Header.Set("Range", "bytes=2-5")
+	rec := httptest.NewRecorder()
+	handler.content(rec, req)
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != "2345" {
+		t.Fatalf("range response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestArtifactContentDownloadIsAnAttachment(t *testing.T) {
 	path := writeTemp(t, "a.html", "<p>x</p>")
 	rec := contentRequest(t, fakeArtifacts{

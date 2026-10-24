@@ -166,6 +166,14 @@ func buildArtifactCreateSchema() (*jsonschema.Schema, error) {
 	for name, property := range contentProperties() {
 		schema.Properties[name] = property
 	}
+	// Advertise only the types this build accepts (the packaged enum also lists
+	// one that shipped in contract 1.0 and is no longer supported).
+	if property := schema.Properties["type"]; property != nil {
+		property.Enum = property.Enum[:0:0]
+		for _, name := range artifacts.SupportedTypes() {
+			property.Enum = append(property.Enum, name)
+		}
+	}
 	// contract_version defaults to the current version when omitted.
 	required := schema.Required[:0:0]
 	for _, name := range schema.Required {
