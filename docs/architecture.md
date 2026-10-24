@@ -128,7 +128,6 @@ The compatibility surface contains these room/workflow and session tools:
 - `tangent_feedback` — the bundled structured-form workflow.
 - `tangent_form_collect` — the bundled generalized schema-driven form workflow.
 - `tangent_design_iteration` — sandboxed HTML preview + click/input iteration.
-- `tangent_whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent_spreadsheet_review` — room-backed dense table review with explicit submit.
 - `tangent_dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
 - `tangent_diff_review` — room-backed diff review with explicit submit.
@@ -216,7 +215,10 @@ The reserved operator inbox adds four stricter adapters:
 - `tangent_hitl_withdraw`
 
 The Docs inbox adds one caller-facing adapter, `tangent_docs_enqueue` — see
-"Durable Docs operator surface" below.
+"Durable Docs operator surface" below. The artifact inbox adds
+`tangent_artifact_create`, `tangent_artifact_update`, `tangent_artifact_get`,
+`tangent_artifact_message`, `tangent_artifact_await` and
+`tangent_artifact_withdraw` — see "Durable artifact operator surface" below.
 
 ### WebSocket bridge with per-room state
 
@@ -347,6 +349,22 @@ no journal, relay, retention job or typed frames (the stream falls back to
 revision pings), while outbox rows keep being written, so turning it back on
 delivers what accrued. The epoch is read once at boot: after `Log.Reset` (a
 restore-time action) restart the process.
+
+### Durable artifact operator surface
+
+`internal/artifacts/` is the artifact inbox ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
+It reuses the docs shape: a reserved surface (`surface_artifacts_default`) and a
+kind (`tangent.artifact-item`) on the interaction substrate, with read state in
+the docs read receipts. The request snapshot is immutable identity (source,
+title, type, whether sign-off is requested); everything that changes lives in
+two side tables (migration `0024`): `artifact_revisions`, one row per revision,
+and `artifact_messages`, the operator/agent thread. Revision files are on disk
+under `TANGENT_ARTIFACT_DIR`, addressed by revision number and never by the
+caller's filename. The SPA reads and acts through `/api/artifacts`; the content
+route serves each revision under its own policy, and HTML gets a sandbox with
+`connect-src 'none'`. The inbox change digest folds in each artifact's latest
+revision and message count, so an agent update reaches the open item through the
+event stream without touching the immutable interaction record.
 
 ### Durable Docs operator surface
 
@@ -596,23 +614,6 @@ view when present:
 The browser host may keep unsent step edits in local storage for draft
 recovery, but the room-backed `wizard` projection remains the canonical
 reopen source.
-
-The shipped v0.4 whiteboard state is persisted on the same room
-state path rather than in a separate table. `tangent_session_get`
-projects a dedicated `whiteboard` payload when present:
-
-- `board_id`
-- `scene_snapshot` (canonical tldraw-style scene JSON)
-- `assets` (references/metadata only, not inline base64 blobs)
-- `export_refs` (latest export metadata, PNG-only in v0.4)
-- `notes`
-- `updated_at`
-- `revision_history` (append-only metadata, not full duplicated scenes)
-
-Full historical whiteboard snapshots are also retained on the room for
-the in-room revision browser, but `session_get` intentionally exposes
-only lightweight revision metadata so agent-side checkpoint reads do not
-need to load every scene blob eagerly.
 
 This keeps restart hydration and room replay simple while still
 supporting reopen/continue-from-revision inside the room UI.
@@ -1385,9 +1386,6 @@ trusting it.
   `tangent_session_advance` is refused with `SESSION_BUSY` rather than queued.
   This is a property of the compatibility room projection, not of the durable
   substrate beneath it.
-- **Whiteboard is single-user localhost first.** The board is shared between
-  one user and one agent through one persistent room; there is no live
-  multiplayer presence or conflict resolution.
 - **Spreadsheet review is review-only, not a spreadsheet editor.**
   Agent-provided rows are canonical; no formulas, workbook semantics, arbitrary
   cell editing, or remote spreadsheet connectors.

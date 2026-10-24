@@ -124,6 +124,13 @@ var contractLock = map[string]lockedPublication{
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaPresent,
 	},
+	ArtifactItemEnvelopeType: {
+		version: "1.0", revision: 1,
+		contract:  "sha256:eefb6b3e4c14af174686c6c9c3c7226c7c7f058535f539d366f752c3de1ecf3e",
+		class:     definition.RendererReactComponent,
+		isolation: definition.IsolationMainOrigin,
+		response:  definition.ResponseSchemaPresent,
+	},
 	FeedbackEnvelopeType: {
 		version: "0.3", revision: 1,
 		contract:  "sha256:1baace03c195ee236a0b9299d739794f70eaddcff5828bd0632ff7537facdb9f",
@@ -203,13 +210,6 @@ var contractLock = map[string]lockedPublication{
 	TriageEnvelopeType: {
 		version: "0.2", revision: 1,
 		contract:  "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368",
-		class:     definition.RendererReactComponent,
-		isolation: definition.IsolationMainOrigin,
-		response:  definition.ResponseSchemaAbsent,
-	},
-	WhiteboardEnvelopeType: {
-		version: "0.5", revision: 1,
-		contract:  "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c",
 		class:     definition.RendererReactComponent,
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaAbsent,
@@ -359,6 +359,7 @@ var kindConstants = []struct{ kind, constant string }{
 	{DashboardEnvelopeType, "DashboardEnvelopeType"},
 	{DesignIterationEnvelopeType, "DesignIterationEnvelopeType"},
 	{DiffReviewEnvelopeType, "DiffReviewEnvelopeType"},
+	{ArtifactItemEnvelopeType, "ArtifactItemEnvelopeType"},
 	{DocItemEnvelopeType, "DocItemEnvelopeType"},
 	{ExternalReviewEnvelopeType, "ExternalReviewEnvelopeType"},
 	{FeedbackEnvelopeType, "FeedbackEnvelopeType"},
@@ -372,7 +373,6 @@ var kindConstants = []struct{ kind, constant string }{
 	{SpreadsheetReviewEnvelopeType, "SpreadsheetReviewEnvelopeType"},
 	{SynthesisNotesEnvelopeType, "SynthesisNotesEnvelopeType"},
 	{TriageEnvelopeType, "TriageEnvelopeType"},
-	{WhiteboardEnvelopeType, "WhiteboardEnvelopeType"},
 	{WizardEnvelopeType, "WizardEnvelopeType"},
 }
 

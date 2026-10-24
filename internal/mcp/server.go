@@ -12,6 +12,7 @@ import (
 	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -60,6 +61,7 @@ type Server struct {
 	hitl         *hitl.Service
 	hitlWire     HITLWire
 	docs         *docs.Service
+	artifacts    *artifacts.Service
 	turns        *turns.Service
 	roomflow     *roomflow.Service
 
@@ -553,16 +555,6 @@ func (s *Server) registerTools() error {
 		InputSchema: outputRenderSchema,
 	}, s.handleOutputRender)
 
-	whiteboardSchema, err := buildWhiteboardInputSchema()
-	if err != nil {
-		return fmt.Errorf("build whiteboard input schema: %w", err)
-	}
-	addTool(s, gmcpserver.Tool{
-		Name:        "tangent_whiteboard",
-		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
-		InputSchema: whiteboardSchema,
-	}, s.handleWhiteboard)
-
 	appBoardSchema, err := buildRoomWorkflowSchema(appBoardInputSchemaJSON, "app_board")
 	if err != nil {
 		return fmt.Errorf("build app-board input schema: %w", err)
@@ -777,6 +769,11 @@ func (s *Server) registerTools() error {
 			return fmt.Errorf("register docs tools: %w", err)
 		}
 	}
+	if s.artifacts != nil {
+		if err := s.registerArtifactTools(); err != nil {
+			return fmt.Errorf("register artifact tools: %w", err)
+		}
+	}
 	if s.turns != nil {
 		if err := s.registerTurnsTools(); err != nil {
 			return fmt.Errorf("register turns tools: %w", err)
@@ -839,10 +836,6 @@ func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
 
 func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
 	return buildRoomWorkflowSchema(outputRenderInputSchemaJSON, "output_render")
-}
-
-func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
-	return buildRoomWorkflowSchema(whiteboardInputSchemaJSON, "whiteboard")
 }
 
 func buildSpreadsheetReviewInputSchema() (*jsonschema.Schema, error) {

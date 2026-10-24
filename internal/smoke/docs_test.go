@@ -92,7 +92,6 @@ var nonToolMentions = map[string]bool{
 	// is tangent_<kind with underscores>; the kind keeps its dotted wire name.
 	"tangent.triage":             true,
 	"tangent.feedback":           true,
-	"tangent.whiteboard":         true,
 	"tangent.dashboard":          true,
 	"tangent.wizard":             true,
 	"tangent.app-board":          true,
@@ -105,6 +104,8 @@ var nonToolMentions = map[string]bool{
 	"tangent.approval-queue":     true,
 	"tangent.hitl-item":          true,
 	"tangent.doc-item":           true,
+	"tangent.artifact-item":      true,
+	"tangent.artifacts":          true,
 	"tangent.interview-question": true,
 	"tangent.synthesis-notes":    true,
 	"tangent.block-draft":        true,

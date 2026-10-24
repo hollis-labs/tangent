@@ -60,9 +60,6 @@ func connectServer(t *testing.T, options ...tangentmcp.Option) (*mcpsdk.ClientSe
 	if regErr := extensions.RegisterOutputRender(envSvc); regErr != nil {
 		t.Fatalf("RegisterOutputRender: %v", regErr)
 	}
-	if regErr := extensions.RegisterWhiteboard(envSvc); regErr != nil {
-		t.Fatalf("RegisterWhiteboard: %v", regErr)
-	}
 	if regErr := extensions.RegisterDashboard(envSvc); regErr != nil {
 		t.Fatalf("RegisterDashboard: %v", regErr)
 	}
@@ -131,12 +128,12 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(res.Tools) != 38 {
+	if len(res.Tools) != 37 {
 		names := make([]string, 0, len(res.Tools))
 		for _, tt := range res.Tools {
 			names = append(names, tt.Name)
 		}
-		t.Fatalf("expected 38 tools, got %d (%v)", len(res.Tools), names)
+		t.Fatalf("expected 37 tools, got %d (%v)", len(res.Tools), names)
 	}
 
 	// tangent.app-board is registered unconditionally like every other room
@@ -156,7 +153,6 @@ func TestServer_ListsBaseToolSurface(t *testing.T) {
 		"tangent_block_draft":              false,
 		"tangent_prose_revision":           false,
 		"tangent_output_render":            false,
-		"tangent_whiteboard":               false,
 		"tangent_dashboard":                false,
 		"tangent_app_board":                false,
 		"tangent_file_picker":              false,

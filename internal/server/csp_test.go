@@ -92,17 +92,11 @@ func TestTheDocumentPolicyEnforcesWhatItClaims(t *testing.T) {
 		t.Errorf("script-src = %q, which admits arbitrary inline script", script)
 	}
 
-	// The one external origin in the policy, and the one directive it is
-	// deliberately absent from. tangent.whiteboard loads tldraw's fonts and
-	// icons from a CDN; admitting them as passive subresources while refusing
-	// the scripted fetch beside them is the whole distinction network.fetch
-	// names.
-	if got := strings.Join(csp["font-src"], " "); !strings.Contains(got, "https://cdn.tldraw.com") {
-		t.Errorf("font-src = %q, want tldraw's CDN: without it the whiteboard loses its typography", got)
-	}
-	if strings.Contains(strings.Join(connect, " "), "tldraw") {
-		t.Error("connect-src admits tldraw's CDN; a scripted fetch to an external origin is " +
-			"exactly the network.fetch capability the whiteboard manifest does not declare")
+	// No external origin is admitted anywhere in the policy.
+	for _, directive := range []string{"img-src", "font-src", "connect-src"} {
+		if got := strings.Join(csp[directive], " "); strings.Contains(got, "https://") {
+			t.Errorf("%s = %q, want no external https origin", directive, got)
+		}
 	}
 
 	for directive, want := range map[string]string{

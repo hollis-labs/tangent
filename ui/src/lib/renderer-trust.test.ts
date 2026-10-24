@@ -45,6 +45,7 @@ const SHIPPED_TRUST: Record<string, string> = {
   "tangent.design-iteration": "sandboxed-frame",
   "tangent.diff-review": "main-origin",
   "tangent.doc-item": "main-origin",
+  "tangent.artifact-item": "main-origin",
   "tangent.external-review": "main-origin",
   "tangent.feedback": "main-origin",
   "tangent.file-picker": "main-origin",
@@ -57,7 +58,6 @@ const SHIPPED_TRUST: Record<string, string> = {
   "tangent.spreadsheet-review": "main-origin",
   "tangent.synthesis-notes": "main-origin",
   "tangent.triage": "main-origin",
-  "tangent.whiteboard": "main-origin",
   "tangent.wizard": "main-origin",
 };
 

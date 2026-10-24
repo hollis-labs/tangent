@@ -287,7 +287,6 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     type !== "tangent.file-picker" &&
     type !== "tangent.progress-panel" &&
     type !== "tangent.diff-review" &&
-    type !== "tangent.whiteboard" &&
     type !== "tangent.spreadsheet-review"
   ) {
     return envelope;
@@ -329,9 +328,6 @@ async function enrichEnvelope(roomID: string, envelope: unknown): Promise<unknow
     }
     if (type === "tangent.spreadsheet-review") {
       return attachSpreadsheetReviewState(envelope, state.spreadsheet_review);
-    }
-    if (type === "tangent.whiteboard") {
-      return attachWhiteboardState(envelope, state.whiteboard);
     }
     return attachSynthesisState(envelope, state.synthesis_notes);
   } catch {
@@ -650,39 +646,6 @@ function attachFinalOutput(envelope: unknown, finalOutput: unknown): unknown {
       : {};
   if (finalOutput && typeof finalOutput === "object") {
     Object.assign(data, finalOutput as Record<string, unknown>);
-  }
-  return { ...typed, data };
-}
-
-function attachWhiteboardState(envelope: unknown, whiteboard: unknown): unknown {
-  if (!envelope || typeof envelope !== "object") {
-    return envelope;
-  }
-  const typed = envelope as Record<string, unknown>;
-  const data =
-    typed.data && typeof typed.data === "object"
-      ? { ...(typed.data as Record<string, unknown>) }
-      : {};
-  if (whiteboard && typeof whiteboard === "object") {
-    const persisted = whiteboard as Record<string, unknown>;
-    data.board_id = persisted.board_id ?? data.board_id;
-    data.scene = persisted.scene_snapshot ?? data.scene;
-    data.assets = persisted.assets ?? data.assets;
-    data.reference_images = Array.isArray(persisted.assets)
-      ? (persisted.assets as Array<Record<string, unknown>>).filter(
-          (asset) => asset?.kind === "reference_image",
-        )
-      : data.reference_images;
-    data.export_refs = persisted.export_refs ?? data.export_refs;
-    data.notes = persisted.notes ?? data.notes;
-    data.updated_at = persisted.updated_at ?? data.updated_at;
-    data.revision_history = persisted.revision_history ?? data.revision_history;
-    if (Array.isArray(persisted.revision_history) && persisted.revision_history.length > 0) {
-      const current = persisted.revision_history[persisted.revision_history.length - 1];
-      if (current && typeof current === "object") {
-        data.revision_id = (current as { revision_id?: unknown }).revision_id ?? data.revision_id;
-      }
-    }
   }
   return { ...typed, data };
 }

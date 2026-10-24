@@ -212,7 +212,7 @@ func TestUnusableKindIsCapabilityUnhealthy(t *testing.T) {
 		Probe: health.ProbeCapability, Status: health.SummaryDegraded,
 		ManagedDefinitions: 18, Usable: 17,
 		Unusable: []health.CapabilityReport{{
-			Kind: "tangent.whiteboard", State: "quarantined",
+			Kind: "tangent.dashboard", State: "quarantined",
 			Action: "Widen host capability policy or re-materialize the definition.",
 		}},
 	}
@@ -220,7 +220,7 @@ func TestUnusableKindIsCapabilityUnhealthy(t *testing.T) {
 	if finding == nil || finding.Mode != smoke.ModeCapabilityUnhealthy {
 		t.Fatalf("unusable kind classified as %v, want %s", finding, smoke.ModeCapabilityUnhealthy)
 	}
-	if !strings.Contains(finding.String(), "tangent.whiteboard(quarantined)") {
+	if !strings.Contains(finding.String(), "tangent.dashboard(quarantined)") {
 		t.Errorf("finding does not name the kind and its state:\n%s", finding)
 	}
 }

@@ -184,31 +184,6 @@ func shippedRoomWorkflows() []workflowFixture {
 			response: map[string]any{"kind": "ack", "status": "submitted"},
 		},
 		{
-			tool: "tangent_whiteboard", envelopeType: "tangent.whiteboard",
-			data: map[string]any{
-				"board_id": "board-1", "title": "Whiteboard", "intent": "Map the layout",
-				"scene": map[string]any{
-					"document": map[string]any{"pages": []any{map[string]any{"id": "page:1"}}},
-					"session":  map[string]any{"currentPageId": "page:1"},
-				},
-			},
-			response: map[string]any{
-				"kind": "data", "status": "submitted",
-				"payload": map[string]any{
-					"board_id": "board-1",
-					"scene": map[string]any{
-						"document": map[string]any{"pages": []any{
-							map[string]any{"id": "page:1"}, map[string]any{"id": "shape:1"},
-						}},
-					},
-					"notes": "submitted board",
-					"selection_summary": map[string]any{
-						"count": 1, "ids": []any{"shape:1"}, "types": []any{"geo"},
-					},
-				},
-			},
-		},
-		{
 			tool: "tangent_dashboard", envelopeType: "tangent.dashboard",
 			data: map[string]any{
 				"dashboard_id": "dashboard-1", "title": "Ops dashboard",

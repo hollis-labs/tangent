@@ -8,8 +8,7 @@ for the full Claude Code e2e walkthrough see
 [`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md), for the
 writing flow see
 [`manual-tests/writing-flow-e2e.md`](./manual-tests/writing-flow-e2e.md),
-and for the whiteboard flow see
-[`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for the
+and for the
 spreadsheet-review flow see
 [`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
 for the approval-queue flow see
@@ -332,7 +331,7 @@ claude mcp list
 
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent_triage`, `tangent_feedback`, `tangent_form_collect`,
-`tangent_design_iteration`, `tangent_whiteboard`,
+`tangent_design_iteration`,
 `tangent_spreadsheet_review`, `tangent_approval_queue`,
 `tangent_diff_review`, `tangent_file_picker`,
 `tangent_progress_panel`, `tangent_dashboard`, or the writing
@@ -441,6 +440,75 @@ sanitized. Tangent references are read-only durable projections. Artifact
 metadata becomes previewable only through an explicitly registered
 authority/capability adapter; a path, `file:` URI, or agent's ambient access is
 never retrieval authority.
+
+## Artifacts in the Inbox
+
+An agent shows the operator something that chat cannot carry — an HTML wireframe
+or mock, a screenshot, a diagram, a PDF, a chart — with `tangent_artifact_create`.
+It becomes a durable Artifact item in the Inbox and waits there until the
+operator has time to review it ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
+
+```json
+{
+  "idempotency_key": "landing-v1",
+  "source": {"agent_id": "designer", "application_id": "my-app"},
+  "title": "Landing page, first pass",
+  "type": "html",
+  "content": "<!doctype html><h1>Hello</h1>",
+  "requires_signoff": true
+}
+```
+
+`type` is one of `html`, `image`, `markdown`, `excalidraw`, `flow`, `mermaid`,
+`d2`, `vega-lite`, `pdf`, `video` or `figma`. Send text types in
+`content` and binary types (`image`, `pdf`, `video`) as base64 in
+`content_base64`; `excalidraw`, `flow` and `vega-lite` content is JSON,
+and `figma` content is a `figma.com` URL. Text is limited to 5 MiB and binary to
+25 MiB. The content is checked against the bytes, not the declared media type.
+
+What each type expects in `content`:
+
+- `html`, `markdown`: the text itself. HTML runs in a sandboxed frame.
+- `image`: base64 PNG, JPEG, GIF, WebP or SVG in `content_base64`. The type is detected from the bytes.
+- `excalidraw`: a JSON scene, `{"elements": [...]}`. Elements may be full Excalidraw elements or the short form
+  (`{"type":"rectangle","id":"a","x":0,"y":0,"width":200,"height":80,"label":{"text":"Browser"}}`); an arrow
+  binds with `"start":{"id":"a"},"end":{"id":"b"}`. Put text in a shape's `label`: a loose `text` element can
+  render a little narrow unless you give it a `width`. Shown read-only, with pan and zoom.
+- `flow`: `{"direction":"LR","nodes":[{"id","label","kind","description"}],"edges":[{"source","target","label"}]}`.
+  `kind` is `trigger`, `action`, `condition`, `output` or `note`; `direction` is `LR` or `TB`. Positions are
+  optional (`"position":{"x","y"}`): nodes without one are laid out for you. Node ids must be unique and every edge
+  must join two of them.
+- `mermaid`: Mermaid text.
+- `vega-lite`: a Vega-Lite spec with its data inline (`data.values`). A spec that names a `url` is refused.
+- `d2`: D2 text. The server draws it with the `d2` command (`TANGENT_D2_BIN`, default `d2` on PATH), so a diagram that
+  does not compile is refused with d2's own message. Imports (`...@file`) are refused. Without the binary, D2 is stored
+  and shown as source.
+- `pdf`, `video`, `figma`: accepted today and shown as source or a download until their viewers land.
+
+The call returns `item_id`, `inbox_path` (open it at `/inbox/items/<item_id>`)
+and `artifact_revision`. Repeating an `idempotency_key` returns the original item
+and adds nothing.
+
+- `tangent_artifact_update` adds a revision to an artifact you created, so the
+  operator iterates on one preview. The type cannot change. It is refused once the
+  artifact is signed off, archived or withdrawn.
+- `tangent_artifact_get` reads the state, the revisions and the message thread;
+  pass `after_seq` for only the newer messages.
+- `tangent_artifact_message` replies to the operator in the thread.
+- `tangent_artifact_await` waits up to two minutes for the operator to write or to
+  finish the item. A timeout is a normal result with `timed_out` true.
+- `tangent_artifact_withdraw` takes the artifact back; it moves to history.
+
+Every follow-up call takes a `source` with the same `application_id` and
+`agent_id` the artifact was created with. An artifact is visible only to its
+creator, and a missing item and someone else's item look the same.
+
+The operator can mark it read, reply, request changes (a message that leaves the
+artifact open), approve (only when `requires_signoff` was set; this resolves the
+item), archive, delete, download the original file and copy a direct link. HTML
+runs in a sandboxed frame with no access to Tangent and no network calls of its
+own. Revision files live under `TANGENT_ARTIFACT_DIR`, by default an `artifacts`
+directory beside the database, and are removed only when retention says so.
 
 ## Agent turns in the Inbox
 
@@ -845,10 +913,6 @@ workflow-neutral phase substrate:
   dedicated projection with `queue_id`, canonical `items`,
   `current_index`, normalized `decisions`, queue `notes`, `updated_at`,
   append-only `audit_trail`, and lightweight audit `export_refs`.
-- `whiteboard`: when a room has persisted board state, a dedicated
-  projection with `board_id`, `scene_snapshot`, referenced `assets`,
-  `export_refs`, `notes`, `updated_at`, and append-only
-  `revision_history` metadata.
 - `form_collect`: when a room has persisted generalized form state, a
   dedicated projection with `form_id`, canonical `schema`, normalized
   `answers`, room-backed `saved_drafts`, `templates`, lightweight
@@ -861,14 +925,6 @@ canonical table content and keeps `session_get` lightweight by
 projecting normalized query state, named saved views, selected rows,
 and export metadata directly off the room substrate rather than
 synthesizing them from browser-local state.
-
-For the shipped v0.4 whiteboard workflow, Tangent treats the full scene
-snapshot as canonical room state but expects image/file inputs to be
-referenced through lightweight asset metadata rather than inlined base64
-payloads. `session_get` intentionally stays lightweight for agents: it
-surfaces revision metadata, not every historical scene blob. The room UI
-can still reopen or continue from older revisions because full revision
-snapshots are retained on the room for the whiteboard browser itself.
 
 The bundled writing workflow's canonical phase sequence is:
 

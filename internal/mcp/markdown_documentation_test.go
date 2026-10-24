@@ -59,7 +59,6 @@ func TestEveryProseBearingSchemaSaysWhatRendersAsMarkdown(t *testing.T) {
 		"tangent.spreadsheet_review": spreadsheetReviewInputSchemaJSON,
 		"tangent_synthesis_notes":    synthesisNotesInputSchemaJSON,
 		"tangent_triage":             triageInputSchemaJSON,
-		"tangent_whiteboard":         whiteboardInputSchemaJSON,
 		"tangent_wizard":             wizardInputSchemaJSON,
 	}
 	for tool, schema := range proseBearing {

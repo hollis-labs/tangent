@@ -28,6 +28,7 @@ import Room from "./Room";
 const labels = {
   approval: "Approval",
   document: "Document",
+  artifact: "Artifact",
   turn: "Agent turn",
   workflow: "Interaction",
 };
@@ -69,7 +70,7 @@ export default function Inbox() {
   // connect) becomes a single conditional follow-up instead of a second full list.
   const sync = useMemo(() => createCoalescer(run), [run]);
   useEffect(() => {
-    // The three event streams all announce on connect and on every change; coalesce a
+    // The four event streams all announce on connect and on every change; coalesce a
     // burst into one conditional fetch. While every stream is up, polling is only a
     // slow safety net; if one drops it tightens until the stream is back.
     let pending: number | undefined;
@@ -82,10 +83,10 @@ export default function Inbox() {
     };
     const poll = visiblePoll(() => void sync(), INBOX_FALLBACK_POLL_MS);
     const up = new Map<string, boolean>();
-    const subscriptions = ["hitl", "turns", "docs"].map((source) =>
+    const subscriptions = ["hitl", "turns", "docs", "artifacts"].map((source) =>
       subscribeRevision(`/api/${source}/events`, schedule, (connected) => {
         up.set(source, connected);
-        const allUp = up.size === 3 && [...up.values()].every(Boolean);
+        const allUp = up.size === 4 && [...up.values()].every(Boolean);
         poll.reset(allUp ? INBOX_FALLBACK_POLL_MS : INBOX_DEGRADED_POLL_MS);
       }),
     );
@@ -255,7 +256,7 @@ export default function Inbox() {
       (
         {
           view: ["pending", "history", "all"],
-          type: ["all", "approval", "document", "turn", "workflow"],
+          type: ["all", "approval", "document", "artifact", "turn", "workflow"],
           sort: ["oldest", "newest"],
         }[args.name] ?? []
       ).includes(args.value),
@@ -319,7 +320,7 @@ export default function Inbox() {
         {
           name: "type",
           values: [
-            ["all", "approval", "document", "turn", "workflow"].includes(category)
+            ["all", "approval", "document", "artifact", "turn", "workflow"].includes(category)
               ? category
               : "unsupported",
           ],
@@ -392,6 +393,7 @@ export default function Inbox() {
               <option value="all">All types</option>
               <option value="approval">Approvals</option>
               <option value="document">Documents</option>
+              <option value="artifact">Artifacts</option>
               <option value="turn">Agent turns</option>
               <option value="workflow">Structured interactions</option>
             </select>

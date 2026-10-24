@@ -24,6 +24,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   elevations at startup, and an elevation granted before stamping keeps its
   12 hours.
 
+### Removed
+
+- **The `tangent.whiteboard` kind and the `tldraw` dependency.** Chrispian's call,
+  made while the artifact kinds were built: Excalidraw covers diagrams and the
+  new artifact item covers agent-sent visuals. Gone with it are the
+  `tangent_whiteboard` MCP tool, the room's `whiteboard` projection in
+  `tangent_session_get`, the browser renderer and its draft storage, the
+  `tangent-whiteboard` skill, the manual test and mock-call script, and the
+  `https://cdn.tldraw.com` entry in the document CSP (`img-src` and `font-src`
+  now admit no external origin). Rooms that already hold whiteboard state keep
+  the stored rows but no longer project them.
+
+### Fixed
+
+- **The operator's browser Inbox now lists items that authenticated producers send to the
+  reserved operator surfaces** (docs, artifacts, turns, approvals). Items that came through
+  the gateway carry the producer's own authority and were hidden from the browser, so
+  opening one answered "This interaction is unavailable". Producers' own surfaces and
+  generic surfaces stay private to the producer.
+
 ### Security
 
 - Go toolchain 1.26.10 (`go` directive and CI pin) for GO-2026-6809 (crypto/x509); no behavior change.
@@ -59,6 +79,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Tangent's `interactions` tables (no migration), run against the lib's
   `hitltest` storecontract and conformance scenarios. Not yet wired into the
   running service (CW-20261016-0031).
+- **Artifact inbox** (ADR 0015, CW-20261024-0061 to -0065). `tangent.artifact-item`
+  is a durable Inbox item for an agent-sent HTML mock, screenshot or image,
+  with the docs lifecycle (read, archive, delete, download, copy, copy direct
+  link) plus a maximize view, a revision switcher, a message thread with
+  request-changes, and an optional sign-off. The agent revises the same item
+  in place with `tangent_artifact_update`, and reads replies with
+  `tangent_artifact_get` and `tangent_artifact_await`. Files live on disk under
+  `TANGENT_ARTIFACT_DIR` (default: `artifacts` beside the database); revisions
+  and messages are in migration `0024`. HTML runs in a sandboxed frame with no
+  network access of its own. `excalidraw`, `flow` (React Flow, auto-laid-out),
+  `mermaid` and `vega-lite` artifacts render in the Inbox, and `d2` is drawn on the
+  server with the `d2` command (`TANGENT_D2_BIN`); `pdf`, `video` and `figma` have viewers too.
 
 ## [v0.20.0] - 2026-10-16
 

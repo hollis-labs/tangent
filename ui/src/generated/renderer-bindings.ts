@@ -1,5 +1,5 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d
+// @definition-source sha256:345adbee66b97104eabdbcdf3c3fbfaed9adb5421b817eb10a7e198866cf29db
 // Run `make generate-envelopes` to regenerate.
 //
 // The renderer binding declared by each of the 22 manifests under
@@ -142,6 +142,22 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.review",
     state: "available",
     contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da",
+  },
+  {
+    kind: "tangent.artifact-item",
+    version: "1.0",
+    rendererId: "tangent.renderer.artifact-item",
+    rendererClass: "react-component",
+    entry: "routes/ArtifactBody#ArtifactBody",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
+    component: "",
+    packageId: "tangent.artifacts",
+    state: "available",
+    contractDigest: "sha256:eefb6b3e4c14af174686c6c9c3c7226c7c7f058535f539d366f752c3de1ecf3e",
   },
   {
     kind: "tangent.block-draft",
@@ -414,22 +430,6 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.generic-candidate",
     state: "available",
     contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368",
-  },
-  {
-    kind: "tangent.whiteboard",
-    version: "0.5",
-    rendererId: "tangent.renderer.whiteboard",
-    rendererClass: "react-component",
-    entry: "components/envelopes/Whiteboard#Whiteboard",
-    isolation: "main-origin",
-    inlinePayloadLimitBytes: 262144,
-    fallbackRendererId: "",
-    fallbackPreservesMeaning: false,
-    fallbackDegradation: "none",
-    component: "WhiteboardView",
-    packageId: "tangent.canvas",
-    state: "available",
-    contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c",
   },
   {
     kind: "tangent.wizard",

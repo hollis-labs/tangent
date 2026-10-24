@@ -124,8 +124,6 @@ Notable suites:
   the bundled triage component.
 - `scripts/triage-mock-call.mjs` — Node-from-the-outside variant. Not
   in CI; used to verify the wire shape with no LLM.
-- `scripts/whiteboard-mock-call.mjs` — end-to-end whiteboard submit ->
-  reopen -> continue verification, including revision lineage.
 - `scripts/spreadsheet-review-mock-call.mjs` — end-to-end
   spreadsheet-review submit -> reopen -> cancel verification, including
   saved views and export metadata.
@@ -304,10 +302,10 @@ land with both directions present.
 ## Adding a new envelope kind
 
 The current precedents are `triage`, `feedback`, `form-collect`,
-`design-iteration`, `whiteboard`, `spreadsheet-review`, `approval-queue`, `interview-question`,
+`design-iteration`, `spreadsheet-review`, `approval-queue`, `interview-question`,
 `synthesis-notes`, `block-draft`, `prose-revision`, and
 `output-render`. Use at least one simple workflow, one room-backed
-structured surface (`form-collect`, `whiteboard`, or
+structured surface (`form-collect`,
 `spreadsheet-review` or `approval-queue`), and one
 multi-phase writing workflow as references instead of assuming one
 shape fits every kind.
@@ -392,7 +390,7 @@ question, not something this gate decided.
 A workflow is one envelope kind plus an MCP tool that creates a room
 and dispatches it. Follow the steps above; `tangent_triage`,
 `tangent_feedback`, `tangent_form_collect`, `tangent_design_iteration`,
-`tangent_whiteboard`, `tangent_spreadsheet_review`,
+`tangent_spreadsheet_review`,
 `tangent_approval_queue`, `tangent_wizard`, and the writing
 workflow kinds are the worked examples. Every named room workflow routes
 through the shared completion adapter in `internal/roomflow`; do not add a

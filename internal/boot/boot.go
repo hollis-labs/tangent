@@ -29,9 +29,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/channelpane"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -71,6 +73,14 @@ type Config struct {
 	// DBPath is the database file path. Empty means the package default
 	// (see internal/db).
 	DBPath string
+
+	// ArtifactDir is where artifact revision files live (ADR 0015). Empty
+	// means an `artifacts` directory beside the database.
+	ArtifactDir string
+
+	// D2Bin is the d2 command used to draw D2 artifacts on the server. Empty means look for `d2` on
+	// PATH; if there is none, D2 artifacts are stored and shown as source.
+	D2Bin string
 
 	// OperatorToken is the value of TANGENT_OPERATOR_TOKEN
 	// (participant.EnvOperatorToken), which elevates a browser session to
@@ -190,6 +200,7 @@ type Services struct {
 	HITL        *hitl.Service
 	Turns       *turns.Service
 	Docs        *docs.Service
+	Artifacts   *artifacts.Service
 
 	RoomManager     *room.Manager
 	WSHandler       *tangentws.Handler
@@ -467,11 +478,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	interactionService, err := interaction.NewService(
 		interactionStore,
 		definitionCatalog,
-		interaction.WithSurfaceAccessPolicy(compoundSurfaceAccessPolicy{
-			hitl.SurfaceAccessPolicy{},
-			turns.SurfaceAccessPolicy{},
-			docs.SurfaceAccessPolicy{},
-		}),
+		interaction.WithSurfaceAccessPolicy(reservedSurfacePolicy()),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers
 		// never hold that authority.
@@ -511,6 +518,21 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	docsService, err := docs.NewService(interactionService, docs.NewReadStore(sqlDB))
 	if err != nil {
 		return release(fmt.Errorf("build docs service: %w", err))
+	}
+	artifactDir, err := resolveArtifactDir(cfg)
+	if err != nil {
+		return release(err)
+	}
+	var artifactOptions []artifacts.Option
+	if d2 := artifacts.NewD2Renderer(cfg.D2Bin); d2 != nil {
+		artifactOptions = append(artifactOptions, artifacts.WithRenderer("d2", d2))
+		logger.Info("d2 renderer enabled", "bin", d2.Bin())
+	} else {
+		logger.Info("d2 renderer not available; D2 artifacts will show their source", "configured", cfg.D2Bin)
+	}
+	artifactsService, err := artifacts.NewService(interactionService, artifacts.NewStore(sqlDB, artifactDir), docs.NewReadStore(sqlDB), artifactOptions...)
+	if err != nil {
+		return release(fmt.Errorf("build artifacts service: %w", err))
 	}
 	recovery, err := interactionService.RecoverAfterRestart(context.Background())
 	if err != nil {
@@ -670,6 +692,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
+		mcp.WithArtifactsService(artifactsService),
 		mcp.WithTurnsService(turnsService),
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
@@ -735,7 +758,6 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		{"block-draft", mcp.RegisterBlockDraftOnDispatcher},
 		{"prose-revision", mcp.RegisterProseRevisionOnDispatcher},
 		{"output-render", mcp.RegisterOutputRenderOnDispatcher},
-		{"whiteboard", mcp.RegisterWhiteboardOnDispatcher},
 		{"dashboard", mcp.RegisterDashboardOnDispatcher},
 		{"app-board", mcp.RegisterAppBoardOnDispatcher},
 		{"external-review", mcp.RegisterExternalReviewOnDispatcher},
@@ -779,6 +801,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		HITL:               hitlService,
 		Turns:              turnsService,
 		Docs:               docsService,
+		Artifacts:          artifactsService,
 		Rooms:              mcpSrv,
 		Inbox:              interactionService,
 		Channels:           channelPaneService,
@@ -804,6 +827,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		HITL:            hitlService,
 		Turns:           turnsService,
 		Docs:            docsService,
+		Artifacts:       artifactsService,
 		RoomManager:     roomMgr,
 		WSHandler:       wsHandler,
 		ParticipantGate: participantGate,
@@ -858,6 +882,22 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 	return inventory
 }
 
+// reservedSurfacePolicy is every host-reserved operator surface, in one place.
+//
+// It does two jobs. It refuses generic MCP callers write access to these surfaces, and, because the
+// browser Inbox treats "reserved" as "an item here was sent to the operator", it also decides which
+// items from other authorities (the authenticated gateway, other producers) the operator's browser
+// lists (interaction.Service.BrowserInbox). A new reserved surface must be added here or its items
+// stay hidden from the operator; TestEveryReservedOperatorSurfaceIsCovered keeps the list honest.
+func reservedSurfacePolicy() compoundSurfaceAccessPolicy {
+	return compoundSurfaceAccessPolicy{
+		hitl.SurfaceAccessPolicy{},
+		turns.SurfaceAccessPolicy{},
+		docs.SurfaceAccessPolicy{},
+		artifacts.SurfaceAccessPolicy{},
+	}
+}
+
 type compoundSurfaceAccessPolicy []interaction.SurfaceAccessPolicy
 
 func (c compoundSurfaceAccessPolicy) Authorize(surfaceID string, capability string) bool {
@@ -882,4 +922,20 @@ func (c compoundSurfaceAccessPolicy) AuthorizeInboxRead(surfaceID string) bool {
 		}
 	}
 	return true
+}
+
+// resolveArtifactDir returns the directory artifact revision files live in:
+// the configured one, else an `artifacts` directory beside the database.
+func resolveArtifactDir(cfg Config) (string, error) {
+	if cfg.ArtifactDir != "" {
+		return cfg.ArtifactDir, nil
+	}
+	if cfg.DBPath != "" {
+		return filepath.Join(filepath.Dir(cfg.DBPath), "artifacts"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir for artifact directory: %w", err)
+	}
+	return filepath.Join(home, ".tangent", "artifacts"), nil
 }

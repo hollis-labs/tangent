@@ -81,7 +81,6 @@ type sessionGetResult struct {
 	DiffReview            *room.DiffReviewStateView        `json:"diff_review,omitempty"`
 	ApprovalQueue         *room.ApprovalQueueStateView     `json:"approval_queue,omitempty"`
 	SpreadsheetReview     *room.SpreadsheetReviewStateView `json:"spreadsheet_review,omitempty"`
-	Whiteboard            *room.WhiteboardStateView        `json:"whiteboard,omitempty"`
 	SynthesisNotes        *room.SynthesisNotesView         `json:"synthesis_notes,omitempty"`
 	AcceptedDraftBlocks   []room.DraftBlock                `json:"accepted_draft_blocks"`
 	CurrentDraft          *room.CurrentDraftView           `json:"current_draft,omitempty"`
@@ -255,7 +254,6 @@ func (s *Server) roomProjection(ctx context.Context, roomID string) (sessionGetR
 		DiffReview:            room.ProjectDiffReviewState(phaseState),
 		ApprovalQueue:         room.ProjectApprovalQueueState(phaseState),
 		SpreadsheetReview:     room.ProjectSpreadsheetReviewState(phaseState),
-		Whiteboard:            room.ProjectWhiteboardState(phaseState),
 		SynthesisNotes:        room.ProjectSynthesisNotes(phaseState),
 		AcceptedDraftBlocks:   room.ProjectAcceptedDraftBlocks(phaseState),
 		CurrentDraft:          room.ProjectCurrentDraft(phaseState),
@@ -554,11 +552,6 @@ func sessionPhaseStateError(roomID string, err error) error {
 		errors.Is(err, room.ErrInvalidSpreadsheetRowAction),
 		errors.Is(err, room.ErrInvalidSpreadsheetActionID),
 		errors.Is(err, room.ErrInvalidSpreadsheetExportRef),
-		errors.Is(err, room.ErrInvalidWhiteboardBoardID),
-		errors.Is(err, room.ErrInvalidWhiteboardSceneSnapshot),
-		errors.Is(err, room.ErrInvalidWhiteboardAssetRef),
-		errors.Is(err, room.ErrInvalidWhiteboardExportRef),
-		errors.Is(err, room.ErrInvalidWhiteboardRevisionID),
 		errors.Is(err, room.ErrInvalidDraftBlockID),
 		errors.Is(err, room.ErrInvalidDraftBlockContent),
 		errors.Is(err, room.ErrInvalidProseRevisionID),

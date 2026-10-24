@@ -72,7 +72,6 @@ var registrations = []registration{
 	{BlockDraftEnvelopeType, "tangent.writing", RegisterBlockDraft, false},
 	{ProseRevisionEnvelopeType, "tangent.writing", RegisterProseRevision, false},
 	{OutputRenderEnvelopeType, "tangent.generic-candidate", RegisterOutputRender, false},
-	{WhiteboardEnvelopeType, "tangent.canvas", RegisterWhiteboard, false},
 	{DashboardEnvelopeType, "tangent.canvas", RegisterDashboard, false},
 	{FilePickerEnvelopeType, "tangent.workspace", RegisterFilePicker, false},
 	{ProgressPanelEnvelopeType, "tangent.generic-candidate", RegisterProgressPanel, false},
@@ -86,6 +85,7 @@ var registrations = []registration{
 	{AppBoardEnvelopeType, AppBoardPackageID, RegisterAppBoard, false},
 	{AgentTurnEnvelopeType, TurnsPackageID, RegisterAgentTurn, false},
 	{DocItemEnvelopeType, DocsPackageID, RegisterDocItem, false},
+	{ArtifactItemEnvelopeType, ArtifactsPackageID, RegisterArtifactItem, false},
 }
 
 // RegisterAll registers every Tangent-owned interaction definition on svc. It

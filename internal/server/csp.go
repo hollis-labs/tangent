@@ -140,28 +140,18 @@ func contentSecurityPolicy(r *http.Request, devFrontendURL string) string {
 
 	return strings.Join([]string{
 		script,
-		// Radix, tldraw, and React itself set inline `style` attributes, so
+		// Radix and React itself set inline `style` attributes, so
 		// `'unsafe-inline'` here is not optional and not a placeholder. Style
 		// injection is a real risk class and a much smaller one than script
 		// injection; the sandboxed frame's own policy is where untrusted
 		// styling is contained.
 		"style-src 'self' 'unsafe-inline'",
-		// `https://cdn.tldraw.com` is the one external origin in the whole
-		// policy, and it is here because `tangent.whiteboard` genuinely loads
-		// its fonts, icons, watermark, and embed icons from tldraw's CDN. That
-		// dependency is the concrete reason whiteboard is `portfolio-trusted`
-		// rather than `core-trusted`: it is a package Tangent hosts and did not
-		// author, and it reaches an origin Tangent does not control.
-		//
-		// It is admitted for *passive subresources only*. It is deliberately
-		// absent from `connect-src`, so tldraw's scripted fetch of a
-		// translation bundle is refused — that is a `network.fetch` the
-		// whiteboard manifest has never declared, and refusing it is the model
-		// working rather than a bug. The honest fix is to self-host the assets
-		// or to declare and grant the capability; both are named in
-		// docs/renderer-trust-classes.md.
-		"img-src 'self' data: blob: https://cdn.tldraw.com",
-		"font-src 'self' data: https://cdn.tldraw.com",
+		// No external origin is admitted: every subresource is same-origin, data:
+		// or blob:. A third-party editor that needs a CDN must self-host its
+		// assets or declare and be granted `network.fetch` (see
+		// docs/renderer-trust-classes.md).
+		"img-src 'self' data: blob:",
+		"font-src 'self' data:",
 		"media-src 'self' data: blob:",
 		"connect-src " + strings.Join(connect, " "),
 		// Nothing in Tangent embeds a plugin, and `object-src` is the one

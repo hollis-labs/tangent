@@ -38,9 +38,8 @@ Confirm:
   per-request from the `Host` header, so it names your port, not a fixed one)
   and nothing else — **no external origin at all**, which is what makes
   `network.fetch` enforced.
-- `img-src` and `font-src` name `https://cdn.tldraw.com`, and nothing else
-  external. That is the whiteboard's asset CDN, admitted as a passive
-  subresource only; seeing it in `connect-src` would be a regression.
+- `img-src` and `font-src` name no external origin either: `'self'`, `data:`
+  and (for images) `blob:` only. Any `https://` origin in them is a regression.
 - `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`,
   `form-action 'self'`.
 - `Permissions-Policy` contains `clipboard-write=(self)` and `camera=()`.
@@ -55,15 +54,6 @@ the `connect-src` websocket clause working.
 
 A `Refused to connect to 'ws://…'` message here means the `connect-src` clause
 is wrong for this Host header; that is the failure mode to watch for.
-
-Then open a **whiteboard** envelope, which is the workflow most likely to trip
-the policy: tldraw loads fonts, icons, and its watermark from
-`https://cdn.tldraw.com`, which the policy admits as passive subresources only.
-Confirm the toolbar icons and the text tool's typography render. A refusal for
-`https://cdn.tldraw.com/…/translations/…` is **expected and correct** when the
-browser is not in English — it is a scripted fetch to an external origin, which
-is the `network.fetch` the whiteboard manifest does not declare — and tldraw
-falls back to its bundled English strings.
 
 ## 4. Drive a design iteration with hostile markup
 

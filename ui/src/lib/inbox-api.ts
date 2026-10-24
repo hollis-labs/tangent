@@ -1,4 +1,4 @@
-export type InboxCategory = "approval" | "document" | "turn" | "workflow";
+export type InboxCategory = "approval" | "document" | "artifact" | "turn" | "workflow";
 
 export interface InboxEntry {
   sequence: number;
@@ -30,6 +30,8 @@ export function categoryOf(entry: InboxEntry): InboxCategory {
       return "approval";
     case "tangent.doc-item":
       return "document";
+    case "tangent.artifact-item":
+      return "artifact";
     case "tangent.agent-turn":
       return "turn";
     default:

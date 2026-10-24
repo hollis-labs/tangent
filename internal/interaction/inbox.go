@@ -25,17 +25,32 @@ func (s *Service) BrowserInbox(ctx context.Context) ([]InboxEntry, error) {
 	}
 	visible := make([]InboxEntry, 0, len(entries))
 	for _, entry := range entries {
-		if authz.Authorize(authz.Request{
-			Kind:       authz.KindCallerApplication,
-			Scope:      authz.CallerScope(""),
-			OwnerScope: entry.Interaction.CallerScope,
-			Capability: authz.View,
-			Isolation:  authz.AuthorityWide,
-		}) == nil {
+		if s.browserMayView(entry) {
 			visible = append(visible, entry)
 		}
 	}
 	return visible, nil
+}
+
+// browserMayView decides whether the operator's browser lists one entry.
+//
+// An entry from the operator's own authority is always listed. An entry from
+// another authority, such as an authenticated gateway producer, is listed only
+// when it sits on a surface reserved for the operator inbox (docs, artifacts,
+// turns, approvals): only the host's own enqueue tools can write there, and
+// delivering to the operator is the whole point of those surfaces. A producer's
+// own surfaces and any generic surface stay private to that producer, as before.
+func (s *Service) browserMayView(entry InboxEntry) bool {
+	if authz.Authorize(authz.Request{
+		Kind:       authz.KindCallerApplication,
+		Scope:      authz.CallerScope(""),
+		OwnerScope: entry.Interaction.CallerScope,
+		Capability: authz.View,
+		Isolation:  authz.AuthorityWide,
+	}) == nil {
+		return true
+	}
+	return s.surfaces != nil && !s.surfaces.Authorize(entry.Interaction.SurfaceID, "")
 }
 
 func (s *Store) listInbox(ctx context.Context) ([]InboxEntry, error) {
@@ -165,13 +180,7 @@ func (s *Service) BrowserInboxItem(ctx context.Context, id string) (InboxEntry, 
 	if err != nil {
 		return InboxEntry{}, err
 	}
-	if authz.Authorize(authz.Request{
-		Kind:       authz.KindCallerApplication,
-		Scope:      authz.CallerScope(""),
-		OwnerScope: entry.Interaction.CallerScope,
-		Capability: authz.View,
-		Isolation:  authz.AuthorityWide,
-	}) != nil {
+	if !s.browserMayView(entry) {
 		return InboxEntry{}, ErrNotFound
 	}
 	return entry, nil

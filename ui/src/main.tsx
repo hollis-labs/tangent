@@ -41,10 +41,6 @@ import type {
   SynthesisNotesResponse,
 } from "./components/envelopes/SynthesisNotes";
 import type { TriageEnvelope, TriageResponse } from "./components/envelopes/Triage";
-import type {
-  WhiteboardEnvelope,
-  WhiteboardSubmitResponse,
-} from "./components/envelopes/Whiteboard";
 import type { WizardEnvelope, WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import { syncPlugins } from "./lib/plugin-loader";
@@ -108,9 +104,6 @@ const SynthesisNotes = lazy(() =>
 );
 const Triage = lazy(() =>
   import("./components/envelopes/Triage").then((m) => ({ default: m.Triage })),
-);
-const Whiteboard = lazy(() =>
-  import("./components/envelopes/Whiteboard").then((m) => ({ default: m.Whiteboard })),
 );
 const Wizard = lazy(() =>
   import("./components/envelopes/Wizard").then((m) => ({ default: m.Wizard })),
@@ -218,17 +211,6 @@ function OutputRenderAdapter({ envelope, onSubmit, onCancel }: EnvelopeComponent
       envelope={envelope as OutputRenderEnvelope}
       onSubmit={onSubmit as (response: OutputRenderResponse) => void}
       onCancel={onCancel}
-    />
-  );
-}
-
-function WhiteboardAdapter({ envelope, onSubmit, onCancel, roomID }: EnvelopeComponentProps) {
-  return (
-    <Whiteboard
-      envelope={envelope as WhiteboardEnvelope}
-      onSubmit={onSubmit as (response: WhiteboardSubmitResponse) => void}
-      onCancel={onCancel}
-      roomID={roomID}
     />
   );
 }
@@ -349,7 +331,6 @@ register("tangent.interview-question", InterviewQuestionAdapter);
 register("tangent.block-draft", BlockDraftAdapter);
 register("tangent.prose-revision", ProseRevisionAdapter);
 register("tangent.output-render", OutputRenderAdapter);
-register("tangent.whiteboard", WhiteboardAdapter);
 register("tangent.dashboard", DashboardAdapter);
 register("tangent.app-board", AppBoardAdapter);
 register("tangent.file-picker", FilePickerAdapter);

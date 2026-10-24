@@ -92,7 +92,6 @@ var toolAnnotationTable = map[string]toolHints{
 	"tangent_block_draft":        {Idempotent: true},
 	"tangent_prose_revision":     {Idempotent: true},
 	"tangent_output_render":      {Idempotent: true},
-	"tangent_whiteboard":         {Idempotent: true},
 	"tangent_app_board":          {Idempotent: true},
 	"tangent_dashboard":          {Idempotent: true},
 	"tangent_file_picker":        {Idempotent: true},
@@ -157,6 +156,15 @@ var toolAnnotationTable = map[string]toolHints{
 
 	// Docs inbox.
 	"tangent_docs_enqueue": {Idempotent: true},
+
+	// Artifact inbox (ADR 0015). create is idempotent by its idempotency_key;
+	// update adds a revision each call; message appends; get and await only read.
+	"tangent_artifact_create":   {Idempotent: true},
+	"tangent_artifact_update":   {},
+	"tangent_artifact_get":      {ReadOnly: true},
+	"tangent_artifact_message":  {},
+	"tangent_artifact_await":    {ReadOnly: true},
+	"tangent_artifact_withdraw": {Destructive: true},
 
 	// Agent turns inbox. turns_enqueue is idempotent by its idempotency_key,
 	// turn_await only reads, and turn_ack converges: acknowledging twice leaves

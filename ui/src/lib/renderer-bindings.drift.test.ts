@@ -43,6 +43,7 @@ const ROUTE_RENDERED_KINDS = new Set([
   "tangent.hitl-item",
   "tangent.agent-turn",
   "tangent.doc-item",
+  "tangent.artifact-item",
 ]);
 
 /**
