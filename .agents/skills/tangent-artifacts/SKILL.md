@@ -43,6 +43,15 @@ Text types go in `content`, binary types in `content_base64`.
 Limits: 5 MiB for text types, 25 MiB for binary types. The same text is in the
 `type` field's description on `tangent_artifact_create`; the server is the authority.
 
+### Closing tags through the gateway
+
+Until the gateway fix ships (CW-20261024-0130, libs PR #123, then Tether/Tesseract/Torque bumps),
+Tether's sanitizer strips a trailing closing tag from long content, so a bare `</svg>` or `</html>`
+at the very end is lost: an SVG then shows a broken preview. End `html` and `svg` content with a
+comment after the root close, for example `</svg><!-- end -->` or `</html><!-- end -->`. Content that
+ends in anything else (JSON, Markdown, Mermaid, D2) is not affected. Sending straight to Tangent's
+own MCP endpoint is not affected either. Remove this note once consumers have bumped.
+
 ### Calls and privacy
 
 - `idempotency_key` is yours; repeating it returns the original item without comparing the content.
