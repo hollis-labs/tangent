@@ -198,6 +198,48 @@ func TestArtifactTools_AreRegisteredWithContractSchemas(t *testing.T) {
 	}
 }
 
+// TestArtifactTools_DocumentThemselvesForAgents pins what an agent reads while
+// building a call: every create field is described, the type help names every
+// type it accepts, and each tool advertises its result shape.
+func TestArtifactTools_DocumentThemselvesForAgents(t *testing.T) {
+	r := newArtifactRig(t)
+	tools, err := r.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	byName := map[string]*mcpsdk.Tool{}
+	for _, tool := range tools.Tools {
+		byName[tool.Name] = tool
+	}
+	for _, name := range []string{
+		"tangent_artifact_create", "tangent_artifact_update", "tangent_artifact_get",
+		"tangent_artifact_message", "tangent_artifact_await", "tangent_artifact_withdraw",
+	} {
+		if byName[name].OutputSchema == nil {
+			t.Errorf("%s advertises no result shape", name)
+		}
+	}
+	var create struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	raw, _ := json.Marshal(byName["tangent_artifact_create"].InputSchema)
+	if err = json.Unmarshal(raw, &create); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	for name, property := range create.Properties {
+		if strings.TrimSpace(property.Description) == "" {
+			t.Errorf("create field %q has no description", name)
+		}
+	}
+	for _, artifactType := range artifacts.SupportedTypes() {
+		if !strings.Contains(create.Properties["type"].Description, artifactType+":") {
+			t.Errorf("the type help does not describe %q's content", artifactType)
+		}
+	}
+}
+
 func TestArtifactCreate_ReturnsAHandleAndReplaysAnIdempotencyKey(t *testing.T) {
 	r := newArtifactRig(t)
 	first := r.create(t, "create-1", "html", map[string]any{"content": "<h1>Hello</h1>", "filename": "hello.html"})

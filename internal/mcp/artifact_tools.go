@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -27,6 +28,19 @@ func WithArtifactsService(service *artifacts.Service) Option {
 		return nil
 	}
 }
+
+// artifactTypeHelp is the per-type content contract, in the one place an agent
+// reads while building the call. The limits are the service's own constants.
+var artifactTypeHelp = "What the content is. " +
+	"html: one self-contained HTML document (runs sandboxed; https CDN scripts allowed, no network calls). " +
+	"markdown: Markdown text. " +
+	"image: PNG, JPEG, GIF or WebP in content_base64, or SVG text in content. " +
+	"excalidraw: JSON {\"elements\": [...]} (an Excalidraw scene). " +
+	"flow: JSON {\"direction\": \"LR\"|\"TB\", \"nodes\": [{\"id\",\"label\",\"kind\"?: trigger|action|condition|output|note}], \"edges\": [{\"source\",\"target\",\"label\"?}]}, at most 500 nodes and 2000 edges. " +
+	"mermaid: Mermaid source. d2: D2 source (drawn on the server; no imports). " +
+	"vega-lite: a Vega-Lite spec with inline data (a url is refused). " +
+	"pdf: bytes in content_base64. video: mp4 or webm bytes in content_base64. figma: a figma.com URL. " +
+	fmt.Sprintf("Limits: text %d MiB, binary %d MiB.", artifacts.MaxTextBytes>>20, artifacts.MaxBinaryBytes>>20)
 
 const artifactContentHelp = "The artifact's content. Send exactly one of content (text: html, markdown, mermaid, d2, " +
 	"or JSON for excalidraw, flow and vega-lite; a figma.com URL for figma) and content_base64 (binary: " +
@@ -62,10 +76,33 @@ func contentProperties() map[string]*jsonschema.Schema {
 	}
 }
 
+// artifactOutputSchema derives a tool's advertised result shape from the
+// service type it returns, so an agent can read the handle, view and message
+// fields from the schema instead of guessing them from a first call.
+func artifactOutputSchema[T any]() (*jsonschema.Schema, error) {
+	return jsonschema.ForType(reflect.TypeFor[T](), &jsonschema.ForOptions{})
+}
+
 func (s *Server) registerArtifactTools() error {
 	createSchema, err := buildArtifactCreateSchema()
 	if err != nil {
 		return fmt.Errorf("build tangent_artifact_create input schema: %w", err)
+	}
+	handleOut, err := artifactOutputSchema[artifacts.Handle]()
+	if err != nil {
+		return fmt.Errorf("build artifact handle output schema: %w", err)
+	}
+	viewOut, err := artifactOutputSchema[artifacts.View]()
+	if err != nil {
+		return fmt.Errorf("build artifact view output schema: %w", err)
+	}
+	messageOut, err := artifactOutputSchema[artifacts.Message]()
+	if err != nil {
+		return fmt.Errorf("build artifact message output schema: %w", err)
+	}
+	awaitOut, err := artifactOutputSchema[artifacts.AwaitResult]()
+	if err != nil {
+		return fmt.Errorf("build artifact await output schema: %w", err)
 	}
 	itemID := &jsonschema.Schema{Type: "string", MinLength: jsonschema.Ptr(1), Description: "The item_id returned by tangent_artifact_create."}
 	source := artifactSourceSchema()
@@ -123,35 +160,41 @@ func (s *Server) registerArtifactTools() error {
 			"returns the original item. Change it later with tangent_artifact_update. An html mock is one self-contained file that runs " +
 			"sandboxed with https CDN scripts and no network calls; for a shadcn/ui mock see the tangent-artifacts skill " +
 			"(.agents/skills/tangent-artifacts/SKILL.md).",
-		InputSchema: createSchema,
+		InputSchema:  createSchema,
+		OutputSchema: handleOut,
 	}, s.handleArtifactCreate)
 	addTool(s, gmcpserver.Tool{
 		Name: "tangent_artifact_update",
 		Description: "Add a new revision to an artifact you created, so the operator iterates on one preview instead of a stream of new items. " +
 			"The type cannot change. Refused once the artifact is signed off, archived or withdrawn.",
-		InputSchema: updateSchema,
+		InputSchema:  updateSchema,
+		OutputSchema: handleOut,
 	}, s.handleArtifactUpdate)
 	addTool(s, gmcpserver.Tool{
 		Name: "tangent_artifact_get",
 		Description: "Read an artifact you created: its state, revisions, and the message thread (operator replies, change requests, sign-off). " +
 			"Pass after_seq to get only newer messages.",
-		InputSchema: getSchema,
+		InputSchema:  getSchema,
+		OutputSchema: viewOut,
 	}, s.handleArtifactGet)
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent_artifact_message",
-		Description: "Reply to the operator in an artifact's message thread, for example to say what changed in a new revision.",
-		InputSchema: messageSchema,
+		Name:         "tangent_artifact_message",
+		Description:  "Reply to the operator in an artifact's message thread, for example to say what changed in a new revision.",
+		InputSchema:  messageSchema,
+		OutputSchema: messageOut,
 	}, s.handleArtifactMessage)
 	addTool(s, gmcpserver.Tool{
 		Name: "tangent_artifact_await",
 		Description: "Wait up to two minutes for the operator to write on an artifact or finish it, and return the artifact with the new " +
 			"messages. A timeout is a normal result (timed_out true) and changes nothing.",
-		InputSchema: awaitSchema,
+		InputSchema:  awaitSchema,
+		OutputSchema: awaitOut,
 	}, s.handleArtifactAwait)
 	addTool(s, gmcpserver.Tool{
-		Name:        "tangent_artifact_withdraw",
-		Description: "Take back an artifact you no longer want shown. It moves to the operator's history. Refused once it is already finished.",
-		InputSchema: withdrawSchema,
+		Name:         "tangent_artifact_withdraw",
+		Description:  "Take back an artifact you no longer want shown. It moves to the operator's history. Refused once it is already finished.",
+		InputSchema:  withdrawSchema,
+		OutputSchema: viewOut,
 	}, s.handleArtifactWithdraw)
 	return nil
 }
@@ -178,6 +221,20 @@ func buildArtifactCreateSchema() (*jsonschema.Schema, error) {
 			property.Enum = append(property.Enum, name)
 		}
 	}
+	describe := func(name, text string) {
+		if property := schema.Properties[name]; property != nil && property.Description == "" {
+			property.Description = text
+		}
+	}
+	describe("idempotency_key", "Your own unique key for this artifact. Sending it again with the same request returns the original item instead of creating a second one; the content is not compared.")
+	describe("title", "Short name shown in the operator's inbox.")
+	describe("summary", "One or two lines on what this is or what you want from the operator.")
+	describe("type", artifactTypeHelp)
+	describe("requires_signoff", "Set true to ask the operator to approve the artifact. Approve resolves it; Request changes leaves it open and sends you a message.")
+	describe("tags", "Optional labels for filtering in the inbox.")
+	describe("correlations", "Optional free-form references to your own work, such as a task id or branch. Stored and returned unchanged.")
+	describe("contract_version", "Optional; defaults to the current version.")
+	describe("source", "Who is sending. Artifacts are private to this application_id (or to the verified gateway identity); agent_id and agent_label are shown to the operator as the author.")
 	// contract_version defaults to the current version when omitted.
 	required := schema.Required[:0:0]
 	for _, name := range schema.Required {
