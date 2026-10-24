@@ -58,7 +58,6 @@ const SHIPPED_TRUST: Record<string, string> = {
   "tangent.spreadsheet-review": "main-origin",
   "tangent.synthesis-notes": "main-origin",
   "tangent.triage": "main-origin",
-  "tangent.whiteboard": "main-origin",
   "tangent.wizard": "main-origin",
 };
 

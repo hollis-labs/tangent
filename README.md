@@ -30,8 +30,7 @@ summon a room, hand it a decision, and get a structured response back.
 - **A desktop shell.** `Tangent.app` (Wails v3) wraps the same loopback
   server; unsigned and without a system tray yet.
 - A catalog of room-backed workflows spanning triage, form collection,
-  diff/spreadsheet review, approval queues, dashboards, and a shared
-  whiteboard. The current set is what the running binary reports — see
+  diff/spreadsheet review, approval queues, dashboards, and agent artifacts. The current set is what the running binary reports — see
   [`docs/mcp-integration.md`](docs/mcp-integration.md) rather than trusting a
   count here, since it drifts.
 

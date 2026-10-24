@@ -106,8 +106,6 @@ func (s *Server) NormalizeResponse(
 		return pkg.NormalizeResponse(context.Background(), s.packageStore(), roomID, env, resp)
 	}
 	switch env.Type {
-	case whiteboardEnvelopeType:
-		return s.normalizeWhiteboardSubmitResponse(roomID, env, resp)
 	case dashboardEnvelopeType:
 		return s.normalizeDashboardSubmitResponse(roomID, env, resp)
 	case filePickerEnvelopeType:

@@ -117,9 +117,7 @@ var responseSchemaBackfilled = []string{
 func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 	t.Parallel()
 	// Most kinds draw with React components reviewed and shipped in Tangent's
-	// own tree. `tangent.whiteboard` is portfolio-trusted because it embeds
-	// tldraw — a third-party editor whose code Tangent hosts but does not
-	// author — and `tangent.design-iteration` is the one renderer that executes
+	// own tree, and `tangent.design-iteration` is the one renderer that executes
 	// agent-authored markup, so it is the only sandboxed-code class in the
 	// distribution.
 	//
@@ -152,7 +150,6 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 		"tangent.spreadsheet-review": definition.IsolationMainOrigin,
 		"tangent.synthesis-notes":    definition.IsolationMainOrigin,
 		"tangent.triage":             definition.IsolationMainOrigin,
-		"tangent.whiteboard":         definition.IsolationMainOrigin,
 		"tangent.wizard":             definition.IsolationMainOrigin,
 	}
 
@@ -204,7 +201,7 @@ func TestShippedManifestsHonorCompatibilityDefaults(t *testing.T) {
 	browserLocal := []string{
 		"tangent.approval-queue", "tangent.dashboard", "tangent.diff-review",
 		"tangent.file-picker", "tangent.form-collect", "tangent.spreadsheet-review",
-		"tangent.whiteboard", "tangent.wizard",
+		"tangent.wizard",
 	}
 
 	// The kinds whose drafts are Tangent's own durable records rather than a
@@ -298,7 +295,6 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		SpreadsheetReviewEnvelopeType: {"tangent.review", definition.OwnershipHostPackage},
 		FilePickerEnvelopeType:        {"tangent.workspace", definition.OwnershipHostPackage},
 		DesignIterationEnvelopeType:   {"tangent.canvas", definition.OwnershipHostPackage},
-		WhiteboardEnvelopeType:        {"tangent.canvas", definition.OwnershipHostPackage},
 		DashboardEnvelopeType:         {"tangent.canvas", definition.OwnershipHostPackage},
 		WizardEnvelopeType:            {"tangent.compound", definition.OwnershipHostPackage},
 		HITLItemEnvelopeType:          {HITLPackageID, definition.OwnershipHostPackage},

@@ -555,16 +555,6 @@ func (s *Server) registerTools() error {
 		InputSchema: outputRenderSchema,
 	}, s.handleOutputRender)
 
-	whiteboardSchema, err := buildWhiteboardInputSchema()
-	if err != nil {
-		return fmt.Errorf("build whiteboard input schema: %w", err)
-	}
-	addTool(s, gmcpserver.Tool{
-		Name:        "tangent_whiteboard",
-		Description: "Dispatch a whiteboard envelope through Tangent. Persists the room's current board snapshot and renders a tldraw host with explicit submit/cancel.",
-		InputSchema: whiteboardSchema,
-	}, s.handleWhiteboard)
-
 	appBoardSchema, err := buildRoomWorkflowSchema(appBoardInputSchemaJSON, "app_board")
 	if err != nil {
 		return fmt.Errorf("build app-board input schema: %w", err)
@@ -846,10 +836,6 @@ func buildProseRevisionInputSchema() (*jsonschema.Schema, error) {
 
 func buildOutputRenderInputSchema() (*jsonschema.Schema, error) {
 	return buildRoomWorkflowSchema(outputRenderInputSchemaJSON, "output_render")
-}
-
-func buildWhiteboardInputSchema() (*jsonschema.Schema, error) {
-	return buildRoomWorkflowSchema(whiteboardInputSchemaJSON, "whiteboard")
 }
 
 func buildSpreadsheetReviewInputSchema() (*jsonschema.Schema, error) {

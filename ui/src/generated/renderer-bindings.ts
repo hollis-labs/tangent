@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09
+// @definition-source sha256:345adbee66b97104eabdbcdf3c3fbfaed9adb5421b817eb10a7e198866cf29db
 // Run `make generate-envelopes` to regenerate.
 //
-// The renderer binding declared by each of the 23 manifests under
+// The renderer binding declared by each of the 22 manifests under
 // internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the
 // single answer to "what draws this kind"; ui/src/main.tsx is checked against
 // this table rather than being a second source of truth.
@@ -430,22 +430,6 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.generic-candidate",
     state: "available",
     contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368",
-  },
-  {
-    kind: "tangent.whiteboard",
-    version: "0.5",
-    rendererId: "tangent.renderer.whiteboard",
-    rendererClass: "react-component",
-    entry: "components/envelopes/Whiteboard#Whiteboard",
-    isolation: "main-origin",
-    inlinePayloadLimitBytes: 262144,
-    fallbackRendererId: "",
-    fallbackPreservesMeaning: false,
-    fallbackDegradation: "none",
-    component: "WhiteboardView",
-    packageId: "tangent.canvas",
-    state: "available",
-    contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c",
   },
   {
     kind: "tangent.wizard",

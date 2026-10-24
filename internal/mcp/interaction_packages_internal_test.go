@@ -35,7 +35,11 @@ import (
 // If this digest ever needs changing, the change is a tools/list contract
 // change and needs the separate accepted ADR that ADR 0001 §11.7 requires —
 // not a regenerated constant.
-const prePackageSessionGetOutputSchemaDigest = "sha256:3e08c98facfe770c638b4ca089a0ec07ff0ba05f541e95f51d8ff3d390755f54"
+//
+// It last changed when `tangent.whiteboard` was removed (its `whiteboard`
+// property left the schema); docs/adr/0015-artifact-inbox-kind.md records that
+// change in its addendum. The previous value was sha256:3e08c98f….
+const prePackageSessionGetOutputSchemaDigest = "sha256:a414bcd614e02805a469e1a0bb780db707d86c9f7680a0f85d923ac2dc76b169"
 
 // canonicalizeSchema renders a schema with every object's members in sorted
 // order, so the comparison is over what the schema says rather than over the

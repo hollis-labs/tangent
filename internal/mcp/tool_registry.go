@@ -92,7 +92,6 @@ var toolAnnotationTable = map[string]toolHints{
 	"tangent_block_draft":        {Idempotent: true},
 	"tangent_prose_revision":     {Idempotent: true},
 	"tangent_output_render":      {Idempotent: true},
-	"tangent_whiteboard":         {Idempotent: true},
 	"tangent_app_board":          {Idempotent: true},
 	"tangent_dashboard":          {Idempotent: true},
 	"tangent_file_picker":        {Idempotent: true},

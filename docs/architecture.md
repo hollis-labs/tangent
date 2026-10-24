@@ -128,7 +128,6 @@ The compatibility surface contains these room/workflow and session tools:
 - `tangent_feedback` — the bundled structured-form workflow.
 - `tangent_form_collect` — the bundled generalized schema-driven form workflow.
 - `tangent_design_iteration` — sandboxed HTML preview + click/input iteration.
-- `tangent_whiteboard` — room-backed freeform canvas with explicit submit.
 - `tangent_spreadsheet_review` — room-backed dense table review with explicit submit.
 - `tangent_dashboard` — room-backed workflow-state dashboard with explicit refresh/update submit.
 - `tangent_diff_review` — room-backed diff review with explicit submit.
@@ -615,23 +614,6 @@ view when present:
 The browser host may keep unsent step edits in local storage for draft
 recovery, but the room-backed `wizard` projection remains the canonical
 reopen source.
-
-The shipped v0.4 whiteboard state is persisted on the same room
-state path rather than in a separate table. `tangent_session_get`
-projects a dedicated `whiteboard` payload when present:
-
-- `board_id`
-- `scene_snapshot` (canonical tldraw-style scene JSON)
-- `assets` (references/metadata only, not inline base64 blobs)
-- `export_refs` (latest export metadata, PNG-only in v0.4)
-- `notes`
-- `updated_at`
-- `revision_history` (append-only metadata, not full duplicated scenes)
-
-Full historical whiteboard snapshots are also retained on the room for
-the in-room revision browser, but `session_get` intentionally exposes
-only lightweight revision metadata so agent-side checkpoint reads do not
-need to load every scene blob eagerly.
 
 This keeps restart hydration and room replay simple while still
 supporting reopen/continue-from-revision inside the room UI.
@@ -1404,9 +1386,6 @@ trusting it.
   `tangent_session_advance` is refused with `SESSION_BUSY` rather than queued.
   This is a property of the compatibility room projection, not of the durable
   substrate beneath it.
-- **Whiteboard is single-user localhost first.** The board is shared between
-  one user and one agent through one persistent room; there is no live
-  multiplayer presence or conflict resolution.
 - **Spreadsheet review is review-only, not a spreadsheet editor.**
   Agent-provided rows are canonical; no formulas, workbook semantics, arbitrary
   cell editing, or remote spreadsheet connectors.

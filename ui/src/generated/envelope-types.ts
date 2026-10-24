@@ -1,10 +1,10 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09
+// @definition-source sha256:345adbee66b97104eabdbcdf3c3fbfaed9adb5421b817eb10a7e198866cf29db
 // Generated from libs/ui-go v0.4.0 (envelopes) — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Coverage: 41 registered kinds — 18 go-envelopes core,
-// 23 Tangent-owned (internal/envelope/extensions).
+// Coverage: 40 registered kinds — 18 go-envelopes core,
+// 22 Tangent-owned (internal/envelope/extensions).
 //
 // Sources of truth: github.com/hollis-labs/libs/ui/ui-go/envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
@@ -861,23 +861,6 @@ export interface TangentTriageData {
   prompt?: string;
 }
 
-/** Envelope data for "tangent.whiteboard" — Whiteboard envelope: present a tldraw-backed board with persisted room snapshot hydration and a full-scene submit response. */
-export interface TangentWhiteboardData {
-  assets?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[];
-  board_id: string;
-  export_refs?: { artifact_id?: string; created_at?: string; height?: number; kind?: "png"; mime_type?: string; name?: string; size_bytes?: number; uri?: string; width?: number }[];
-  intent?: string;
-  notes?: string;
-  reference_images?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[];
-  revision_history?: { asset_count?: number; continued_from_revision_id?: string; revision_id: string; scene_size?: number; summary?: string; updated_at?: string }[];
-  revision_id?: string;
-  revisions?: { asset_count?: number; assets?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[]; continued_from_revision_id?: string; export_refs?: { artifact_id?: string; created_at?: string; height?: number; kind?: "png"; mime_type?: string; name?: string; size_bytes?: number; uri?: string; width?: number }[]; notes?: string; reference_images?: { artifact_id?: string; asset_id?: string; height?: number; kind?: "reference_image"; mime_type?: string; name?: string; source?: string; uri?: string; width?: number }[]; revision_id: string; scene?: Record<string, unknown>; scene_size?: number; summary?: string; updated_at?: string }[];
-  scene?: Record<string, unknown>;
-  title?: string;
-  tool_mode?: "select" | "draw" | "text" | "shape" | "arrow" | "note";
-  updated_at?: string;
-}
-
 /** Envelope data for "tangent.wizard" — Step-based wizard workflow with room-backed progress, branching selections, review, and completion. */
 export interface TangentWizardData {
   branch_selections?: unknown[];
@@ -966,7 +949,6 @@ export type TangentProseRevisionEnvelope = EnvelopeBase<"tangent.prose-revision"
 export type TangentSpreadsheetReviewEnvelope = EnvelopeBase<"tangent.spreadsheet-review", TangentSpreadsheetReviewData>;
 export type TangentSynthesisNotesEnvelope = EnvelopeBase<"tangent.synthesis-notes", TangentSynthesisNotesData>;
 export type TangentTriageEnvelope = EnvelopeBase<"tangent.triage", TangentTriageData>;
-export type TangentWhiteboardEnvelope = EnvelopeBase<"tangent.whiteboard", TangentWhiteboardData>;
 export type TangentWizardEnvelope = EnvelopeBase<"tangent.wizard", TangentWizardData>;
 export type TimelineCardEnvelope = EnvelopeBase<"timeline-card", TimelineCardData>;
 
@@ -1010,7 +992,6 @@ export type Envelope =
   | TangentSpreadsheetReviewEnvelope
   | TangentSynthesisNotesEnvelope
   | TangentTriageEnvelope
-  | TangentWhiteboardEnvelope
   | TangentWizardEnvelope
   | TimelineCardEnvelope;
 
@@ -1054,7 +1035,6 @@ export type EnvelopeType =
   | "tangent.spreadsheet-review"
   | "tangent.synthesis-notes"
   | "tangent.triage"
-  | "tangent.whiteboard"
   | "tangent.wizard"
   | "timeline-card";
 
@@ -1098,7 +1078,6 @@ export interface EnvelopeDataMap {
   "tangent.spreadsheet-review": TangentSpreadsheetReviewData;
   "tangent.synthesis-notes": TangentSynthesisNotesData;
   "tangent.triage": TangentTriageData;
-  "tangent.whiteboard": TangentWhiteboardData;
   "tangent.wizard": TangentWizardData;
   "timeline-card": TimelineCardData;
 }
@@ -1144,7 +1123,6 @@ export const EnvelopeKindMap = {
   "tangent.spreadsheet-review": "SpreadsheetReviewView",
   "tangent.synthesis-notes": "SynthesisNotesView",
   "tangent.triage": "TriageView",
-  "tangent.whiteboard": "WhiteboardView",
   "tangent.wizard": "WizardView",
   "timeline-card": "",
 } as const satisfies Record<EnvelopeType, string>;
@@ -1189,13 +1167,12 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "tangent.spreadsheet-review",
   "tangent.synthesis-notes",
   "tangent.triage",
-  "tangent.whiteboard",
   "tangent.wizard",
   "timeline-card",
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09";
+export const DEFINITION_SOURCE_DIGEST = "sha256:345adbee66b97104eabdbcdf3c3fbfaed9adb5421b817eb10a7e198866cf29db";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.20.0";
@@ -1232,7 +1209,6 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
   { kind: "tangent.spreadsheet-review", version: "0.6", revision: 1, manifestDigest: "sha256:8bfd251bfdc6faa486ace91d642a937c46c2ae473701cfc80ae089331e30761d", contractDigest: "sha256:16282b257eff5d6c7e9ad27ca178980aa5ee7ddb67f1a2edba22af66b3c8c1d9" },
   { kind: "tangent.synthesis-notes", version: "0.4", revision: 1, manifestDigest: "sha256:a4c695e3c09557b9901839f9c1a317a0c630e33d09b143f8a0abb17b76deb09a", contractDigest: "sha256:9884a5ead5775b887689cf468454f8dca1eccc2c2eb0f9633640af85d0381342" },
   { kind: "tangent.triage", version: "0.2", revision: 1, manifestDigest: "sha256:b9513affa43bf0f88cd7c899731823332b43ffb2552ee1c221ea5e58b2751cf3", contractDigest: "sha256:8edeb85a3ff1b279b1f7dafa39b49c4a4f9465ff75400e105eaf31c1c8936368" },
-  { kind: "tangent.whiteboard", version: "0.5", revision: 1, manifestDigest: "sha256:1fa1b5261c6255fd037c22582ab9229ccc09b4d6f7e9df83ad207b8e51ebb9bf", contractDigest: "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c" },
   { kind: "tangent.wizard", version: "0.13", revision: 1, manifestDigest: "sha256:920170905798d3372cf0f24453f50d9e844c6c4e51af8822e4f5a39d4707a776", contractDigest: "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8" },
 ] as const;
 

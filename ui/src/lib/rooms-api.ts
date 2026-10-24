@@ -37,7 +37,6 @@ export interface RoomStatePayload {
   approval_queue?: unknown;
   form_collect?: unknown;
   spreadsheet_review?: unknown;
-  whiteboard?: unknown;
   synthesis_notes?: unknown;
   current_draft?: unknown;
   prose_revision_outcomes?: unknown[];

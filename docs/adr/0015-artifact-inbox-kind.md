@@ -35,3 +35,8 @@ Tangent still owns **what it presented and what the operator said back**, never 
 
 ## Out of scope
 Figma API import, v0/Vercel previews and Storybook (post-MVP tasks CW-20261024-0073 to -0075); multi-file HTML bundles; push delivery of operator replies to agents over Tether; TTL semantics (CW-20261024-0076).
+
+## Addendum: removal of `tangent.whiteboard` (2026-10-24)
+Chrispian dropped tldraw as an artifact type and then asked for the existing whiteboard kind to go too. Excalidraw covers diagrams; artifact items cover agent-sent visuals. This removes the `tangent_whiteboard` tool, the kind's package, renderer and draft storage, the `whiteboard` field of the `tangent_session_get` output, and the `tldraw` dependency with its `https://cdn.tldraw.com` CSP entry.
+
+This is a `tools/list` contract change: the tool count drops from 38 to 37, and the composed `session_get` output schema digest moves from `sha256:3e08c98f…` to `sha256:a414bcd6…`. ADR 0001 §11.7 asks for an accepted ADR when that digest changes; this addendum is that record. The digest constant in `internal/mcp/interaction_packages_internal_test.go` is updated to match, and the only schema difference is the removed `whiteboard` property. Stored whiteboard state in existing rooms is left in place and no longer projected.

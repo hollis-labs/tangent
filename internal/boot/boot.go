@@ -758,7 +758,6 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		{"block-draft", mcp.RegisterBlockDraftOnDispatcher},
 		{"prose-revision", mcp.RegisterProseRevisionOnDispatcher},
 		{"output-render", mcp.RegisterOutputRenderOnDispatcher},
-		{"whiteboard", mcp.RegisterWhiteboardOnDispatcher},
 		{"dashboard", mcp.RegisterDashboardOnDispatcher},
 		{"app-board", mcp.RegisterAppBoardOnDispatcher},
 		{"external-review", mcp.RegisterExternalReviewOnDispatcher},

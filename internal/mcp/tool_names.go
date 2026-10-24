@@ -108,7 +108,6 @@ var legacyToolNames = map[string]string{
 	"tangent_ui_modal_open":                  "tangent.ui_open_modal",
 	"tangent_ui_navigate":                    "tangent.ui_navigate",
 	"tangent_view_get":                       "tangent.view_get",
-	"tangent_whiteboard":                     "tangent.whiteboard",
 	"tangent_wizard":                         "tangent.wizard",
 	"tangent_workflow_list":                  "tangent.list_workflows",
 }

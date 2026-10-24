@@ -38,7 +38,6 @@
     "react-router-dom": "^7.18.3",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.6.0",
-    "tldraw": "^5.4.1",
     "vega": "6.4.0",
     "vega-embed": "7.3.0",
     "vega-interpreter": "2.3.2",

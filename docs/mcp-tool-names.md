@@ -35,7 +35,7 @@ at the source.
   `tangent_app_board`, `tangent_approval_queue`, `tangent_design_iteration`,
   `tangent_diff_review`, `tangent_file_picker`, `tangent_form_collect`,
   `tangent_progress_panel`, `tangent_spreadsheet_review`, `tangent_triage`,
-  `tangent_feedback`, `tangent_whiteboard`, `tangent_dashboard`,
+  `tangent_feedback`, `tangent_dashboard`,
   `tangent_wizard`. Calling one is the act of opening it.
 
 Only names changed. Arguments, results, annotations and behavior are the same.
@@ -113,7 +113,6 @@ not tool names and did not change: an envelope's `type` is still
 | `tangent.ui_open_modal` | `tangent_ui_modal_open` |
 | `tangent.ui_navigate` | `tangent_ui_navigate` (spelling only) |
 | `tangent.view_get` | `tangent_view_get` (spelling only) |
-| `tangent.whiteboard` | `tangent_whiteboard` (spelling only) |
 | `tangent.wizard` | `tangent_wizard` (spelling only) |
 | `tangent.list_workflows` | `tangent_workflow_list` |
 

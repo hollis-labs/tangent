@@ -161,7 +161,6 @@ workflow with the full seeded example from the linked doc.
 | `tangent.triage` | [`triage-e2e.md`](./triage-e2e.md) | Fill the required triage fields and submit once. | Agent receives a `data` response and the room resolves cleanly. |
 | `tangent.feedback` | [`feedback-e2e.md`](./feedback-e2e.md) | Answer the feedback prompt set and submit. | Agent receives the structured questionnaire response with your answers. |
 | `tangent.design-iteration` | [`design-iteration-e2e.md`](./design-iteration-e2e.md) | Review one iteration, choose one action, and submit. | Agent receives the chosen action and the selected iteration state. |
-| `tangent.whiteboard` | [`whiteboard-e2e.md`](./whiteboard-e2e.md) | Add or move one object on the canvas, then submit. | Agent receives a whiteboard response and reopening the room shows the saved scene. |
 | `tangent.spreadsheet-review` | [`spreadsheet-review-e2e.md`](./spreadsheet-review-e2e.md) | Filter or select one row, add one note or action, then submit. | Agent receives the selected row state and reopening shows the accepted review state. |
 | `tangent.form-collect` | [`form-collect-e2e.md`](./form-collect-e2e.md) | Fill the required fields and submit once. | Agent receives the structured form payload and the room can reopen with accepted values. |
 | `tangent.approval-queue` | [`approval-queue-e2e.md`](./approval-queue-e2e.md) | Make one decision on one queued item and submit. | Agent receives the decision payload and reopening shows the accepted queue state. |

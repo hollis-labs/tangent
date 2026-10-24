@@ -214,13 +214,6 @@ var contractLock = map[string]lockedPublication{
 		isolation: definition.IsolationMainOrigin,
 		response:  definition.ResponseSchemaAbsent,
 	},
-	WhiteboardEnvelopeType: {
-		version: "0.5", revision: 1,
-		contract:  "sha256:69ffc26511c4df989fb8018feff2b7f488d72a35e1357178290e49ce0e5f7d9c",
-		class:     definition.RendererReactComponent,
-		isolation: definition.IsolationMainOrigin,
-		response:  definition.ResponseSchemaAbsent,
-	},
 	WizardEnvelopeType: {
 		version: "0.13", revision: 1,
 		contract:  "sha256:8b21894e32f6f8a70afff3c12be89dd8ad7219d7ee6d575f46adabd0c71477d8",
@@ -380,7 +373,6 @@ var kindConstants = []struct{ kind, constant string }{
 	{SpreadsheetReviewEnvelopeType, "SpreadsheetReviewEnvelopeType"},
 	{SynthesisNotesEnvelopeType, "SynthesisNotesEnvelopeType"},
 	{TriageEnvelopeType, "TriageEnvelopeType"},
-	{WhiteboardEnvelopeType, "WhiteboardEnvelopeType"},
 	{WizardEnvelopeType, "WizardEnvelopeType"},
 }
 

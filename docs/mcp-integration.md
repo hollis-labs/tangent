@@ -8,8 +8,7 @@ for the full Claude Code e2e walkthrough see
 [`manual-tests/triage-e2e.md`](./manual-tests/triage-e2e.md), for the
 writing flow see
 [`manual-tests/writing-flow-e2e.md`](./manual-tests/writing-flow-e2e.md),
-and for the whiteboard flow see
-[`manual-tests/whiteboard-e2e.md`](./manual-tests/whiteboard-e2e.md); for the
+and for the
 spreadsheet-review flow see
 [`manual-tests/spreadsheet-review-e2e.md`](./manual-tests/spreadsheet-review-e2e.md);
 for the approval-queue flow see
@@ -332,7 +331,7 @@ claude mcp list
 
 Then in any Claude Code session, ask Claude to use one of the bundled
 tools: `tangent_triage`, `tangent_feedback`, `tangent_form_collect`,
-`tangent_design_iteration`, `tangent_whiteboard`,
+`tangent_design_iteration`,
 `tangent_spreadsheet_review`, `tangent_approval_queue`,
 `tangent_diff_review`, `tangent_file_picker`,
 `tangent_progress_panel`, `tangent_dashboard`, or the writing
@@ -914,10 +913,6 @@ workflow-neutral phase substrate:
   dedicated projection with `queue_id`, canonical `items`,
   `current_index`, normalized `decisions`, queue `notes`, `updated_at`,
   append-only `audit_trail`, and lightweight audit `export_refs`.
-- `whiteboard`: when a room has persisted board state, a dedicated
-  projection with `board_id`, `scene_snapshot`, referenced `assets`,
-  `export_refs`, `notes`, `updated_at`, and append-only
-  `revision_history` metadata.
 - `form_collect`: when a room has persisted generalized form state, a
   dedicated projection with `form_id`, canonical `schema`, normalized
   `answers`, room-backed `saved_drafts`, `templates`, lightweight
@@ -930,14 +925,6 @@ canonical table content and keeps `session_get` lightweight by
 projecting normalized query state, named saved views, selected rows,
 and export metadata directly off the room substrate rather than
 synthesizing them from browser-local state.
-
-For the shipped v0.4 whiteboard workflow, Tangent treats the full scene
-snapshot as canonical room state but expects image/file inputs to be
-referenced through lightweight asset metadata rather than inlined base64
-payloads. `session_get` intentionally stays lightweight for agents: it
-surfaces revision metadata, not every historical scene blob. The room UI
-can still reopen or continue from older revisions because full revision
-snapshots are retained on the room for the whiteboard browser itself.
 
 The bundled writing workflow's canonical phase sequence is:
 

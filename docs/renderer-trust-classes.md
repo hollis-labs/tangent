@@ -266,22 +266,11 @@ not deliver.
    to a module at runtime is a bundling change with no trust consequence, and it
    remains `CW-20260825-0074`'s open leak.
 
-8. **The policy admits one external origin: `https://cdn.tldraw.com`.**
-   `tangent.whiteboard` loads tldraw's fonts, icons, watermark, and embed icons
-   from that CDN. That dependency used to be the concrete reason whiteboard was
-   `portfolio-trusted` rather than `core-trusted`; ADR 0009 removed that
-   distinction, and the dependency is unchanged — it is still a package Tangent
-   hosts and did not author, reaching an origin Tangent does not control. What
-   contains it is this CSP entry rather than a trust class, which is the
-   reduction's point: it is admitted for **passive subresources only**
-   (`img-src`, `font-src`).
-   It is deliberately absent from `connect-src`, so tldraw's scripted fetch of a
-   non-English translation bundle is refused: that is a `network.fetch` the
-   whiteboard manifest has never declared, and refusing it is the model working
-   rather than a bug. The honest fixes are to self-host the assets or to declare
-   and grant the capability; neither is done here. **This one was found by
-   reading the shipped bundle, not by a test — nothing in CI would have caught
-   a renderer reaching a CDN.**
+8. **The policy admits no external origin.** `https://cdn.tldraw.com` was the one
+   exception, admitted for the whiteboard's passive subresources; the whiteboard
+   kind and the `tldraw` dependency were removed, and the entry went with them.
+   A renderer that needs a CDN must self-host its assets or declare and be
+   granted `network.fetch`.
 
 9. **`Capability.scope`'s allowed-origins list is still unconsumed.** ADR 0003
    §2.5 describes a publisher-authored origin allowlist; `connect-src` now

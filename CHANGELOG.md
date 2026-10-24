@@ -24,6 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   elevations at startup, and an elevation granted before stamping keeps its
   12 hours.
 
+### Removed
+
+- **The `tangent.whiteboard` kind and the `tldraw` dependency.** Chrispian's call,
+  made while the artifact kinds were built: Excalidraw covers diagrams and the
+  new artifact item covers agent-sent visuals. Gone with it are the
+  `tangent_whiteboard` MCP tool, the room's `whiteboard` projection in
+  `tangent_session_get`, the browser renderer and its draft storage, the
+  `tangent-whiteboard` skill, the manual test and mock-call script, and the
+  `https://cdn.tldraw.com` entry in the document CSP (`img-src` and `font-src`
+  now admit no external origin). Rooms that already hold whiteboard state keep
+  the stored rows but no longer project them.
+
 ### Fixed
 
 - **The operator's browser Inbox now lists items that authenticated producers send to the
