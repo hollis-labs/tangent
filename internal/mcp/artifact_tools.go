@@ -33,12 +33,14 @@ const artifactContentHelp = "The artifact's content. Send exactly one of content
 	"image, pdf, video)."
 
 // artifactSourceSchema is the shared shape of the `source` argument every
-// follow-up tool takes. It must name the same application_id and agent_id the
-// artifact was created with: an artifact is visible only to its creator.
+// follow-up tool takes. Access is partitioned by application_id (or by the
+// verified gateway identity when the call arrives through one); agent_id is
+// attribution, never authority (ADR 0004 §1). A follow-up must therefore name
+// the application_id the artifact was created under.
 func artifactSourceSchema() *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type:        "object",
-		Description: "Who is calling. Use the same application_id and agent_id you created the artifact with.",
+		Description: "Who is calling. Use the same application_id you created the artifact under: artifacts are private to that application (or to the verified gateway identity), and agent_id is only recorded as the author.",
 		Required:    []string{"agent_id"},
 		Properties: map[string]*jsonschema.Schema{
 			"agent_id":       {Type: "string", MinLength: jsonschema.Ptr(1), MaxLength: jsonschema.Ptr(256)},
