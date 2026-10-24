@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>shadcn mock: login card</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11"></script>
+<style type="text/tailwindcss">
+  @custom-variant dark (&:is(.dark *));
+  :root {
+    --background: oklch(1 0 0); --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0); --card-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0); --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0); --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0); --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0); --accent-foreground: oklch(0.205 0 0);
+    --border: oklch(0.922 0 0); --input: oklch(0.922 0 0); --ring: oklch(0.708 0 0);
+    --radius: 0.625rem;
+  }
+  @theme inline {
+    --color-background: var(--background); --color-foreground: var(--foreground);
+    --color-card: var(--card); --color-card-foreground: var(--card-foreground);
+    --color-primary: var(--primary); --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary); --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent); --color-accent-foreground: var(--accent-foreground);
+    --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
+    --radius-md: calc(var(--radius) - 2px); --radius-xl: calc(var(--radius) + 4px);
+  }
+  @layer base { * { border-color: var(--border); outline-color: color-mix(in oklab, var(--ring) 50%, transparent); } }
+  body { background: var(--background); color: var(--foreground); font-family: ui-sans-serif, system-ui, sans-serif; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "react": "https://esm.sh/react@19.1.0",
+  "react-dom/client": "https://esm.sh/react-dom@19.1.0/client",
+  "class-variance-authority": "https://esm.sh/class-variance-authority@0.7.1",
+  "clsx": "https://esm.sh/clsx@2.1.1",
+  "tailwind-merge": "https://esm.sh/tailwind-merge@3.3.1"
+} }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.4/babel.min.js"></script>
+</head>
+<body>
+<div id="root" class="flex min-h-screen items-center justify-center p-6"></div>
+<script type="text/babel" data-type="module" data-presets="react">
+import * as React from "react";
+import { createRoot } from "react-dom/client";
+import { cva } from "class-variance-authority";
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+// --- @/lib/utils (shadcn) ---
+const cn = (...inputs) => twMerge(clsx(inputs));
+
+// --- ui/button (shadcn registry, new-york-v4; types and Slot removed) ---
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+  { variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        outline: "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: { default: "h-9 px-4 py-2", sm: "h-8 px-3" },
+    }, defaultVariants: { variant: "default", size: "default" } });
+function Button({ className, variant, size, ...props }) {
+  return <button className={cn(buttonVariants({ variant, size, className }))} {...props} />;
+}
+
+// --- ui/card (shadcn registry, new-york-v4) ---
+const Card = ({ className, ...p }) => <div className={cn("bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm", className)} {...p} />;
+const CardHeader = ({ className, ...p }) => <div className={cn("grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6", className)} {...p} />;
+const CardTitle = ({ className, ...p }) => <div className={cn("leading-none font-semibold", className)} {...p} />;
+const CardDescription = ({ className, ...p }) => <div className={cn("text-muted-foreground text-sm", className)} {...p} />;
+const CardContent = ({ className, ...p }) => <div className={cn("px-6", className)} {...p} />;
+const CardFooter = ({ className, ...p }) => <div className={cn("flex items-center px-6", className)} {...p} />;
+
+function App() {
+  return (
+    <Card className="w-full max-w-sm">
+      <CardHeader>
+        <CardTitle>Login to your account</CardTitle>
+        <CardDescription>Enter your email below to login</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <input id="email" type="email" placeholder="m@example.com"
+          className="border-input h-9 w-full rounded-md border bg-transparent px-3 text-sm shadow-xs" />
+      </CardContent>
+      <CardFooter className="flex-col gap-2">
+        <Button className="w-full" onClick={(e) => { e.currentTarget.textContent = "Clicked"; }}>Login</Button>
+        <Button variant="outline" className="w-full">Login with Google</Button>
+      </CardFooter>
+    </Card>
+  );
+}
+createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

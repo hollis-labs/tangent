@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   elevations at startup, and an elevation granted before stamping keeps its
   12 hours.
 
+- `tangent-artifacts` agent skill and a shadcn/ui mock template (CW-20261024-0072):
+  which artifact type to send, and how an agent builds a React mock from shadcn
+  registry source (found through the gateway's shadcn tools) as one HTML file that
+  runs under the artifact sandbox. The create tool's description points to it.
+
 ### Removed
 
 - **The `tangent.whiteboard` kind and the `tldraw` dependency.** Chrispian's call,
