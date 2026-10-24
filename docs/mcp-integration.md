@@ -448,6 +448,12 @@ or mock, a screenshot, a diagram, a PDF, a chart — with `tangent_artifact_crea
 It becomes a durable Artifact item in the Inbox and waits there until the
 operator has time to review it ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
 
+Which type to send, and how to build a shadcn/ui React mock that runs in the
+artifact sandbox (registry source from the shadcn MCP tools, inlined into one
+HTML file), is in the agent skill
+[`.agents/skills/tangent-artifacts/SKILL.md`](../.agents/skills/tangent-artifacts/SKILL.md),
+with a working template beside it.
+
 ```json
 {
   "idempotency_key": "landing-v1",

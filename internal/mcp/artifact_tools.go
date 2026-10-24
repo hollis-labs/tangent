@@ -118,7 +118,9 @@ func (s *Server) registerArtifactTools() error {
 		Description: "Show the operator an artifact — an HTML wireframe or mock, a screenshot or image, a diagram, a PDF, a chart — " +
 			"as a durable item in their inbox, and return its handle (item_id, inbox_path, artifact_revision). It waits there until " +
 			"they review it; they can reply, request changes, or sign off if you set requires_signoff. Repeating an idempotency_key " +
-			"returns the original item. Change it later with tangent_artifact_update.",
+			"returns the original item. Change it later with tangent_artifact_update. An html mock is one self-contained file that runs " +
+			"sandboxed with https CDN scripts and no network calls; for a shadcn/ui mock see the tangent-artifacts skill " +
+			"(.agents/skills/tangent-artifacts/SKILL.md).",
 		InputSchema: createSchema,
 	}, s.handleArtifactCreate)
 	addTool(s, gmcpserver.Tool{
