@@ -412,6 +412,13 @@ export function ArtifactBody(props: Props) {
         {item.agent_label || item.agent_id} · {item.type} · {item.read_at ? "Read" : "Unread"}
         {item.requires_signoff ? " · Sign-off requested" : ""}
       </p>
+      {/* The name above is whatever the agent declared. This is who the host bound the sender to. */}
+      <p className="text-xs text-fg-muted" data-testid="artifact-provenance">
+        Sent via {props.entry.interaction.caller_scope}
+        {props.entry.interaction.caller_principal_ref
+          ? ` · ${props.entry.interaction.caller_principal_ref}`
+          : ""}
+      </p>
       {item.summary ? (
         <div className="mt-4">
           <Markdown content={item.summary} />

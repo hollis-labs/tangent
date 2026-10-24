@@ -478,12 +478,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	interactionService, err := interaction.NewService(
 		interactionStore,
 		definitionCatalog,
-		interaction.WithSurfaceAccessPolicy(compoundSurfaceAccessPolicy{
-			hitl.SurfaceAccessPolicy{},
-			turns.SurfaceAccessPolicy{},
-			docs.SurfaceAccessPolicy{},
-			artifacts.SurfaceAccessPolicy{},
-		}),
+		interaction.WithSurfaceAccessPolicy(reservedSurfacePolicy()),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers
 		// never hold that authority.
@@ -886,6 +881,22 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 		})
 	}
 	return inventory
+}
+
+// reservedSurfacePolicy is every host-reserved operator surface, in one place.
+//
+// It does two jobs. It refuses generic MCP callers write access to these surfaces, and, because the
+// browser Inbox treats "reserved" as "an item here was sent to the operator", it also decides which
+// items from other authorities (the authenticated gateway, other producers) the operator's browser
+// lists (interaction.Service.BrowserInbox). A new reserved surface must be added here or its items
+// stay hidden from the operator; TestEveryReservedOperatorSurfaceIsCovered keeps the list honest.
+func reservedSurfacePolicy() compoundSurfaceAccessPolicy {
+	return compoundSurfaceAccessPolicy{
+		hitl.SurfaceAccessPolicy{},
+		turns.SurfaceAccessPolicy{},
+		docs.SurfaceAccessPolicy{},
+		artifacts.SurfaceAccessPolicy{},
+	}
 }
 
 type compoundSurfaceAccessPolicy []interaction.SurfaceAccessPolicy

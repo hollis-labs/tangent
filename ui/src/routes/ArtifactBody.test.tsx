@@ -266,3 +266,9 @@ it("shows the server-drawn picture for a D2 revision that has one", async () => 
   const image = await screen.findByTestId("artifact-rendered");
   expect(image).toHaveAttribute("src", "/api/artifacts/items/art-1/revisions/1/rendered");
 });
+
+it("shows who the host bound the sender to, apart from the name the agent declared", async () => {
+  mount();
+  const line = await screen.findByTestId("artifact-provenance");
+  expect(line).toHaveTextContent("Sent via test");
+});
