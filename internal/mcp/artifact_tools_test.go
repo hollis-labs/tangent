@@ -24,7 +24,7 @@ import (
 // artifactRig is a Tangent MCP server with the artifact tools wired to a real
 // artifacts service on a throwaway database, plus an in-memory client. The
 // tools are exercised the way an agent reaches them: arguments in, tool result
-// out. The service's own behaviour is covered in internal/artifacts; these tests
+// out. The service's own behavior is covered in internal/artifacts; these tests
 // cover what only the tool layer owns: registration, schemas, argument handling
 // and the error vocabulary.
 type artifactRig struct {
@@ -311,7 +311,7 @@ func TestArtifactCreate_RefusesBadInput(t *testing.T) {
 		"unknown type":          base(map[string]any{"type": "tldraw"}),
 		"no content":            base(map[string]any{"content": nil}),
 		"both content kinds":    base(map[string]any{"content_base64": "AAAA"}),
-		"unknown argument":      base(map[string]any{"colour": "red"}),
+		"unknown argument":      base(map[string]any{"color": "red"}),
 		"missing source":        base(map[string]any{"source": nil}),
 		"flow with a bad edge":  base(map[string]any{"type": "flow", "content": `{"nodes":[{"id":"a"}],"edges":[{"source":"a","target":"zzz"}]}`}),
 		"vega-lite loading URL": base(map[string]any{"type": "vega-lite", "content": `{"data":{"url":"https://example.test/x.json"},"mark":"bar"}`}),
