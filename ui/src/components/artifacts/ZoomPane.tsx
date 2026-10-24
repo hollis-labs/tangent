@@ -4,7 +4,11 @@ import { type ReactNode, useState } from "react";
 const STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 /** A scrollable pane with zoom buttons, for viewers that produce a static picture (SVG). */
-export function ZoomPane({ children }: { children: ReactNode }) {
+/**
+ * `fill` makes the content as wide as the pane, for pictures that carry only a viewBox (D2's SVG has
+ * no intrinsic width, so a shrink-to-fit pane would collapse them to nothing).
+ */
+export function ZoomPane({ children, fill = false }: { children: ReactNode; fill?: boolean }) {
   const [index, setIndex] = useState(3);
   const scale = STEPS[index] ?? 1;
   const button =
@@ -51,7 +55,7 @@ export function ZoomPane({ children }: { children: ReactNode }) {
           style={{
             transform: `scale(${scale})`,
             transformOrigin: "top left",
-            width: "fit-content",
+            width: fill ? "100%" : "fit-content",
           }}
         >
           {children}

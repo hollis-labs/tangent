@@ -22,6 +22,10 @@ type fakeArtifacts struct {
 	err  error
 }
 
+func (f fakeArtifacts) OpenRendered(ctx context.Context, id string, revision int) (artifacts.Revision, *os.File, error) {
+	return f.OpenRevision(ctx, id, revision)
+}
+
 func (f fakeArtifacts) OpenRevision(_ context.Context, _ string, _ int) (artifacts.Revision, *os.File, error) {
 	if f.err != nil {
 		return artifacts.Revision{}, nil, f.err
@@ -171,5 +175,25 @@ func TestWriteArtifactsErrorMapping(t *testing.T) {
 		if rec.Code != tc.code {
 			t.Errorf("%v -> %d, want %d", tc.err, rec.Code, tc.code)
 		}
+	}
+}
+
+func TestArtifactRenderedIsServedAsAnImageUnderThePassivePolicy(t *testing.T) {
+	path := writeTemp(t, "rendered.svg", "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>")
+	handler := newArtifactsHTTPHandler(fakeArtifacts{
+		rev:  artifacts.Revision{Revision: 1, Filename: "rendered.svg", MediaType: "image/svg+xml", CreatedAt: time.Now()},
+		path: path,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.SetPathValue("itemID", "abc")
+	req.SetPathValue("revision", "1")
+	rec := httptest.NewRecorder()
+	handler.rendered(rec, req)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/svg+xml" {
+		t.Fatalf("status/type = %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.HasPrefix(csp, "sandbox;") || strings.Contains(csp, "script-src") {
+		t.Fatalf("rendered CSP = %q", csp)
 	}
 }

@@ -153,3 +153,68 @@ func TestBrowserInboxItemMatchesTheListedEntryAndHonorsVisibility(t *testing.T) 
 		t.Fatalf("a hidden item must be not found, got %v", err)
 	}
 }
+
+// reservedInboxPolicy reserves one surface for host services, like the docs and
+// artifact inbox surfaces: writing there needs a capability only the host holds.
+type reservedInboxPolicy struct{ reserved string }
+
+func (p reservedInboxPolicy) Authorize(surfaceID, capability string) bool {
+	return surfaceID != p.reserved || capability == "host-capability"
+}
+
+func (reservedInboxPolicy) AuthorizeInboxRead(string) bool { return true }
+
+// A producer from another authority (the authenticated gateway) enqueues onto the operator's
+// reserved inbox surfaces through the host's own tools. The operator's browser must list that, or
+// everything an agent sends through the gateway is invisible. Generic surfaces stay private.
+func TestBrowserInboxListsOtherAuthoritiesOnReservedSurfacesOnly(t *testing.T) {
+	ctx := context.Background()
+	store, _ := openTestStore(t)
+	service, err := NewService(store, testDefinitionCatalog{},
+		WithSurfaceAccessPolicy(reservedInboxPolicy{reserved: "reserved-inbox"}),
+		WithPrivilegedActorPolicy(testPrivilegedActorPolicy{}),
+		WithDeliveryWorkerPolicy(testDeliveryWorkerPolicy{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reserved := createTestSurface(t, store, "reserved-inbox")
+	generic := createTestSurface(t, store, "generic-surface")
+	mk := func(surface SurfaceRecord, scope string) string {
+		// A distinct idempotency key per surface: the same key from one scope is a replay.
+		created, createErr := store.CreateInteraction(ctx, testInteractionParams(surface.ID, scope, surface.ID+"|"+scope, "request"))
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		return created.Interaction.ID
+	}
+	gatewayReserved := mk(reserved, "gateway:tether-gateway")
+	gatewayGeneric := mk(generic, "gateway:tether-gateway")
+	localGeneric := mk(generic, "standalone-local:a")
+
+	entries, err := service.BrowserInbox(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, entry := range entries {
+		listed[entry.Interaction.ID] = true
+	}
+	if !listed[gatewayReserved] {
+		t.Error("an item a gateway producer sent to a reserved operator surface is not listed")
+	}
+	if listed[gatewayGeneric] {
+		t.Error("a gateway producer's item on a generic surface leaked into the operator's browser")
+	}
+	if !listed[localGeneric] {
+		t.Error("a local item went missing")
+	}
+
+	// The keyed read used when one item is opened must agree with the list.
+	if _, err = service.BrowserInboxItem(ctx, gatewayReserved); err != nil {
+		t.Errorf("opening the reserved gateway item: %v", err)
+	}
+	if _, err = service.BrowserInboxItem(ctx, gatewayGeneric); !errors.Is(err, ErrNotFound) {
+		t.Errorf("opening a private gateway item = %v, want ErrNotFound", err)
+	}
+}

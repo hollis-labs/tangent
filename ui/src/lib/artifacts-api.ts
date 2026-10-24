@@ -37,6 +37,8 @@ export interface ArtifactRevision {
   size_bytes: number;
   sha256: string;
   note?: string;
+  /** A server-drawn picture of this revision exists (see artifactRenderedURL). */
+  rendered?: boolean;
   created_at: string;
 }
 
@@ -132,6 +134,11 @@ const itemURL = (itemID: string) => `/api/artifacts/items/${encodeURIComponent(i
 /** The URL a revision's bytes are served from. `download` asks for an attachment. */
 export function artifactContentURL(itemID: string, revision: number, download = false): string {
   return `${itemURL(itemID)}/revisions/${revision}/content${download ? "?download=1" : ""}`;
+}
+
+/** The URL of the picture the server drew from a revision, for types it draws (D2). */
+export function artifactRenderedURL(itemID: string, revision: number): string {
+  return `${itemURL(itemID)}/revisions/${revision}/rendered`;
 }
 
 /** The absolute link that opens this artifact in the Inbox. */

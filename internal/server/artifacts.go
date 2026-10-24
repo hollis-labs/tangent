@@ -36,6 +36,7 @@ type ArtifactsService interface {
 	Archive(context.Context, artifacts.ArchiveInput) (artifacts.View, error)
 	Delete(context.Context, artifacts.ArchiveInput) (artifacts.View, error)
 	OpenRevision(context.Context, string, int) (artifacts.Revision, *os.File, error)
+	OpenRendered(context.Context, string, int) (artifacts.Revision, *os.File, error)
 }
 
 type artifactsHTTPHandler struct {
@@ -225,6 +226,30 @@ func (h *artifactsHTTPHandler) content(w http.ResponseWriter, r *http.Request) {
 		modified = info.ModTime()
 	}
 	http.ServeContent(w, r, rev.Filename, modified, file)
+}
+
+// rendered serves the picture the server drew from a revision (D2 today). It is an SVG that is only
+// ever shown as an image, and it is held to the same passive policy as any non-HTML file.
+func (h *artifactsHTTPHandler) rendered(w http.ResponseWriter, r *http.Request) {
+	revision, err := strconv.Atoi(r.PathValue("revision"))
+	if err != nil || revision < 1 {
+		writeArtifactsError(w, fmt.Errorf("%w: revision must be a positive integer", artifacts.ErrInvalidRequest))
+		return
+	}
+	rev, file, err := h.service.OpenRendered(r.Context(), r.PathValue("itemID"), revision)
+	if err != nil {
+		writeArtifactsError(w, err)
+		return
+	}
+	defer func() { _ = file.Close() }()
+	header := w.Header()
+	header.Set("Content-Security-Policy", artifactPassivePolicy)
+	header.Set("X-Frame-Options", "SAMEORIGIN")
+	header.Set("X-Content-Type-Options", "nosniff")
+	header.Set("Cache-Control", "private, no-store")
+	header.Set("Content-Type", "image/svg+xml")
+	header.Set("Content-Disposition", "inline")
+	http.ServeContent(w, r, rev.Filename, rev.CreatedAt, file)
 }
 
 func (h *artifactsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {

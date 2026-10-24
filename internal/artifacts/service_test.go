@@ -19,7 +19,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 )
 
-func newTestService(t *testing.T) (*Service, *sql.DB, string) {
+func newTestService(t *testing.T, opts ...Option) (*Service, *sql.DB, string) {
 	t.Helper()
 	root := t.TempDir()
 	database, err := tangentdb.Open(filepath.Join(root, "artifacts-test.db"))
@@ -46,7 +46,7 @@ func newTestService(t *testing.T) (*Service, *sql.DB, string) {
 		t.Fatalf("interaction.NewService: %v", err)
 	}
 	dir := filepath.Join(root, "artifacts")
-	svc, err := NewService(interactions, NewStore(database, dir), docs.NewReadStore(database))
+	svc, err := NewService(interactions, NewStore(database, dir), docs.NewReadStore(database), opts...)
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}

@@ -7,4 +7,6 @@ export interface ViewerProps {
   width: number;
   /** Bumped by the Reload button to remount the frame. */
   reloadKey: number;
+  /** The server drew a picture of this revision (D2 today), served from the rendered URL. */
+  rendered: boolean;
 }

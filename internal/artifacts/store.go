@@ -91,6 +91,12 @@ func (s *Store) addRevision(ctx context.Context, interactionID string, file File
 	if err = writeFileAtomic(abs, file.Data); err != nil {
 		return Revision{}, false, fmt.Errorf("artifacts store: write file: %w", err)
 	}
+	if len(file.Rendered) > 0 {
+		if err = writeFileAtomic(filepath.Join(filepath.Dir(abs), renderedFilename), file.Rendered); err != nil {
+			_ = os.Remove(abs)
+			return Revision{}, false, fmt.Errorf("artifacts store: write rendered picture: %w", err)
+		}
+	}
 	sum := sha256.Sum256(file.Data)
 	rev := Revision{
 		Revision:  next,
@@ -100,6 +106,7 @@ func (s *Store) addRevision(ctx context.Context, interactionID string, file File
 		SHA256:    hex.EncodeToString(sum[:]),
 		Note:      file.Note,
 		CreatedAt: s.now(),
+		Rendered:  len(file.Rendered) > 0,
 		relPath:   rel,
 	}
 	if _, err = tx.ExecContext(ctx,
@@ -164,9 +171,39 @@ func (s *Store) RevisionsBulk(ctx context.Context, ids []string) (map[string][]R
 		if err = rows.Scan(&id, &r.Revision, &r.Filename, &r.MediaType, &r.SizeBytes, &r.SHA256, &r.relPath, &r.Note, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("artifacts store: scan revision: %w", err)
 		}
+		r.Rendered = s.hasRendered(r.relPath)
 		out[id] = append(out[id], r)
 	}
 	return out, rows.Err()
+}
+
+// hasRendered reports whether a revision has a server-drawn picture beside its source.
+func (s *Store) hasRendered(rel string) bool {
+	clean := filepath.Clean(rel)
+	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(s.dir, filepath.Dir(clean), renderedFilename)) //nolint:gosec // clean is checked above
+	return err == nil && info.Mode().IsRegular()
+}
+
+// OpenRendered opens a revision's server-drawn picture. The caller closes it.
+func (s *Store) OpenRendered(ctx context.Context, id string, revision int) (Revision, *os.File, error) {
+	rev, source, err := s.OpenRevision(ctx, id, revision)
+	if err != nil {
+		return Revision{}, nil, err
+	}
+	_ = source.Close()
+	if !s.hasRendered(rev.relPath) {
+		return Revision{}, nil, ErrNotFound
+	}
+	file, err := os.Open(filepath.Join(s.dir, filepath.Dir(filepath.Clean(rev.relPath)), renderedFilename)) //nolint:gosec // path derived from a validated stored path
+	if err != nil {
+		return Revision{}, nil, ErrNotFound
+	}
+	rev.MediaType = "image/svg+xml"
+	rev.Filename = renderedFilename
+	return rev, file, nil
 }
 
 // Revisions returns one artifact's revisions, oldest first.

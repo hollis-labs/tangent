@@ -1,8 +1,9 @@
 import { lazy, type ReactNode, Suspense } from "react";
 import { Markdown } from "@/components/markdown";
-import { type ArtifactType, artifactContentURL } from "@/lib/artifacts-api";
+import { type ArtifactType, artifactContentURL, artifactRenderedURL } from "@/lib/artifacts-api";
 import { useArtifactText } from "./useArtifactText";
 import type { ViewerProps } from "./viewer-types";
+import { ZoomPane } from "./ZoomPane";
 
 export type { ViewerProps } from "./viewer-types";
 
@@ -106,6 +107,20 @@ function SourceView({ itemID, revision }: ViewerProps) {
   );
 }
 
+/** D2, drawn by the server. An SVG shown as an image cannot run script or load anything. */
+function RenderedView({ itemID, revision, title }: ViewerProps) {
+  return (
+    <ZoomPane fill>
+      <img
+        src={artifactRenderedURL(itemID, revision)}
+        alt={title}
+        className="h-auto w-full"
+        data-testid="artifact-rendered"
+      />
+    </ZoomPane>
+  );
+}
+
 function PDFView({ itemID, revision, title }: ViewerProps) {
   return (
     <iframe
@@ -140,6 +155,7 @@ const VIEWERS: Partial<Record<ArtifactType, (props: ViewerProps) => ReactNode>> 
   mermaid: (p) => <MermaidView {...p} />,
   "vega-lite": (p) => <VegaView {...p} />,
   figma: (p) => <FigmaView {...p} />,
+  d2: (p) => (p.rendered ? <RenderedView {...p} /> : <SourceView {...p} />),
   pdf: (p) => <PDFView {...p} />,
   video: (p) => <VideoView {...p} />,
 };

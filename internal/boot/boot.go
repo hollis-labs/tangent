@@ -78,6 +78,10 @@ type Config struct {
 	// means an `artifacts` directory beside the database.
 	ArtifactDir string
 
+	// D2Bin is the d2 command used to draw D2 artifacts on the server. Empty means look for `d2` on
+	// PATH; if there is none, D2 artifacts are stored and shown as source.
+	D2Bin string
+
 	// OperatorToken is the value of TANGENT_OPERATOR_TOKEN
 	// (participant.EnvOperatorToken), which elevates a browser session to
 	// operator assurance so it may resolve approvals (CW-20261016-0174).
@@ -524,7 +528,14 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	if err != nil {
 		return release(err)
 	}
-	artifactsService, err := artifacts.NewService(interactionService, artifacts.NewStore(sqlDB, artifactDir), docs.NewReadStore(sqlDB))
+	var artifactOptions []artifacts.Option
+	if d2 := artifacts.NewD2Renderer(cfg.D2Bin); d2 != nil {
+		artifactOptions = append(artifactOptions, artifacts.WithRenderer("d2", d2))
+		logger.Info("d2 renderer enabled", "bin", d2.Bin())
+	} else {
+		logger.Info("d2 renderer not available; D2 artifacts will show their source", "configured", cfg.D2Bin)
+	}
+	artifactsService, err := artifacts.NewService(interactionService, artifacts.NewStore(sqlDB, artifactDir), docs.NewReadStore(sqlDB), artifactOptions...)
 	if err != nil {
 		return release(fmt.Errorf("build artifacts service: %w", err))
 	}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,6 +48,9 @@ type FileInput struct {
 	MediaType string
 	Data      []byte
 	Note      string
+	// Rendered is a picture of Data drawn on the server, stored beside it. Empty when the type has
+	// no renderer or none is installed.
+	Rendered []byte
 }
 
 // typeSpec says how one artifact type is carried and checked. The type set is
@@ -274,7 +278,9 @@ type Revision struct {
 	SHA256    string    `json:"sha256"`
 	Note      string    `json:"note,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
-	relPath   string
+	// Rendered says a server-drawn picture of this revision exists (see Renderer).
+	Rendered bool `json:"rendered,omitempty"`
+	relPath  string
 }
 
 // Message is one entry in an artifact's operator/agent thread.
@@ -292,6 +298,9 @@ const (
 	maxFlowNodes = 500
 	maxFlowEdges = 2000
 )
+
+// d2Import matches D2 import syntax (`...@file`, `key: @file`), which would read files from the host.
+var d2Import = regexp.MustCompile(`(^|[\s:{])(\.\.\.)?@[^\s]`)
 
 var flowKinds = map[string]bool{"trigger": true, "action": true, "condition": true, "output": true, "note": true}
 
@@ -319,6 +328,9 @@ func validateStructured(artifactType string, data []byte) error {
 	case "mermaid", "d2":
 		if strings.TrimSpace(string(data)) == "" {
 			return fmt.Errorf("%w: %s content is empty", ErrInvalidRequest, artifactType)
+		}
+		if artifactType == "d2" && d2Import.Match(data) {
+			return fmt.Errorf("%w: d2 imports (@file) are not allowed; put the whole diagram in the content", ErrInvalidRequest)
 		}
 	}
 	return nil

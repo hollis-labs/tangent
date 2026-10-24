@@ -246,3 +246,23 @@ it("shows the source for a type that has no rendered preview yet", async () => {
   ).toBeInTheDocument();
   expect(await screen.findByText("a -> b")).toBeInTheDocument();
 });
+
+it("shows the server-drawn picture for a D2 revision that has one", async () => {
+  current = artifact({
+    type: "d2",
+    revisions: [
+      {
+        revision: 1,
+        filename: "a.d2",
+        media_type: "text/plain",
+        size_bytes: 6,
+        sha256: "a",
+        rendered: true,
+        created_at: "2026-10-24T10:00:00Z",
+      },
+    ],
+  });
+  mount();
+  const image = await screen.findByTestId("artifact-rendered");
+  expect(image).toHaveAttribute("src", "/api/artifacts/items/art-1/revisions/1/rendered");
+});

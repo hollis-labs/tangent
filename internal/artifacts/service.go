@@ -207,7 +207,20 @@ const (
 	awaitPoll    = 500 * time.Millisecond
 )
 
+// Option configures a Service.
+type Option func(*Service)
+
+// WithRenderer draws the given artifact type on the server when it is created or revised.
+func WithRenderer(artifactType string, renderer Renderer) Option {
+	return func(s *Service) {
+		if renderer != nil {
+			s.renderers[artifactType] = renderer
+		}
+	}
+}
+
 type Service struct {
+	renderers     map[string]Renderer
 	interactions  *interaction.Service
 	store         *Store
 	reads         *docs.ReadStore
@@ -215,7 +228,7 @@ type Service struct {
 	now           func() time.Time
 }
 
-func NewService(interactions *interaction.Service, store *Store, reads *docs.ReadStore) (*Service, error) {
+func NewService(interactions *interaction.Service, store *Store, reads *docs.ReadStore, opts ...Option) (*Service, error) {
 	if interactions == nil || store == nil || reads == nil {
 		return nil, fmt.Errorf("%w: interaction service, store and read store are required", ErrInvalidRequest)
 	}
@@ -232,13 +245,33 @@ func NewService(interactions *interaction.Service, store *Store, reads *docs.Rea
 	if err != nil {
 		return nil, fmt.Errorf("%w: compile embedded artifact schema: %w", ErrInvalidRequest, err)
 	}
-	return &Service{
+	svc := &Service{
+		renderers:     map[string]Renderer{},
 		interactions:  interactions,
 		store:         store,
 		reads:         reads,
 		requestSchema: requestSchema,
 		now:           func() time.Time { return time.Now().UTC() },
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(svc)
+	}
+	return svc, nil
+}
+
+// draw renders file's source for types that have a renderer, so a source that cannot be drawn is
+// refused here, with the renderer's reason, before anything is stored.
+func (s *Service) draw(ctx context.Context, artifactType string, file *FileInput) error {
+	renderer := s.renderers[artifactType]
+	if renderer == nil {
+		return nil
+	}
+	picture, _, err := renderer.Render(ctx, file.Data)
+	if err != nil {
+		return err
+	}
+	file.Rendered = picture
+	return nil
 }
 
 // contentFieldNames are removed from the wire object before it is validated
@@ -295,6 +328,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Handle, error)
 	var req Request
 	if err = json.Unmarshal(identity, &req); err != nil {
 		return Handle{}, fmt.Errorf("%w: unmarshal request: %w", ErrInvalidRequest, err)
+	}
+	if err = s.draw(ctx, req.Type, &file); err != nil {
+		return Handle{}, err
 	}
 	if err = s.ensureDefaultSurface(ctx); err != nil {
 		return Handle{}, err
@@ -428,6 +464,9 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (Handle, error)
 	c := input.Content
 	file, err := BuildFile(req.Type, c.Content, c.ContentBase64, c.Filename, c.MediaType, c.Note)
 	if err != nil {
+		return Handle{}, err
+	}
+	if err = s.draw(ctx, req.Type, &file); err != nil {
 		return Handle{}, err
 	}
 	if _, err = s.store.AddRevision(ctx, input.ItemID, file); err != nil {
@@ -828,6 +867,14 @@ func (s *Service) Delete(ctx context.Context, input ArchiveInput) (View, error) 
 		return View{}, err
 	}
 	return current, nil
+}
+
+// OpenRendered returns the server-drawn picture of one revision, when it has one.
+func (s *Service) OpenRendered(ctx context.Context, itemID string, revision int) (Revision, *os.File, error) {
+	if _, err := s.inspectAs(ctx, itemID, OperatorParticipant.Scope); err != nil {
+		return Revision{}, nil, err
+	}
+	return s.store.OpenRendered(ctx, itemID, revision)
 }
 
 // OpenRevision returns one revision's metadata and file for the content route.

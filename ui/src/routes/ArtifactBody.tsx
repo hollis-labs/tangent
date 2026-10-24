@@ -302,6 +302,7 @@ export function ArtifactBody(props: Props) {
           title={item.title}
           width={width}
           reloadKey={reloadKey}
+          rendered={current?.rendered ?? false}
         />
       </div>
     </div>

@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   elevations at startup, and an elevation granted before stamping keeps its
   12 hours.
 
+### Fixed
+
+- **The operator's browser Inbox now lists items that authenticated producers send to the
+  reserved operator surfaces** (docs, artifacts, turns, approvals). Items that came through
+  the gateway carry the producer's own authority and were hidden from the browser, so
+  opening one answered "This interaction is unavailable". Producers' own surfaces and
+  generic surfaces stay private to the producer.
+
 ### Security
 
 - Go toolchain 1.26.10 (`go` directive and CI pin) for GO-2026-6809 (crypto/x509); no behavior change.
@@ -69,8 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `TANGENT_ARTIFACT_DIR` (default: `artifacts` beside the database); revisions
   and messages are in migration `0024`. HTML runs in a sandboxed frame with no
   network access of its own. `excalidraw`, `flow` (React Flow, auto-laid-out),
-  `mermaid` and `vega-lite` artifacts render in the Inbox; `d2`, `pdf`, `video`
-  and `figma` are accepted and show their source until their viewers land.
+  `mermaid` and `vega-lite` artifacts render in the Inbox, and `d2` is drawn on the
+  server with the `d2` command (`TANGENT_D2_BIN`); `pdf`, `video` and `figma` have viewers too.
 
 ## [v0.20.0] - 2026-10-16
 

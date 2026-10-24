@@ -394,6 +394,7 @@ func New(cfg Config) (*Server, error) {
 		register("GET /api/artifacts/events", authz.View, artifactsHandler.events)
 		register("GET /api/artifacts/items/{itemID}", authz.View, artifactsHandler.item)
 		register("GET /api/artifacts/items/{itemID}/revisions/{revision}/content", authz.View, artifactsHandler.content)
+		register("GET /api/artifacts/items/{itemID}/revisions/{revision}/rendered", authz.View, artifactsHandler.rendered)
 		register("POST /api/artifacts/items/{itemID}/read", authz.Draft, artifactsHandler.markRead)
 		register("POST /api/artifacts/items/{itemID}/messages", authz.Resolve, artifactsHandler.message)
 		register("POST /api/artifacts/items/{itemID}/signoff", authz.Resolve, artifactsHandler.signoff)

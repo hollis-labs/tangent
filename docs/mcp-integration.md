@@ -481,7 +481,9 @@ What each type expects in `content`:
   must join two of them.
 - `mermaid`: Mermaid text.
 - `vega-lite`: a Vega-Lite spec with its data inline (`data.values`). A spec that names a `url` is refused.
-- `d2`: D2 text. It is stored and shown as source for now; a rendered preview is not available yet.
+- `d2`: D2 text. The server draws it with the `d2` command (`TANGENT_D2_BIN`, default `d2` on PATH), so a diagram that
+  does not compile is refused with d2's own message. Imports (`...@file`) are refused. Without the binary, D2 is stored
+  and shown as source.
 - `pdf`, `video`, `figma`: accepted today and shown as source or a download until their viewers land.
 
 The call returns `item_id`, `inbox_path` (open it at `/inbox/items/<item_id>`)
