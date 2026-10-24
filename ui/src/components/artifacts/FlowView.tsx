@@ -17,12 +17,14 @@ import { useArtifactText } from "./useArtifactText";
 import { useThemeMode } from "./useThemeMode";
 import type { ViewerProps } from "./viewer-types";
 
+// Theme tokens, so a node kind follows light and dark; the kind is also printed
+// on the node, so colour is never the only signal.
 const KIND_COLOR: Record<FlowKind, string> = {
-  trigger: "#16a34a",
-  action: "#2563eb",
-  condition: "#d97706",
-  output: "#9333ea",
-  note: "#6b7280",
+  trigger: "var(--hl-success)",
+  action: "var(--hl-info)",
+  condition: "var(--hl-warning)",
+  output: "var(--hl-fg-secondary)",
+  note: "var(--hl-fg-faint)",
 };
 
 type StepData = { label: string; description?: string; kind: FlowKind; direction: "LR" | "TB" };
