@@ -442,6 +442,56 @@ metadata becomes previewable only through an explicitly registered
 authority/capability adapter; a path, `file:` URI, or agent's ambient access is
 never retrieval authority.
 
+## Artifacts in the Inbox
+
+An agent shows the operator something that chat cannot carry — an HTML wireframe
+or mock, a screenshot, a diagram, a PDF, a chart — with `tangent_artifact_create`.
+It becomes a durable Artifact item in the Inbox and waits there until the
+operator has time to review it ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
+
+```json
+{
+  "idempotency_key": "landing-v1",
+  "source": {"agent_id": "designer", "application_id": "my-app"},
+  "title": "Landing page, first pass",
+  "type": "html",
+  "content": "<!doctype html><h1>Hello</h1>",
+  "requires_signoff": true
+}
+```
+
+`type` is one of `html`, `image`, `markdown`, `excalidraw`, `flow`, `mermaid`,
+`d2`, `vega-lite`, `tldraw`, `pdf`, `video` or `figma`. Send text types in
+`content` and binary types (`image`, `pdf`, `video`) as base64 in
+`content_base64`; `excalidraw`, `flow`, `vega-lite` and `tldraw` content is JSON,
+and `figma` content is a `figma.com` URL. Text is limited to 5 MiB and binary to
+25 MiB. The content is checked against the bytes, not the declared media type.
+
+The call returns `item_id`, `inbox_path` (open it at `/inbox/items/<item_id>`)
+and `artifact_revision`. Repeating an `idempotency_key` returns the original item
+and adds nothing.
+
+- `tangent_artifact_update` adds a revision to an artifact you created, so the
+  operator iterates on one preview. The type cannot change. It is refused once the
+  artifact is signed off, archived or withdrawn.
+- `tangent_artifact_get` reads the state, the revisions and the message thread;
+  pass `after_seq` for only the newer messages.
+- `tangent_artifact_message` replies to the operator in the thread.
+- `tangent_artifact_await` waits up to two minutes for the operator to write or to
+  finish the item. A timeout is a normal result with `timed_out` true.
+- `tangent_artifact_withdraw` takes the artifact back; it moves to history.
+
+Every follow-up call takes a `source` with the same `application_id` and
+`agent_id` the artifact was created with. An artifact is visible only to its
+creator, and a missing item and someone else's item look the same.
+
+The operator can mark it read, reply, request changes (a message that leaves the
+artifact open), approve (only when `requires_signoff` was set; this resolves the
+item), archive, delete, download the original file and copy a direct link. HTML
+runs in a sandboxed frame with no access to Tangent and no network calls of its
+own. Revision files live under `TANGENT_ARTIFACT_DIR`, by default an `artifacts`
+directory beside the database, and are removed only when retention says so.
+
 ## Agent turns in the Inbox
 
 The turns inbox is where a running agent puts a turn it needs the operator for —

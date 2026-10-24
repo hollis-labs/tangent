@@ -105,6 +105,8 @@ var nonToolMentions = map[string]bool{
 	"tangent.approval-queue":     true,
 	"tangent.hitl-item":          true,
 	"tangent.doc-item":           true,
+	"tangent.artifact-item":      true,
+	"tangent.artifacts":          true,
 	"tangent.interview-question": true,
 	"tangent.synthesis-notes":    true,
 	"tangent.block-draft":        true,

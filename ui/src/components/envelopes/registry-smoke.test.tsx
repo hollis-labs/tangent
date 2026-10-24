@@ -86,14 +86,15 @@ describe("shipped room workflow registry", () => {
   const spaTypes = registeredEnvelopeTypes();
 
   it("registers every server-side envelope extension in the SPA", () => {
-    // hitl-item, agent-turn, and doc-item are route ledgers/inboxes (/hitl,
+    // hitl-item, agent-turn, doc-item, and artifact-item are route ledgers/inboxes (/hitl,
     // /turns, and /docs), not room workflows: they have no room presentation
     // and are deliberately absent from the SPA registry.
     const roomWorkflows = goTypes.filter(
       (type) =>
         type !== "tangent.hitl-item" &&
         type !== "tangent.agent-turn" &&
-        type !== "tangent.doc-item",
+        type !== "tangent.doc-item" &&
+        type !== "tangent.artifact-item",
     );
     expect([...roomWorkflows].sort()).toEqual([...spaTypes].sort());
   });
@@ -102,13 +103,14 @@ describe("shipped room workflow registry", () => {
     // The count is derived from the Go side rather than typed here. It moved
     // the first time a workflow was added after this test was written, and a
     // literal that has to be edited alongside the thing it checks is not a
-    // check. `hitl-item`, `agent-turn`, and `doc-item` are excluded for the
+    // check. `hitl-item`, `agent-turn`, `doc-item`, and `artifact-item` are excluded for the
     // reason given above.
     const expected = goTypes.filter(
       (type) =>
         type !== "tangent.hitl-item" &&
         type !== "tangent.agent-turn" &&
-        type !== "tangent.doc-item",
+        type !== "tangent.doc-item" &&
+        type !== "tangent.artifact-item",
     ).length;
     expect(new Set(spaTypes).size).toBe(spaTypes.length);
     expect(spaTypes).toHaveLength(expected);

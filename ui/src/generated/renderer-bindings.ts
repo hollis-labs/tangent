@@ -1,8 +1,8 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d
+// @definition-source sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09
 // Run `make generate-envelopes` to regenerate.
 //
-// The renderer binding declared by each of the 22 manifests under
+// The renderer binding declared by each of the 23 manifests under
 // internal/envelope/extensions/packages/. ADR 0003 §2.3 makes the manifest the
 // single answer to "what draws this kind"; ui/src/main.tsx is checked against
 // this table rather than being a second source of truth.
@@ -142,6 +142,22 @@ export const RENDERER_BINDINGS: readonly RendererBinding[] = [
     packageId: "tangent.review",
     state: "available",
     contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da",
+  },
+  {
+    kind: "tangent.artifact-item",
+    version: "1.0",
+    rendererId: "tangent.renderer.artifact-item",
+    rendererClass: "react-component",
+    entry: "routes/ArtifactBody#ArtifactBody",
+    isolation: "main-origin",
+    inlinePayloadLimitBytes: 262144,
+    fallbackRendererId: "",
+    fallbackPreservesMeaning: false,
+    fallbackDegradation: "none",
+    component: "",
+    packageId: "tangent.artifacts",
+    state: "available",
+    contractDigest: "sha256:eefb6b3e4c14af174686c6c9c3c7226c7c7f058535f539d366f752c3de1ecf3e",
   },
   {
     kind: "tangent.block-draft",

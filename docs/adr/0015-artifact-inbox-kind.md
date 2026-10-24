@@ -1,0 +1,34 @@
+# ADR 0015: Artifact inbox kind
+
+**Status:** Accepted by Chrispian, 2026-10-24 (chat; scope and decisions listed below). Task: CW-20261024-0060, theme "Tangent Artifacts".
+**Date:** 2026-10-24
+**Related:** ADR 0002 (retention and draft custody), 0003 (definition ownership), 0005 (product boundary), 0009 (renderer trust). Torque CW-20261024-0059 (tldraw validation) to -0076.
+
+## Context
+Agents need somewhere to show the operator a thing that chat cannot carry: an HTML wireframe or mock, a screenshot, a diagram, a PDF, a chart. The operator wants those to wait in the inbox until they have time to review them, to iterate on the same preview as the agent revises it, to reply to the agent, and optionally to sign off. Tangent already has the pieces: a durable inbox, a doc item with read state / archive / delete / download / copy, a sandboxed design-iteration frame, and a whiteboard with revisions.
+
+None of the existing kinds fits. `tangent.doc-item` is Markdown only and immutable once sent. `tangent.design-iteration` is a room workflow with no inbox lifecycle, no in-place update and no maximize. `tangent.whiteboard` is an operator drawing surface whose scene is a full tldraw store snapshot that an agent cannot author by hand (finding on CW-20261024-0059).
+
+## Boundary check against ADR 0005
+Tangent still owns **what it presented and what the operator said back**, never the source artifact. An artifact is transient presentation: it stays in Tangent until the operator downloads it and clears it. The sending agent or its application stays the owner of the design, the code and the decision; the operator's sign-off is a typed response that the business system interprets. Tangent is not a document editor of record or a content authority, and nothing here makes it one. TTL and retention defaults are an open decision (CW-20261024-0076); the files live under the retention policy of ADR 0002 and are not a permanent store.
+
+## Decision
+1. **A new kind, `tangent.artifact-item`**, in package `tangent.artifacts`. It does not extend design-iteration, which is left alone.
+2. **Same substrate as docs.** An artifact is an interaction on a reserved surface (`surface_artifacts_default`). The request snapshot is immutable identity: source, title, summary, type, whether sign-off is requested, tags, correlations. It follows the docs lifecycle: pending until archived, signed off or deleted; Archive keeps it in History; Delete hides it from operator lists and keeps the immutable record; read state is an explicit operator action (reusing the docs read receipts).
+3. **Mutable state lives in side tables, not the request snapshot.** `artifact_revisions` holds one row per revision (type, media type, size, sha256, relative file path, note). `artifact_messages` holds the conversation: operator messages and agent messages with a per-item sequence. Updating an artifact adds a revision; nothing is overwritten, so the viewer can switch between revisions. The item's change digest includes the latest revision and message sequence so the event stream and the unified inbox see an update.
+4. **Files live on disk**, not in the database: `<artifact dir>/<interaction id>/<revision>/<file>`. The directory defaults beside the database and is set with `TANGENT_ARTIFACT_DIR`. A per-file size cap applies. Download serves the original bytes.
+5. **Types.** The type is an open string with a registry: `html`, `image`, `markdown` first; `excalidraw`, `flow` (React Flow node graph), `mermaid`, `d2`, `vega-lite`, `tldraw`, `pdf`, `video` and `figma` (link embed) follow as separate tasks. Text types are sent as `content`; binary types as `content_base64`. An unknown type is refused.
+6. **HTML runs isolated.** Revisions are served from `/api/artifacts/items/{id}/revisions/{n}/content` into an iframe with `sandbox="allow-scripts"` and no `allow-same-origin`, under a per-response Content-Security-Policy (`sandbox allow-scripts`, scripts and styles from inline or https, images and fonts from https/data/blob, `connect-src 'none'`, `frame-ancestors 'self'`). The frame cannot read Tangent's cookies, storage or API, and cannot make network requests of its own. Remote scripts and styles stay allowed because agent mocks routinely use CDN Tailwind and React.
+7. **Conversation and sign-off.** The operator can send messages on any artifact; an agent can reply. A creator may request sign-off. The operator's choices are Approve, which resolves the interaction, and Request changes, which records a message of kind `changes_requested` and leaves the item open. Agents read replies with `tangent_artifact_get` (messages after a sequence) or block with `tangent_artifact_await`. Replies are not pushed through Tether in this version.
+8. **Agent tools**, named `tangent_artifact_<verb>`: `create`, `update`, `get`, `message`, `await`, `withdraw`. An agent already holds the `item_id` of what it created, so there is no list tool; `tangent_inbox_list` covers discovery. Tools are scoped to the calling application partition like the docs tools, and follow-up calls take the same `source` the artifact was created with. `contract_version` defaults to the current one.
+9. **Viewer.** The item body shows the preview, a revision switcher, a maximize button (full pane, Escape exits) and an action bar: Mark read, Archive, Delete, Copy, Download, Copy direct link (`/inbox/items/<id>`). Images and screenshots use the same viewer.
+
+## Consequences
+- The substrate and renderer contract are reused; the new code is a service, one migration, one HTTP handler, the MCP tools and a React body.
+- File custody is a new thing for Tangent: disk usage and TTL need a sweeper under CW-20261024-0076. Until then files are removed only when the operator deletes the item.
+- HTML artifacts run agent-authored script. The sandbox and the CSP are the whole defence, in line with ADR 0009; `connect-src 'none'` means a mock cannot call out, which is deliberate.
+- Binary content arrives base64 in MCP arguments, which is expensive for large screenshots. A file-upload route is a follow-up.
+- Sign-off is the operator's typed response only; no consequence follows in Tangent.
+
+## Out of scope
+Figma API import, v0/Vercel previews and Storybook (post-MVP tasks CW-20261024-0073 to -0075); multi-file HTML bundles; push delivery of operator replies to agents over Tether; TTL semantics (CW-20261024-0076).

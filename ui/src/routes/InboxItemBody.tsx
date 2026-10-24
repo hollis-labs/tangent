@@ -30,6 +30,7 @@ import {
   retryReplyDelivery,
   type TurnItemView,
 } from "@/lib/turns-api";
+import { ArtifactBody } from "./ArtifactBody";
 import { type ComposerIntent, ItemDetail } from "./HITLInbox";
 import { TurnContent } from "./TurnContent";
 
@@ -47,6 +48,8 @@ export function InboxItemBody(props: Props) {
       return <ApprovalBody {...props} />;
     case "document":
       return <DocumentBody {...props} />;
+    case "artifact":
+      return <ArtifactBody {...props} />;
     case "turn":
       return <TurnBody {...props} />;
     default:

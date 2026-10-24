@@ -29,9 +29,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/channelpane"
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
@@ -71,6 +73,10 @@ type Config struct {
 	// DBPath is the database file path. Empty means the package default
 	// (see internal/db).
 	DBPath string
+
+	// ArtifactDir is where artifact revision files live (ADR 0015). Empty
+	// means an `artifacts` directory beside the database.
+	ArtifactDir string
 
 	// OperatorToken is the value of TANGENT_OPERATOR_TOKEN
 	// (participant.EnvOperatorToken), which elevates a browser session to
@@ -190,6 +196,7 @@ type Services struct {
 	HITL        *hitl.Service
 	Turns       *turns.Service
 	Docs        *docs.Service
+	Artifacts   *artifacts.Service
 
 	RoomManager     *room.Manager
 	WSHandler       *tangentws.Handler
@@ -471,6 +478,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 			hitl.SurfaceAccessPolicy{},
 			turns.SurfaceAccessPolicy{},
 			docs.SurfaceAccessPolicy{},
+			artifacts.SurfaceAccessPolicy{},
 		}),
 		// The in-process caller-pull adapter is the only actor allowed to
 		// assert that a terminal outcome was delivered. Direct MCP callers
@@ -511,6 +519,14 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	docsService, err := docs.NewService(interactionService, docs.NewReadStore(sqlDB))
 	if err != nil {
 		return release(fmt.Errorf("build docs service: %w", err))
+	}
+	artifactDir, err := resolveArtifactDir(cfg)
+	if err != nil {
+		return release(err)
+	}
+	artifactsService, err := artifacts.NewService(interactionService, artifacts.NewStore(sqlDB, artifactDir), docs.NewReadStore(sqlDB))
+	if err != nil {
+		return release(fmt.Errorf("build artifacts service: %w", err))
 	}
 	recovery, err := interactionService.RecoverAfterRestart(context.Background())
 	if err != nil {
@@ -670,6 +686,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
+		mcp.WithArtifactsService(artifactsService),
 		mcp.WithTurnsService(turnsService),
 		mcp.WithInteractionPackages(interactionPackages),
 		mcp.WithHealthReporter(healthReporter),
@@ -779,6 +796,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		HITL:               hitlService,
 		Turns:              turnsService,
 		Docs:               docsService,
+		Artifacts:          artifactsService,
 		Rooms:              mcpSrv,
 		Inbox:              interactionService,
 		Channels:           channelPaneService,
@@ -804,6 +822,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		HITL:            hitlService,
 		Turns:           turnsService,
 		Docs:            docsService,
+		Artifacts:       artifactsService,
 		RoomManager:     roomMgr,
 		WSHandler:       wsHandler,
 		ParticipantGate: participantGate,
@@ -882,4 +901,20 @@ func (c compoundSurfaceAccessPolicy) AuthorizeInboxRead(surfaceID string) bool {
 		}
 	}
 	return true
+}
+
+// resolveArtifactDir returns the directory artifact revision files live in:
+// the configured one, else an `artifacts` directory beside the database.
+func resolveArtifactDir(cfg Config) (string, error) {
+	if cfg.ArtifactDir != "" {
+		return cfg.ArtifactDir, nil
+	}
+	if cfg.DBPath != "" {
+		return filepath.Join(filepath.Dir(cfg.DBPath), "artifacts"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir for artifact directory: %w", err)
+	}
+	return filepath.Join(home, ".tangent", "artifacts"), nil
 }

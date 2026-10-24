@@ -29,6 +29,14 @@ Download saves the original Markdown; Copy puts it on your clipboard. Archive
 retains the document in History. Delete removes it from Inbox and History while
 retaining its durable record and any response for the sending agent.
 
+An artifact is an agent-sent HTML mock, screenshot, diagram or similar. It stays
+in Inbox until you delete or archive it. Its toolbar offers Mark read, Archive,
+Delete, Download, Copy and Copy link, plus Maximize to see the preview full
+size (Escape returns). When the agent revises it, the same item updates and a
+revision switcher lets you look back. Write in the reply box to talk to the
+agent; Request changes sends your note and leaves the item open, and Approve
+appears when the agent asked for sign-off.
+
 Documents can be marked read without resolving them. A document requesting an
 acknowledgement offers that action; Archive removes an unanswered document from
 the pending queue. Dismissing an agent turn does not send the agent an answer.

@@ -1,0 +1,50 @@
+manifest_version: "1.0.0"
+publisher: tangent
+kind: tangent.artifact-item
+version: "1.0"
+revision: 1
+title: "Artifact inbox item"
+description: "Durable operator-facing artifact: an agent-sent HTML mock, screenshot, diagram or document that waits in the inbox, can be revised in place by the agent, and carries a message thread and an optional sign-off. See ADR 0015."
+package_id: tangent.artifacts
+package_version: "1.0.0"
+ownership_class: host-package
+
+request_schema: request.schema.json
+response_kind: data
+response_schema: response.schema.json
+error_schema: error.schema.json
+compatibility_response_schema: present
+
+named_definitions:
+  ArtifactItemRequestV1: "Enqueue request root: the immutable identity of one artifact. Content lives in revisions, not here."
+  ArtifactItemResponseV1: "Operator sign-off payload, when the artifact requested one."
+  ArtifactItemHandleV1: "Durable handle returned at artifact create."
+  ArtifactItemViewV1: "Operator-facing projection of one artifact, including revisions, messages and read state."
+
+renderer:
+  id: tangent.renderer.artifact-item
+  class: react-component
+  entry: "routes/ArtifactBody#ArtifactBody"
+  isolation: main-origin
+  fallback:
+    preserves_meaning: false
+    degradation: none
+
+compatible_host_versions: ">=0.13.0 <1.0.0"
+compatible_protocol_versions: ">=1 <2"
+compatibility_class: additive
+
+required_capabilities: []
+
+draft_custody: disabled
+sensitivity_default: normal
+inline_payload_limit_bytes: 262144
+client_persistence_prohibited: false
+
+trust:
+  assurance: content-addressed-registry
+
+telemetry:
+  emits: []
+  redact_fields: []
+  opt_in: true

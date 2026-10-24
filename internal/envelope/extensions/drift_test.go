@@ -101,6 +101,7 @@ var responseSchemaBackfilled = []string{
 	FormCollectEnvelopeType,
 	AgentTurnEnvelopeType,
 	DocItemEnvelopeType,
+	ArtifactItemEnvelopeType,
 }
 
 // TestEveryShippedRendererIsExplicitlyClassified is CW-20260825-0073's
@@ -138,6 +139,7 @@ func TestEveryShippedRendererIsExplicitlyClassified(t *testing.T) {
 		"tangent.design-iteration":   definition.IsolationSandboxedFrame,
 		"tangent.diff-review":        definition.IsolationMainOrigin,
 		"tangent.doc-item":           definition.IsolationMainOrigin,
+		"tangent.artifact-item":      definition.IsolationMainOrigin,
 		"tangent.external-review":    definition.IsolationMainOrigin,
 		"tangent.feedback":           definition.IsolationMainOrigin,
 		"tangent.file-picker":        definition.IsolationMainOrigin,
@@ -302,6 +304,7 @@ func TestShippedManifestsMatchTheirADROwnershipAssignment(t *testing.T) {
 		HITLItemEnvelopeType:          {HITLPackageID, definition.OwnershipHostPackage},
 		AgentTurnEnvelopeType:         {TurnsPackageID, definition.OwnershipHostPackage},
 		DocItemEnvelopeType:           {DocsPackageID, definition.OwnershipHostPackage},
+		ArtifactItemEnvelopeType:      {ArtifactsPackageID, definition.OwnershipHostPackage},
 
 		// Its own package, and a host package. It went through the plugin door
 		// until CW-20260911-0036, and this row is the reason that was always

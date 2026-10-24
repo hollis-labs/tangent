@@ -47,6 +47,10 @@ const (
 	// envDBPath overrides the default ~/.tangent/tangent.db location.
 	envDBPath = "TANGENT_DB_PATH"
 
+	// envArtifactDir overrides where artifact revision files live; the default
+	// is an `artifacts` directory beside the database (ADR 0015).
+	envArtifactDir = "TANGENT_ARTIFACT_DIR"
+
 	// envManagedResource names the managed-runtime resource that owns this
 	// process's lifecycle, when one does (Cerberus resource `tangent-dev` in
 	// the reference installation). Health reports use it to recommend a
@@ -337,6 +341,7 @@ func run() int {
 	// function this does.
 	_, srv, closer, bootErr := boot.Boot(boot.Config{
 		DBPath:                  dbPath,
+		ArtifactDir:             os.Getenv(envArtifactDir),
 		OperatorToken:           os.Getenv(participant.EnvOperatorToken),
 		ElevationTTL:            os.Getenv(participant.EnvElevationTTL),
 		MCPCallerTokens:         os.Getenv(mcp.EnvCallerTokens),

@@ -12,6 +12,7 @@ import (
 	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -60,6 +61,7 @@ type Server struct {
 	hitl         *hitl.Service
 	hitlWire     HITLWire
 	docs         *docs.Service
+	artifacts    *artifacts.Service
 	turns        *turns.Service
 	roomflow     *roomflow.Service
 
@@ -775,6 +777,11 @@ func (s *Server) registerTools() error {
 	if s.docs != nil {
 		if err := s.registerDocsTools(); err != nil {
 			return fmt.Errorf("register docs tools: %w", err)
+		}
+	}
+	if s.artifacts != nil {
+		if err := s.registerArtifactTools(); err != nil {
+			return fmt.Errorf("register artifact tools: %w", err)
 		}
 	}
 	if s.turns != nil {

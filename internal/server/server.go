@@ -86,6 +86,11 @@ type Config struct {
 	// this HTTP API — Docs has no daemon-loopback caller the way Turns does.
 	Docs DocsService
 
+	// Artifacts is the durable artifact inbox application service (ADR 0015).
+	// The operator acts on an artifact through this HTTP API; agents use the
+	// tangent_artifact_* MCP tools.
+	Artifacts ArtifactsService
+
 	// Rooms is the browser room API's application service. When set, the
 	// server mounts /api/rooms — the participant-authenticated replacement for
 	// the SPA's direct /mcp POSTs (ADR 0004 §11). Optional in Config for the
@@ -375,6 +380,25 @@ func New(cfg Config) (*Server, error) {
 		register("POST /api/docs/items/{itemID}/acknowledge", authz.Resolve, docsHandler.acknowledge)
 		register("POST /api/docs/items/{itemID}/archive", authz.Resolve, docsHandler.archive)
 		register("DELETE /api/docs/items/{itemID}", authz.Resolve, docsHandler.delete)
+	}
+
+	if cfg.Artifacts != nil {
+		// Same capability split as docs: reading and marking read are view and
+		// draft; messaging, sign-off, archive and delete move an artifact
+		// toward a terminal state or speak for the operator, so take resolve.
+		artifactsHandler := newArtifactsHTTPHandler(cfg.Artifacts)
+		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+		}
+		register("GET /api/artifacts", authz.View, artifactsHandler.inbox)
+		register("GET /api/artifacts/events", authz.View, artifactsHandler.events)
+		register("GET /api/artifacts/items/{itemID}", authz.View, artifactsHandler.item)
+		register("GET /api/artifacts/items/{itemID}/revisions/{revision}/content", authz.View, artifactsHandler.content)
+		register("POST /api/artifacts/items/{itemID}/read", authz.Draft, artifactsHandler.markRead)
+		register("POST /api/artifacts/items/{itemID}/messages", authz.Resolve, artifactsHandler.message)
+		register("POST /api/artifacts/items/{itemID}/signoff", authz.Resolve, artifactsHandler.signoff)
+		register("POST /api/artifacts/items/{itemID}/archive", authz.Resolve, artifactsHandler.archive)
+		register("DELETE /api/artifacts/items/{itemID}", authz.Resolve, artifactsHandler.delete)
 	}
 
 	if cfg.Rooms != nil {

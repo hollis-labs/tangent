@@ -1,10 +1,10 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
-// @definition-source sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d
+// @definition-source sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09
 // Generated from libs/ui-go v0.4.0 (envelopes) — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
-// Coverage: 40 registered kinds — 18 go-envelopes core,
-// 22 Tangent-owned (internal/envelope/extensions).
+// Coverage: 41 registered kinds — 18 go-envelopes core,
+// 23 Tangent-owned (internal/envelope/extensions).
 //
 // Sources of truth: github.com/hollis-labs/libs/ui/ui-go/envelopes (core catalog)
 // and internal/envelope/extensions (Tangent kinds).
@@ -664,6 +664,19 @@ export interface TangentApprovalQueueData {
   title?: string;
 }
 
+/** Envelope data for "tangent.artifact-item" — Durable operator-facing artifact: an agent-sent HTML mock, screenshot, diagram or document that waits in the inbox, can be revised in place by the agent, and carries a message thread and an optional sign-off. See ADR 0015. */
+export interface TangentArtifactItemData {
+  contract_version: "1.0";
+  correlations?: Record<string, unknown>;
+  idempotency_key: string;
+  requires_signoff?: boolean;
+  source: { agent_id: string; agent_label?: string; application_id?: string };
+  summary?: string;
+  tags?: string[];
+  title: string;
+  type: "html" | "image" | "markdown" | "excalidraw" | "flow" | "mermaid" | "d2" | "vega-lite" | "tldraw" | "pdf" | "video" | "figma";
+}
+
 /** Envelope data for "tangent.block-draft" — Block-draft envelope: propose one draft block, capture accept/revise/inline-edit direction, and accumulate accepted blocks on the room. */
 export interface TangentBlockDraftData {
   block_id: string;
@@ -935,6 +948,7 @@ export type TableCardEnvelope = EnvelopeBase<"table-card", TableCardData>;
 export type TangentAgentTurnEnvelope = EnvelopeBase<"tangent.agent-turn", TangentAgentTurnData>;
 export type TangentAppBoardEnvelope = EnvelopeBase<"tangent.app-board", TangentAppBoardData>;
 export type TangentApprovalQueueEnvelope = EnvelopeBase<"tangent.approval-queue", TangentApprovalQueueData>;
+export type TangentArtifactItemEnvelope = EnvelopeBase<"tangent.artifact-item", TangentArtifactItemData>;
 export type TangentBlockDraftEnvelope = EnvelopeBase<"tangent.block-draft", TangentBlockDraftData>;
 export type TangentDashboardEnvelope = EnvelopeBase<"tangent.dashboard", TangentDashboardData>;
 export type TangentDesignIterationEnvelope = EnvelopeBase<"tangent.design-iteration", TangentDesignIterationData>;
@@ -978,6 +992,7 @@ export type Envelope =
   | TangentAgentTurnEnvelope
   | TangentAppBoardEnvelope
   | TangentApprovalQueueEnvelope
+  | TangentArtifactItemEnvelope
   | TangentBlockDraftEnvelope
   | TangentDashboardEnvelope
   | TangentDesignIterationEnvelope
@@ -1021,6 +1036,7 @@ export type EnvelopeType =
   | "tangent.agent-turn"
   | "tangent.app-board"
   | "tangent.approval-queue"
+  | "tangent.artifact-item"
   | "tangent.block-draft"
   | "tangent.dashboard"
   | "tangent.design-iteration"
@@ -1064,6 +1080,7 @@ export interface EnvelopeDataMap {
   "tangent.agent-turn": TangentAgentTurnData;
   "tangent.app-board": TangentAppBoardData;
   "tangent.approval-queue": TangentApprovalQueueData;
+  "tangent.artifact-item": TangentArtifactItemData;
   "tangent.block-draft": TangentBlockDraftData;
   "tangent.dashboard": TangentDashboardData;
   "tangent.design-iteration": TangentDesignIterationData;
@@ -1109,6 +1126,7 @@ export const EnvelopeKindMap = {
   "tangent.agent-turn": "",
   "tangent.app-board": "AppBoardView",
   "tangent.approval-queue": "ApprovalQueueView",
+  "tangent.artifact-item": "",
   "tangent.block-draft": "BlockDraftView",
   "tangent.dashboard": "DashboardView",
   "tangent.design-iteration": "DesignIterationView",
@@ -1153,6 +1171,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
   "tangent.agent-turn",
   "tangent.app-board",
   "tangent.approval-queue",
+  "tangent.artifact-item",
   "tangent.block-draft",
   "tangent.dashboard",
   "tangent.design-iteration",
@@ -1176,7 +1195,7 @@ export const ENVELOPE_TYPES: readonly EnvelopeType[] = [
 ] as const;
 
 /** The @definition-source stamp above, as a value. */
-export const DEFINITION_SOURCE_DIGEST = "sha256:fec1bd252ed9b7ae0cd76a5c0cbfed67eeb7d084b1d577e94b0f29f675d66a1d";
+export const DEFINITION_SOURCE_DIGEST = "sha256:2819ede5e0353b9f443e7cddb61d6ed2db66130bc8fda101ce0e099b094bab09";
 
 /** The Tangent release these types were generated against. */
 export const DEFINITION_HOST_VERSION = "v0.20.0";
@@ -1195,6 +1214,7 @@ export const DEFINITION_SOURCE_ENTRIES: readonly DefinitionSourceEntry[] = [
   { kind: "tangent.agent-turn", version: "1.2", revision: 1, manifestDigest: "sha256:be4f2c75363b7edc1eef10cd3364cdd9d8a5fc7f0c9db91f55772d90bb7e06ed", contractDigest: "sha256:25006f5b5e2f5151d9af2a1ed0aade03486fdffea87ea07081f2716afa4ac42c" },
   { kind: "tangent.app-board", version: "0.3", revision: 1, manifestDigest: "sha256:21689b180436900fe77562eaf86f7c435cccc63235baacb0b4870b9d2e064bd5", contractDigest: "sha256:2d917db24c08e3cebc17ae46c2a47ecdee9f4fec519798ed79dec0f7b8dc0c8e" },
   { kind: "tangent.approval-queue", version: "0.8", revision: 1, manifestDigest: "sha256:40f8023c9c1efa1c83fdba1d80c1e5cab68e037f2296f1f1e5207358ad49bfef", contractDigest: "sha256:dbc7755ca2c7f84d78932ccd0eb4051508fc4fd9fda98e0b11d3c8e5e17504da" },
+  { kind: "tangent.artifact-item", version: "1.0", revision: 1, manifestDigest: "sha256:453302b90d22e2152858f5e52d0c4f355aa8adb95a5c1c8c793e6622be5777ad", contractDigest: "sha256:eefb6b3e4c14af174686c6c9c3c7226c7c7f058535f539d366f752c3de1ecf3e" },
   { kind: "tangent.block-draft", version: "0.4", revision: 1, manifestDigest: "sha256:52ff9c8adfffd35ee43826ca5016dd798b1b9f19e8a8755fbd4d816f600218cd", contractDigest: "sha256:ecdfd3188a09c662143db4f18a4434603fbfc545b030a17630c5f6210501e485" },
   { kind: "tangent.dashboard", version: "0.12", revision: 1, manifestDigest: "sha256:24640bcaa0298cb9e89100002712fec80bc8360d5d6bd671beeaeb668425e999", contractDigest: "sha256:d98476dab3c21ac23b19c83852be3a3311f6a5130c39a379ddeca00cd058734c" },
   { kind: "tangent.design-iteration", version: "0.3", revision: 1, manifestDigest: "sha256:e98d28afa43b82490d6f2321add7ce8221830cb48f9c2051fa61b0ff9a7a2125", contractDigest: "sha256:bcd36530be7442b0eedb46c297d87e37f0dbb52b28390d25336f32536b98a6b4" },
@@ -1237,6 +1257,12 @@ export const DEFINITION_NAMED_DEFINITIONS: Readonly<
     "AgentTurnRequestV1": "Enqueue request root: one live agent turn.",
     "AgentTurnResponseV1": "Operator reply response payload.",
     "AgentTurnTerminalOutcomeV1": "Terminal outcome across resolved, canceled, expired, failed, and superseded.",
+  },
+  "tangent.artifact-item": {
+    "ArtifactItemHandleV1": "Durable handle returned at artifact create.",
+    "ArtifactItemRequestV1": "Enqueue request root: the immutable identity of one artifact. Content lives in revisions, not here.",
+    "ArtifactItemResponseV1": "Operator sign-off payload, when the artifact requested one.",
+    "ArtifactItemViewV1": "Operator-facing projection of one artifact, including revisions, messages and read state.",
   },
   "tangent.doc-item": {
     "DocItemHandleV1": "Durable handle returned at doc enqueue.",

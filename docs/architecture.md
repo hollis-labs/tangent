@@ -216,7 +216,10 @@ The reserved operator inbox adds four stricter adapters:
 - `tangent_hitl_withdraw`
 
 The Docs inbox adds one caller-facing adapter, `tangent_docs_enqueue` — see
-"Durable Docs operator surface" below.
+"Durable Docs operator surface" below. The artifact inbox adds
+`tangent_artifact_create`, `tangent_artifact_update`, `tangent_artifact_get`,
+`tangent_artifact_message`, `tangent_artifact_await` and
+`tangent_artifact_withdraw` — see "Durable artifact operator surface" below.
 
 ### WebSocket bridge with per-room state
 
@@ -347,6 +350,22 @@ no journal, relay, retention job or typed frames (the stream falls back to
 revision pings), while outbox rows keep being written, so turning it back on
 delivers what accrued. The epoch is read once at boot: after `Log.Reset` (a
 restore-time action) restart the process.
+
+### Durable artifact operator surface
+
+`internal/artifacts/` is the artifact inbox ([ADR 0015](adr/0015-artifact-inbox-kind.md)).
+It reuses the docs shape: a reserved surface (`surface_artifacts_default`) and a
+kind (`tangent.artifact-item`) on the interaction substrate, with read state in
+the docs read receipts. The request snapshot is immutable identity (source,
+title, type, whether sign-off is requested); everything that changes lives in
+two side tables (migration `0024`): `artifact_revisions`, one row per revision,
+and `artifact_messages`, the operator/agent thread. Revision files are on disk
+under `TANGENT_ARTIFACT_DIR`, addressed by revision number and never by the
+caller's filename. The SPA reads and acts through `/api/artifacts`; the content
+route serves each revision under its own policy, and HTML gets a sandbox with
+`connect-src 'none'`. The inbox change digest folds in each artifact's latest
+revision and message count, so an agent update reaches the open item through the
+event stream without touching the immutable interaction record.
 
 ### Durable Docs operator surface
 

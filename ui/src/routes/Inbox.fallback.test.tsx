@@ -43,7 +43,7 @@ describe("Inbox fallback polling", () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(fetchInbox).toHaveBeenCalledTimes(1));
-    expect(FakeSource.instances).toHaveLength(3);
+    expect(FakeSource.instances).toHaveLength(4);
 
     // Every stream fails before its first open: the Inbox must tighten to 3s.
     act(() => {

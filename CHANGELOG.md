@@ -59,6 +59,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   Tangent's `interactions` tables (no migration), run against the lib's
   `hitltest` storecontract and conformance scenarios. Not yet wired into the
   running service (CW-20261016-0031).
+- **Artifact inbox** (ADR 0015, CW-20261024-0061 to -0065). `tangent.artifact-item`
+  is a durable Inbox item for an agent-sent HTML mock, screenshot or image,
+  with the docs lifecycle (read, archive, delete, download, copy, copy direct
+  link) plus a maximize view, a revision switcher, a message thread with
+  request-changes, and an optional sign-off. The agent revises the same item
+  in place with `tangent_artifact_update`, and reads replies with
+  `tangent_artifact_get` and `tangent_artifact_await`. Files live on disk under
+  `TANGENT_ARTIFACT_DIR` (default: `artifacts` beside the database); revisions
+  and messages are in migration `0024`. HTML runs in a sandboxed frame with no
+  network access of its own. Other types (`excalidraw`, `flow`, `mermaid`, `d2`,
+  `vega-lite`, `tldraw`, `pdf`, `video`, `figma`) are accepted and show their
+  source until their renderers land.
 
 ## [v0.20.0] - 2026-10-16
 
