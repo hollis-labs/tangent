@@ -35,11 +35,15 @@ func (s *Service) BrowserInbox(ctx context.Context) ([]InboxEntry, error) {
 // browserMayView decides whether the operator's browser lists one entry.
 //
 // An entry from the operator's own authority is always listed. An entry from
-// another authority, such as an authenticated gateway producer, is listed only
-// when it sits on a surface reserved for the operator inbox (docs, artifacts,
-// turns, approvals): only the host's own enqueue tools can write there, and
-// delivering to the operator is the whole point of those surfaces. A producer's
-// own surfaces and any generic surface stay private to that producer, as before.
+// the verified gateway is listed too: the gateway is the operator's own front
+// door for the agents of the fabric, its authority is assigned by the host from
+// an authenticated token and can never be asserted by a local caller, and a
+// room workflow an agent sends through it (triage, diff review, forms) is
+// addressed to the operator by definition. An entry from any other authority is
+// listed only when it sits on a surface reserved for the operator inbox (docs,
+// artifacts, turns, approvals): only the host's own enqueue tools can write
+// there. A producer's own surfaces and any generic surface stay private to that
+// producer, as before.
 func (s *Service) browserMayView(entry InboxEntry) bool {
 	if authz.Authorize(authz.Request{
 		Kind:       authz.KindCallerApplication,
@@ -48,6 +52,9 @@ func (s *Service) browserMayView(entry InboxEntry) bool {
 		Capability: authz.View,
 		Isolation:  authz.AuthorityWide,
 	}) == nil {
+		return true
+	}
+	if authz.ParseScope(entry.Interaction.CallerScope).Authority == authz.AuthorityGateway {
 		return true
 	}
 	return s.surfaces != nil && !s.surfaces.Authorize(entry.Interaction.SurfaceID, "")

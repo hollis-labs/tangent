@@ -26,9 +26,9 @@ func TestBrowserInboxOrdersAcrossSurfacesAndPreservesReplies(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if index != 2 {
-			ids = append(ids, created.Interaction.ID)
-		}
+		// The gateway item (index 2) is the operator's too: the verified gateway is how the
+		// operator's own agents reach them, so it is listed with the local ones.
+		ids = append(ids, created.Interaction.ID)
 		if index == 0 {
 			presented, err := store.AdvanceInteraction(ctx, AdvanceInteractionParams{
 				InteractionID: created.Interaction.ID, ExpectedRevision: created.Interaction.Revision,
@@ -85,7 +85,7 @@ func TestBrowserInboxOrdersAcrossSurfacesAndPreservesReplies(t *testing.T) {
 		t.Fatal("hid an active request")
 	}
 	entries, err = service.BrowserInbox(ctx)
-	if err != nil || len(entries) != 2 {
+	if err != nil || len(entries) != 3 {
 		t.Fatalf("durable hidden inbox: %v, %v", entries, err)
 	}
 	hidden, err := service.HiddenInboxItems(ctx)
@@ -128,7 +128,7 @@ func TestBrowserInboxItemMatchesTheListedEntryAndHonorsVisibility(t *testing.T) 
 		}
 	}
 	listed, err := service.BrowserInbox(ctx)
-	if err != nil || len(listed) != 1 {
+	if err != nil || len(listed) != 2 {
 		t.Fatalf("listed = %d, %v", len(listed), err)
 	}
 	keyed, err := service.BrowserInboxItem(ctx, visible)
@@ -140,8 +140,8 @@ func TestBrowserInboxItemMatchesTheListedEntryAndHonorsVisibility(t *testing.T) 
 	if string(want) != string(got) {
 		t.Fatalf("keyed entry differs from the listed one:\n%s\n%s", got, want)
 	}
-	if _, err := service.BrowserInboxItem(ctx, foreign); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a not-visible interaction must be not found, got %v", err)
+	if _, err := service.BrowserInboxItem(ctx, foreign); err != nil {
+		t.Fatalf("a verified-gateway interaction is the operator's and must open, got %v", err)
 	}
 	if _, err := service.BrowserInboxItem(ctx, "missing"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown id = %v", err)
@@ -164,10 +164,12 @@ func (p reservedInboxPolicy) Authorize(surfaceID, capability string) bool {
 
 func (reservedInboxPolicy) AuthorizeInboxRead(string) bool { return true }
 
-// A producer from another authority (the authenticated gateway) enqueues onto the operator's
-// reserved inbox surfaces through the host's own tools. The operator's browser must list that, or
-// everything an agent sends through the gateway is invisible. Generic surfaces stay private.
-func TestBrowserInboxListsOtherAuthoritiesOnReservedSurfacesOnly(t *testing.T) {
+// An agent that reaches Tangent through the authenticated gateway is the operator's own agent, and
+// what it sends is addressed to the operator. The operator's browser must list it wherever it lands:
+// on a reserved inbox surface (docs, artifacts) and on a room's own surface (triage, diff review,
+// forms), or a whole class of agent requests is invisible (CW-20261025-0002). The gateway authority
+// is host-assigned from an authenticated token, so a local caller cannot claim it.
+func TestBrowserInboxListsGatewayItemsOnEverySurface(t *testing.T) {
 	ctx := context.Background()
 	store, _ := openTestStore(t)
 	service, err := NewService(store, testDefinitionCatalog{},
@@ -200,21 +202,20 @@ func TestBrowserInboxListsOtherAuthoritiesOnReservedSurfacesOnly(t *testing.T) {
 	for _, entry := range entries {
 		listed[entry.Interaction.ID] = true
 	}
-	if !listed[gatewayReserved] {
-		t.Error("an item a gateway producer sent to a reserved operator surface is not listed")
+	for name, id := range map[string]string{
+		"a gateway item on a reserved operator surface": gatewayReserved,
+		"a gateway item on a room's own surface":        gatewayGeneric,
+		"a local item":                                  localGeneric,
+	} {
+		if !listed[id] {
+			t.Errorf("%s is not listed", name)
+		}
+		// The keyed read used when one item is opened must agree with the list.
+		if _, openErr := service.BrowserInboxItem(ctx, id); openErr != nil {
+			t.Errorf("opening %s: %v", name, openErr)
+		}
 	}
-	if listed[gatewayGeneric] {
-		t.Error("a gateway producer's item on a generic surface leaked into the operator's browser")
-	}
-	if !listed[localGeneric] {
-		t.Error("a local item went missing")
-	}
-
-	// The keyed read used when one item is opened must agree with the list.
-	if _, err = service.BrowserInboxItem(ctx, gatewayReserved); err != nil {
-		t.Errorf("opening the reserved gateway item: %v", err)
-	}
-	if _, err = service.BrowserInboxItem(ctx, gatewayGeneric); !errors.Is(err, ErrNotFound) {
-		t.Errorf("opening a private gateway item = %v, want ErrNotFound", err)
+	if _, err = service.BrowserInboxItem(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unknown id = %v, want ErrNotFound", err)
 	}
 }

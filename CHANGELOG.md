@@ -43,11 +43,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Room workflows sent through the Tether gateway (`tangent_triage`, `tangent_diff_review`,
+  `tangent_form_collect` and the rest) are now visible to the operator (CW-20261025-0002). They land
+  on a per-room surface, which the browser Inbox did not list for another authority, so the room
+  said "This interaction is unavailable" and the agent's call waited for nothing. The browser now
+  lists every item from the verified gateway authority. The participant authorization rule is
+  unchanged.
+
 - **The operator's browser Inbox now lists items that authenticated producers send to the
   reserved operator surfaces** (docs, artifacts, turns, approvals). Items that came through
   the gateway carry the producer's own authority and were hidden from the browser, so
-  opening one answered "This interaction is unavailable". Producers' own surfaces and
-  generic surfaces stay private to the producer.
+  opening one answered "This interaction is unavailable". (A later fix, CW-20261025-0002,
+  extends this to every item from the verified gateway, including room workflows on their own
+  surfaces.)
 
 ### Security
 
