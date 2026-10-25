@@ -884,11 +884,11 @@ func pluginInventory(source pluginhost.PluginInventory) health.PluginInventory {
 
 // reservedSurfacePolicy is every host-reserved operator surface, in one place.
 //
-// It does two jobs. It refuses generic MCP callers write access to these surfaces, and, because the
-// browser Inbox treats "reserved" as "an item here was sent to the operator", it also decides which
-// items from other authorities (the authenticated gateway, other producers) the operator's browser
-// lists (interaction.Service.BrowserInbox). A new reserved surface must be added here or its items
-// stay hidden from the operator; TestEveryReservedOperatorSurfaceIsCovered keeps the list honest.
+// It refuses generic MCP callers write access to these surfaces, so only the host's own enqueue
+// tools can put an item there. It no longer decides what the operator's browser lists: every item
+// from the verified gateway is the operator's (interaction.Service.BrowserInbox, CW-20261025-0002).
+// A new reserved surface must still be added here so callers cannot write to it;
+// TestEveryReservedOperatorSurfaceIsCovered keeps the list honest.
 func reservedSurfacePolicy() compoundSurfaceAccessPolicy {
 	return compoundSurfaceAccessPolicy{
 		hitl.SurfaceAccessPolicy{},
