@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { expectProseRendered, proseProbe } from "@/components/markdown/prose-probe";
 import { SANDBOX_FRAME_ORIGIN, SANDBOX_PAYLOAD_ELEMENT_ID } from "@/lib/sandbox-frame";
@@ -99,13 +99,20 @@ describe("<DesignIteration>", () => {
     );
   });
 
-  it("submits the shaped response on a message that passes all four checks", () => {
+  it("selects on a message that passes all four checks and submits only on Send selection", () => {
     const onSubmit = vi.fn();
     render(<DesignIteration envelope={sampleEnvelope()} onSubmit={onSubmit} onCancel={vi.fn()} />);
 
     const iframe = screen.getByTestId("design-iteration-iframe") as HTMLIFrameElement;
-    window.dispatchEvent(activation(iframe, {}));
+    act(() => {
+      window.dispatchEvent(activation(iframe, {}));
+    });
 
+    // A click only selects: the item must survive stray clicks.
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("design-iteration-selection")).toHaveTextContent(/Selected/);
+
+    fireEvent.click(screen.getByTestId("design-iteration-send-selection"));
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
       v: 1,
@@ -192,6 +199,36 @@ describe("<DesignIteration>", () => {
 
       expect(onSubmit).not.toHaveBeenCalled();
     });
+  });
+
+  it("never submits from clicks alone, however many arrive", () => {
+    const onSubmit = vi.fn();
+    render(<DesignIteration envelope={sampleEnvelope()} onSubmit={onSubmit} onCancel={vi.fn()} />);
+
+    const iframe = screen.getByTestId("design-iteration-iframe") as HTMLIFrameElement;
+    act(() => {
+      for (let index = 0; index < 5; index += 1) {
+        window.dispatchEvent(activation(iframe, {}));
+      }
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the latest selection and lets the operator clear it", () => {
+    const onSubmit = vi.fn();
+    render(<DesignIteration envelope={sampleEnvelope()} onSubmit={onSubmit} onCancel={vi.fn()} />);
+
+    const iframe = screen.getByTestId("design-iteration-iframe") as HTMLIFrameElement;
+    act(() => {
+      window.dispatchEvent(activation(iframe, { data: { value: "First" } }));
+      window.dispatchEvent(activation(iframe, { data: { value: "Second" } }));
+    });
+    fireEvent.click(screen.getByTestId("design-iteration-send-selection"));
+    expect(onSubmit.mock.calls[0][0].payload.value).toBe("Second");
+
+    fireEvent.click(screen.getByTestId("design-iteration-clear-selection"));
+    expect(screen.queryByTestId("design-iteration-selection")).toBeNull();
   });
 
   it("declares every click region as a keyboard-reachable control", () => {
