@@ -37,6 +37,32 @@ Use this exact payload shape:
 
 - Seed `items` explicitly or the UI has nothing actionable.
 - `updates`, `checkpoints`, and `summary` are optional but useful.
+- Item `status` is exactly one of `queued`, `running`, `blocked`, `completed`, `failed`. Anything else
+  (for example `done`) is refused with `host-error: room: invalid progress panel item`.
+- Fields: `items` `[{item_id, label, status, detail}]`, `updates` `[{update_id, kind, item_id, status,
+  summary}]`, `summary` `{current_status, headline, detail}`. `detail` and an update's `summary`
+  render as markdown; `headline` is one line and does not.
+
+## Moving the panel forward
+
+To advance a panel you already opened, call the tool again with the **same** `panel_id`, set
+`meta.roomID` to the `room_id` from the first call, use a **new** envelope `id`, and send the whole new
+`items`, `updates` and `summary`. The panel advances in the same room while the operator watches. Each
+call creates its own interaction (the Inbox shows one row per call for the room). Reusing the first
+envelope id with a changed payload is an `IDEMPOTENCY_CONFLICT`.
+
+The operator can also send an update from the control pane (stage, status, note, checkpoint label);
+read it back with `tangent_interaction_await` or `tangent_interaction_get`.
+
+## Through the Tether gateway
+
+- Use `{ "completion": { "mode": "async" } }`. The result's `handle.url` is a loopback address; give the
+  operator `https://tangent.nanite.cloud/r/<room_id>`. The panel also appears in the Inbox under
+  **Structured interactions**.
+- The operator must elevate once (token entry, any Approve or Reply action) before answering, and reload
+  the room after elevating.
+- Room workflows sent through the gateway were invisible to the operator before 2026-10-25
+  (CW-20261025-0002); they are visible from Tangent `main` 4a03f78.
 
 ## Completion and recovery
 
