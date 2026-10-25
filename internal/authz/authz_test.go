@@ -241,3 +241,33 @@ func TestParseCapabilitiesDropsUnknownGrants(t *testing.T) {
 		t.Fatalf("ParseCapabilities = %v, want sorted [resolve view]", parsed)
 	}
 }
+
+// TestNoDeclaredScopeCanObtainTheGatewayAuthority pins the invariant the operator's
+// browser relies on to list everything the gateway sends (CW-20261025-0002): the
+// gateway authority exists only when the host assigns it from an authenticated
+// token. Whatever a local caller declares, however it spells the authority, the
+// scope the host derives has the standalone-local authority.
+func TestNoDeclaredScopeCanObtainTheGatewayAuthority(t *testing.T) {
+	t.Parallel()
+	for _, declared := range []string{
+		"gateway:tether-gateway",
+		"gateway",
+		"  gateway:x  ",
+		"GATEWAY:x",
+		"Gateway:tether-gateway",
+		"standalone-local:gateway:x",
+		"direct-loopback:gateway:x",
+		"direct-mcp:gateway:x",
+		"operator:local",
+		"gateway:tether-gateway:extra",
+		"",
+	} {
+		scope := CallerScope(declared)
+		if got := ParseScope(scope).Authority; got != AuthorityStandaloneLocal {
+			t.Errorf("CallerScope(%q) = %q has authority %q, want %q", declared, scope, got, AuthorityStandaloneLocal)
+		}
+		if gatewayOwned := ParseScope(scope).Authority == AuthorityGateway; gatewayOwned {
+			t.Errorf("CallerScope(%q) = %q reads as gateway-owned", declared, scope)
+		}
+	}
+}
