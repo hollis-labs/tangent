@@ -43,14 +43,15 @@ Text types go in `content`, binary types in `content_base64`.
 Limits: 5 MiB for text types, 25 MiB for binary types. The same text is in the
 `type` field's description on `tangent_artifact_create`; the server is the authority.
 
-### Closing tags through the gateway
+### Closing tags through the gateway (fixed, legacy note)
 
-Until the gateway fix ships (CW-20261024-0130, libs PR #123, then Tether/Tesseract/Torque bumps),
-Tether's sanitizer strips a trailing closing tag from long content, so a bare `</svg>` or `</html>`
-at the very end is lost: an SVG then shows a broken preview. End `html` and `svg` content with a
-comment after the root close, for example `</svg><!-- end -->` or `</html><!-- end -->`. Content that
-ends in anything else (JSON, Markdown, Mermaid, D2) is not affected. Sending straight to Tangent's
-own MCP endpoint is not affected either. Remove this note once consumers have bumped.
+Until 2026-10-25 the Tether gateway's sanitizer stripped a trailing closing tag from long content, so
+a bare `</svg>` or `</html>` at the very end was lost and an SVG showed a broken preview
+(CW-20261024-0130). Fixed in libs `mcp/plugin-mcp` v0.6.0 and live in Tether; verified through the
+gateway with a 114-byte SVG and a 277-byte HTML page, both stored intact with no trailing comment. The
+old workaround (`</svg><!-- end -->`) is harmless but no longer needed for Tangent tools. It still
+applies to anything routed through Tesseract or Torque until they bump the library, and artifacts
+created before the fix may be missing their last tag.
 
 ### Calls and privacy
 

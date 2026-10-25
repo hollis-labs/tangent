@@ -44,8 +44,7 @@ var artifactTypeHelp = "What the content is. " +
 
 const artifactContentHelp = "The artifact's content. Send exactly one of content (text: html, markdown, mermaid, d2, " +
 	"or JSON for excalidraw, flow and vega-lite; a figma.com URL for figma) and content_base64 (binary: " +
-	"image, pdf, video). Through the Tether gateway, a trailing closing tag can be stripped (CW-20261024-0130): " +
-	"end html and svg with a comment after the root close, e.g. </svg><!-- end -->."
+	"image, pdf, video)."
 
 // artifactSourceSchema is the shared shape of the `source` argument every
 // follow-up tool takes. Access is partitioned by application_id (or by the
