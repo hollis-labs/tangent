@@ -289,7 +289,10 @@ func singleInteractionIDIn(t *testing.T, rg *sessionRig, roomID, envelopeID stri
 }
 
 func secretFormData(fields, sections []any) map[string]any {
-	schema := map[string]any{"fields": fields}
+	schema := map[string]any{}
+	if fields != nil {
+		schema["fields"] = fields
+	}
 	if sections != nil {
 		schema["sections"] = sections
 	}
@@ -402,5 +405,27 @@ func TestFormCollectRejectsSecretsOfUnprotectableTypes(t *testing.T) {
 	}
 	if result.result != nil && !strings.Contains(extractText(t, result.result), "secret field must be type text") {
 		t.Fatalf("unexpected refusal: %s", extractText(t, result.result))
+	}
+}
+
+// Agents sent fields keyed by "name" and sections without "fields". The host
+// accepted them and the form crashed in the browser, so the operator could not
+// review the item. The tool must refuse both shapes at submit.
+func TestFormCollectRefusesAMalformedFieldSchema(t *testing.T) {
+	rg := newSessionRigWith(t, sessionRigOptions{durable: true, window: 5 * time.Second, dbPath: filepath.Join(t.TempDir(), "tangent.db")})
+	defer rg.cleanup()
+	roomID, _ := createSession(t, rg, "malformed-schema")
+	fixture := namedFixture(t, "tangent_form_collect")
+	cases := map[string]map[string]any{
+		"field keyed by name":         {"fields": []any{map[string]any{"name": "a", "type": "text", "label": "A"}}},
+		"section without fields":      {"sections": []any{map[string]any{"id": "s", "title": "S"}}},
+		"neither fields nor sections": {},
+	}
+	for name, schema := range cases {
+		data := map[string]any{"form_id": "bad-" + strings.ReplaceAll(name, " ", "-"), "schema": schema}
+		result := callWorkflow(t, rg, fixture, roomID, "bad-"+strings.ReplaceAll(name, " ", "-"), nil, data)
+		if result.err == nil && (result.result == nil || !result.result.IsError) {
+			t.Fatalf("%s: a malformed form schema must be refused", name)
+		}
 	}
 }

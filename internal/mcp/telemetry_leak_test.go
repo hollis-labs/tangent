@@ -85,9 +85,9 @@ func TestTelemetryCarriesNoPlantedTokenAcrossTheWholePath(t *testing.T) {
 		"title":   planted["request payload"],
 		"schema": map[string]any{"fields": []any{
 			map[string]any{
-				"field_id": "scope",
-				"label":    planted["code"],
-				"kind":     "text",
+				"id":    "scope",
+				"label": planted["code"],
+				"type":  "text",
 			},
 		}},
 	}
