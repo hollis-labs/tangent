@@ -75,6 +75,9 @@ type sessionRigOptions struct {
 	// participant installs a ws participant resolver, which is how a test
 	// attaches as a specific session binding (an elevated one, say).
 	participant tangentws.ParticipantResolver
+	// requireReplyTo boots the server the way production does: every
+	// room-backed tool refuses a call with no completion.reply_to.
+	requireReplyTo bool
 }
 
 func newSessionRig(t *testing.T) *sessionRig {
@@ -246,6 +249,9 @@ func newSessionRigWith(t *testing.T, options sessionRigOptions) *sessionRig {
 	}
 	for _, kind := range options.disabledPackages {
 		interactionPackages.SetEnabled(kind, false)
+	}
+	if options.requireReplyTo {
+		serverOptions = append(serverOptions, tangentmcp.WithReplyToRequired())
 	}
 	serverOptions = append(serverOptions, tangentmcp.WithInteractionPackages(interactionPackages))
 

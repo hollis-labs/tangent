@@ -21,6 +21,7 @@ import {
   focusControl,
   useRevealRequirement,
 } from "@/lib/submit-gate";
+import { repairFormSchema } from "./formCollectSchema";
 
 export type FormCollectFieldType =
   | "text"
@@ -180,7 +181,8 @@ const ATTACHMENT_NAME_ID = "form-collect-attachment-name";
 
 export function FormCollect({ envelope, onSubmit, onCancel, roomID }: FormCollectProps) {
   const formID = envelope.data?.form_id ?? "form";
-  const schema = envelope.data?.schema ?? {};
+  const rawSchema = envelope.data?.schema;
+  const schema = useMemo(() => repairFormSchema(rawSchema), [rawSchema]);
   const initialAnswers = useMemo(
     () => normalizeAnswers(schema, envelope.data?.answers ?? {}),
     [schema, envelope.data?.answers],

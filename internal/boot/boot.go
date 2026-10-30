@@ -27,6 +27,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/hollis-labs/tangent/internal/replymail"
 	"io"
 	"log/slog"
 	"os"
@@ -180,6 +181,10 @@ type Config struct {
 	// transaction), so turning the stream back on drains whatever accrued.
 	EventsDisabled bool
 
+	// ReplyMailSender overrides the Tether sender built from TANGENT_TETHER_*
+	// (tests only).
+	ReplyMailSender replymail.Sender
+
 	// eventsRelayTick overrides the relay's polling interval; tests only.
 	eventsRelayTick time.Duration
 	// eventsNoCommitHook leaves the relay to its tick alone; tests only, to
@@ -242,12 +247,17 @@ type ownedCloser struct {
 	// stopEvents ends the event relay and retention job and waits for them;
 	// both use the database.
 	stopEvents func()
+	// stopReplyMail ends the reply-mail worker; nil when it never started.
+	stopReplyMail func()
 }
 
 func (c *ownedCloser) Close() error {
 	var errs []error
 	if c.stopSweeper != nil {
 		c.stopSweeper()
+	}
+	if c.stopReplyMail != nil {
+		c.stopReplyMail()
 	}
 	if c.stopEvents != nil {
 		c.stopEvents()
@@ -511,6 +521,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		return release(err)
 	}
 	closer.stopEvents = stopEvents
+	closer.stopReplyMail = startReplyMail(cfg, logger, interactionStore)
 	turnsService, err := turns.NewService(interactionService)
 	if err != nil {
 		return release(fmt.Errorf("build turns service: %w", err))
@@ -704,6 +715,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithRetentionReporter(retentionReporter),
 		// tangent_relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
+	}
+	// reply_to is required unless an operator opts out for a rollout window
+	// (TANGENT_REPLY_TO_OPTIONAL=1): agents need their prompts updated first.
+	if os.Getenv("TANGENT_REPLY_TO_OPTIONAL") != "1" {
+		mcpOptions = append(mcpOptions, mcp.WithReplyToRequired())
 	}
 	useGoHITL, backendErr := gohitl.Enabled(cfg.HITLBackend)
 	if backendErr != nil {

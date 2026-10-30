@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/telemetry"
@@ -676,6 +677,9 @@ func (s *Service) ResolveInteraction(
 	if len(deliveries) == 0 {
 		deliveries = []ResolutionDeliveryParams{callerPullResolutionDelivery(current)}
 	}
+	if replyTo := ReplyToOf(current); replyTo != "" {
+		deliveries = append(deliveries, tetherMailResolutionDelivery(current, replyTo))
+	}
 	return s.store.ResolveInteraction(ctx, ResolveInteractionParams{
 		InteractionID:               input.InteractionID,
 		ExpectedInteractionRevision: input.ExpectedInteractionRevision,
@@ -733,7 +737,7 @@ func (s *Service) CancelInteraction(
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		To: InteractionStateCanceled, Cause: input.Cause, Reason: input.Reason,
 		ActorRef: input.Requester.PrincipalRef, Authority: input.Requester.Authority,
-		Notifications: []TerminalNotificationParams{callerPullTerminalNotification(current, "cancel")},
+		Notifications: withTetherMailNotification(current, "cancel", []TerminalNotificationParams{callerPullTerminalNotification(current, "cancel")}),
 	})
 }
 
@@ -779,7 +783,7 @@ func (s *Service) SupersedeInteraction(
 		To: InteractionStateSuperseded, ReplacementInteractionID: replacement.ID,
 		Reason: input.Reason, ActorRef: input.Requester.PrincipalRef,
 		Authority:     input.Requester.Authority,
-		Notifications: []TerminalNotificationParams{callerPullTerminalNotification(current, "supersede")},
+		Notifications: withTetherMailNotification(current, "supersede", []TerminalNotificationParams{callerPullTerminalNotification(current, "supersede")}),
 	})
 }
 
@@ -815,7 +819,7 @@ func (s *Service) ExpireInteraction(
 		InteractionID: input.InteractionID, ExpectedRevision: input.ExpectedRevision,
 		To: InteractionStateExpired, PolicyRef: input.PolicyRef, Reason: input.Reason,
 		ActorRef: input.Actor.PrincipalRef, Authority: input.Actor.Authority,
-		Notifications: []TerminalNotificationParams{callerPullTerminalNotification(current, "expire")},
+		Notifications: withTetherMailNotification(current, "expire", []TerminalNotificationParams{callerPullTerminalNotification(current, "expire")}),
 	})
 }
 
@@ -1023,6 +1027,56 @@ func defaultJSON(value json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return value
+}
+
+// DestinationKindTetherMail is the destination_binding kind of a delivery that
+// mails the outcome to the agent's Tether address (reply_to).
+const DestinationKindTetherMail = "tether_mail"
+
+// ReplyToOf returns the Tether URN the interaction's caller asked for answers
+// at, or "" when none was given. Tangent's own internal address names no agent
+// and is skipped.
+func ReplyToOf(record InteractionRecord) string {
+	var refs struct {
+		ReplyTo string `json:"reply_to"`
+	}
+	if len(record.ExternalRefs) == 0 || json.Unmarshal(record.ExternalRefs, &refs) != nil {
+		return ""
+	}
+	if !strings.HasPrefix(refs.ReplyTo, "msg://") || strings.HasPrefix(refs.ReplyTo, "msg://app/tangent/") {
+		return ""
+	}
+	return refs.ReplyTo
+}
+
+func tetherMailBinding(replyTo string) json.RawMessage {
+	return json.RawMessage(mustJSON(map[string]any{"kind": DestinationKindTetherMail, "reply_to": replyTo}))
+}
+
+var tetherMailPolicy = json.RawMessage(`{"delivery":"tether-mail","restart_recovery":"idempotent_retry"}`)
+
+func tetherMailResolutionDelivery(record InteractionRecord, replyTo string) ResolutionDeliveryParams {
+	return ResolutionDeliveryParams{
+		DestinationBinding: tetherMailBinding(replyTo),
+		IdempotencyKey:     fmt.Sprintf("tangent:resolution:%s:%d", record.ID, record.Revision),
+		Policy:             tetherMailPolicy,
+	}
+}
+
+// withTetherMailNotification adds the reply-mail notification beside the
+// caller-pull one when the interaction has a reply address.
+func withTetherMailNotification(
+	record InteractionRecord, operation string, notes []TerminalNotificationParams,
+) []TerminalNotificationParams {
+	replyTo := ReplyToOf(record)
+	if replyTo == "" {
+		return notes
+	}
+	return append(notes, TerminalNotificationParams{
+		DestinationBinding: tetherMailBinding(replyTo),
+		IdempotencyKey:     fmt.Sprintf("tangent:%s:%s:%d", operation, record.ID, record.Revision),
+		Policy:             tetherMailPolicy,
+	})
 }
 
 func callerPullResolutionDelivery(interaction InteractionRecord) ResolutionDeliveryParams {
