@@ -91,7 +91,7 @@ func shippedRoomWorkflows() []workflowFixture {
 			data: map[string]any{
 				"form_id": "form-1",
 				"schema": map[string]any{"fields": []any{
-					map[string]any{"field_id": "scope", "label": "Scope", "kind": "text"},
+					map[string]any{"id": "scope", "label": "Scope", "type": "text"},
 				}},
 			},
 			response: map[string]any{
