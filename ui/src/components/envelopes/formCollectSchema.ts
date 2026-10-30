@@ -8,11 +8,13 @@ import type { FormCollectField, FormCollectSchema, FormCollectSection } from "./
 // the ones already stored so the operator can still answer them.
 type Loose = Record<string, unknown>;
 
-const isObject = (v: unknown): v is Loose => typeof v === "object" && v !== null && !Array.isArray(v);
+const isObject = (v: unknown): v is Loose =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
 
 function repairField(raw: unknown): (FormCollectField & { section?: string }) | null {
   if (!isObject(raw)) return null;
-  const id = typeof raw.id === "string" && raw.id ? raw.id : typeof raw.name === "string" ? raw.name : "";
+  const id =
+    typeof raw.id === "string" && raw.id ? raw.id : typeof raw.name === "string" ? raw.name : "";
   if (!id) return null;
   const { name: _name, ...rest } = raw;
   return {
