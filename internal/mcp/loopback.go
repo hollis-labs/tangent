@@ -82,7 +82,7 @@ func (c *LoopbackCaller) CallTool(
 	}
 	result, err := c.client.CallTool(ctx, &mcpsdk.CallToolParams{
 		Name:      name,
-		Arguments: arguments,
+		Arguments: withInternalReplyTo(arguments),
 	})
 	if err != nil {
 		return pluginhost.ToolResult{}, fmt.Errorf("mcp: call %s: %w", name, err)
@@ -91,6 +91,33 @@ func (c *LoopbackCaller) CallTool(
 		Content: loopbackContent(result),
 		IsError: result.IsError,
 	}, nil
+}
+
+// withInternalReplyTo gives a plugin's workflow call the internal reply
+// address. Every room-backed tool requires completion.reply_to, but a plugin is
+// not an agent with a Tether mailbox; the delivery worker skips this address.
+// Arguments that are not a JSON object, or carry no envelope, pass through.
+func withInternalReplyTo(arguments any) any {
+	raw, err := json.Marshal(arguments)
+	if err != nil {
+		return arguments
+	}
+	var args map[string]any
+	if json.Unmarshal(raw, &args) != nil || args == nil {
+		return arguments
+	}
+	if _, isWorkflow := args["envelope"]; !isWorkflow {
+		return arguments
+	}
+	completion, _ := args["completion"].(map[string]any)
+	if completion == nil {
+		completion = map[string]any{}
+	}
+	if _, set := completion["reply_to"]; !set {
+		completion["reply_to"] = internalReplyTo
+	}
+	args["completion"] = completion
+	return args
 }
 
 // Close tears down both sessions.

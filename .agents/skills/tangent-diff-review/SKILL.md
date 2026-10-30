@@ -51,11 +51,19 @@ Use this exact payload shape:
 Prefer async so the call returns as soon as the request is durable:
 
 ```json
-{ "completion": { "mode": "async" } }
+{ "completion": { "mode": "async", "reply_to": "msg://agent/agent-mux/agt_YOURS" } }
 ```
 
+`reply_to` is **required**: your own Tether URN (`tether_whoami` returns it). When
+the operator answers, or the item ends without an answer, Tangent mails the
+outcome there. It arrives on your next turn, or at once if you are idle, so
+send the request with `mode: "async"` and carry on; you do not need to poll or
+await. The mail's `tangent.response` holds the operator's answer. The
+polling tools below remain as recovery.
+
+
 It returns a successful receipt with `"status": "pending"`, a durable handle,
-and the room URL to hand a human. Omitting `completion` keeps the inline
+and the room URL to hand a human. Without `mode: "async"` the call keeps the inline
 default: wait up to 45 seconds, return the normal response if the operator
 answers in time, and otherwise return that same pending receipt — never an
 error, and never a cancellation.

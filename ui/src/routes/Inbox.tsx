@@ -1,4 +1,4 @@
-import { ArrowLeft, Expand, Minimize, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, Expand, Hash, Link2, Minimize, RefreshCw } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -482,6 +482,9 @@ export default function Inbox() {
                 >
                   <ArrowLeft size={14} /> Back to inbox
                 </button>
+                {categoryOf(selectedSummary) === "workflow" ? (
+                  <WorkflowTitle entry={selectedSummary} />
+                ) : null}
                 <span className="ml-auto text-fg-muted">
                   {labels[categoryOf(selectedSummary)]} · {selectedSummary.interaction.state}
                 </span>
@@ -647,5 +650,53 @@ function WorkflowHistory({ entry }: { entry: InboxEntry }) {
         </fieldset>
       </section>
     </article>
+  );
+}
+
+/**
+ * The header a workflow (form, review, board...) shares with artifacts and
+ * documents: what it is called, and links to it. Archive and delete are not
+ * here: a workflow belongs to the agent that asked, and ending one from the
+ * browser needs an operator authority the host does not grant yet (ADR 0004).
+ */
+function WorkflowTitle({ entry }: { entry: InboxEntry }) {
+  const [copied, setCopied] = useState("");
+  const id = entry.interaction.interaction_id;
+  const copy = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(""), 1500);
+    } catch {
+      setCopied("");
+    }
+  };
+  const iconClass = "rounded p-1.5 text-fg-muted hover:bg-surface-hover";
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="truncate text-sm font-medium text-fg" title={entryTitle(entry)}>
+        {entryTitle(entry)}
+      </span>
+      <button
+        type="button"
+        aria-label="Copy direct link"
+        title={copied === "link" ? "Link copied" : "Copy direct link"}
+        className={iconClass}
+        onClick={() =>
+          void copy(`${window.location.origin}/inbox/items/${encodeURIComponent(id)}`, "link")
+        }
+      >
+        {copied === "link" ? <Check size={14} /> : <Link2 size={14} />}
+      </button>
+      <button
+        type="button"
+        aria-label="Copy object id"
+        title={copied === "id" ? "Object id copied" : "Copy object id"}
+        className={iconClass}
+        onClick={() => void copy(id, "id")}
+      >
+        {copied === "id" ? <Check size={14} /> : <Hash size={14} />}
+      </button>
+    </div>
   );
 }

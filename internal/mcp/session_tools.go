@@ -419,6 +419,11 @@ func (s *Server) advanceRoomEnvelope(
 	if request == nil {
 		return nil, toolErrorResult(envelopes.ErrorCodeValidationFailed, "envelope is required")
 	}
+	if s.requireReplyTo || completion.ReplyTo != "" {
+		if err := validateReplyTo(completion.ReplyTo); err != nil {
+			return nil, err
+		}
+	}
 	if presented == nil {
 		presented = request
 	}

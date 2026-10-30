@@ -123,7 +123,7 @@ const summaryTextLimit = 300
 // stays (a row can tell it is resolved) without its payload.
 func summarizeInboxEntry(entry interaction.InboxEntry) interaction.InboxEntry {
 	record := entry.Interaction
-	record.RequestSnapshot = summarizeSnapshot(record.RequestSnapshot)
+	record.RequestSnapshot = summarizeSnapshot(record.RequestSnapshot, record.ExternalRefs)
 	record.ExternalRefs = nil
 	record.Policy = nil
 	// Binding, caller and participant bookkeeping is not shown in a row; only the kind
@@ -143,7 +143,7 @@ func summarizeInboxEntry(entry interaction.InboxEntry) interaction.InboxEntry {
 	return entry
 }
 
-func summarizeSnapshot(raw json.RawMessage) json.RawMessage {
+func summarizeSnapshot(raw json.RawMessage, externalRefs json.RawMessage) json.RawMessage {
 	var snapshot map[string]json.RawMessage
 	if json.Unmarshal(raw, &snapshot) != nil {
 		return json.RawMessage(`{}`)
@@ -153,6 +153,11 @@ func summarizeSnapshot(raw json.RawMessage) json.RawMessage {
 		var text string
 		if json.Unmarshal(snapshot[key], &text) == nil && text != "" {
 			kept[key] = truncateRunes(text, summaryTextLimit)
+		}
+	}
+	if _, titled := kept["title"]; !titled {
+		if title := workflowRowTitle(snapshot, externalRefs); title != "" {
+			kept["title"] = truncateRunes(title, summaryTextLimit)
 		}
 	}
 	var source map[string]json.RawMessage
@@ -171,6 +176,28 @@ func summarizeSnapshot(raw json.RawMessage) json.RawMessage {
 		return json.RawMessage(`{}`)
 	}
 	return out
+}
+
+// workflowRowTitle names a room-workflow row. The request payload of a form or
+// review has no title field (the envelope's title lives in the presented
+// envelope kept in external_refs), so without this the row reads "form collect"
+// for every one of them. Falls back to the form's intent, then its id.
+func workflowRowTitle(snapshot map[string]json.RawMessage, externalRefs json.RawMessage) string {
+	var refs struct {
+		Envelope struct {
+			Title string `json:"title"`
+		} `json:"legacy_envelope"`
+	}
+	if json.Unmarshal(externalRefs, &refs) == nil && refs.Envelope.Title != "" {
+		return refs.Envelope.Title
+	}
+	for _, key := range []string{"intent", "form_id", "queue_id", "review_id"} {
+		var text string
+		if json.Unmarshal(snapshot[key], &text) == nil && text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func truncateRunes(text string, limit int) string {
