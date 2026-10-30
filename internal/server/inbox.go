@@ -85,6 +85,33 @@ func inboxItemHandler(service InboxService) http.HandlerFunc {
 	})
 }
 
+// inboxOperator is what the Inbox offers the operator on any open or closed
+// item, whatever its kind: end it (archive) or remove it (delete).
+type inboxOperator interface {
+	ArchiveBrowserInboxItem(context.Context, string) error
+	DeleteBrowserInboxItem(context.Context, string) error
+}
+
+func inboxArchiveHandler(service inboxOperator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := service.ArchiveBrowserInboxItem(r.Context(), r.PathValue("interactionID")); err != nil {
+			writeRoomError(w, err)
+			return
+		}
+		writeHITLJSON(w, http.StatusOK, map[string]string{"status": "archived"})
+	}
+}
+
+func inboxDeleteHandler(service inboxOperator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := service.DeleteBrowserInboxItem(r.Context(), r.PathValue("interactionID")); err != nil {
+			writeRoomError(w, err)
+			return
+		}
+		writeHITLJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	}
+}
+
 // inboxSearchHandler returns the ids of interactions whose request, source or resolution
 // text contains `q` (case-insensitive), so the page can search content it no longer holds.
 func inboxSearchHandler(service InboxService) http.HandlerFunc {

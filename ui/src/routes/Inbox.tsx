@@ -1,4 +1,15 @@
-import { ArrowLeft, Check, Expand, Hash, Link2, Minimize, RefreshCw } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  Check,
+  Download,
+  Expand,
+  Hash,
+  Link2,
+  Minimize,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
@@ -10,7 +21,10 @@ import { useViewPresentation } from "@/hooks/useViewPresentation";
 import { createCoalescer } from "@/lib/coalesce";
 import { subscribeRevision, visiblePoll } from "@/lib/event-hub";
 import {
+  archiveInboxItem,
   categoryOf,
+  deleteInboxItem,
+  downloadInboxItem,
   entrySource,
   entryTitle,
   fetchInbox,
@@ -482,8 +496,16 @@ export default function Inbox() {
                 >
                   <ArrowLeft size={14} /> Back to inbox
                 </button>
-                {categoryOf(selectedSummary) === "workflow" ? (
-                  <WorkflowTitle entry={selectedSummary} />
+                {["workflow", "approval", "turn"].includes(categoryOf(selectedSummary)) ? (
+                  <ItemActions
+                    entry={selectedSummary}
+                    detail={selected ?? null}
+                    onChanged={sync}
+                    onDeleted={() => {
+                      sync();
+                      navigate(listURL);
+                    }}
+                  />
                 ) : null}
                 <span className="ml-auto text-fg-muted">
                   {labels[categoryOf(selectedSummary)]} · {selectedSummary.interaction.state}
@@ -654,29 +676,84 @@ function WorkflowHistory({ entry }: { entry: InboxEntry }) {
 }
 
 /**
- * The header a workflow (form, review, board...) shares with artifacts and
- * documents: what it is called, and links to it. Archive and delete are not
- * here: a workflow belongs to the agent that asked, and ending one from the
- * browser needs an operator authority the host does not grant yet (ADR 0004).
+ * The header every Inbox item shares: what it is called and what the operator
+ * can do with it. Archive ends an open item (it moves to History) and Delete
+ * removes it; both work on any kind. Documents and artifacts carry their own
+ * richer action rows in their bodies, so they do not use this one.
  */
-function WorkflowTitle({ entry }: { entry: InboxEntry }) {
+function ItemActions({
+  entry,
+  detail,
+  onChanged,
+  onDeleted,
+}: {
+  entry: InboxEntry;
+  detail: InboxEntry | null;
+  onChanged: () => void;
+  onDeleted: () => void;
+}) {
   const [copied, setCopied] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const id = entry.interaction.interaction_id;
+  const terminal = isTerminal(entry);
   const copy = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value);
       setCopied(label);
       window.setTimeout(() => setCopied(""), 1500);
     } catch {
-      setCopied("");
+      setError("Could not copy. Check your browser's clipboard permission.");
     }
   };
-  const iconClass = "rounded p-1.5 text-fg-muted hover:bg-surface-hover";
+  const act = async (run: () => Promise<void>, after: () => void) => {
+    setBusy(true);
+    setError("");
+    try {
+      await run();
+      after();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The action failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const iconClass = "rounded p-1.5 text-fg-muted hover:bg-surface-hover disabled:opacity-40";
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="truncate text-sm font-medium text-fg" title={entryTitle(entry)}>
+    <div className="flex min-w-0 items-center gap-1">
+      <span className="mr-1 truncate text-sm font-medium text-fg" title={entryTitle(entry)}>
         {entryTitle(entry)}
       </span>
+      <button
+        type="button"
+        aria-label="Archive"
+        title={terminal ? "Already in history" : "Archive"}
+        disabled={busy || terminal}
+        className={iconClass}
+        onClick={() => void act(() => archiveInboxItem(id), onChanged)}
+      >
+        <Archive size={14} />
+      </button>
+      <button
+        type="button"
+        aria-label="Delete"
+        title="Delete"
+        disabled={busy}
+        className={iconClass}
+        onClick={() => void act(() => deleteInboxItem(id), onDeleted)}
+      >
+        <Trash2 size={14} />
+      </button>
+      <button
+        type="button"
+        aria-label="Download"
+        title="Download as JSON"
+        disabled={!detail}
+        className={iconClass}
+        onClick={() => detail && downloadInboxItem(detail)}
+      >
+        <Download size={14} />
+      </button>
       <button
         type="button"
         aria-label="Copy direct link"
@@ -697,6 +774,11 @@ function WorkflowTitle({ entry }: { entry: InboxEntry }) {
       >
         {copied === "id" ? <Check size={14} /> : <Hash size={14} />}
       </button>
+      {error ? (
+        <span role="alert" className="ml-1 text-danger">
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

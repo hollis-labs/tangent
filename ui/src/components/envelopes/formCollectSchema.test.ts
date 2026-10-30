@@ -7,7 +7,13 @@ describe("repairFormSchema", () => {
       answers: { a: "x" },
       sections: [{ id: "policy", title: "Policy" }],
       fields: [
-        { name: "a", label: "A", type: "select", section: "policy", options: [{ value: "x", label: "X" }] },
+        {
+          name: "a",
+          label: "A",
+          type: "select",
+          section: "policy",
+          options: [{ value: "x", label: "X" }],
+        },
         { name: "b", type: "textarea" },
       ],
     });
