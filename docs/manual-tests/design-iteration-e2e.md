@@ -50,7 +50,7 @@ Open the `/r/<roomID>` URL. Confirm:
 
 - The preview renders inside an iframe.
 - The iframe has interaction, but no external navigation/forms/popups.
-- Clicking an annotated region returns a response to the agent.
+- Clicking an annotated region only **selects** it: a "Selected: ..." bar appears with **Send selection** and **Clear**, and the item stays pending. Nothing reaches the agent until **Send selection** (or a button or text prompt's own Send) is pressed. Stray clicks never submit.
 - If Claude sends another iteration to the same room, a new variant tab
   appears and the current preview updates.
 

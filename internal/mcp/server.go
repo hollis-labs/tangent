@@ -511,7 +511,7 @@ func (s *Server) registerTools() error {
 	}
 	addTool(s, gmcpserver.Tool{
 		Name:        "tangent_design_iteration",
-		Description: "Dispatch a design-iteration envelope through Tangent. Renders sandboxed HTML and returns the user's selected action for each iteration.",
+		Description: "Dispatch a design-iteration envelope through Tangent. Renders sandboxed HTML and returns the action the user chooses and sends (a click on a click-region only selects it; nothing is sent until the user presses Send selection). The item resolves when they send, so use it to ask for a choice. To just show a design the user will review and compare over several revisions, use tangent_artifact_create (type html) instead.",
 		InputSchema: designIterationSchema,
 	}, s.handleDesignIteration)
 

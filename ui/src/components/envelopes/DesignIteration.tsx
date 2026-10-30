@@ -117,6 +117,15 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
     envelope.data?.variant_id ?? envelope.id,
   );
   const [textValues, setTextValues] = useState<Record<string, string>>({});
+  // A click inside the preview only SELECTS a region. It used to submit at once,
+  // which resolved the whole item on any stray click and took it out of Pending,
+  // so comparing iterations meant losing them. The operator sends explicitly.
+  const [selection, setSelection] = useState<{
+    actionId: string;
+    label: string;
+    value: string;
+    variantId: string;
+  } | null>(null);
 
   const prompts = envelope.data?.prompts ?? [];
   const currentVariantID = envelope.data?.variant_id ?? envelope.id;
@@ -177,23 +186,17 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
       if (!activation) {
         return;
       }
-      onSubmit({
-        v: 1,
-        envelopeId: envelope.id,
-        kind: "data",
-        status: "submitted",
-        payload: {
-          variant_id: activation.variantId || currentVariantID,
-          action_id: activation.actionId,
-          action_kind: activation.actionKind,
-          value: activation.value,
-        },
-        completedAt: new Date().toISOString(),
+      const declared = envelope.data?.prompts?.find((prompt) => prompt.id === activation.actionId);
+      setSelection({
+        actionId: activation.actionId,
+        label: declared?.label ?? activation.value ?? activation.actionId,
+        value: activation.value,
+        variantId: activation.variantId || currentVariantID,
       });
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [currentVariantID, envelope.id, onSubmit]);
+  }, [currentVariantID, envelope.data?.prompts]);
 
   const activeVariant = variants.find((variant) => variant.variantID === activeVariantID) ??
     variants[variants.length - 1] ?? {
@@ -249,6 +252,25 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
         action_id: actionID,
         action_kind: actionKind,
         value,
+      },
+      completedAt: new Date().toISOString(),
+    });
+  };
+
+  const sendSelection = () => {
+    if (!selection) {
+      return;
+    }
+    onSubmit({
+      v: 1,
+      envelopeId: envelope.id,
+      kind: "data",
+      status: "submitted",
+      payload: {
+        variant_id: selection.variantId,
+        action_id: selection.actionId,
+        action_kind: "click-region",
+        value: selection.value,
       },
       completedAt: new Date().toISOString(),
     });
@@ -346,9 +368,38 @@ export function DesignIteration({ envelope, onSubmit, onCancel }: DesignIteratio
           // a bare title reads as a document, not as a set of controls.
           <p className="text-xs text-zinc-500" data-testid="design-iteration-region-hint">
             {regions.length === 1
-              ? "The preview contains 1 selectable region. Enter the frame and press Enter or Space to choose it."
-              : `The preview contains ${regions.length} selectable regions. Enter the frame and press Enter or Space to choose one.`}
+              ? "The preview contains 1 selectable region. Click it, or enter the frame and press Enter or Space, to select it. Nothing is sent until you press Send selection."
+              : `The preview contains ${regions.length} selectable regions. Click one, or enter the frame and press Enter or Space, to select it. Nothing is sent until you press Send selection.`}
           </p>
+        ) : null}
+
+        {selection ? (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900/70 px-3 py-2"
+            data-testid="design-iteration-selection"
+            role="status"
+          >
+            <span className="text-sm text-zinc-200">
+              Selected:{" "}
+              <strong data-testid="design-iteration-selection-label">{selection.label}</strong>
+              <span className="text-zinc-500"> on {selection.variantId}</span>
+            </span>
+            <Button
+              type="button"
+              onClick={sendSelection}
+              data-testid="design-iteration-send-selection"
+            >
+              Send selection
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setSelection(null)}
+              data-testid="design-iteration-clear-selection"
+            >
+              Clear
+            </Button>
+          </div>
         ) : null}
 
         {buttonPrompts.length > 0 ? (

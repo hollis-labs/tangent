@@ -13,6 +13,22 @@ Use this skill when you need to launch `tangent_design_iteration`.
 Use `tangent_design_iteration` to show me two simple hero-card concepts and let me choose one action for the current iteration. Wait for my submit/cancel response.
 ```
 
+## What the operator sees
+
+A `click-region` prompt makes that part of the preview selectable. A click only **selects** it: the
+page shows "Selected: <label>" with **Send selection** and **Clear**, and the item stays pending until
+the operator sends. Buttons and text prompts submit with their own Send. A region selector that matches
+a large area (for example `.board` or `body`) is fine now, but keep regions meaningful, because the
+selected region's `action_id` is what you get back.
+
+## Design iteration or artifact?
+
+This tool asks for **one choice** and resolves when the operator sends it. If you just want to show a
+design, iterate on it over several revisions and let the operator compare and comment, send an
+artifact instead: `tangent_artifact_create` with `type: html`, then `tangent_artifact_update` for each
+revision (one item, a revision switcher, Request changes, optional Approve; it never resolves by
+accident). See the `tangent-artifacts` skill.
+
 ## Completion and recovery
 
 Prefer async so the call returns as soon as the request is durable:
