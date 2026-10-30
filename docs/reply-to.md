@@ -15,7 +15,7 @@ URN. Tether delivers it on the agent's next turn, or at once if the agent is idl
 - Room-backed tools (`tangent_form_collect`, `tangent_approval_queue`, `tangent_diff_review`,
   `tangent_design_iteration`, ... and `tangent_session_advance`): `completion.reply_to`.
 - `tangent_interaction_submit`: top-level `reply_to`.
-- Required when the server runs with `WithReplyToRequired` (production boot does). A call
+- Required when the server runs with `WithReplyToRequired` (production boot does unless `TANGENT_REPLY_TO_OPTIONAL=1`, a rollout switch while agents catch up). A call
   without a usable `msg://...` address is refused with `REPLY_TO_REQUIRED`.
 - Tangent's own plugins use `msg://app/tangent/internal`, which names no agent and is skipped.
 - Stored on the interaction's `external_refs.reply_to`.

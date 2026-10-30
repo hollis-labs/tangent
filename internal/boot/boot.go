@@ -700,7 +700,6 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 
 	mcpOptions := []mcp.Option{
 		mcp.WithCallerAuth(callerAuth),
-		mcp.WithReplyToRequired(),
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
@@ -716,6 +715,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		mcp.WithRetentionReporter(retentionReporter),
 		// tangent_relay_*: the cooperative MCP inbox.
 		mcp.WithRelay(channelStore, relayStore),
+	}
+	// reply_to is required unless an operator opts out for a rollout window
+	// (TANGENT_REPLY_TO_OPTIONAL=1): agents need their prompts updated first.
+	if os.Getenv("TANGENT_REPLY_TO_OPTIONAL") != "1" {
+		mcpOptions = append(mcpOptions, mcp.WithReplyToRequired())
 	}
 	useGoHITL, backendErr := gohitl.Enabled(cfg.HITLBackend)
 	if backendErr != nil {
