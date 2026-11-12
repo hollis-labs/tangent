@@ -13,8 +13,10 @@ import (
 )
 
 // databaseCommand is `tangent database check|backup`. Both run before the modules start and open
-// the database read-only: neither creates the data directory or writes the source, so they are
-// safe beside a running server and in an installer preflight.
+// the database read-only: neither creates the data directory or changes the source file's content, so
+// they are safe beside a running server and in an installer preflight. SQLite itself leaves empty
+// -wal and -shm files beside a WAL-mode database that no server holds open (checked against a copy:
+// the database file's checksum is unchanged).
 func databaseCommand(ctx context.Context, args []string, getenv func(string) string, out io.Writer) error {
 	if len(args) == 0 || (args[0] != "check" && args[0] != "backup") {
 		return errors.New("usage: tangent database check [--db PATH] | tangent database backup --to PATH [--db PATH]")
@@ -65,7 +67,7 @@ func databaseCommand(ctx context.Context, args []string, getenv func(string) str
 		return err
 	}
 	report(out, "backup", rep)
-	fmt.Fprintln(out, "the backup is a point-in-time copy from a read transaction; the source was not written")
+	fmt.Fprintln(out, "the backup is a point-in-time copy from a read transaction; the source file's content was not changed (a read-only open of a database in WAL mode with no server running leaves empty -wal and -shm files beside it)")
 	return nil
 }
 

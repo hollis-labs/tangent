@@ -99,8 +99,14 @@ func Copy(ctx context.Context, opts Options) (Report, error) {
 		}
 		rep.Trees[name] = tr
 	}
-	if opts.Database != "" && contains(present, "artifacts") {
-		n, err := checkArtifacts(ctx, opts.Database, filepath.Join(to, "artifacts.migrating"))
+	if opts.Database != "" {
+		// Checked even when the old tree has no artifacts directory: a database that records revisions
+		// while the tree holds none is a refusal (every body missing), not a pass with nothing compared.
+		bodies := filepath.Join(to, "artifacts.migrating")
+		if !contains(present, "artifacts") {
+			bodies = filepath.Join(from, "artifacts")
+		}
+		n, err := checkArtifacts(ctx, opts.Database, bodies)
 		if err != nil {
 			cleanup()
 			return rep, err

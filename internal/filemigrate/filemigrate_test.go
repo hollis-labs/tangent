@@ -131,3 +131,19 @@ func TestCopyRefusesLinksAndNestedDirectories(t *testing.T) {
 		t.Fatal("a target inside the source was accepted")
 	}
 }
+
+func TestCopyRefusesWhenTheDatabaseRecordsArtifactsAndTheOldTreeHasNone(t *testing.T) {
+	from, to, db := oldTree(t)
+	if err := os.RemoveAll(filepath.Join(from, "artifacts")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := filemigrate.Copy(context.Background(), filemigrate.Options{From: from, To: to, Database: db})
+	if err == nil || !strings.Contains(err.Error(), "2 of 2 artifact revisions") {
+		t.Fatalf("err = %v, want both recorded revisions reported missing", err)
+	}
+	for _, name := range []string{"artifacts", "plugins", "plugins.migrating"} {
+		if _, statErr := os.Stat(filepath.Join(to, name)); statErr == nil {
+			t.Fatalf("%s exists after a refused run", name)
+		}
+	}
+}
