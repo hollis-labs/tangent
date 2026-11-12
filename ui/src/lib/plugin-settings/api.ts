@@ -4,7 +4,7 @@ import type {
   SettingsValidation,
   SettingsValues,
 } from "@hollis-labs/kit-settings";
-import { fetchWithElevation } from "@/lib/operator-elevation";
+import { apiFetch } from "@/lib/api";
 
 export interface Scope {
   kind: string;
@@ -37,7 +37,7 @@ export interface SettingsAPI {
 // Refusals use host-owned text. Neither provider errors nor submitted secrets
 // enter browser diagnostics, even if a proxy returns an unexpected error body.
 async function request<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetchWithElevation(path, {
+  const response = await apiFetch(path, {
     ...init,
     credentials: "same-origin",
     headers: { Accept: "application/json", ...init.headers },

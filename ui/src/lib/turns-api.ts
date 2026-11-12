@@ -3,7 +3,7 @@
  * Contracts 1.0, 1.1 and 1.2 (CW-20260913-0019).
  */
 
-import { fetchWithElevation } from "@/lib/operator-elevation";
+import { apiFetch } from "@/lib/api";
 
 export type TurnKind = "question" | "approval" | "checkpoint" | "failure" | "terminal";
 
@@ -126,7 +126,7 @@ async function requestResponse(
   init?: RequestInit,
   allowNotModified = false,
 ): Promise<Response> {
-  const response = await fetchWithElevation(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       Accept: "application/json",

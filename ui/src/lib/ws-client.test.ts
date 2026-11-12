@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { UiEvent } from "./ui-channel";
-import { connect, getTabClientID, getTabClientKind, seedShellClientIdentity } from "./ws-client";
+import { connect, getTabClientID } from "./ws-client";
 
 class MockWebSocket extends EventTarget {
   static instances: MockWebSocket[] = [];
@@ -521,68 +521,39 @@ describe("ws-client draft revisions", () => {
   });
 });
 
-describe("shell client identity", () => {
+describe("tab client identity", () => {
   const ID_KEY = "tangent:v2:room:client-id";
-  const KIND_KEY = "tangent:v2:room:client-kind";
 
-  function withURL(path: string, run: () => void) {
+  it("mints a tab id once and keeps it for the tab", () => {
+    window.sessionStorage.clear();
+    const id = getTabClientID();
+    expect(id.startsWith("room-tab-")).toBe(true);
+    expect(window.sessionStorage.getItem(ID_KEY)).toBe(id);
+    expect(getTabClientID()).toBe(id);
+  });
+
+  it("ignores a clientId or clientKind on the page URL", () => {
+    window.sessionStorage.clear();
     const original = window.location.href;
-    window.history.replaceState(null, "", path);
+    window.history.replaceState(null, "", "/?clientId=shell-abc&clientKind=desktop");
     try {
-      run();
-    } finally {
-      window.history.replaceState(null, "", original);
-    }
-  }
-
-  it("survives the first in-app navigation when seeded at boot", () => {
-    window.sessionStorage.clear();
-    // The shell opens the window with the params on the root URL...
-    withURL("/?clientId=shell-abc&clientKind=desktop", () => {
-      seedShellClientIdentity();
-    });
-    // ...and React Router's first pushState drops the query string before
-    // connect() ever runs on the room route.
-    withURL("/r/room-1", () => {
-      expect(getTabClientID()).toBe("shell-abc");
-      expect(getTabClientKind()).toBe("desktop");
-    });
-  });
-
-  it("is a no-op for a plain browser tab and still mints a tab id", () => {
-    window.sessionStorage.clear();
-    withURL("/", () => {
-      seedShellClientIdentity();
-      expect(window.sessionStorage.getItem(ID_KEY)).toBeNull();
-      expect(window.sessionStorage.getItem(KIND_KEY)).toBeNull();
-      const id = getTabClientID();
-      expect(id.startsWith("room-tab-")).toBe(true);
-      expect(getTabClientID()).toBe(id);
-      expect(getTabClientKind()).toBe("");
-    });
-  });
-
-  it("lets an explicit clientID option win over the seeded slot", () => {
-    window.sessionStorage.clear();
-    withURL("/?clientId=shell-abc&clientKind=desktop", () => {
-      seedShellClientIdentity();
-    });
-    Object.assign(MockWebSocket, { instances: [] });
-    vi.stubGlobal("WebSocket", MockWebSocket);
-    withURL("/r/room-1", () => {
+      expect(getTabClientID().startsWith("room-tab-")).toBe(true);
+      Object.assign(MockWebSocket, { instances: [] });
+      vi.stubGlobal("WebSocket", MockWebSocket);
       const client = connect("room-1", {
         wsURL: "ws://example.test/ws",
-        clientID: "explicit-id",
         onOpen: vi.fn(),
         onClose: vi.fn(),
         onEnvelope: vi.fn(),
         onError: vi.fn(),
       });
       const url = new URL(MockWebSocket.instances[0].url);
-      expect(url.searchParams.get("clientID")).toBe("explicit-id");
-      expect(url.searchParams.get("clientKind")).toBe("desktop");
+      expect(url.searchParams.get("clientKind")).toBeNull();
+      expect(url.searchParams.get("clientID")?.startsWith("room-tab-")).toBe(true);
       client.close();
-    });
-    vi.unstubAllGlobals();
+    } finally {
+      vi.unstubAllGlobals();
+      window.history.replaceState(null, "", original);
+    }
   });
 });

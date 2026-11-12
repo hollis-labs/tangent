@@ -4,7 +4,6 @@
  */
 
 import { apiFetch } from "@/lib/api";
-import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export type ArtifactType =
   | "html"
@@ -111,7 +110,7 @@ export function isArtifactTerminal(state: ArtifactState): boolean {
 }
 
 async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetchWithElevation(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { Accept: "application/json", ...(init?.headers ?? {}) },
   });

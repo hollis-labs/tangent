@@ -3,7 +3,6 @@
 // roster is whatever Tether reports, and "unavailable" is a first-class state.
 
 import { apiFetch } from "@/lib/api";
-import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export interface RosterSession {
   id: string;
@@ -88,7 +87,7 @@ export async function sendChat(
   text: string,
   idempotencyKey: string,
 ): Promise<ChatSendResult> {
-  const response = await fetchWithElevation(SEND_URL, {
+  const response = await apiFetch(SEND_URL, {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
     body: JSON.stringify({ launch_id: launchID, text, idempotency_key: idempotencyKey }),

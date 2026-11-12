@@ -1,5 +1,4 @@
 import { apiFetch } from "@/lib/api";
-import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export type InboxCategory = "approval" | "document" | "artifact" | "turn" | "workflow";
 
@@ -116,7 +115,7 @@ export async function fetchInboxItem(id: string, signal?: AbortSignal): Promise<
 }
 
 async function operatorAction(url: string, method: "POST" | "DELETE"): Promise<void> {
-  const response = await fetchWithElevation(url, {
+  const response = await apiFetch(url, {
     method,
     headers: { Accept: "application/json" },
   });
