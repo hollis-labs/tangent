@@ -105,12 +105,13 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
    the plain binary is kept as `tangent.pre-fleet-install`; that is confirmed at the real deploy (as it was for another
    app), with the dated copy of step 3 as the fallback. Nothing proceeds until the dry run shows the link flip and the
    drop-in path.
-7. **Precondition: the frontend.** A signed-in owner must be able to decide an inbox item in a real browser against the
-   release build. The pull requests are merged: #151 (Node 24 and dev proxy), #152 and #153 (one request layer,
-   operator elevation removed), #155 (sign-in), #159 (ExternalReview path check) and #154 (the release build that embeds
-   the SPA). What remains is the check by hand: on scratch, against the **published artifact** (not a local build), sign in
-   as the owner in a real browser and decide an inbox item; the evidence goes to the driver. The server-side hardening
-   that goes with it (#161 envelope paths, #162 body-less owner routes) is merged or the owner accepts it unmerged.
+7. **Precondition: the frontend. Met on the build of `main` at `c01fbf0`** (workflow `build`, run `43300354697`, artifact
+   `tangent-c01fbf00b05d`, accepted by the driver 2026-11-12). A signed-in owner decides an inbox item in a real browser
+   against the published artifact: sign-in, a decision shown as sent without a reload (on the host's acknowledgement frame),
+   no refused-channel notice, the review-plugin-unavailable message for a plugin that is not installed, inbox archive and
+   sign-out. The pull requests: #151, #152, #153, #155, #159, #154, #164 to #168. If a later change to `main` touches the
+   page or the room protocol, the short check is repeated on that build; it is not repeated for the deployed build when
+   nothing that the page or the host serves has changed since `c01fbf0`.
 8. Read `docs/client-table.md` against the producer list: each producer gets a key, or is retired.
 
 ## 6. The window (host-run, in this order)
@@ -349,6 +350,13 @@ Step by step, with what was observed:
   its key file (`.state/<id>/run/mcp-key`, mode 0600), and `/mcp` listed 75 tools: the 73 plus the plugin's two, whose names
   the plugin chooses (`tangent.tesseract_review` has a dot, which the gateway's name lint refuses: `docs/mcp-tool-names.md`).
 
+- **Browser and hardening checks, on the published artifact** (`main` at `c01fbf0`, run `43300354697`, artifact
+  `tangent-c01fbf00b05d`, scratch loopback port, the migrated copy): in real Chrome, sign-in, deciding a structured item,
+  reload, sign-out, inbox archive and plugin enable and disable all work; a clean review room for a missing plugin says so.
+  With the owner's session, a POST with an envelope-shaped body to inbox archive, plugin enable, disable and reload, channel
+  read and sign-out is 400 and the bare call (the page's own) works; a dotted `action_url` is refused when the envelope is
+  created, with a clear error; the stored dotted envelope made the page send no request.
+
 **Not rehearsed, and why:** the real keyring (synthetic only, by instruction); `fleet-install` and its `--dry-run` (the
 driver's, with the real unit); the real proxy; the Tether catalog plan and hub reload (Agent Ops); the plugin reinstall
 **with the new plugin release** (it does not exist until the plugin release in section 5 step 1: the mechanics above ran
@@ -445,6 +453,14 @@ removed-pieces sections). In short:
   (the old binary never had it; `tangent mcp` exits non-zero and says what to use), the operator-token elevation, first-run
   setup over HTTP, the `/readyz` and `/healthz/capability` paths, the Wails desktop app, the LaunchAgent and its installer,
   the Caddy snippet.
+- Hardening that is new (all after the rehearsal of the data steps, all server side, none needs an action at the cutover):
+  an envelope whose `action_url`, `state_url` or board `sync.endpoint` is not a clean `/api/plugins/<plugin>/...` path is
+  refused when it is created (records already stored are left alone, and the page refuses to call one that fails the rule);
+  inbox archive, plugin enable, disable and reload, channel read and sign-out refuse a request body with 400.
+- Added: after a response or cancel is durably accepted the room's socket sends `response.accepted` to the sender, which the
+  page uses to show it as sent (`docs/architecture.md`).
+- Not live, in the old build either (CW-20261112-0128, `docs/conversion-notes.md` "Known behaviour"): the UI-command channel
+  (agents driving the open view) is not switched on.
 - Behaviour that changed: the SPA is served without `ETag`/`Last-Modified` (the framework's web UI sends neither, so a
   static asset is revalidated by content-hashed name, not by a 304); the owner's session lasts 12 hours.
 
