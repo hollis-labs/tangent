@@ -112,16 +112,28 @@ const ErrorMessageSchema = z.object({
   lease: LeaseViewSchema.nullish(),
 });
 
+// The host's acknowledgement that a response or cancel was durably accepted.
+// `revision` is the revision the sender sent; only the sending connection gets it.
+const ResponseAcceptedSchema = z.object({
+  type: z.literal("response.accepted"),
+  envelopeId: z.string().min(1),
+  revision: z.number().int().nonnegative().default(0),
+  outcome: z.enum(["resolved", "canceled"]),
+});
+
 const InboundSchema = z.discriminatedUnion("type", [
   EnvelopeMessageSchema,
   ConnectionMessageSchema,
   SyncMessageSchema,
   ErrorMessageSchema,
+  ResponseAcceptedSchema,
   UiCommandSchema,
   ViewPublishedSchema,
 ]);
 
 type InboundMessage = z.infer<typeof InboundSchema>;
+
+export type ResponseAccepted = Omit<z.infer<typeof ResponseAcceptedSchema>, "type">;
 
 export type ConnectionRole = "resolver" | "observer";
 export type ConnectionView = z.infer<typeof ConnectionViewSchema>;
@@ -175,6 +187,8 @@ export type WSClientOptions = {
    * Called with the durable revision snapshot this tab is synchronized to.
    */
   onSync?: (sync: SurfaceSync) => void;
+  /** The host durably accepted this tab's response or cancel. */
+  onResponseAccepted?: (accepted: ResponseAccepted) => void;
 
   /**
    * Called when the server refuses a client action — a lease conflict or a
@@ -418,6 +432,13 @@ export function connect(roomID: string, opts: WSClientOptions): WSClient {
       case "sync":
         opts.onSync?.(msg.sync);
         return;
+      case "response.accepted":
+        opts.onResponseAccepted?.({
+          envelopeId: msg.envelopeId,
+          revision: msg.revision,
+          outcome: msg.outcome,
+        });
+        return;
       case "error":
         if (msg.code === "ui_command_rejected") {
           emitUI({ type: "refused" });
@@ -564,6 +585,7 @@ const KNOWN_FRAME_TYPES = new Set([
   "envelope",
   "connection",
   "sync",
+  "response.accepted",
   "error",
   "ui.command",
   "view.published",

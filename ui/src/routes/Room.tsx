@@ -67,6 +67,8 @@ export default function Room({
   // presents something new or refuses it. The renderer stays mounted for the
   // whole of it; this only decides whether the operator can see and touch it.
   const [submitting, setSubmitting] = useState(false);
+  // What the host accepted from this tab, until it presents something else.
+  const [accepted, setAccepted] = useState<"resolved" | "canceled" | null>(null);
   const [status, setStatus] = useState<string>("Connecting to the interaction…");
   const [transport, setTransport] = useState<string>("connecting...");
   const [connection, setConnection] = useState<ConnectionState | null>(null);
@@ -99,6 +101,7 @@ export default function Room({
       }
       setPending({ envelopeId, envelope: enriched, revision, roomID: targetRoomID });
       setSubmitting(false);
+      setAccepted(null);
       setStatus("envelope received");
       setServerError(null);
     },
@@ -122,6 +125,15 @@ export default function Room({
       onSync: (next) => {
         lifecycleRef.current?.receiveSync(next);
         setSync(next);
+      },
+      onResponseAccepted: (ack) => {
+        // The host's word that the answer is recorded. Without it the room
+        // would say "Sending your response…" until a reload.
+        if (!lifecycleRef.current?.receiveAccepted(ack)) return;
+        setPending(null);
+        setSubmitting(false);
+        setAccepted(ack.outcome);
+        setStatus(ack.outcome === "canceled" ? "cancelled" : "response accepted");
       },
       onServerError: (refused) => {
         // A refused action did not happen, so the operator goes back to the
@@ -149,6 +161,7 @@ export default function Room({
         setConnection(null);
         setPending(null);
         setSubmitting(false);
+        setAccepted(null);
       },
       onError: (err) => {
         setError(err.message);
@@ -174,6 +187,7 @@ export default function Room({
     }
     setPending(null);
     setSubmitting(false);
+    setAccepted(null);
     setConnection(null);
     setSync(null);
     setServerError(null);
@@ -250,7 +264,11 @@ export default function Room({
           />
         </section>
       ) : null}
-      {!pending || submitting ? (
+      {accepted && !pending ? (
+        <p role="status" className="text-sm text-fg-faint">
+          {accepted === "canceled" ? "Cancelled." : "Response sent."}
+        </p>
+      ) : !pending || submitting ? (
         <p role="status" className="text-sm text-fg-faint">
           {submitting ? "Sending your response…" : "Connecting to the interaction…"}
         </p>
