@@ -30,10 +30,14 @@ Decided by the owner (2026-11-12):
 The order, fixed by the driver: merge the port (done), tag Tangent, bump and release the three plugin modules against
 that tag, then cut over with the plugins reinstalled.
 
-`tangent-plugins.version` (and `smoke-ref`) in the v0.21.0 tag still name the plugins built against the old client, which
-sends no key. Until a later commit bumps them to the plugin release, `make install-plugins` installs plugins that get 401
-on `/mcp`. Reinstall the plugins from the plugin release (or from a Tangent commit that carries the bumped pin), not from
-the bare tag.
+The three plugins are released (`tangent-runner/v0.2.0`, `tangent-tesseract/v0.2.0`, `tangent-torque/v0.2.0`, all at
+plugins commit `a5132c3`). `tangent-plugins.version` and `smoke-ref` name that commit from the pin commit on `main` on;
+the v0.21.0 tag itself (`207a6ba`) still names the old-client plugins, which get 401 on `/mcp`, so reinstall the plugins
+from a checkout at the pin commit or later, not from the bare tag.
+
+The build of `207a6ba` ran before the tag existed, so its tarball is named `tangent_v0.20.0-134-g207a6ba_...`. The
+installer reads by commit or run and nothing looks the artifact up by version: the cutover uses
+`fleet-install deploy tangent --commit 207a6ba` (or a later commit of `main`).
 
 ## 2. What runs today (read from the host, names only)
 
@@ -87,7 +91,7 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
 ## 5. Before the window (anyone, no downtime)
 
 1. Tag Tangent and release the three plugin modules against it (`runner`, `tesseract`, `torque` in the plugins
-   repository; the new host-callback client). Bump `tangent-plugins.version` in this repository to that plugin release.
+   repository; the new host-callback client). `tangent-plugins.version` in this repository names that release (done: plugins `a5132c3`).
    Without this the plugins start and fail loudly with `401` (section 8).
 2. Publish the release from `main` (CI is green on the merge): `tangent_<version>_linux_amd64.tar.gz`, `SHA256SUMS` and
    `deploy.yaml`, built by `.github/workflows/build.yml` (frontend built first, and a check that the published binary
