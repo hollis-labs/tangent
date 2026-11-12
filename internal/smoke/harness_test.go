@@ -1,13 +1,18 @@
 package smoke_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"net"
+	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,8 +84,8 @@ func repoRoot() string {
 // check that ran against a developer's real installation once is a smoke check
 // nobody runs again:
 //
-//   - TANGENT_DB_PATH is always set and always inside t.TempDir(), so the
-//     process cannot fall back to ~/.tangent/tangent.db.
+//   - TANGENT_DATA_DIR is always set and always inside t.TempDir(), so the
+//     process cannot fall back to the operator's real data directory.
 //   - The port is reserved by this test, never the default 7842, so a running
 //     local instance is neither contacted nor displaced.
 //
@@ -101,13 +106,6 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 	binary := tangentBinary(t)
 
 	root := t.TempDir()
-	dbPath := filepath.Join(root, "smoke", "tangent.db")
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
-		t.Fatalf("create smoke database directory: %v", err)
-	}
-	if !strings.HasPrefix(dbPath, root) {
-		t.Fatalf("refusing to boot: database path %q escapes the test temp root", dbPath)
-	}
 	pluginDir := installFirstPartyPlugins(t, binary, root)
 	// Resolve/build/install can take long enough for the kernel to reuse a
 	// released ephemeral port. Choose it only after staging, just before spawn.
@@ -116,20 +114,23 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		t.Fatalf("refusing to boot: reserved the default port 7842, which a local instance may own")
 	}
 
-	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
-	command.Env = append(os.Environ(),
+	// The host reads its address and the identity cost from the override file the
+	// SUBSTRATE_CONFIG variable names; everything else lives under the data directory.
+	override := filepath.Join(root, "substrate.local.yaml")
+	if err := os.WriteFile(override, []byte(fmt.Sprintf("httphost:\n  addr: \"127.0.0.1:%d\"\nidentity:\n  bcrypt_cost: 4\n", port)), 0o600); err != nil {
+		t.Fatalf("write config override: %v", err)
+	}
+	env := append(os.Environ(),
 		"HOME="+root,
-		"TANGENT_DB_PATH="+dbPath,
-		// The operator token lets the smoke operator elevate its browser
-		// session so it may answer (CW-20261016-0174). A fixture value,
-		// scoped to this throwaway process.
-		"TANGENT_OPERATOR_TOKEN="+smokeOperatorToken,
+		"TANGENT_DATA_DIR="+filepath.Join(root, "data"),
+		"SUBSTRATE_CONFIG="+override,
 		"TANGENT_PLUGIN_DIR="+pluginDir,
-		"TANGENT_HTTP_PORT="+strconv.Itoa(port),
-		// An unset dev frontend URL keeps the embedded bundle in play, which
-		// is what readiness reports on as the renderer host.
-		"TANGENT_DEV_FRONTEND_URL=",
 	)
+	// The owner and the smoke key are made the way production makes them: by the host's offline
+	// commands, before the server starts. POST /api/setup is always refused.
+	key := createOwnerAndKey(t, binary, env)
+	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
+	command.Env = env
 	var logs strings.Builder
 	command.Stdout = &logs
 	command.Stderr = &logs
@@ -140,6 +141,11 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		if command.Process == nil {
 			return
 		}
+		defer func() {
+			if t.Failed() {
+				t.Logf("the booted binary's log:\n%s", logs.String())
+			}
+		}()
 		// Signal this pid only. Never a pattern-matched kill: a smoke check
 		// that can take down a process it did not start is a worse outage than
 		// the one it was written to find.
@@ -161,7 +167,7 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		listening := endpoint.Listening(ctx)
 		cancel()
 		if listening {
-			return endpoint, pluginDir
+			return withOwnerSession(t, endpoint, key), pluginDir
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -236,6 +242,70 @@ func smokePlugins() []string {
 	return names
 }
 
+// pinnedPluginBuild builds the plugin at the pinned source commit against THIS tree's
+// pkg/plugin/hostclient. The plugin's callback to /mcp has to present the key the host mints for
+// its child (internal/childkeys), which the released hostclient does not do yet: until the plugins
+// repository takes the new hostclient, the fixture replaces the module with the working tree so
+// the shipped path is measured, not a stub. The plugin's own code is the pinned commit's, untouched.
+//
+// Checksums for the modules the build adds are not looked up in the public database: the commit
+// pins the source, and this is a test fixture built from a read-only module-cache copy.
+func pinnedPluginBuild(name, ref, workRoot, output string) (*exec.Cmd, error) {
+	module := "github.com/hollis-labs/plugins/tangent-" + name + "@" + ref
+	// #nosec G204 -- a fixed module path at the pinned source commit.
+	listing, err := exec.Command("go", "mod", "download", "-json", module).Output()
+	if err != nil {
+		return nil, fmt.Errorf("fetch %s: %w", module, err)
+	}
+	var downloaded struct{ Dir string }
+	if err = json.Unmarshal(listing, &downloaded); err != nil || downloaded.Dir == "" {
+		return nil, fmt.Errorf("fetch %s: no directory in %q", module, listing)
+	}
+	source := filepath.Join(workRoot, "src", name)
+	if err = copyTree(downloaded.Dir, source); err != nil {
+		return nil, err
+	}
+	goVersion, err := exec.Command("go", "list", "-m", "-f", "{{.GoVersion}}", "github.com/hollis-labs/tangent").Output()
+	if err != nil {
+		return nil, fmt.Errorf("this tree's go version: %w", err)
+	}
+	tree, err := filepath.Abs(repoRoot())
+	if err != nil {
+		return nil, err
+	}
+	edit := exec.Command("go", "mod", "edit", "-replace", "github.com/hollis-labs/tangent="+tree, "-go="+strings.TrimSpace(string(goVersion))) // #nosec G204 -- fixed arguments.
+	edit.Dir = source
+	if output, editErr := edit.CombinedOutput(); editErr != nil {
+		return nil, fmt.Errorf("replace the tangent module: %w\n%s", editErr, output)
+	}
+	build := exec.Command("go", "build", "-o", output, "./cmd/tangent-plugin-"+name) // #nosec G204 -- fixed arguments.
+	build.Dir = source
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GONOSUMDB=*", "GOWORK=off")
+	return build, nil
+}
+
+// copyTree copies a read-only module-cache directory into a writable one.
+func copyTree(from, to string) error {
+	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(to, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o750)
+		}
+		data, err := os.ReadFile(path) // #nosec G304,G122 -- a module-cache directory this test just resolved.
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o600) // #nosec G703 -- a path under this test's temp directory.
+	})
+}
+
 func buildFirstPartyPlugins() (map[string]string, error) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsFixtureRefFile))
 	if err != nil {
@@ -266,10 +336,10 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 			build = exec.Command("go", "build", "-o", built, "./cmd/"+binaryName)
 			build.Dir = filepath.Join(source, "tangent-"+name)
 		} else {
-			module := "github.com/hollis-labs/plugins/tangent-" + name + "/cmd/" + binaryName
-			// #nosec G204 -- a fixed module path at the pinned source commit.
-			build = exec.Command("go", "install", module+"@"+ref)
-			build.Env = append(os.Environ(), "GOBIN="+filepath.Join(dir, "bin"))
+			var err error
+			if build, err = pinnedPluginBuild(name, ref, root, built); err != nil {
+				return nil, err
+			}
 		}
 		if output, err := build.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("build %s: %w\n%s", binaryName, err, output)
@@ -325,4 +395,72 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 		}
 	}
 	return pluginDir
+}
+
+// smokePassphrase is the owner's passphrase in the smoke data directory. #nosec G101 -- a throwaway
+// passphrase for an owner that exists only in this test's data directory.
+const smokePassphrase = "a long smoke passphrase" // #nosec G101 -- throwaway, see above.
+
+// createOwnerAndKey runs `tangent identity setup` and `tangent identity key create` against the
+// booted binary's data directory and returns the key. The password goes in on stdin, never in an
+// argument or the environment; the key comes back on stdout.
+func createOwnerAndKey(t *testing.T, binary string, env []string) string {
+	t.Helper()
+	run := func(stdin string, args ...string) string {
+		command := exec.Command(binary, args...) // #nosec G204 -- the binary is the one this test just built.
+		command.Env = env
+		command.Stdin = strings.NewReader(stdin)
+		var stdout, stderr strings.Builder
+		command.Stdout, command.Stderr = &stdout, &stderr
+		if err := command.Run(); err != nil {
+			t.Fatalf("tangent %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
+		}
+		return strings.TrimSpace(stdout.String())
+	}
+	run(smokePassphrase+"\n", "identity", "setup", "--username", "owner")
+	args := []string{"identity", "key", "create", "--name", "smoke", "--stdout"}
+	for _, scope := range smokeKeyScopes {
+		args = append(args, "--scope", scope)
+	}
+	key := run("", args...)
+	if key == "" {
+		t.Fatal("no smoke key was minted")
+	}
+	return key
+}
+
+// owners are the signed-in owner sessions of the booted binaries, by base URL.
+var owners sync.Map
+
+// withOwnerSession signs the owner in (an ordinary login) for the tests that act as the person,
+// and returns the endpoint carrying the smoke key.
+func withOwnerSession(t *testing.T, endpoint smoke.Endpoint, key string) smoke.Endpoint {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 15 * time.Second}
+	encoded, _ := json.Marshal(map[string]any{"username": "owner", "password": smokePassphrase})
+	request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL+"/api/login", bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Requested-With", "smoke")
+	request.Header.Set("Origin", endpoint.BaseURL)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("POST /api/login: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(response.Body)
+		t.Fatalf("POST /api/login: %s: %s", response.Status, raw)
+	}
+	owners.Store(endpoint.BaseURL, client)
+	return endpoint.WithKey(key)
+}
+
+// smokeKeyScopes are the scopes of the smoke key: /mcp and every tool scope, never the decision.
+var smokeKeyScopes = []string{
+	"tangent.mcp", "tangent.view", "tangent.draft", "tangent.submit", "tangent.cancel",
+	"tangent.close", "tangent.withdraw", "tangent.deliver", "tangent.plugin",
 }

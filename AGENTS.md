@@ -25,7 +25,6 @@ something new.
   Tangent's own binary takes no application dependency, not which direction a
   write travels. `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
-  `cmd/tangent-app/main.go` is the Wails desktop shell.
 - `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
   writes to `internal/server/ui_dist/` so the embed resolves relative to the
   package.
@@ -204,9 +203,8 @@ from `internal/...` — the dependency is one-way. The transports
 (`internal/server`, `internal/mcp`, `internal/ws`) call services, never
 `internal/db` or raw SQL: `.golangci.transport.yml` is that gate, at hard block
 in `make lint` and CI, and a new transport directory has to be added to it.
-Wails is a real dependency
-today, confined to `cmd/tangent-app` and `internal/appshell`; that binary
-carries no `go:embed` of its own because the server already holds `ui_dist`.
+There is no desktop-shell dependency: the Wails app, the LaunchAgent and the macOS installer were removed (see
+`docs/conversion-notes.md`) and may return as their own task.
 
 There is no plugin sandbox, importmap or shared-chunk pattern here, and adding
 one needs an explicit decision rather than drift. Renderer trust classes and

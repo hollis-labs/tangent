@@ -136,12 +136,10 @@ func (h *effectHTTPHandler) request(w http.ResponseWriter, r *http.Request) {
 	result, err := h.broker.Request(r.Context(), effect.Request{
 		Capability: effect.Capability(strings.TrimSpace(command.Capability)),
 		Principal: effect.Principal{
-			Kind:  authz.KindParticipant,
-			Scope: session.Scope,
-			Ref:   session.Ref,
-			// Effective, not stored: a pre-elevation session row may list
-			// `resolve`, which only operator assurance may exercise.
-			Granted: session.EffectiveGrants(),
+			Kind:    authz.KindParticipant,
+			Scope:   session.Scope,
+			Ref:     session.Ref,
+			Granted: session.Grants,
 		},
 		Binding:        binding,
 		OwnerScope:     ownerScope,

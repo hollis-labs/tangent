@@ -9,42 +9,29 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
-	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/testdb"
 	"github.com/hollis-labs/tangent/internal/turns"
 )
 
 type turnsTestApp struct {
 	database *sql.DB
-	server   *server.Server
-	listener net.Listener
 	baseURL  string
-	done     chan error
 }
 
 func startTurnsTestApp(t *testing.T) *turnsTestApp {
 	t.Helper()
 	databasePath := filepath.Join(t.TempDir(), "turns-server-test.db")
-	database, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("tangentdb.Open: %v", err)
-	}
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		_ = database.Close()
-		t.Fatalf("RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, databasePath)
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		_ = database.Close()
@@ -68,38 +55,14 @@ func startTurnsTestApp(t *testing.T) *turnsTestApp {
 		_ = database.Close()
 		t.Fatalf("turns.NewService: %v", err)
 	}
-	manager := room.NewManager(database)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	httpServer, serverErr := server.New(server.Config{
-		Port:        0,
-		Logger:      logger,
-		Envelope:    envelopeService,
-		RoomManager: manager,
-		Turns:       turnsService,
-	})
-	if serverErr != nil {
-		_ = database.Close()
-		t.Fatalf("server.New: %v", serverErr)
-	}
-	listener, listenErr := httpServer.Listen()
-	if listenErr != nil {
-		_ = database.Close()
-		t.Fatalf("server.Listen: %v", listenErr)
-	}
-	app := &turnsTestApp{
-		database: database,
-		server:   httpServer,
-		listener: listener,
-		baseURL:  "http://" + listener.Addr().String(),
-		done:     make(chan error, 1),
-	}
-	go func() { app.done <- httpServer.Serve(listener) }()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = httpServer.Shutdown(ctx)
-		_ = database.Close()
-	})
+	baseURL := serveAs(t, server.Config{
+		Logger:   logger,
+		Envelope: envelopeService,
+		Turns:    turnsService,
+	}, ownerPrincipal())
+	app := &turnsTestApp{database: database, baseURL: baseURL}
+	t.Cleanup(func() { _ = database.Close() })
 	return app
 }
 

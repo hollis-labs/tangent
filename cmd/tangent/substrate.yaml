@@ -1,0 +1,21 @@
+# Tangent on Substrate. The manifest is the shell: modules and config.
+# Secure by default: the auth guard enforces, and the app is its own identity provider.
+app: tangent
+variant: app-host
+profiles: [minimal]
+modules:
+  add: [secrets, auth, database, identity, mcp, cli]
+config:
+  logging: { level: info, format: text }
+  httphost: { addr: "127.0.0.1:7842" }
+  # Paths here are defaults relative to the working directory. The binary resolves the data
+  # directory (XDG data home or TANGENT_DATA_DIR) and replaces them with absolute paths before
+  # the modules start.
+  database:
+    sqlite: { path: tangent.db }
+  auth: { mode: enforce }
+  identity: { key_file: identity-signing.key, session_ttl: 12h }
+  secrets: { state_dir: secrets }
+  # The app's own block (internal/settings).
+  tangent:
+    allowed_hosts: []

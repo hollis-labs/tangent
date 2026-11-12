@@ -12,13 +12,13 @@ import (
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
 
 	"github.com/hollis-labs/tangent/internal/authz"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/roomflow"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // This file is acceptance criterion 2 at the tool layer: cross-caller list,
@@ -182,14 +182,7 @@ type authorizationFixture struct {
 
 func newAuthorizationFixture(t *testing.T) (*authorizationFixture, *room.Manager) {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "authorization.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("run migrations: %v", migrateErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "authorization.db"))
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

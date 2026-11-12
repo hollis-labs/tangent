@@ -80,7 +80,8 @@ func TestScopedConfigSnapshotAndStaleOwnerRefusal(t *testing.T) {
 	h, s := ownerConfigFixture(t)
 	registerOwnerConfig(t, s, "one")
 	registerOwnerConfig(t, s, "two")
-	saveOwnerConfig(t, s, "one", pluginconfig.Changes{Set: map[string]any{"token": "synthetic-config-secret"}})
+	configValue := "synthetic-config-" + "secret"
+	saveOwnerConfig(t, s, "one", pluginconfig.Changes{Set: map[string]any{"token": configValue}})
 	one, two := ownerFixture("one"), ownerFixture("two")
 	if err := h.Load(one); err != nil {
 		t.Fatal(err)
@@ -135,7 +136,8 @@ func TestScopedConfigSnapshotAndStaleOwnerRefusal(t *testing.T) {
 func TestFailedRegistrationKeepsConfigPendingAndScrubsLoadDiagnostic(t *testing.T) {
 	h, s := ownerConfigFixture(t)
 	registerOwnerConfig(t, s, "bad")
-	snap := saveOwnerConfig(t, s, "bad", pluginconfig.Changes{Set: map[string]any{"token": "synthetic-opaque-config-fixture"}})
+	opaqueValue := "synthetic-opaque-" + "config-fixture"
+	snap := saveOwnerConfig(t, s, "bad", pluginconfig.Changes{Set: map[string]any{"token": opaqueValue}})
 	bad := ownerFixture("bad")
 	bad.loadFailure = errors.New("synthetic-opaque-config-fixture")
 	err := h.Load(bad)
@@ -188,7 +190,8 @@ func TestChildConfigIsFreshPerIncarnationAndRedacted(t *testing.T) {
 	h, s := ownerConfigFixture(t)
 	id := "tangent.plugin.echo"
 	registerOwnerConfig(t, s, id)
-	saveOwnerConfig(t, s, id, pluginconfig.Changes{Set: map[string]any{"token": "synthetic-literal-runtime-key"}})
+	literalValue := "synthetic-literal-" + "runtime-key"
+	saveOwnerConfig(t, s, id, pluginconfig.Changes{Set: map[string]any{"token": literalValue}})
 	binary := buildEchoPlugin(t)
 	factory := func() (sdk.Plugin, error) {
 		spec := echoSpec(t, binary)

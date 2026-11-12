@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Run go test with a temporary HOME and XDG tree and nothing else from the caller's environment,
+# so no test can reach the real Tangent data of the person running it.
+set -euo pipefail
+root="$(mktemp -d "${TMPDIR:-/tmp}/tangent-test.XXXXXX")"
+trap 'rm -rf "$root"' EXIT
+mkdir -p "$root"/{config,data,state,cache,run}
+exec env -i PATH="$PATH" GOPATH="$(go env GOPATH)" GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)" \
+  GOFLAGS="${GOFLAGS:-}" MIGRATION_PORT_BASE="${MIGRATION_PORT_BASE:-}" \
+  HOME="$root" XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" XDG_STATE_HOME="$root/state" \
+  XDG_CACHE_HOME="$root/cache" XDG_RUNTIME_DIR="$root/run" \
+  go test "$@"

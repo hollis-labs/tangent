@@ -159,7 +159,7 @@ func TestInboxReadPaginationFiltersAndCursorRefusal(t *testing.T) {
 
 func TestInboxReadSearchAndRetentionTombstones(t *testing.T) {
 	ctx := context.Background()
-	store, _ := openTestStore(t)
+	store, _ := openLegacyMigratedStore(t)
 	service := newTestService(t, store)
 	surface := createTestSurface(t, store, "retention-read")
 	record := inboxReadFixture(t, store, surface.ID, "standalone-local:a", "request", "literal 100% _ SQL quote ' and \"escaped\" text")
@@ -237,7 +237,7 @@ func (policy *inboxReadPolicy) AuthorizeInboxRead(string) bool { return !policy.
 
 func TestInboxReadPurgedCursorDoesNotRecoverLegacyContent(t *testing.T) {
 	ctx := context.Background()
-	store, _ := openTestStore(t)
+	store, _ := openLegacyMigratedStore(t)
 	service := newTestService(t, store)
 	removedSurface := createTestSurface(t, store, "purged-inbox")
 	retainedSurface := createTestSurface(t, store, "retained-inbox")

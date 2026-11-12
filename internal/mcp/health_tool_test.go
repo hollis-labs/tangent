@@ -10,17 +10,17 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/health"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // tangent_health_get is how a Tether-connected agent asks the operability
 // questions. It reaches Tangent over MCP and has no reason to hold an HTTP
-// client, so a readiness answer that only exists on /readyz is an answer that
+// client, so a readiness answer that only exists on /api/health/ready is an answer that
 // consumer never sees — and "the database is gone" becomes "the workflow is
 // flaky".
 
@@ -70,14 +70,7 @@ func connectWithHealth(
 
 func migratedDatabase(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "health.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err := tangentdb.RunMigrations(db); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testdb.Open(t, filepath.Join(t.TempDir(), "health.db"))
 	return db
 }
 

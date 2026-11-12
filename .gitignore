@@ -1,9 +1,6 @@
 # Go binary (top-level build output)
 /tangent
-/tangent-app
 /tangent-new-plugin
-/Tangent.app
-/Tangent.app-bin
 
 # Go build / test artifacts
 *.test
@@ -46,5 +43,8 @@ coverage.html
 # Cerberus source-tree build lock
 .cerberus-build.lock
 
-# Built plugin directories
+# Built plugin directories; also the shared app-build workflow writes dist/build-info.json into the
+# checkout, and an untracked file there makes Go stamp the build as modified (+dirty)
 /dist/
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep

@@ -13,13 +13,13 @@ import (
 
 	"github.com/hollis-labs/libs/mesh/core/hitl/hitltest"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // mcpHITLAdapter drives Tangent's tangent_hitl_* MCP tools through the
@@ -171,14 +171,7 @@ func newConformanceAdapter(t *testing.T) *mcpHITLAdapter {
 // The operator's resolve path is Tangent's own in both.
 func newConformanceAdapterFor(t *testing.T, goHITL bool) *mcpHITLAdapter {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "conformance.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "conformance.db"))
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

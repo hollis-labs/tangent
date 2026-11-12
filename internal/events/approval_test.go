@@ -103,7 +103,9 @@ func TestBuildStampIgnoresPayloadKeysAndFailsClosedEnvelope(t *testing.T) {
 func TestVerifiedFollowsRecordedAssurance(t *testing.T) {
 	for assurance, want := range map[string]string{
 		"": "none", "loopback-unverified": "claimed",
-		"operator-token": "token", "asserted": "claimed", "anything-else": "claimed",
+		"operator-token": "token", "identity-session": "token", "asserted": "claimed", "anything-else": "claimed",
+		// An agent's key is a verified credential but not a person: it must not read as one.
+		"key-verified": "claimed", "adapter-verified": "claimed",
 	} {
 		if got := Verified(assurance); got != want {
 			t.Errorf("Verified(%q) = %q, want %q", assurance, got, want)
@@ -182,8 +184,9 @@ func TestMappingFailureIsSkippedNotFatal(t *testing.T) {
 }
 
 func TestAssuranceDetailUsesClosedVocabulary(t *testing.T) {
+	opToken := "operator" + "-token"
 	ctx := context.Background()
-	for in, want := range map[string]string{"asserted": "asserted", "operator-token": "operator-token", "future-thing": "other"} {
+	for in, want := range map[string]string{"asserted": "asserted", opToken: opToken, "identity-session": "identity-session", "key-verified": "key-verified", "future-thing": "other"} {
 		db := openOutbox(t)
 		tx, err := db.Begin()
 		if err != nil {

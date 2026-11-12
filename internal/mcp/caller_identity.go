@@ -18,16 +18,10 @@ import (
 // off the wire: `caller.scope`, `requester_scope`, and `owner_scope` were
 // whatever the caller typed, and every check in the durable substrate was a
 // string comparison against that. The arguments are still accepted so the
-// shipped schemas do not break — but only their *partition* half survives.
-// The authority is assigned here, from admission facts, and no request can
-// spell it.
-//
-// The result of that split, stated plainly so nothing downstream mistakes it:
-// Verified HTTP bearer callers use a private context binding that assigns
-// gateway:<producer>. Wire assertions cannot change that scope. For tokenless
-// callers within `standalone-local`, a partition prevents accident, not intent. Any
-// local caller can assert any application id. Isolation is enforced only
-// across authorities, where the prefix is host-assigned.
+// shipped schemas do not break, but the caller is now the credential's:
+// callers.go derives it from the verified API key, and a request cannot spell
+// it. A wire assertion is read only when there is no credential at all, which
+// is an in-process call or a test.
 
 // callerIdentity derives the durable caller identity for one tool call.
 //
@@ -43,6 +37,9 @@ func callerIdentity(ctx context.Context) interaction.ActorBinding {
 	if binding, ok := verifiedCaller(ctx); ok {
 		return binding
 	}
+	if binding, ok := localCaller(ctx); ok {
+		return binding
+	}
 	return roomflow.DefaultCaller
 }
 
@@ -51,6 +48,9 @@ func callerIdentity(ctx context.Context) interaction.ActorBinding {
 // supplied.
 func declaredCaller(ctx context.Context, declared, principalRef string) interaction.ActorBinding {
 	binding, verified := verifiedCaller(ctx)
+	if !verified {
+		binding, verified = localCaller(ctx)
+	}
 	if !verified {
 		binding = roomflow.CallerFor(declared)
 	}
@@ -67,6 +67,9 @@ func declaredCaller(ctx context.Context, declared, principalRef string) interact
 // not.
 func requesterScope(ctx context.Context, declared string) string {
 	if binding, ok := verifiedCaller(ctx); ok {
+		return binding.Scope
+	}
+	if binding, ok := localCaller(ctx); ok {
 		return binding.Scope
 	}
 	return authz.CallerScope(declared)

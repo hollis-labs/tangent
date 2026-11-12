@@ -13,10 +13,9 @@ import (
 // This file is the version gate (CW-20260907-0019).
 //
 // The release version has exactly one source: the "version" field of
-// ui/package.json. scripts/build-macos-app.sh already stamps Tangent.app's
-// Info.plist from it; this test makes every other place a version appears in
-// prose agree with it, so a release cannot be cut with a README, CHANGELOG,
-// and bundle that disagree — which is how the tree came to say 0.1.0, v0.11.0,
+// ui/package.json. This test makes every place a version appears in
+// prose agree with it, so a release cannot be cut with a README and CHANGELOG
+// that disagree — which is how the tree came to say 0.1.0, v0.11.0,
 // and v0.12.0 about itself at the same time.
 //
 // The same rule the tool-count gate applies: a number in prose is only allowed
@@ -125,20 +124,5 @@ func TestBundleTemplateDerivesTheVersion(t *testing.T) {
 	}
 	if !strings.Contains(string(script), "require('./"+versionSource+"').version") {
 		t.Fatalf("scripts/build-macos-app.sh must read the version from %s", versionSource)
-	}
-}
-
-// TestNoOtherFileClaimsToBeTheVersionSource: the two files that historically
-// carried their own version (README status, CHANGELOG) are covered above; this
-// guards the one Go string that reads like a release version. The HTML
-// placeholder served when ui_dist is missing is a build-time message, not a
-// release claim, and says so.
-func TestNoOtherFileClaimsToBeTheVersionSource(t *testing.T) {
-	raw, err := os.ReadFile(repoPath("internal", "server", "static.go")) // #nosec G304 -- constant path inside the repository.
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "v0.1.0-dev") {
-		t.Fatal("internal/server/static.go still carries a literal v0.1.0-dev; the placeholder page must not look like a release version")
 	}
 }

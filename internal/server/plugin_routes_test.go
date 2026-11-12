@@ -1,382 +1,78 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
-	"path/filepath"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
+	libauth "github.com/hollis-labs/libs/security/auth"
 
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/authz"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/server"
 )
 
-// These tests hold CW-20260910-0030. The claim a plugin route makes is that a
-// button in a room can do work with no agent turn *and* that it is not a side
-// door around the guards every other browser route carries. Both halves need a
-// real, fully wired process to check — the class of bug this is guarding
-// against (CW-20260907-0084) was invisible to every test that used a fake
-// service with no participant gate configured.
+// A plugin route is a button in a room that does work with no agent turn, and it is not a side door
+// around the guards every other browser route carries. The host's own guard (cookie session, key
+// scopes, CSRF header) is the real host's: cmd/tangent/plugin_http_test.go asserts it there. These
+// tests drive the route table behind a stand-in for the principal the host's guard stamps, chosen
+// per request by the callerHeader, so what is asserted is the routes' own checks.
 
-// pluginRouteFunc adapts a function to the SDK's HTTPHandler.
-type pluginRouteFunc func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error)
+const callerHeader = "X-Test-Caller"
 
-func (f pluginRouteFunc) HTTPHandle(
-	ctx context.Context, req subprocess.HTTPRequest,
-) (subprocess.HTTPResponse, error) {
-	return f(ctx, req)
+const (
+	callerOwner = "owner"
+	callerAgent = "agent"
+)
+
+func principalFor(caller string) (libauth.Principal, bool) {
+	future := time.Now().Add(time.Hour)
+	switch caller {
+	case callerOwner:
+		return libauth.Principal{Verified: true, ID: "user:usr_owner", Kind: "user", SessionID: "ses_owner", Scopes: []string{"*"}, ExpiresAt: future}, true
+	case callerAgent:
+		return libauth.Principal{Verified: true, ID: "key:k_agent", Kind: "service", Display: "agent", Scopes: []string{"*"}, TokenID: "k_agent", ExpiresAt: future}, true
+	}
+	return libauth.Principal{}, false
 }
 
-func syncRoute(handler pluginRouteFunc) pluginhost.HTTPRoute {
-	return pluginhost.HTTPRoute{
-		Method:     http.MethodPost,
-		Path:       "/api/plugins/stub/sync",
-		Capability: authz.Draft,
-		Handler:    handler,
-	}
+type lockedLogs struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
 }
 
-// TestPluginRouteWorksForARealParticipantSession is the requirement itself,
-// stated as Chrispian did: press the button, the work happens, no agent turn.
-func TestPluginRouteWorksForARealParticipantSession(t *testing.T) {
-	t.Parallel()
-	var seen subprocess.HTTPRequest
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(_ context.Context, req subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				seen = req
-				return subprocess.HTTPResponse{
-					Status: http.StatusOK,
-					Body:   []byte(`{"applied":3}`),
-				}, nil
-			})}
-	})
-
-	cookie := app.openDocument(t, "/")
-	if cookie == nil {
-		t.Fatal("no participant session was minted")
-	}
-
-	request, err := http.NewRequest(http.MethodPost,
-		app.baseURL+"/api/plugins/stub/sync?scope=active",
-		strings.NewReader(`{"decisions":[]}`))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.AddCookie(cookie)
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("POST plugin route: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("POST /api/plugins/stub/sync with a minted session = %d, want 200",
-			response.StatusCode)
-	}
-	body, _ := io.ReadAll(response.Body)
-	if strings.TrimSpace(string(body)) != `{"applied":3}` {
-		t.Errorf("body = %q, want the plugin's own", body)
-	}
-
-	if seen.Method != http.MethodPost || seen.Path != "/api/plugins/stub/sync" {
-		t.Errorf("plugin saw %s %s", seen.Method, seen.Path)
-	}
-	if seen.Query["scope"] != "active" {
-		t.Errorf("plugin saw query %v, want the caller's", seen.Query)
-	}
-	if string(seen.Body) != `{"decisions":[]}` {
-		t.Errorf("plugin saw body %q, want the caller's", seen.Body)
-	}
-	// The two things that must not cross the boundary: ADR 0004 §6.1 makes the
-	// session id capability material, and a plugin holding the cookie could
-	// replay a participant's authority against every other route on this
-	// server.
-	if seen.SessionID != "" {
-		t.Errorf("plugin was handed session id %q; it must be empty", seen.SessionID)
-	}
-	for name := range seen.Headers {
-		if strings.EqualFold(name, "Cookie") || strings.EqualFold(name, "Authorization") {
-			t.Errorf("plugin was handed the %s header; it is the participant's credential", name)
-		}
-	}
-	if seen.Headers["Content-Type"] != "application/json" {
-		t.Errorf("plugin saw headers %v, want Content-Type among them", seen.Headers)
-	}
+func (l *lockedLogs) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
 }
 
-// TestPluginRouteRequiresAParticipantSession: a plugin route is not a way to
-// reach the process without one.
-func TestPluginRouteRequiresAParticipantSession(t *testing.T) {
-	t.Parallel()
-	called := false
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				called = true
-				return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-			})}
-	})
-
-	response := app.do(t, http.MethodPost, "/api/plugins/stub/sync", nil)
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusForbidden {
-		t.Errorf("POST a plugin route with no session = %d, want 403", response.StatusCode)
-	}
-	if called {
-		t.Error("the plugin handler ran for an unauthenticated request")
-	}
+func (l *lockedLogs) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
-// TestPluginRouteIsOriginGuarded: the guard that stops a drive-by POST from
-// any page the operator happens to have open covers plugin routes too, because
-// they are registered through the same door.
-func TestPluginRouteIsOriginGuarded(t *testing.T) {
-	t.Parallel()
-	called := false
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				called = true
-				return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-			})}
-	})
-	cookie := app.openDocument(t, "/")
-	if cookie == nil {
-		t.Fatal("no participant session was minted")
-	}
-
-	crossSite := http.Header{}
-	crossSite.Set("Sec-Fetch-Site", "cross-site")
-	response := app.doWithHeaders(t, http.MethodPost, "/api/plugins/stub/sync", cookie, crossSite)
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusForbidden {
-		t.Errorf("cross-site POST to a plugin route = %d, want 403", response.StatusCode)
-	}
-	if called {
-		t.Error("the plugin handler ran for a cross-site request")
-	}
+type pluginApp struct {
+	base  string
+	table *server.Table
+	logs  *lockedLogs
 }
 
-// TestPluginRouteAppearsInParticipantRoutes is what puts plugin routes inside
-// TestEveryParticipantGuardedRouteUsesACapabilityParticipantsHold. A route the
-// enumeration cannot see is a route no check covers.
-func TestPluginRouteAppearsInParticipantRoutes(t *testing.T) {
-	t.Parallel()
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-			})}
-	})
-	for _, route := range app.server.ParticipantRoutes() {
-		if route.Pattern == "POST /api/plugins/stub/sync" {
-			if route.Capability != authz.Draft {
-				t.Errorf("plugin route capability = %q, want the one it registered", route.Capability)
-			}
-			return
-		}
-	}
-	t.Fatal("the plugin route is not in ParticipantRoutes(); no capability check covers it")
-}
-
-// TestPluginRouteFailureRendersARefusal: a plugin that errors or panics gives
-// the SPA something to show, never a stack trace and never a dead process.
-func TestPluginRouteFailureRendersARefusal(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		handler pluginRouteFunc
-		want    string
-	}{
-		{
-			name: "an error is the plugin's own reason",
-			handler: func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				return subprocess.HTTPResponse{}, errPluginRefused
-			},
-			want: "torque is unreachable",
-		},
-		{
-			name: "a panic is contained",
-			handler: func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				panic("a plugin defect")
-			},
-			want: "panicked",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			app := startGuardedAppWith(t, func(cfg *server.Config) {
-				cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(test.handler)}
-			})
-			cookie := app.openDocument(t, "/")
-			if cookie == nil {
-				t.Fatal("no participant session was minted")
-			}
-
-			response := app.do(t, http.MethodPost, "/api/plugins/stub/sync", cookie)
-			defer func() { _ = response.Body.Close() }()
-			if response.StatusCode != http.StatusBadGateway {
-				t.Fatalf("status = %d, want 502", response.StatusCode)
-			}
-			var refusal struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-			}
-			if err := json.NewDecoder(response.Body).Decode(&refusal); err != nil {
-				t.Fatalf("decode refusal: %v", err)
-			}
-			if refusal.Code != "plugin_error" {
-				t.Errorf("code = %q, want plugin_error", refusal.Code)
-			}
-			if !strings.Contains(refusal.Message, test.want) {
-				t.Errorf("message = %q, want it to contain %q", refusal.Message, test.want)
-			}
-
-			// The process is still serving. A plugin defect is one route's
-			// problem.
-			healthy := app.do(t, http.MethodGet, "/api/hitl", cookie)
-			defer func() { _ = healthy.Body.Close() }()
-			if healthy.StatusCode != http.StatusOK {
-				t.Errorf("GET /api/hitl after a plugin failure = %d, want 200", healthy.StatusCode)
-			}
-		})
-	}
-}
-
-// TestPluginRouteCannotSetACookie is the outbound half of the credential
-// boundary: a plugin that could set a cookie could mint or overwrite a
-// participant session.
-func TestPluginRouteCannotSetACookie(t *testing.T) {
-	t.Parallel()
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				return subprocess.HTTPResponse{
-					Status: http.StatusOK,
-					Headers: map[string]string{
-						"Set-Cookie":   "tangent_participant=forged; Path=/",
-						"Content-Type": "application/json",
-					},
-					Body: []byte(`{}`),
-				}, nil
-			})}
-	})
-	cookie := app.openDocument(t, "/")
-	if cookie == nil {
-		t.Fatal("no participant session was minted")
-	}
-
-	response := app.do(t, http.MethodPost, "/api/plugins/stub/sync", cookie)
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", response.StatusCode)
-	}
-	if got := response.Header.Get("Set-Cookie"); got != "" {
-		t.Errorf("a plugin set a cookie: %q", got)
-	}
-	if got := response.Header.Get("Content-Type"); got != "application/json" {
-		t.Errorf("Content-Type = %q; an allowed header should have survived", got)
-	}
-	if !strings.Contains(app.logs.String(), "plugin route response headers dropped") {
-		t.Error("the dropped header was not logged; a plugin author would have no way to learn why")
-	}
-}
-
-// TestPluginRouteBodyIsCapped: a button is not an upload endpoint.
-func TestPluginRouteBodyIsCapped(t *testing.T) {
-	t.Parallel()
-	called := false
-	app := startGuardedAppWith(t, func(cfg *server.Config) {
-		cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				called = true
-				return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-			})}
-	})
-	cookie := app.openDocument(t, "/")
-	if cookie == nil {
-		t.Fatal("no participant session was minted")
-	}
-
-	request, err := http.NewRequest(http.MethodPost, app.baseURL+"/api/plugins/stub/sync",
-		strings.NewReader(strings.Repeat("x", 64*1024)))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.AddCookie(cookie)
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("POST oversized body: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Errorf("status = %d, want 413", response.StatusCode)
-	}
-	if called {
-		t.Error("an oversized body reached the plugin")
-	}
-}
-
-// TestServerRefusesAPluginRouteNoParticipantCouldReach is the second check, at
-// the layer that mounts. pluginhost already refuses this; a route that got past
-// it would answer 403 forever and look like a plugin bug.
-func TestServerRefusesAPluginRouteNoParticipantCouldReach(t *testing.T) {
-	t.Parallel()
-	unreachable := syncRoute(func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-		return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-	})
-	unreachable.Capability = authz.Submit
-
-	srv, err := server.New(server.Config{
-		Envelope:     buildEnvelopeServiceForPluginRouteCheck(t),
-		Participants: buildParticipantGateForPluginRouteCheck(t),
-		PluginRoutes: []pluginhost.HTTPRoute{unreachable},
-	})
-	if err == nil {
-		_ = srv
-		t.Fatal("server.New accepted a plugin route gated on a capability no participant holds")
-	}
-	if !strings.Contains(err.Error(), "submit") {
-		t.Errorf("server.New = %v, want the capability named", err)
-	}
-}
-
-// TestServerRefusesPluginRoutesWithNoParticipantGate: the gate is what
-// authorizes them, so mounting without one would publish them unguarded.
-func TestServerRefusesPluginRoutesWithNoParticipantGate(t *testing.T) {
-	t.Parallel()
-	_, err := server.New(server.Config{
-		Envelope: buildEnvelopeServiceForPluginRouteCheck(t),
-		PluginRoutes: []pluginhost.HTTPRoute{syncRoute(
-			func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-				return subprocess.HTTPResponse{Status: http.StatusOK}, nil
-			})},
-	})
-	if err == nil {
-		t.Fatal("server.New mounted plugin routes with no participant gate")
-	}
-	if !strings.Contains(err.Error(), "participant gate") {
-		t.Errorf("server.New = %v, want the missing gate named", err)
-	}
-}
-
-// errPluginRefused stands in for the shape a real app plugin fails with: the
-// application it adapts is down, and every other Tangent surface keeps working.
-var errPluginRefused = errors.New("torque is unreachable")
-
-func buildEnvelopeServiceForPluginRouteCheck(t *testing.T) *envelope.Service {
+func newEnvelope(t *testing.T) *envelope.Service {
 	t.Helper()
 	service, err := envelope.New(context.Background())
 	if err != nil {
@@ -385,23 +81,253 @@ func buildEnvelopeServiceForPluginRouteCheck(t *testing.T) *envelope.Service {
 	return service
 }
 
-func buildParticipantGateForPluginRouteCheck(t *testing.T) *participant.Gate {
+func startPluginApp(t *testing.T, mutate func(*server.Config)) *pluginApp {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "plugin-routes.db"))
+	logs := &lockedLogs{}
+	cfg := server.Config{
+		Envelope:     newEnvelope(t),
+		Participants: participant.NewGate(nil),
+		Logger:       slog.New(slog.NewTextHandler(logs, nil)),
+	}
+	mutate(&cfg)
+	table, err := server.New(cfg)
 	if err != nil {
-		t.Fatalf("open database: %v", err)
+		t.Fatalf("server.New: %v", err)
 	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("run migrations: %v", migrateErr)
-	}
-	store, err := participant.NewStore(database)
+	handler := table.Handler()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p, ok := principalFor(r.Header.Get(callerHeader)); ok {
+			r = r.WithContext(libauth.WithPrincipal(r.Context(), p))
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return &pluginApp{base: srv.URL, table: table, logs: logs}
+}
+
+func (a *pluginApp) do(t *testing.T, method, path, caller, body string, headers map[string]string) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, a.base+path, strings.NewReader(body))
 	if err != nil {
-		t.Fatalf("participant.NewStore: %v", err)
+		t.Fatal(err)
 	}
-	gate, err := participant.NewGate(store)
+	req.Header.Set("Content-Type", "application/json")
+	if caller != "" {
+		req.Header.Set(callerHeader, caller)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("participant.NewGate: %v", err)
+		t.Fatal(err)
 	}
-	return gate
+	defer func() { _ = res.Body.Close() }()
+	raw, _ := io.ReadAll(res.Body)
+	return res, raw
+}
+
+// pluginRouteFunc adapts a function to the SDK's HTTPHandler.
+type pluginRouteFunc func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error)
+
+func (f pluginRouteFunc) HTTPHandle(ctx context.Context, req subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+	return f(ctx, req)
+}
+
+func syncRoute(handler pluginRouteFunc) pluginhost.HTTPRoute {
+	return pluginhost.HTTPRoute{Method: http.MethodPost, Path: "/api/plugins/stub/sync", Capability: authz.Draft, Handler: handler}
+}
+
+func withRoute(handler pluginRouteFunc) func(*server.Config) {
+	return func(cfg *server.Config) { cfg.PluginRoutes = []pluginhost.HTTPRoute{syncRoute(handler)} }
+}
+
+func okRoute(called *bool) pluginRouteFunc {
+	return func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+		*called = true
+		return subprocess.HTTPResponse{Status: http.StatusOK}, nil
+	}
+}
+
+const syncPath = "/api/plugins/stub/sync"
+
+// The requirement itself: the signed-in owner presses the button, the work happens, no agent turn.
+func TestPluginRouteWorksForTheSignedInOwner(t *testing.T) {
+	var seen subprocess.HTTPRequest
+	app := startPluginApp(t, withRoute(func(_ context.Context, req subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+		seen = req
+		return subprocess.HTTPResponse{Status: http.StatusOK, Body: []byte(`{"applied":3}`)}, nil
+	}))
+	res, body := app.do(t, http.MethodPost, syncPath+"?scope=active", callerOwner, `{"decisions":[]}`, map[string]string{
+		"Cookie": "identity_session=capability-material", "Authorization": "Bearer capability-material",
+	})
+	if res.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != `{"applied":3}` {
+		t.Fatalf("the owner's call = %d %s, want 200 and the plugin's own body", res.StatusCode, body)
+	}
+	if seen.Method != http.MethodPost || seen.Path != syncPath || seen.Query["scope"] != "active" || string(seen.Body) != `{"decisions":[]}` {
+		t.Errorf("the plugin saw %+v, want the caller's request", seen)
+	}
+	// The credential that admitted the request is not the plugin's to hold.
+	if seen.SessionID != "" {
+		t.Errorf("the plugin was handed session id %q", seen.SessionID)
+	}
+	for name := range seen.Headers {
+		if strings.EqualFold(name, "Cookie") || strings.EqualFold(name, "Authorization") {
+			t.Errorf("the plugin was handed the %s header", name)
+		}
+	}
+	if seen.Headers["Content-Type"] != "application/json" {
+		t.Errorf("the plugin saw headers %v, want Content-Type among them", seen.Headers)
+	}
+}
+
+// A plugin route is not a way to reach the process without a user session, and an agent's key is
+// not one, whatever scopes it holds.
+func TestPluginRouteIsRefusedWithoutASessionAndForAnAgentKey(t *testing.T) {
+	var called bool
+	app := startPluginApp(t, withRoute(okRoute(&called)))
+	for name, caller := range map[string]string{"no credential": "", "an agent key": callerAgent} {
+		res, _ := app.do(t, http.MethodPost, syncPath, caller, "{}", nil)
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("a plugin route with %s = %d, want 403", name, res.StatusCode)
+		}
+	}
+	if called {
+		t.Fatal("the plugin handler ran for a caller that is not the signed-in owner")
+	}
+}
+
+// The check that stops a drive-by POST from a page the owner has open covers plugin routes too.
+func TestPluginRouteIsOriginGuarded(t *testing.T) {
+	var called bool
+	app := startPluginApp(t, withRoute(okRoute(&called)))
+	for name, headers := range map[string]map[string]string{
+		"a cross-site fetch": {"Sec-Fetch-Site": "cross-site"},
+		"a foreign Origin":   {"Origin": "https://evil.example.test"},
+	} {
+		res, _ := app.do(t, http.MethodPost, syncPath, callerOwner, "{}", headers)
+		if res.StatusCode != http.StatusForbidden {
+			t.Errorf("%s to a plugin route = %d, want 403", name, res.StatusCode)
+		}
+	}
+	if called {
+		t.Fatal("the plugin handler ran for a cross-origin request")
+	}
+}
+
+// The table the host maps onto its scope guard names the plugin's route with the scope its
+// capability needs, so a route the check cannot see does not exist.
+func TestPluginRouteAppearsInTheRouteTableWithItsScope(t *testing.T) {
+	var called bool
+	app := startPluginApp(t, withRoute(okRoute(&called)))
+	for _, route := range app.table.Routes() {
+		if route.Pattern == "POST "+syncPath {
+			if route.Scope != access.Draft || route.UserOnly {
+				t.Errorf("the plugin route is registered at scope %q (user-only %t), want %s and not user-only", route.Scope, route.UserOnly, access.Draft)
+			}
+			return
+		}
+	}
+	t.Fatal("the plugin route is not in the route table; the host would leave it unmapped")
+}
+
+// A plugin that errors or panics gives the SPA a refusal to show, never a stack trace or a dead
+// process.
+func TestPluginRouteFailureRendersARefusal(t *testing.T) {
+	for name, test := range map[string]struct {
+		handler pluginRouteFunc
+		want    string
+	}{
+		"an error is the plugin's own reason": {func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+			return subprocess.HTTPResponse{}, errors.New("torque is unreachable")
+		}, "torque is unreachable"},
+		"a panic is contained": {func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+			panic("a plugin defect")
+		}, "panicked"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app := startPluginApp(t, withRoute(test.handler))
+			res, body := app.do(t, http.MethodPost, syncPath, callerOwner, "{}", nil)
+			var refusal struct{ Code, Message string }
+			if err := json.Unmarshal(body, &refusal); res.StatusCode != http.StatusBadGateway || err != nil ||
+				refusal.Code != "plugin_error" || !strings.Contains(refusal.Message, test.want) {
+				t.Fatalf("a failing plugin route = %d %s, want 502 plugin_error naming %q", res.StatusCode, body, test.want)
+			}
+			if after, _ := app.do(t, http.MethodGet, "/api/health/capability", callerOwner, "", nil); after.StatusCode == http.StatusBadGateway {
+				t.Errorf("the server stopped serving after a plugin failure: %d", after.StatusCode)
+			}
+		})
+	}
+}
+
+// The outbound half of the credential boundary: a plugin that could set a cookie could overwrite a
+// session.
+func TestPluginRouteCannotSetACookie(t *testing.T) {
+	app := startPluginApp(t, withRoute(func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+		return subprocess.HTTPResponse{Status: http.StatusOK, Body: []byte(`{}`), Headers: map[string]string{
+			"Set-Cookie": "identity_session=forged; Path=/", "Content-Type": "application/json",
+		}}, nil
+	}))
+	res, _ := app.do(t, http.MethodPost, syncPath, callerOwner, "{}", nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	if got := res.Header.Get("Set-Cookie"); got != "" {
+		t.Errorf("a plugin set a cookie: %q", got)
+	}
+	if got := res.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q; an allowed header should have survived", got)
+	}
+	if !strings.Contains(app.logs.String(), "plugin route response headers dropped") {
+		t.Error("the dropped header was not logged; a plugin author would have no way to learn why")
+	}
+}
+
+// A button is not an upload endpoint.
+func TestPluginRouteBodyIsCapped(t *testing.T) {
+	var called bool
+	app := startPluginApp(t, withRoute(okRoute(&called)))
+	res, _ := app.do(t, http.MethodPost, syncPath, callerOwner, strings.Repeat("x", 64*1024), nil)
+	if res.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", res.StatusCode)
+	}
+	if called {
+		t.Error("an oversized body reached the plugin")
+	}
+}
+
+// pluginhost refuses a route no browser could reach when it is registered; the server checks again
+// where routes are mounted, because a route that got past would answer 403 forever and look like a
+// plugin bug.
+func TestServerRefusesAPluginRouteNoCallerCouldReach(t *testing.T) {
+	noop := func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
+		return subprocess.HTTPResponse{Status: http.StatusOK}, nil
+	}
+	submit := syncRoute(noop)
+	submit.Capability = authz.Submit
+	outside := syncRoute(noop)
+	outside.Path = "/api/hitl/sync"
+	for name, test := range map[string]struct {
+		route pluginhost.HTTPRoute
+		want  string
+	}{
+		"a capability a signed-in user never holds": {submit, "submit"},
+		"no capability at all":                      {func() pluginhost.HTTPRoute { r := syncRoute(noop); r.Capability = ""; return r }(), "gated on"},
+		"a path outside the reserved prefix":        {outside, "reserved"},
+	} {
+		_, err := server.New(server.Config{Envelope: newEnvelope(t), Participants: participant.NewGate(nil), PluginRoutes: []pluginhost.HTTPRoute{test.route}})
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Errorf("%s: server.New = %v, want a refusal naming %q", name, err, test.want)
+		}
+	}
+}
+
+// The user check is what authorizes the routes, so mounting them with none would publish them
+// guarded by nothing but their scope.
+func TestServerRefusesPluginRoutesWithNoUserGate(t *testing.T) {
+	var called bool
+	_, err := server.New(server.Config{Envelope: newEnvelope(t), PluginRoutes: []pluginhost.HTTPRoute{syncRoute(okRoute(&called))}})
+	if err == nil || !strings.Contains(err.Error(), "participant gate") {
+		t.Fatalf("server.New = %v, want the missing gate named", err)
+	}
 }

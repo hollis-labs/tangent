@@ -1,8 +1,7 @@
 # Tangent
 
 Tangent is an agent-summoned interactive surface: one Go binary, an MCP
-server, and a React SPA embedded in it, opened in a browser (or the
-`Tangent.app` desktop shell) when chat is the wrong shape for the work. Any
+server, and a React SPA embedded in it, opened in a browser when chat is the wrong shape for the work. Any
 MCP-speaking agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI — can
 summon a room, hand it a decision, and get a structured response back.
 
@@ -27,8 +26,6 @@ summon a room, hand it a decision, and get a structured response back.
   interactions, with FIFO arrival order, filters, and durable response history — a wait can return an
   inline answer or a pending receipt with a durable handle, and survives
   transport loss, timeouts, and process restart.
-- **A desktop shell.** `Tangent.app` (Wails v3) wraps the same loopback
-  server; unsigned and without a system tray yet.
 - A catalog of room-backed workflows spanning triage, form collection,
   diff/spreadsheet review, approval queues, dashboards, and agent artifacts. The current set is what the running binary reports — see
   [`docs/mcp-integration.md`](docs/mcp-integration.md) rather than trusting a
@@ -107,7 +104,6 @@ mise install            # pins Node; see mise.toml
 (cd ui && npm ci)
 make build              # → ./tangent, with the UI embedded
 make install-plugins    # optional: first-party plugins at tangent-plugins.version
-# `make build-app` additionally assembles Tangent.app on macOS.
 ```
 
 Run:

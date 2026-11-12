@@ -9,11 +9,11 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/channel"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // relayHarness bundles an MCP client connected to a server wired with
@@ -29,15 +29,7 @@ type relayHarness struct {
 
 func newRelayHarness(t *testing.T) *relayHarness {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "mcp-relay.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	err = tangentdb.RunMigrations(database)
-	if err != nil {
-		t.Fatalf("db.RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "mcp-relay.db"))
 	channels, err := channel.NewStore(database)
 	if err != nil {
 		t.Fatalf("channel.NewStore: %v", err)

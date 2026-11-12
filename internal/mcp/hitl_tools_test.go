@@ -8,29 +8,23 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestHITLToolsExposeContractAndAllFourDurableOperations(t *testing.T) {
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "mcp-hitl.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "mcp-hitl.db"))
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
@@ -332,8 +326,20 @@ func callHTTPMCP(t *testing.T, endpoint string, payload map[string]any) map[stri
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("HTTP MCP status = %d, body %s", response.StatusCode, body)
 	}
+	// The host's transport answers a POST that accepts text/event-stream with
+	// one SSE-framed message; a client that accepts only JSON gets JSON. Read
+	// either (TestStreamableHTTPReplyFraming records what each gets).
+	reply := body
+	if strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
+		for _, line := range strings.Split(string(body), "\n") {
+			if data, ok := strings.CutPrefix(line, "data: "); ok {
+				reply = []byte(data)
+				break
+			}
+		}
+	}
 	var decoded map[string]any
-	if err := json.Unmarshal(body, &decoded); err != nil {
+	if err := json.Unmarshal(reply, &decoded); err != nil {
 		t.Fatalf("decode HTTP MCP response: %v (body %s)", err, body)
 	}
 	return decoded

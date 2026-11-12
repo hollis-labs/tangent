@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/channel"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/relay"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 type testHarness struct {
@@ -24,15 +24,7 @@ type testHarness struct {
 
 func openTestHarness(t *testing.T) *testHarness {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "channelpane.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	err = tangentdb.RunMigrations(database)
-	if err != nil {
-		t.Fatalf("RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "channelpane.db"))
 	channels, err := channel.NewStore(database)
 	if err != nil {
 		t.Fatalf("channel.NewStore: %v", err)

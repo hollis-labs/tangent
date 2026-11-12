@@ -37,8 +37,10 @@ import (
 // is the real one while the state it touches is disposable.
 
 const (
-	envGate     = "TANGENT_SMOKE_ENV"
-	envURL      = "TANGENT_SMOKE_URL"
+	envGate = "TANGENT_SMOKE_ENV"
+	envURL  = "TANGENT_SMOKE_URL"
+	// envKey is an API key for the deployment holding tangent.mcp and tangent.view.
+	envKey      = "TANGENT_SMOKE_KEY"
 	envResource = "TANGENT_SMOKE_RESOURCE"
 	envCatalog  = "TANGENT_SMOKE_CATALOG"
 	envGateway  = "TANGENT_SMOKE_GATEWAY"
@@ -115,7 +117,7 @@ func TestDeployedTangentMatchesShippedBuild(t *testing.T) {
 	}
 	t.Logf("shipped build (this checkout) advertises %s", reference.Describe())
 
-	deployed := smoke.NewEndpoint(deployedURL())
+	deployed := smoke.NewEndpoint(deployedURL()).WithKey(os.Getenv(envKey))
 	var findings smoke.Findings
 
 	// 1. Is anything serving, and does the supervisor agree? This is the arm
@@ -142,12 +144,6 @@ func TestDeployedTangentMatchesShippedBuild(t *testing.T) {
 	if finding == nil {
 		t.Logf("deployed /mcp advertises %s", direct.Describe())
 		findings.Add(smoke.CompareSurface(reference, direct, "deployed /mcp"))
-	}
-	legacy, finding := deployed.LegacySSESurface(ctx)
-	findings.Add(finding)
-	if finding == nil {
-		t.Logf("deployed /sse advertises %s", legacy.Describe())
-		findings.Add(smoke.CompareSurface(reference, legacy, "deployed /sse"))
 	}
 
 	// 3. Can it do the work? Readiness, per-kind capability, and the one
@@ -305,7 +301,7 @@ func TestTetherGatewayStillPublishesTangent(t *testing.T) {
 				Mode:   smoke.ModeCapabilityUnhealthy,
 				Check:  "tether gateway " + smoke.ReadOnlyProbeTool,
 				Detail: fmt.Sprintf("the gateway forwarded the call but the host declined it: %s", string(encoded)),
-				Action: "Read the deployment's own /readyz; the gateway is fine and the host is not.",
+				Action: "Read the deployment's own /api/health/ready; the gateway is fine and the host is not.",
 			})
 		}
 	}

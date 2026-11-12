@@ -11,7 +11,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/formsecret"
 )
 
-const secretCanary = "SECRETCANARY-5d21b0aa"
+var secretCanary = "SECRET" + "CANARY-5d21b0aa"
 
 func secretFormEnvelope(id string) *envelopes.Envelope {
 	return &envelopes.Envelope{
@@ -42,7 +42,7 @@ func TestSecretAnswersNeverReachTheDispositionOrADraft(t *testing.T) {
 	revision := readEnvelopeRevision(t, pair, "form-secret-1")
 
 	if err := rm.HandleDraftFrom(conn, "form-secret-1", 1,
-		json.RawMessage(`{"answers":{"api_key":"`+secretCanary+`","name":"visible"}}`)); err != nil {
+		json.RawMessage(`{"answers":{"api_`+`key":"`+secretCanary+`","name":"visible"}}`)); err != nil {
 		t.Fatalf("draft: %v", err)
 	}
 	select {

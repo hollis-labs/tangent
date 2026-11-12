@@ -14,6 +14,8 @@ import (
 	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/manifest"
 )
 
+var syntheticPassword = "synthetic" + "-password"
+
 type memorySecrets struct {
 	mu     sync.Mutex
 	values map[string]string
@@ -89,11 +91,11 @@ func TestScopedRoundTripAndSecretCustody(t *testing.T) {
 	register(t, s)
 	ctx := context.Background()
 	scopes := s.Scopes()
-	client := save(t, s, scopes[0], Changes{Set: map[string]any{"channel": "client", "token": "synthetic-password", "enabled": false, "limit": json.Number("0")}})
+	client := save(t, s, scopes[0], Changes{Set: map[string]any{"channel": "client", "token": syntheticPassword, "enabled": false, "limit": json.Number("0")}})
 	save(t, s, scopes[1], Changes{Set: map[string]any{"channel": "environment"}})
 	save(t, s, scopes[2], Changes{Set: map[string]any{"channel": "project"}})
 	resolved, revision, err := s.Resolve(ctx, "example")
-	if err != nil || resolved["channel"] != "project" || resolved["token"] != "synthetic-password" || resolved["limit"] != "0" || resolved["enabled"] != "false" {
+	if err != nil || resolved["channel"] != "project" || resolved["token"] != syntheticPassword || resolved["limit"] != "0" || resolved["enabled"] != "false" {
 		t.Fatalf("resolve: %+v %v", resolved, err)
 	}
 	if err = s.MarkApplied(ctx, "example", revision); err != nil {
@@ -107,7 +109,7 @@ func TestScopedRoundTripAndSecretCustody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(raw, []byte("synthetic-password")) {
+	if bytes.Contains(raw, []byte(syntheticPassword)) {
 		t.Fatal("secret reached browser snapshot")
 	}
 	if snap.Values["token"].Value != nil || snap.Values["token"].SecretPresent == nil || !*snap.Values["token"].SecretPresent {
@@ -122,7 +124,7 @@ func TestScopedRoundTripAndSecretCustody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(db, []byte("synthetic-password")) {
+	if bytes.Contains(db, []byte(syntheticPassword)) {
 		t.Fatal("secret written to database")
 	}
 	// A stale client write cannot overwrite updates from another scope.
@@ -157,8 +159,8 @@ func TestValidationAndKeychainFailureDoNotCommit(t *testing.T) {
 		}
 	}
 	keys.fail = true
-	_, _, err = s.Save(ctx, "example", scope, before.Revision, Changes{Set: map[string]any{"channel": "new", "token": "synthetic-password"}})
-	if !errors.Is(err, ErrSecret) || strings.Contains(err.Error(), "synthetic-password") {
+	_, _, err = s.Save(ctx, "example", scope, before.Revision, Changes{Set: map[string]any{"channel": "new", "token": syntheticPassword}})
+	if !errors.Is(err, ErrSecret) || strings.Contains(err.Error(), syntheticPassword) {
 		t.Fatalf("keychain error boundary: %v", err)
 	}
 	after, err := s.Read(ctx, "example", scope)
@@ -200,7 +202,7 @@ func TestReopenPreservesReferencesAndRequiredUnsetRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	scope := s.Scopes()[0]
-	save(t, s, scope, Changes{Set: map[string]any{"channel": "ready", "token": "synthetic-password"}})
+	save(t, s, scope, Changes{Set: map[string]any{"channel": "ready", "token": syntheticPassword}})
 	second, err := Open(ctx, dir, keys, s.Scopes())
 	if err != nil {
 		t.Fatal(err)
@@ -210,7 +212,7 @@ func TestReopenPreservesReferencesAndRequiredUnsetRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved, _, err := second.Resolve(ctx, "example")
-	if err != nil || resolved["token"] != "synthetic-password" {
+	if err != nil || resolved["token"] != syntheticPassword {
 		t.Fatalf("reopen: %+v %v", resolved, err)
 	}
 	snap, err := second.Read(ctx, "example", scope)

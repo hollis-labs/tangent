@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/stopping"
 	"github.com/hollis-labs/tangent/internal/turns"
 )
 
@@ -244,6 +244,8 @@ func (h *turnsHTTPHandler) sessionReplies(w http.ResponseWriter, r *http.Request
 }
 
 func (h *turnsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
+	streamCtx, stopStream := stopping.Context(r)
+	defer stopStream()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -273,7 +275,7 @@ func (h *turnsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case <-lifetime.C:
 			return
@@ -360,27 +362,6 @@ func writeTurnsError(w http.ResponseWriter, err error) {
 		response["code"] = "conflict"
 	}
 	writeTurnsJSON(w, status, response)
-}
-
-func turnsLoopbackOrParticipantRoute(
-	mux *http.ServeMux,
-	routes *[]ParticipantRoute,
-	cfg Config,
-	pattern string,
-	capability authz.Capability,
-	handler http.HandlerFunc,
-) {
-	*routes = append(*routes, ParticipantRoute{Pattern: pattern, Capability: capability})
-	guarded := hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Non-browser loopback callers (like Tether daemon or test clients) without Origin/Sec-Fetch headers
-		// do not carry a browser cookie, but are permitted as local daemons.
-		if requestHostIsLoopback(r.Host) && r.Header.Get("Sec-Fetch-Site") == "" && r.Header.Get("Origin") == "" {
-			handler(w, r)
-			return
-		}
-		requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler).ServeHTTP(w, r)
-	}))
-	mux.Handle(pattern, guarded)
 }
 
 // withoutSyncTime returns the inbox with its read timestamp cleared, for ETag purposes only.

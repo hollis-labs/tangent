@@ -175,7 +175,7 @@ func (r *Reporter) Capability(kind string) CapabilityReport {
 	report.Presence = PresenceUnknown
 	report.Status = StatusFail
 	report.Action = "No definition manifest and no registered envelope type in this build " +
-		"answers to that kind. Check the spelling against the kind list at /healthz/capability."
+		"answers to that kind. Check the spelling against the kind list at /api/health/capability."
 	report.Correlation = correlationForKind(report.Kind)
 	return report
 }

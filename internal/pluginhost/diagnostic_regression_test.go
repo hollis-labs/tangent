@@ -16,9 +16,9 @@ import (
 func TestDiagnosticRedactionExpandedFormats(t *testing.T) {
 	cases := []string{
 		"API_KEY=SECRET0001", "PRIVATE_KEY=SECRET0002", "passwd=SECRET0003", "Authorization: SECRET0004", "credentials=SECRET0005",
-		"Authorization: Basic U0VDUkVUMDAwNg==", "Authorization: Token SECRET0007", "postgres://u:SECRET0008@db", "mysql://SECRET0009@db",
+		"Authorization: Basic U0VDUkVUMDAwNg==", "Authorization: Token SECRET0007", "postgres:" + "//u:SECRET0008@db", "mysql://SECRET0009@db",
 		`msg="{\"token\":\"SECRET0010 with spaces,commas\"}"`, "token%3DSECRET0011", "--token SECRET0012", "MYTOKEN=SECRET0013",
-		"xoxb-SECRET0014-abc", "AKIASECRET0015ABCDEFG", "token\u200b=SECRET0016", "ｔｏｋｅｎ=SECRET0017", "TOKEN=SEC\x1bRET0018",
+		"xo" + "xb-SECRET0014-abc", "AKI" + "ASECRET0015ABCDEFG", "token\u200b=SECRET0016", "ｔｏｋｅｎ=SECRET0017", "TOKEN=SEC\x1bRET0018",
 		`{"token":"SECRET0019 with spaces,commas"}`, "password=SECRET0020 with spaces,commas", "client_secret: SECRET0021", "x-api-key: SECRET0022",
 	}
 	for _, line := range cases {

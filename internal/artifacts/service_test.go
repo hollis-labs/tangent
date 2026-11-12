@@ -12,24 +12,17 @@ import (
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func newTestService(t *testing.T, opts ...Option) (*Service, *sql.DB, string) {
 	t.Helper()
 	root := t.TempDir()
-	database, err := tangentdb.Open(filepath.Join(root, "artifacts-test.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = tangentdb.RunMigrations(database); err != nil {
-		t.Fatalf("db.RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, filepath.Join(root, "artifacts-test.db"))
 	envSvc, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

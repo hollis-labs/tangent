@@ -14,26 +14,25 @@ import (
 	"github.com/hollis-labs/tangent/internal/roomflow"
 )
 
-// TestRoomWorkflowCompletionOverLegacySSE exercises the whole completion
-// contract across the legacy SSE transport rather than the in-memory one.
+// TestRoomWorkflowCompletionOverStreamableHTTP exercises the whole completion
+// contract across the Streamable HTTP transport rather than the in-memory one.
 //
-// Legacy SSE is the transport older MCP clients (and Tether's native-flat
-// gateway) actually use, and it is the one whose sessions the server-wide read
-// timeout used to kill mid-flight. Running the full sequence over it —
+// It is the transport the host serves (the legacy /sse transport is gone).
+// Running the full sequence over it —
 // pending receipt, operator answer, handle recovery, original-invocation
 // retry, acknowledgement, and cancellation — is what proves the contract is a
 // property of the adapter rather than of one transport.
-func TestRoomWorkflowCompletionOverLegacySSE(t *testing.T) {
+func TestRoomWorkflowCompletionOverStreamableHTTP(t *testing.T) {
 	rg := newDurableRig(t)
 	defer rg.cleanup()
 
-	sseServer := httptest.NewServer(rg.mcpSrv.SSEHandler())
+	sseServer := httptest.NewServer(rg.mcpSrv.HTTPHandler())
 	defer sseServer.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-sse-test", Version: "v0.0.0"}, nil)
-	session, err := client.Connect(ctx, &mcpsdk.SSEClientTransport{
+	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{
 		Endpoint: sseServer.URL, HTTPClient: http.DefaultClient,
 	}, nil)
 	if err != nil {

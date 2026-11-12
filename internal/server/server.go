@@ -1,18 +1,22 @@
+// Package server is Tangent's HTTP surface: the browser APIs for the inbox,
+// HITL, turns, docs, artifacts, channels, rooms, effects and plugins, and the
+// /ws bridge.
+//
+// It builds a route table. It does not listen, mint sessions, guard hosts or
+// verify callers: the Substrate host does (httphost, identity, auth). Every
+// route is registered with the scope it needs, and the table is what the host
+// maps onto auth.ScopeTable, so a route with no scope cannot exist.
 package server
 
 import (
-	"context"
-	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strings"
-	"time"
 
 	driver "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-host"
+
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -20,24 +24,11 @@ import (
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/pluginconfig"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
-	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 )
 
-// Config controls Server construction.
+// Config controls route construction.
 type Config struct {
-	// Port is the TCP port to listen on (e.g. 7842).
-	Port int
-
-	// ProxiedHTTPAddr optionally binds a second loopback socket whose requests
-	// always require MCP caller authentication, even without forwarding headers.
-	ProxiedHTTPAddr string
-
-	// DevFrontendURL, when non-empty, makes the server reverse-proxy all
-	// non-API requests to the given URL (typically a Vite dev server at
-	// http://localhost:5173). When empty, the embedded SPA is served.
-	DevFrontendURL string
-
 	// Logger receives structured logs. Defaults to slog.Default() when nil.
 	Logger *slog.Logger
 
@@ -48,25 +39,11 @@ type Config struct {
 	// envelope.
 	Envelope *envelope.Service
 
-	// MCP is the constructed MCP server (PR 3). When non-nil the HTTP
-	// server mounts /mcp (streamable HTTP) and /sse (legacy fallback).
-	// It's optional in Config so test code can spin up a server without
-	// the full MCP wiring; production main always passes a non-nil value.
-	MCP MCPServer
-
 	// WSHandler is the constructed WebSocket bridge handler (PR 4).
 	// When non-nil the HTTP server mounts /ws. Optional in Config so
 	// test code can spin up a server without the full WS wiring;
 	// production main always passes a non-nil value.
 	WSHandler http.Handler
-
-	// RoomManager is the in-memory multi-room session model (PR 4).
-	// When non-nil the HTTP server uses it to validate /r/<roomID>
-	// links — unknown ids return 404 immediately, before the SPA
-	// loads (which would otherwise show a confusing blank room).
-	// Optional in Config; when nil all /r/ requests fall through to
-	// the SPA which renders its own "room not found" view client-side.
-	RoomManager *room.Manager
 
 	// HITL is the durable operator-owned inbox application service. When set,
 	// the server mounts its dedicated browser API and revision event stream;
@@ -125,13 +102,9 @@ type Config struct {
 	// rather than 404ing, so an unwired build is visible instead of silent.
 	Health *health.Reporter
 
-	// Participants is the authenticated browser participant session gate.
-	//
-	// When set, document navigations mint a session, the browser APIs and the
-	// /ws upgrade require one, and a room UUID alone grants nothing. Optional
-	// in Config so an embedder or a transport-level test can construct a
-	// server without a database — production main always passes it, and
-	// leaving it nil is what the pre-ADR-0004 behavior was.
+	// Participants resolves the signed-in user behind a browser request. It is
+	// required: a route table with no gate would publish the browser APIs
+	// guarded by nothing but their scope, so New refuses it.
 	Participants *participant.Gate
 
 	// PluginRoutes are the ADR 0007 §4 plugin-served browser routes
@@ -157,99 +130,143 @@ type Config struct {
 	Telemetry *telemetry.Recorder
 }
 
-// MCPServer is the minimal contract internal/mcp satisfies. Declared as
-// an interface here (rather than importing the package directly) so
-// tests can inject a stub and to keep the import graph one-way: mcp
-// depends on envelope; server depends on mcp via this interface only.
-type MCPServer interface {
-	HTTPHandler() http.Handler
-	SSEHandler() http.Handler
+// Route is one HTTP route and the scope it needs.
+type Route struct {
+	// Pattern is "METHOD /path" as net/http spells it.
+	Pattern string
+	// Scope is the scope a request must hold. It is never empty: register
+	// refuses that.
+	Scope string
+	// UserOnly marks a route a signed-in user session alone may use, whatever
+	// scopes an API key holds. Every route whose scope is access.Resolve is
+	// UserOnly; routes whose pattern says "deliver" are not.
+	UserOnly bool
+	Handler  http.Handler
 }
 
-// Server is the Tangent HTTP server. It wraps a *http.Server and the
-// route registration; in v0.1 the only handler is the SPA (or its dev
-// reverse-proxy).
-type Server struct {
-	cfg    Config
-	logger *slog.Logger
-	mux    *http.ServeMux
-	httpS  *http.Server
-
-	// envelope holds the registry-backed validation/dispatch service
-	// shared with future MCP and WebSocket subsystems.
-	envelope *envelope.Service
-
-	// participantRoutes is CW-20260907-0084's enumeration point: every
-	// route registerParticipantRoute wired up during New, in the order it
-	// was registered. It exists so a check can read what the server
-	// actually did rather than a hand-maintained list that drifts the way
-	// #37's route did — see ParticipantRoutes.
-	participantRoutes []ParticipantRoute
-	cfgPluginHost     *pluginhost.Host
+// Method and Path split Pattern.
+func (r Route) Method() string {
+	method, _, found := strings.Cut(r.Pattern, " ")
+	if !found {
+		return ""
+	}
+	return method
 }
 
-// ParticipantRoute names one HTTP route requireParticipant gates, and the
-// capability it was registered with.
-type ParticipantRoute struct {
-	Pattern    string
-	Capability authz.Capability
+// Path is the path part of Pattern.
+func (r Route) Path() string {
+	_, path, found := strings.Cut(r.Pattern, " ")
+	if !found {
+		return r.Pattern
+	}
+	return path
 }
 
-// ParticipantRoutes returns every participant-guarded route this Server
-// registered, in registration order.
-//
-// It is CW-20260907-0084's answer to a real bug: PR #37 shipped
-// POST /api/channels/{id}/messages gated on authz.Submit, a capability
-// ADR 0004 §7's KindParticipant row never holds, so no browser participant
-// session could ever have sent a message through it — and every test for
-// that route used a fake service with no participant gate configured, so
-// nothing could have caught it. A check that reads this list back and
-// asserts every capability is one KindParticipant actually holds closes
-// that class at test time, for every route registerParticipantRoute wires
-// up, present and future, with no per-route test and no hand-maintained
-// list to drift.
-func (s *Server) ParticipantRoutes() []ParticipantRoute {
-	out := append([]ParticipantRoute(nil), s.participantRoutes...)
-	if s.cfgPluginHost != nil {
-		for _, route := range s.cfgPluginHost.HTTPRoutes() {
-			out = append(out, ParticipantRoute{Pattern: route.Pattern(), Capability: route.Capability})
+// Table is the set of routes New built.
+type Table struct {
+	routes []Route
+}
+
+// Routes lists every route in registration order.
+func (t *Table) Routes() []Route { return append([]Route(nil), t.routes...) }
+
+// API is the handler for every route under /api/, for httphost's Routes
+// option. The host's guard wraps it.
+func (t *Table) API() *http.ServeMux {
+	mux := http.NewServeMux()
+	for _, route := range t.routes {
+		if strings.HasPrefix(route.Path(), "/api/") {
+			mux.Handle(route.Pattern, route.Handler)
+		}
+	}
+	return mux
+}
+
+// Handler serves every route, API and outside, on one mux with nothing in
+// front of it: no host guard, no authentication. The host builds its own from
+// API and Outside; this is for tests and tools that exercise handlers.
+func (t *Table) Handler() http.Handler {
+	mux := http.NewServeMux()
+	for _, route := range t.routes {
+		mux.Handle(route.Pattern, route.Handler)
+	}
+	return mux
+}
+
+// ScopePattern is Pattern's path in the form auth.ScopeTable reads: a
+// trailing "{name...}" becomes the table's final "*".
+func (r Route) ScopePattern() string {
+	path := r.Path()
+	if i := strings.LastIndex(path, "{"); i >= 0 && strings.HasSuffix(path, "...}") {
+		return path[:i] + "*"
+	}
+	return path
+}
+
+// Outside lists the routes that are not under /api/, which the host mounts
+// one by one.
+func (t *Table) Outside() []Route {
+	var out []Route
+	for _, route := range t.routes {
+		if !strings.HasPrefix(route.Path(), "/api/") {
+			out = append(out, route)
 		}
 	}
 	return out
 }
 
-// registerParticipantRoute wires pattern to handler behind the same
-// same-origin and participant-capability guards every browser API route
-// uses, and records the (pattern, capability) pair on the Server being
-// built. This is the one place a route's capability is written down, so it
-// and Server.ParticipantRoutes can never drift apart — a route registered
-// any other way is, by construction, not a route ParticipantRoutes can see.
-func registerParticipantRoute(
-	mux *http.ServeMux,
-	routes *[]ParticipantRoute,
-	cfg Config,
-	pattern string,
-	capability authz.Capability,
-	handler http.HandlerFunc,
-) {
-	*routes = append(*routes, ParticipantRoute{Pattern: pattern, Capability: capability})
-	mux.Handle(pattern, hitlSameOrigin(requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler)))
+// router collects routes while New builds them.
+type router struct {
+	cfg    Config
+	routes []Route
+	seen   map[string]bool
+	err    error
 }
 
-const (
-	httpServerWriteTimeout = 60 * time.Second
-	httpServerReadTimeout  = 30 * time.Second
-)
-
-// New constructs a Server with the embedded-SPA or dev-proxy handler.
-//
-// cfg.Envelope must be non-nil. The envelope service is constructed at
-// startup in cmd/tangent/main.go; passing it through Config keeps the
-// server agnostic to manifest-load lifecycle.
-func New(cfg Config) (*Server, error) {
-	if err := validateProxiedHTTPAddr(cfg.ProxiedHTTPAddr); err != nil {
-		return nil, err
+// handle registers a route under scope. A route with no scope, or the same
+// pattern twice, is an error New returns.
+func (rt *router) handle(pattern, scope string, userOnly bool, handler http.Handler) {
+	handler = sameOriginGuard(handler)
+	switch {
+	case rt.err != nil:
+		return
+	case scope == "":
+		rt.err = fmt.Errorf("server: route %q has no scope", pattern)
+		return
+	case rt.seen[pattern]:
+		rt.err = fmt.Errorf("server: route %q registered twice", pattern)
+		return
 	}
+	rt.seen[pattern] = true
+	rt.routes = append(rt.routes, Route{Pattern: pattern, Scope: scope, UserOnly: userOnly, Handler: handler})
+}
+
+// participant registers a browser route: the caller must be a signed-in user,
+// holding the scope the capability maps to. The scope is checked by the host
+// before the handler runs, and again here against the session's grants, so the
+// ADR 0004 §7 matrix is consulted in one place.
+func (rt *router) participant(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+	scope := access.ForCapability(capability)
+	rt.handle(pattern, scope, scope == access.Resolve,
+		requireParticipant(rt.cfg.Participants, rt.cfg.Telemetry, capability, handler))
+}
+
+// caller registers a route a service credential may use as well as a user: a
+// producer enqueuing a turn, a consumer acknowledging one. The scope is its
+// own; none of these may be access.Resolve.
+func (rt *router) caller(pattern, scope string, handler http.HandlerFunc) {
+	if scope == access.Resolve {
+		rt.err = fmt.Errorf("server: caller route %q may not need %s: a decision is a user's", pattern, access.Resolve)
+		return
+	}
+	rt.handle(pattern, scope, false, handler)
+}
+
+// New builds the route table.
+//
+// cfg.Envelope and cfg.Participants must be non-nil, so a misconfigured boot
+// fails fast.
+func New(cfg Config) (*Table, error) {
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -257,10 +274,12 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Envelope == nil {
 		return nil, fmt.Errorf("server: envelope service is required")
 	}
+	if cfg.Participants == nil {
+		return nil, fmt.Errorf("server: participant gate is required")
+	}
 	if err := cfg.HITLEvents.validate(); err != nil {
 		return nil, fmt.Errorf("server: hitl events: %w", err)
 	}
-
 	if cfg.PluginHostInstance == "" {
 		epoch, err := driver.NewHostInstance()
 		if err != nil {
@@ -268,60 +287,24 @@ func New(cfg Config) (*Server, error) {
 		}
 		cfg.PluginHostInstance = epoch
 	}
-	mux := http.NewServeMux()
-	registerHealthRoutes(mux, cfg.Health)
-	var participantRoutes []ParticipantRoute
+	rt := &router{cfg: cfg, seen: map[string]bool{}}
 
-	if cfg.MCP != nil {
-		// Streamable-HTTP transport (modern MCP clients). The SDK's
-		// handler accepts POST + GET on the same URL — clients use POST
-		// to send JSON-RPC requests and may GET to subscribe to a
-		// session-scoped event stream. We mount it at the path level
-		// rather than per-method so both routes resolve to the same
-		// handler.
-		//
-		// The origin guard now covers it. It always permitted header-less
-		// non-browser clients, so MCP clients are unaffected; what it stops is
-		// a drive-by POST from any page the operator happens to have open,
-		// which until now could reach every session_* tool.
-		mux.Handle("/mcp", sameOriginGuard(longLivedMCPHandler(cfg.MCP.HTTPHandler())))
-		// SSE fallback for legacy Claude Code / older MCP clients. GET
-		// opens the long-lived event stream; POST is used for outbound
-		// JSON-RPC frames keyed against the streamed session id.
-		mux.Handle("/sse", sameOriginGuard(longLivedMCPHandler(cfg.MCP.SSEHandler())))
-		// Logged URLs use 127.0.0.1 (matching the actual bind) rather
-		// than the human-friendly "localhost" alias — on systems where
-		// localhost resolves to ::1 first without an IPv4 fallback, a
-		// pasted link would dead-end against an IPv4-only listener.
-		logger.Info("MCP server ready",
-			"http_url", fmt.Sprintf("http://127.0.0.1:%d/mcp", cfg.Port),
-			"sse_url", fmt.Sprintf("http://127.0.0.1:%d/sse", cfg.Port),
-		)
-	}
+	registerHealthRoutes(rt, cfg.Health)
 
 	if cfg.WSHandler != nil {
-		// /ws upgrades to WebSocket. Mounted before the catch-all so
-		// the SPA (or dev proxy) never sees the upgrade request.
-		// The upgrade is same-origin guarded here and participant-session
-		// guarded inside the handler, before the upgrade, so a refusal is an
-		// ordinary 403 rather than a socket that closes for no stated reason.
-		mux.Handle("GET /ws", sameOriginGuard(cfg.WSHandler))
-		logger.Info("WebSocket bridge ready",
-			"ws_url", fmt.Sprintf("ws://127.0.0.1:%d/ws", cfg.Port),
-		)
+		// /ws upgrades to WebSocket. The upgrade needs a user session, checked
+		// inside the handler before the upgrade so a refusal is an ordinary
+		// 403 rather than a socket that closes for no stated reason.
+		rt.handle("GET /ws", access.View, false, sameOriginGuard(cfg.WSHandler))
 	}
 
-	// Operator elevation (CW-20261016-0174): the only way a browser session
-	// acquires `resolve`.
-	registerOperatorElevation(mux, cfg, logger)
-
 	if cfg.Inbox != nil {
-		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
-		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
-		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/items/{interactionID}", authz.View, inboxItemHandler(cfg.Inbox))
+		rt.participant("GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
+		rt.participant("GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
+		rt.participant("GET /api/inbox/items/{interactionID}", authz.View, inboxItemHandler(cfg.Inbox))
 		if operator, ok := cfg.Inbox.(inboxOperator); ok {
-			registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/inbox/items/{interactionID}/archive", authz.Resolve, inboxArchiveHandler(operator))
-			registerParticipantRoute(mux, &participantRoutes, cfg, "DELETE /api/inbox/items/{interactionID}", authz.Resolve, inboxDeleteHandler(operator))
+			rt.participant("POST /api/inbox/items/{interactionID}/archive", authz.Resolve, inboxArchiveHandler(operator))
+			rt.participant("DELETE /api/inbox/items/{interactionID}", authz.Resolve, inboxDeleteHandler(operator))
 		}
 	}
 
@@ -334,7 +317,7 @@ func New(cfg Config) (*Server, error) {
 		hitlHandler.logger = logger
 		hitlHandler.eventStream = cfg.HITLEvents
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
-			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+			rt.participant(pattern, capability, handler)
 		}
 		register("GET /api/hitl", authz.View, hitlHandler.inbox)
 		register("GET /api/hitl/events", authz.View, hitlHandler.events)
@@ -355,16 +338,16 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Turns != nil {
 		turnsHandler := newTurnsHTTPHandler(cfg.Turns)
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
-			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+			rt.participant(pattern, capability, handler)
 		}
 		register("GET /api/turns", authz.View, turnsHandler.inbox)
 		register("GET /api/turns/events", authz.View, turnsHandler.events)
 		register("GET /api/turns/items/{itemID}", authz.View, turnsHandler.item)
 		register("POST /api/turns/items/{itemID}/reply", authz.Resolve, turnsHandler.reply)
 		register("POST /api/turns/items/{itemID}/dismiss", authz.Resolve, turnsHandler.dismiss)
-		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/enqueue", authz.Draft, turnsHandler.enqueue)
-		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "POST /api/turns/items/{itemID}/ack", authz.Resolve, turnsHandler.ack)
-		turnsLoopbackOrParticipantRoute(mux, &participantRoutes, cfg, "GET /api/turns/sessions/{sessionID}/replies", authz.View, turnsHandler.sessionReplies)
+		rt.caller("POST /api/turns/enqueue", access.Draft, turnsHandler.enqueue)
+		rt.caller("POST /api/turns/items/{itemID}/ack", access.Deliver, turnsHandler.ack)
+		rt.caller("GET /api/turns/sessions/{sessionID}/replies", access.View, turnsHandler.sessionReplies)
 	}
 
 	if cfg.Docs != nil {
@@ -375,7 +358,7 @@ func New(cfg Config) (*Server, error) {
 		// take `resolve`, matching HITL's resolve and Turns' dismiss/reply.
 		docsHandler := newDocsHTTPHandler(cfg.Docs)
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
-			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+			rt.participant(pattern, capability, handler)
 		}
 		register("GET /api/docs", authz.View, docsHandler.inbox)
 		register("GET /api/docs/events", authz.View, docsHandler.events)
@@ -392,7 +375,7 @@ func New(cfg Config) (*Server, error) {
 		// toward a terminal state or speak for the operator, so take resolve.
 		artifactsHandler := newArtifactsHTTPHandler(cfg.Artifacts)
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
-			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+			rt.participant(pattern, capability, handler)
 		}
 		register("GET /api/artifacts", authz.View, artifactsHandler.inbox)
 		register("GET /api/artifacts/events", authz.View, artifactsHandler.events)
@@ -418,9 +401,9 @@ func New(cfg Config) (*Server, error) {
 		// establishes which browser is asking; the caller identity decides
 		// what it may destroy.
 		roomHandler := newRoomHTTPHandler(cfg.Rooms)
-		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/rooms", authz.View, roomHandler.list)
-		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/rooms/{roomID}", authz.View, roomHandler.inspect)
-		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/rooms/{roomID}/close", authz.View, roomHandler.close)
+		rt.participant("GET /api/rooms", authz.View, roomHandler.list)
+		rt.participant("GET /api/rooms/{roomID}", authz.View, roomHandler.inspect)
+		rt.participant("POST /api/rooms/{roomID}/close", authz.View, roomHandler.close)
 	}
 
 	if cfg.Channels != nil {
@@ -457,7 +440,7 @@ func New(cfg Config) (*Server, error) {
 		// to them. See TestChannelSendWorksForARealParticipantSession.
 		channelHandler := newChannelHTTPHandler(cfg.Channels)
 		register := func(pattern string, capability authz.Capability, handler http.HandlerFunc) {
-			registerParticipantRoute(mux, &participantRoutes, cfg, pattern, capability, handler)
+			rt.participant(pattern, capability, handler)
 		}
 		register("GET /api/channels", authz.View, channelHandler.list)
 		register("GET /api/channels/events", authz.View, channelHandler.events)
@@ -474,192 +457,27 @@ func New(cfg Config) (*Server, error) {
 		// audit table free of rows for requests that were never participant
 		// acts.
 		effectHandler := newEffectHTTPHandler(cfg.Effects, cfg.EffectContext, cfg.Telemetry)
-		registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/effects", authz.View, effectHandler.request)
+		rt.participant("POST /api/effects", authz.View, effectHandler.request)
 	}
 
 	// Plugin registry endpoint (CW-20260911-0035). Serves registry.Response
 	// so the browser loader can resolve plugins. Registered before plugin-served
 	// routes so it cannot be claimed by a plugin.
-	registerPluginRegistryRoute(mux, logger, cfg.PluginHostInstance)
+	registerPluginRegistryRoute(rt, logger, cfg.PluginHostInstance)
 	if cfg.PluginConfig != nil && cfg.PluginHost != nil {
-		registerPluginConfig(mux, &participantRoutes, cfg, cfg.PluginConfig)
+		registerPluginConfig(rt, cfg.PluginConfig)
 	}
 
 	// Plugin-served routes (ADR 0007 §4, CW-20260910-0030). Mounted last, so
 	// every route this package writes by hand has already claimed its pattern
 	// and a plugin cannot take one; the reserved prefix makes that structural
 	// rather than a matter of ordering, and the ordering makes it obvious.
-	if err := registerPluginRoutes(mux, &participantRoutes, cfg, logger); err != nil {
+	if err := registerPluginRoutes(rt, logger); err != nil {
 		return nil, err
 	}
 
-	rootHandler, err := buildRootHandler(cfg, logger)
-	if err != nil {
-		return nil, fmt.Errorf("build root handler: %w", err)
+	if rt.err != nil {
+		return nil, rt.err
 	}
-
-	// /r/{roomID} → SPA. The SPA's React Router picks up the roomID
-	// from the path. When a RoomManager is configured we pre-validate
-	// the id so unknown rooms get a 404 before the SPA bundle loads;
-	// keeps the dev experience honest about ephemeral state.
-	if cfg.RoomManager != nil {
-		mux.Handle("GET /r/{roomID}", roomFallbackHandler(cfg.RoomManager, rootHandler))
-	}
-	mux.Handle("/", rootHandler)
-
-	// v0.x is localhost-only by design (concept doc: single-user, no
-	// auth, no cloud). Bind explicitly to 127.0.0.1 so a developer
-	// running `./tangent` on a coffee-shop wifi isn't inadvertently
-	// exposing MCP + WS to the LAN. A future release may add an
-	// opt-in BindAll flag; until then the constraint is enforced
-	// here rather than relying on docs/firewall hygiene.
-	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
-	httpS := &http.Server{
-		Addr: addr,
-		// Order matters and is the decision, not a detail. Security headers are
-		// outermost so nothing below can forget them; minting sits inside the
-		// headers and outside the routes so a document navigation has a
-		// session before any route reads one; logging stays innermost so it
-		// measures the handler rather than the middleware.
-		Handler:           markProxiedRequests(securityHeaders(cfg.DevFrontendURL, mintParticipantSessions(cfg.Participants, loggingMiddleware(logger, mux)))),
-		ConnContext:       proxiedConnContext,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       httpServerReadTimeout,
-		WriteTimeout:      httpServerWriteTimeout,
-		IdleTimeout:       120 * time.Second,
-	}
-
-	return &Server{
-		cfg:               cfg,
-		logger:            logger,
-		mux:               mux,
-		httpS:             httpS,
-		envelope:          cfg.Envelope,
-		participantRoutes: participantRoutes,
-		cfgPluginHost:     cfg.PluginHost,
-	}, nil
-}
-
-// longLivedMCPHandler removes both server-wide deadlines for MCP transports.
-// Room-backed tools deliberately wait for a human response, and SSE
-// subscriptions are likewise long-lived; both may validly outlive the ordinary
-// HTTP timeouts. Request-context cancellation remains authoritative.
-//
-// Clearing the write deadline alone is not enough. A legacy `/sse` session is a
-// GET whose request body is never closed by the client, so the server-wide
-// ReadTimeout keeps counting against the connection and tears the stream down
-// mid-session — the MCP session id then disappears and the next POST answers
-// "session not found". Both deadlines must go.
-func longLivedMCPHandler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		controller := http.NewResponseController(w)
-		_ = controller.SetWriteDeadline(time.Time{})
-		_ = controller.SetReadDeadline(time.Time{})
-		next.ServeHTTP(w, r)
-	})
-}
-
-// Envelope returns the wired envelope service. Exposed so future PRs
-// (MCP, WebSocket) can grab it after construction without revisiting
-// New's signature.
-func (s *Server) Envelope() *envelope.Service { return s.envelope }
-
-// ListenAndServe is a convenience for tests / non-production callers
-// that don't need to log readiness only after a successful bind.
-// Production main() uses Listen + Serve so bind failures surface before
-// the "tangent ready" log line.
-func (s *Server) ListenAndServe() error {
-	ln, err := s.Listen()
-	if err != nil {
-		return err
-	}
-	return s.Serve(ln)
-}
-
-// Shutdown gracefully drains in-flight requests with the given timeout.
-func (s *Server) Shutdown(ctx context.Context) error {
-	return s.httpS.Shutdown(ctx)
-}
-
-// buildRootHandler returns the root handler — either the embedded SPA
-// or a reverse proxy to a Vite dev server.
-func buildRootHandler(cfg Config, logger *slog.Logger) (http.Handler, error) {
-	if cfg.DevFrontendURL == "" {
-		return spaHandler(), nil
-	}
-
-	target, err := url.Parse(cfg.DevFrontendURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse dev frontend url: %w", err)
-	}
-	// url.Parse is lenient: "localhost:5173" parses with scheme="" and
-	// host="" (it lands in Path), which would silently produce a broken
-	// reverse proxy. Reject anything that isn't an absolute http(s) URL
-	// so misconfigured TANGENT_DEV_FRONTEND_URL fails fast.
-	if scheme := strings.ToLower(target.Scheme); scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("dev frontend url %q must use http or https scheme", cfg.DevFrontendURL)
-	}
-	if target.Host == "" {
-		return nil, fmt.Errorf("dev frontend url %q must include a host (e.g. http://localhost:5173)", cfg.DevFrontendURL)
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		// Connection refused / timeout → frontend dev server isn't up.
-		// Surface a clear message rather than the default 502.
-		logger.Warn("dev frontend proxy error",
-			"url", cfg.DevFrontendURL,
-			"path", r.URL.Path,
-			"err", err,
-		)
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		_, _ = io.WriteString(w, "tangent dev: frontend unreachable at "+cfg.DevFrontendURL+"\n")
-	}
-	return proxy, nil
-}
-
-// roomFallbackHandler validates the {roomID} path variable against the
-// live room manager and either delegates to the SPA handler (allowing
-// the React Router to pick up the route) or returns a 404. We don't
-// rewrite the request path — the SPA receives /r/<id> and chooses what
-// to render.
-func roomFallbackHandler(mgr *room.Manager, fallback http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("roomID")
-		if id == "" {
-			http.Error(w, "missing roomID", http.StatusBadRequest)
-			return
-		}
-		if _, ok := mgr.Get(id); !ok {
-			http.Error(w, "room not found", http.StatusNotFound)
-			return
-		}
-		fallback.ServeHTTP(w, r)
-	})
-}
-
-// loggingMiddleware emits a single structured log entry per request.
-//
-// It logs method, path, and duration. It must never be extended to log
-// r.URL.RawQuery, the Cookie or Authorization headers, or request bodies. That
-// is a maintenance rule, not an observation: the participant session id is the
-// only capability material in the system, and this is the one place in the
-// process with an obvious temptation to log it (ADR 0004 §6.2).
-func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		logger.Info("http",
-			"method", r.Method,
-			"path", r.URL.Path,
-			"duration", time.Since(start).String(),
-		)
-	})
-}
-
-// IsClosedErr reports whether err is the sentinel returned by a clean
-// http.Server.Shutdown call. Convenience wrapper so cmd/tangent doesn't
-// need to import net/http just for the comparison.
-func IsClosedErr(err error) bool {
-	return errors.Is(err, http.ErrServerClosed)
+	return &Table{routes: rt.routes}, nil
 }

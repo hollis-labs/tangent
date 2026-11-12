@@ -1,12 +1,8 @@
 package boot
 
 import (
-	"context"
 	"encoding/json"
-	"log/slog"
-	"net"
 	"net/http"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -15,28 +11,11 @@ import (
 )
 
 func TestRegistryUsesLifecycleHostEpoch(t *testing.T) {
-	root := t.TempDir()
-	_, srv, closer, err := Boot(Config{DBPath: filepath.Join(root, "tangent.db"), PluginDir: filepath.Join(root, "plugins"), Logger: slog.New(slog.DiscardHandler)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = closer.Close() })
-	epoch := closer.(*ownedCloser).plugins.HostInstance()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ln) }()
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-		<-done
-	})
+	app := startE2E(t, nil)
+	epoch := app.closer.(*ownedCloser).plugins.HostInstance()
 	client := &http.Client{Timeout: time.Second}
 	for i := 0; i < 2; i++ {
-		resp, err := client.Get("http://" + ln.Addr().String() + "/api/plugins/registry")
+		resp, err := client.Get(app.baseURL + "/api/plugins/registry")
 		if err != nil {
 			t.Fatal(err)
 		}

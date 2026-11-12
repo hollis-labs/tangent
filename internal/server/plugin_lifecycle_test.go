@@ -8,7 +8,7 @@ import (
 
 	sdk "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
-	"github.com/hollis-labs/tangent/internal/envelope"
+
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 	"github.com/hollis-labs/tangent/internal/server"
 )
@@ -26,16 +26,15 @@ func (p *liveRoutePlugin) Load(h sdk.Host) error {
 	return h.(interface {
 		RegisterHTTPRoute(pluginhost.HTTPRoute) error
 	}).RegisterHTTPRoute(syncRoute(func(context.Context, subprocess.HTTPRequest) (subprocess.HTTPResponse, error) {
-		return subprocess.HTTPResponse{Status: 200, Body: []byte(p.marker)}, nil
+		return subprocess.HTTPResponse{Status: http.StatusOK, Body: []byte(p.marker)}, nil
 	}))
 }
 
-func TestRuntimePluginRoutesAndManagementRetainParticipantGuards(t *testing.T) {
-	svc, err := envelope.New(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	host, err := pluginhost.New(context.Background(), nil, svc)
+// A route a plugin contributes while the server runs, and the enable, disable and reload actions
+// that change it, keep the guards: the actions decide, so only the owner's session may take them,
+// and the route a plugin serves is the owner's and nobody else's.
+func TestRuntimePluginRoutesAndManagementKeepTheirGuards(t *testing.T) {
+	host, err := pluginhost.New(context.Background(), nil, newEnvelope(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,56 +42,46 @@ func TestRuntimePluginRoutesAndManagementRetainParticipantGuards(t *testing.T) {
 	if err = host.ConfigureIntent(filepath.Join(t.TempDir(), "intent.json")); err != nil {
 		t.Fatal(err)
 	}
-	factory := func() (sdk.Plugin, error) { return &liveRoutePlugin{marker: "replacement"}, nil }
-	if err = host.RegisterFactory("live-route", factory); err != nil {
+	if err = host.RegisterFactory("live-route", func() (sdk.Plugin, error) { return &liveRoutePlugin{marker: "replacement"}, nil }); err != nil {
 		t.Fatal(err)
 	}
-	app := startGuardedAppWith(t, func(cfg *server.Config) { cfg.PluginHost = host })
-	// Plugin management and config writes take `resolve`, which needs an
-	// elevated session (CW-20261016-0174).
-	cookie := app.openElevatedDocument(t, "/")
-	request := func(path string, credential bool) int {
+	app := startPluginApp(t, func(cfg *server.Config) { cfg.PluginHost = host })
+	call := func(path, caller string) int {
 		t.Helper()
-		req, e := http.NewRequest(http.MethodPost, app.baseURL+path, nil)
-		if e != nil {
-			t.Fatal(e)
-		}
-		req.Header.Set("Origin", app.baseURL)
-		if credential {
-			req.AddCookie(cookie)
-		}
-		res, e := http.DefaultClient.Do(req)
-		if e != nil {
-			t.Fatal(e)
-		}
-		defer res.Body.Close()
+		res, _ := app.do(t, http.MethodPost, path, caller, "", nil)
 		return res.StatusCode
 	}
-	if got := request("/api/plugin-management/live-route/enable", false); got == 200 {
-		t.Fatal("unguarded lifecycle action")
+	const enable, disable, reload = "/api/plugin-management/live-route/enable", "/api/plugin-management/live-route/disable", "/api/plugin-management/live-route/reload"
+
+	for name, caller := range map[string]string{"no credential": "", "an agent key": callerAgent} {
+		if got := call(enable, caller); got != http.StatusForbidden {
+			t.Errorf("enable with %s = %d, want 403", name, got)
+		}
 	}
-	if got := request("/api/plugin-management/live-route/enable", true); got != 200 {
-		t.Fatalf("enable:%d", got)
+	if got := call(enable, callerOwner); got != http.StatusOK {
+		t.Fatalf("enable = %d", got)
 	}
-	if got := request("/api/plugins/stub/sync", false); got == 200 {
-		t.Fatal("dynamic route skipped participant guard")
+	for name, caller := range map[string]string{"no credential": "", "an agent key": callerAgent} {
+		if got := call(syncPath, caller); got != http.StatusForbidden {
+			t.Errorf("the plugin's live route with %s = %d, want 403", name, got)
+		}
 	}
-	if got := request("/api/plugins/stub/sync", true); got != 200 {
-		t.Fatalf("live route:%d", got)
+	if got := call(syncPath, callerOwner); got != http.StatusOK {
+		t.Fatalf("the plugin's live route = %d", got)
 	}
-	if got := request("/api/plugin-management/live-route/disable", true); got != 200 {
-		t.Fatalf("disable:%d", got)
+	if got := call(disable, callerOwner); got != http.StatusOK {
+		t.Fatalf("disable = %d", got)
 	}
-	if got := request("/api/plugins/stub/sync", true); got != 404 {
-		t.Fatalf("removed route:%d", got)
+	if got := call(syncPath, callerOwner); got != http.StatusNotFound {
+		t.Fatalf("the route of a disabled plugin = %d, want 404", got)
 	}
-	if got := request("/api/plugin-management/live-route/enable", true); got != 200 {
-		t.Fatalf("re-enable:%d", got)
+	if got := call(enable, callerOwner); got != http.StatusOK {
+		t.Fatalf("re-enable = %d", got)
 	}
-	if got := request("/api/plugin-management/live-route/reload", true); got != 200 {
-		t.Fatalf("reload:%d", got)
+	if got := call(reload, callerOwner); got != http.StatusOK {
+		t.Fatalf("reload = %d", got)
 	}
-	if got := request("/api/plugins/stub/sync", true); got != 200 {
-		t.Fatalf("replacement route:%d", got)
+	if got := call(syncPath, callerOwner); got != http.StatusOK {
+		t.Fatalf("the replacement's route = %d", got)
 	}
 }

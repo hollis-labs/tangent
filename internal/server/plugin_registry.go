@@ -6,6 +6,8 @@ import (
 	"net/http"
 
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/registry"
+
+	"github.com/hollis-labs/tangent/internal/access"
 )
 
 // registerPluginRegistryRoute mounts GET /api/plugins/registry.
@@ -16,11 +18,11 @@ import (
 // registered) as the validation target; full plugin discovery and contribution
 // collection is follow-on adoption work.
 func registerPluginRegistryRoute(
-	mux *http.ServeMux,
+	rt *router,
 	logger *slog.Logger,
 	hostInstance string,
 ) {
-	mux.HandleFunc("GET /api/plugins/registry", func(w http.ResponseWriter, r *http.Request) {
+	rt.handle("GET /api/plugins/registry", access.View, false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := buildRegistryResponse(hostInstance)
 
 		payload, err := json.Marshal(resp)
@@ -32,7 +34,7 @@ func registerPluginRegistryRoute(
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(payload)
-	})
+	}))
 }
 
 // buildRegistryResponse constructs a registry.Response from the plugin host state.

@@ -9,19 +9,12 @@ import (
 	"testing"
 
 	"github.com/hollis-labs/tangent/internal/authz"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func openTestStore(t *testing.T) (*Store, *sql.DB) {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "channel.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("run migrations: %v", migrateErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "channel.db"))
 	store, err := NewStore(database)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

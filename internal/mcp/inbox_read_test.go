@@ -7,25 +7,18 @@ import (
 	"strings"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestInboxReadToolsWireAuthorityAndReservedMutationRefusal(t *testing.T) {
 	ctx := context.Background()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "inbox-mcp.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = tangentdb.RunMigrations(database); err != nil {
-		t.Fatal(err)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "inbox-mcp.db"))
 	envelopes, err := envelope.New(ctx)
 	if err != nil {
 		t.Fatal(err)

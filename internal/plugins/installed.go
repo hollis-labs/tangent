@@ -27,11 +27,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/childkeys"
 
 	sdkplugin "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk"
 	"github.com/hollis-labs/tangent/internal/envelope"
@@ -149,7 +148,7 @@ func LoadInstalled(
 				if snapshotErr != nil {
 					return nil, snapshotErr
 				}
-				spec := specFor(entry, root, cleanup)
+				spec := specFor(entry, root, cleanup, settings.mcpURL, settings.keys)
 				if settings.config != nil {
 					spec.ResolveConfig = host.ResolveConfiguration(id)
 					spec.ConfigApplied = func(ctx context.Context, revision string) error {
@@ -173,36 +172,6 @@ func LoadInstalled(
 	}
 	return host, nil
 }
-
-// pluginEnvironment is what every child is told about its host.
-//
-// TANGENT_MCP_URL is how a plugin calls back — see specFor. It is derived from
-// the same environment Tangent's own server reads for its port, so a Tangent on
-// a non-default port hands its children the URL that actually reaches it rather
-// than one that used to.
-func pluginEnvironment() []string {
-	return []string{"TANGENT_MCP_URL=" + mcpURL()}
-}
-
-// mcpURL is the loopback address of this host's MCP endpoint.
-//
-// 127.0.0.1 rather than "localhost" for the reason internal/server already logs
-// it that way: on a system where localhost resolves to ::1 first without an
-// IPv4 fallback, the name dead-ends against an IPv4-only listener.
-func mcpURL() string {
-	port := defaultHTTPPort
-	if raw := os.Getenv(envHTTPPort); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			port = parsed
-		}
-	}
-	return fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-}
-
-const (
-	envHTTPPort     = "TANGENT_HTTP_PORT"
-	defaultHTTPPort = 7842
-)
 
 // specFor builds the spawn spec for one installed plugin.
 //
@@ -228,18 +197,40 @@ const (
 // resolved separately into each incarnation's Init.Config by the scoped host
 // store; this address does not confer additional capability grants.
 
-func specFor(entry pluginpkg.Installed, root string, cleanup func() error) pluginhost.ChildSpec {
-	return pluginhost.ChildSpec{
+func specFor(entry pluginpkg.Installed, root string, cleanup func() error, mcpURL string, keys *childkeys.Leases) pluginhost.ChildSpec {
+	spec := pluginhost.ChildSpec{
 		ID:       entry.Manifest.ID,
 		Version:  entry.Manifest.Version,
 		Command:  entry.Entrypoint,
 		WorkDir:  entry.Dir,
 		DataDir:  filepath.Join(root, ".state", entry.Manifest.ID, "data"),
 		CacheDir: filepath.Join(root, ".state", entry.Manifest.ID, "cache"),
-		Env:      pluginEnvironment(),
+		Env:      callbackEnvironment(mcpURL),
 		Verify:   func() error { return entry.Manifest.VerifyBundle(entry.Dir) },
 		Cleanup:  cleanup,
 	}
+	if keys != nil {
+		keyDir := filepath.Join(root, ".state", entry.Manifest.ID, "run")
+		spec.Credential = func(ctx context.Context) ([]string, func(), error) {
+			lease, env, err := keys.Open(ctx, entry.Manifest.ID, keyDir)
+			if err != nil {
+				return nil, nil, err
+			}
+			return env, lease.Close, nil
+		}
+	}
+	return spec
+}
+
+// callbackEnvironment is what every child is told about its host: TANGENT_MCP_URL, the address
+// the host really listens on (a Tangent on a non-default port hands its children the URL that
+// reaches it). 127.0.0.1 rather than "localhost" because on a system where localhost resolves to
+// ::1 first without an IPv4 fallback, the name dead-ends against an IPv4-only listener.
+func callbackEnvironment(mcpURL string) []string {
+	if mcpURL == "" {
+		return nil
+	}
+	return []string{"TANGENT_MCP_URL=" + mcpURL}
 }
 
 // toolsFor projects the manifest's tool declarations into host registrations.

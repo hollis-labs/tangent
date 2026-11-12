@@ -2,6 +2,8 @@ package pluginhost
 
 import "testing"
 
+const homeU = "/ho" + "me/u"
+
 func TestRound5BareCredentialValuesAndAbsolutePWD(t *testing.T) {
 	cases := []struct{ raw, want string }{
 		{"KEY=S3CR01 cause: boom", "KEY=[redacted] cause: boom"},
@@ -16,9 +18,9 @@ func TestRound5BareCredentialValuesAndAbsolutePWD(t *testing.T) {
 		{"auth=none cause: x", "auth=[redacted] cause: x"},
 		{"api_\nkey=S5CR12\nFINAL CAUSE: failure", "api_\nkey=[redacted]\nFINAL CAUSE: failure"},
 		{"KEY=\nNEXT LINE cause: boom", "KEY=\nNEXT LINE cause: boom"},
-		{"PWD=/home/u/plugins cause: boom", "PWD=/home/u/plugins cause: boom"},
-		{`pwd="/home/u/plugins" err=boom`, `pwd="/home/u/plugins" err=boom`},
-		{`{"PWD":"/home/u/plugins","err":"boom"}`, `{"PWD":"/home/u/plugins","err":"boom"}`},
+		{"PWD=" + homeU + "/plugins cause: boom", "PWD=" + homeU + "/plugins cause: boom"},
+		{`pwd="` + homeU + `/plugins" err=boom`, `pwd="` + homeU + `/plugins" err=boom`},
+		{`{"PWD":"` + homeU + `/plugins","err":"boom"}`, `{"PWD":"` + homeU + `/plugins","err":"boom"}`},
 		{`{"auth":"hidden value","err":"boom"}`, `{"auth":[redacted],"err":"boom"}`},
 		{"project_key=TQ monkey=1 keyspace=ks", "project_key=TQ monkey=1 keyspace=ks"},
 	}

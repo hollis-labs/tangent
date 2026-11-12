@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 type hitlLifecyclePrivilegedPolicy struct{}
@@ -31,14 +31,7 @@ func (hitlLifecyclePrivilegedPolicy) AuthorizeAdministrator(interaction.ActorBin
 // public browser or direct-MCP operation. It proves cancellation, withdrawal,
 // expiry, and transport-context loss cannot collapse into one terminal fact.
 func TestHITLLifecycleBoundariesKeepTerminalAuthoritiesDistinct(t *testing.T) {
-	database, openErr := tangentdb.Open(filepath.Join(t.TempDir(), "hitl-lifecycle-boundaries.db"))
-	if openErr != nil {
-		t.Fatalf("db.Open: %v", openErr)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "hitl-lifecycle-boundaries.db"))
 	envelopes, envelopeErr := envelope.New(context.Background())
 	if envelopeErr != nil {
 		t.Fatalf("envelope.New: %v", envelopeErr)

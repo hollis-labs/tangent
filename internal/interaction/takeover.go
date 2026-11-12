@@ -28,6 +28,9 @@ var assuranceRanks = map[string]int{
 	"asserted":            1,
 	"loopback-unverified": 1,
 	"operator-token":      2,
+	// A signed-in user's session (package participant): the strongest of the
+	// three, so the owner can resolve what any earlier admission presented.
+	"identity-session": 3,
 }
 
 // AssuranceRank returns the takeover rank of a participant assurance, or zero

@@ -9,6 +9,7 @@ import (
 	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
 
@@ -221,6 +222,9 @@ func (s *Server) AddPluginTool(tool pluginhost.MCPTool) error {
 			registered.OpenWorldHint = *a.OpenWorldHint
 		}
 	}
+	// Scoped at registration, before the tool can be listed or called: a tool
+	// with no scope is unreachable, so ordering matters here.
+	s.scopes.set(tool.Name, access.Plugin)
 	s.mcp.RegisterTool(registered)
 	if s.dynamicTools == nil {
 		s.dynamicTools = map[string]bool{}
@@ -236,6 +240,7 @@ func (s *Server) RemovePluginTools(names ...string) {
 		if !s.dynamicTools[name] {
 			continue
 		}
+		s.scopes.remove(name)
 		s.mcp.RemoveTools(name)
 		delete(s.claimedTools, name)
 		delete(s.dynamicTools, name)

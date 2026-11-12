@@ -15,10 +15,10 @@ import (
 
 	jsonschemav6 "github.com/santhosh-tekuri/jsonschema/v6"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestEnqueueAllocatesOneGlobalFIFOAndScopesIdempotency(t *testing.T) {
@@ -311,14 +311,7 @@ func TestOperatorInboxResumesPresentedItemAfterRestart(t *testing.T) {
 		t.Fatalf("close database: %v", closeErr)
 	}
 
-	restartedDB, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen database: %v", err)
-	}
-	t.Cleanup(func() { _ = restartedDB.Close() })
-	if migrationErr := tangentdb.RunMigrations(restartedDB); migrationErr != nil {
-		t.Fatalf("RunMigrations: %v", migrationErr)
-	}
+	restartedDB := testdb.Open(t, databasePath)
 	restartedInteractions, err := interaction.NewService(
 		interaction.NewStore(restartedDB),
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, "hitl-test-host"),
@@ -555,14 +548,7 @@ func TestAttentionPendingStateAndAcknowledgementSurviveRestart(t *testing.T) {
 		t.Fatalf("close database: %v", closeErr)
 	}
 
-	restartedDB, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen database: %v", err)
-	}
-	t.Cleanup(func() { _ = restartedDB.Close() })
-	if migrationErr := tangentdb.RunMigrations(restartedDB); migrationErr != nil {
-		t.Fatalf("RunMigrations: %v", migrationErr)
-	}
+	restartedDB := testdb.Open(t, databasePath)
 	restartedInteractions, err := interaction.NewService(
 		interaction.NewStore(restartedDB),
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, "hitl-test-host"),
@@ -717,14 +703,7 @@ func TestAwaitResolutionSurvivesDisconnectAndRestartWithoutAcknowledgingDelivery
 	if closeErr := database.Close(); closeErr != nil {
 		t.Fatalf("close pre-restart database: %v", closeErr)
 	}
-	restartedDB, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen DB: %v", err)
-	}
-	t.Cleanup(func() { _ = restartedDB.Close() })
-	if migrationErr := tangentdb.RunMigrations(restartedDB); migrationErr != nil {
-		t.Fatalf("RunMigrations after restart: %v", migrationErr)
-	}
+	restartedDB := testdb.Open(t, databasePath)
 	restartedInteractions, err := interaction.NewService(
 		interaction.NewStore(restartedDB),
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, "hitl-test-host"),
@@ -1112,14 +1091,7 @@ func newTestServiceAtPath(t *testing.T, databasePath string) (*Service, *interac
 // transition observer. The approval event observer is installed by default.
 func newTestServiceStore(t *testing.T, databasePath string) (*Service, *interaction.Service, *sql.DB, *envelope.Service, *interaction.Store) {
 	t.Helper()
-	database, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, databasePath)
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

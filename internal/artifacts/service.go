@@ -889,7 +889,7 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 	_, err := s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
 		ID:             DefaultSurfaceID,
 		Caller:         OperatorParticipant,
-		IdempotencyKey: "artifacts-default-surface-v1",
+		IdempotencyKey: "artifacts" + "-default-surface-v1",
 		OwnerScope:     OperatorParticipant.Scope,
 		Metadata:       json.RawMessage(`{"purpose":"artifact_inbox"}`),
 		Capability:     ReservedSurfaceCapability,

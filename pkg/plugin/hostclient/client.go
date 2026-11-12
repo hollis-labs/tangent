@@ -37,7 +37,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	gmcpclient "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/client"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,6 +56,15 @@ import (
 // host holds on a plugin's behalf, which is what keeps ADR 0005 §3.1's secret
 // boundary true by construction.
 const URLEnv = "TANGENT_MCP_URL"
+
+// KeyFileEnv names the environment variable carrying the path of the file that holds the plugin's
+// current API key. The host mints one key per child, short-lived, and rewrites the file when it
+// renews, so the client reads it on every request rather than once at start. KeyEnv carries a key
+// directly instead, for a host that does not renew (a test, a fixed deployment).
+const (
+	KeyFileEnv = "TANGENT_MCP_KEY_FILE"
+	KeyEnv     = "TANGENT_MCP_KEY"
+)
 
 // ErrNoHost reports that a plugin was started without being told where its host
 // is. It is returned rather than defaulted: a plugin that guessed a URL would
@@ -91,7 +103,10 @@ func New() (*Client, error) {
 	if url == "" {
 		return nil, ErrNoHost
 	}
-	pool := gmcpclient.NewPool(gmcpclient.WithIdentity("tangent-plugin", "0.1.0"))
+	pool := gmcpclient.NewPool(
+		gmcpclient.WithIdentity("tangent-plugin", "0.1.0"),
+		gmcpclient.WithHTTPClient(func(_ map[string]string, timeoutSeconds int) *http.Client { return newHTTPClient(timeoutSeconds) }),
+	)
 	if err := pool.Register(poolServerName, gmcpclient.ServerConfig{
 		Transport: gmcpclient.TransportHTTP,
 		URL:       url,
@@ -99,6 +114,42 @@ func New() (*Client, error) {
 		return nil, fmt.Errorf("hostclient: register %s: %w", url, err)
 	}
 	return &Client{pool: pool}, nil
+}
+
+// newHTTPClient is the client the pool dials the host with. It follows no redirects: the key is
+// added in the transport, so a redirect to another host would carry it there. The host answers /mcp
+// itself; a redirect is returned to the caller as the response it is.
+func newHTTPClient(timeoutSeconds int) *http.Client {
+	client := &http.Client{
+		Transport:     &keyTransport{base: http.DefaultTransport},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	if timeoutSeconds > 0 {
+		client.Timeout = time.Duration(timeoutSeconds) * time.Second
+	}
+	return client
+}
+
+// keyTransport presents the plugin's key as a bearer credential on every request. The key is read
+// from the file the host keeps current (or from the environment) each time: it is never held in a
+// field, so a renewal reaches the next request, and it is never logged.
+type keyTransport struct{ base http.RoundTripper }
+
+func (t *keyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	key := os.Getenv(KeyEnv)
+	if path := os.Getenv(KeyFileEnv); path != "" {
+		raw, err := os.ReadFile(path) // #nosec G304,G703 -- the host names this file in the child's environment.
+		if err != nil {
+			return nil, fmt.Errorf("hostclient: read the key file named by %s: %w", KeyFileEnv, err)
+		}
+		key = strings.TrimSpace(string(raw))
+	}
+	if key == "" {
+		return t.base.RoundTrip(req) // no credential: the host refuses, and says so
+	}
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+key)
+	return t.base.RoundTrip(req)
 }
 
 // Compile-time proof this is interchangeable with the in-process caller. Plugin

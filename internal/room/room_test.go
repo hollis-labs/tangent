@@ -18,6 +18,7 @@ import (
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestMain(m *testing.M) {
@@ -110,15 +111,7 @@ func runRoomReadLoop(ctx context.Context, rm *room.Room, conn *websocket.Conn, d
 
 func newTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := tangentdb.Open(t.TempDir() + "/tangent.db")
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	if err := tangentdb.RunMigrations(db); err != nil {
-		_ = tangentdb.Close(db)
-		t.Fatalf("db.RunMigrations: %v", err)
-	}
-	return db
+	return testdb.Open(t, t.TempDir()+"/tangent.db")
 }
 
 func newAnonRoom(t *testing.T, db *sql.DB) *room.Room {

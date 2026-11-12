@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/hollis-labs/tangent/internal/webui"
 )
 
 // The document policy, and the one cross-language constant it depends on.
@@ -19,12 +21,12 @@ import (
 // application needs. Real-browser verification is
 // docs/manual-tests/renderer-sandbox-e2e.md.
 
-func policyFor(t *testing.T, host, devFrontendURL string) map[string][]string {
+func policyFor(t *testing.T, host string) map[string][]string {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.Host = host
 	out := map[string][]string{}
-	for _, clause := range strings.Split(contentSecurityPolicy(request, devFrontendURL), ";") {
+	for _, clause := range strings.Split(contentSecurityPolicy(request), ";") {
 		fields := strings.Fields(clause)
 		if len(fields) == 0 {
 			continue
@@ -64,7 +66,7 @@ func TestSandboxFrameShimMatchesTheSPA(t *testing.T) {
 
 func TestTheDocumentPolicyEnforcesWhatItClaims(t *testing.T) {
 	t.Parallel()
-	csp := policyFor(t, "127.0.0.1:7842", "")
+	csp := policyFor(t, "127.0.0.1:7842")
 
 	// network.fetch. This directive is the whole reason that capability stopped
 	// being `MediationDeclared` — see effect.MediationFor.
@@ -123,35 +125,6 @@ func TestTheDocumentPolicyEnforcesWhatItClaims(t *testing.T) {
 	}
 }
 
-func TestTheDevProxyPolicyKeepsTheSandboxIntact(t *testing.T) {
-	t.Parallel()
-	csp := policyFor(t, "localhost:7842", "http://localhost:5173")
-
-	script := strings.Join(csp["script-src"], " ")
-	// Vite injects inline module scripts no hash can cover. A policy carrying
-	// both a hash and 'unsafe-inline' ignores 'unsafe-inline' entirely, so the
-	// hash is dropped rather than added alongside it.
-	if !strings.Contains(script, "'unsafe-inline'") {
-		t.Errorf("dev script-src = %q, want 'unsafe-inline' for Vite's preamble", script)
-	}
-	if strings.Contains(script, sandboxFrameShimSHA256) {
-		t.Errorf("dev script-src = %q; a hash beside 'unsafe-inline' voids the "+
-			"'unsafe-inline' and breaks the dev server", script)
-	}
-
-	connect := strings.Join(csp["connect-src"], " ")
-	for _, want := range []string{"http://localhost:5173", "ws://localhost:5173"} {
-		if !strings.Contains(connect, want) {
-			t.Errorf("dev connect-src = %q, want %s for Vite HMR", connect, want)
-		}
-	}
-	// The sandbox itself is unaffected: the frame's own policy carries the hash
-	// and denies everything else, so untrusted scripts stay blocked in dev too.
-	if got := strings.Join(csp["frame-ancestors"], " "); got != "'none'" {
-		t.Errorf("dev frame-ancestors = %q", got)
-	}
-}
-
 func TestPermissionsPolicyDeniesTheClipboardToEveryFrame(t *testing.T) {
 	t.Parallel()
 	policy := permissionsPolicy()
@@ -176,7 +149,7 @@ func TestPermissionsPolicyDeniesTheClipboardToEveryFrame(t *testing.T) {
 // next route forgets.
 func TestSecurityHeadersAreAppliedToEveryResponse(t *testing.T) {
 	t.Parallel()
-	handler := securityHeaders("", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	for _, path := range []string{"/", "/api/rooms", "/healthz", "/r/room-1"} {
@@ -210,12 +183,12 @@ func TestSecurityHeadersAreAppliedToEveryResponse(t *testing.T) {
 // against the artifact that actually ships.
 func TestTheShippedBundleCarriesTheHashedShimVerbatim(t *testing.T) {
 	t.Parallel()
-	dist, err := spaFileSystem()
+	dist, err := webui.Assets()
 	if err != nil {
-		t.Fatalf("spaFileSystem: %v", err)
+		t.Fatalf("webui.Assets: %v", err)
 	}
 	if _, statErr := fs.Stat(dist, "index.html"); statErr != nil {
-		t.Skip("no SPA build embedded; `make build-ui` populates internal/server/ui_dist")
+		t.Skip("no SPA build embedded; `make build-ui` populates internal/webui/dist")
 	}
 
 	shim := shimSource(t)

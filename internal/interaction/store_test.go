@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestCreateInteractionCollapsesRetriesAndAllocatesConcurrentOrder(t *testing.T) {
@@ -123,14 +124,7 @@ func TestHydrateSurfacePreservesOpenStateAcrossRestart(t *testing.T) {
 		t.Fatalf("close before restart: %v", err)
 	}
 
-	database, openErr := tangentdb.Open(databasePath)
-	if openErr != nil {
-		t.Fatalf("reopen database: %v", openErr)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err := tangentdb.RunMigrations(database); err != nil {
-		t.Fatalf("RunMigrations after restart: %v", err)
-	}
+	database := testdb.Open(t, databasePath)
 	restarted := NewStore(database)
 	snapshot, err := restarted.HydrateSurface(ctx, surface.ID)
 	if err != nil {
@@ -467,7 +461,7 @@ INSERT INTO envelopes (
 	}
 }
 
-func openTestStore(t *testing.T) (*Store, string) {
+func openLegacyMigratedStore(t *testing.T) (*Store, string) {
 	t.Helper()
 	databasePath := filepath.Join(t.TempDir(), "tangent.db")
 	database, openErr := tangentdb.Open(databasePath)
@@ -478,6 +472,13 @@ func openTestStore(t *testing.T) (*Store, string) {
 	if err := tangentdb.RunMigrations(database); err != nil {
 		t.Fatalf("db.RunMigrations: %v", err)
 	}
+	return NewStore(database), databasePath
+}
+
+func openTestStore(t *testing.T) (*Store, string) {
+	t.Helper()
+	databasePath := filepath.Join(t.TempDir(), "tangent.db")
+	database := testdb.Open(t, databasePath)
 	return NewStore(database), databasePath
 }
 

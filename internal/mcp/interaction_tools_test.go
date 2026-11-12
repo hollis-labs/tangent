@@ -10,23 +10,16 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "mcp-interactions.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "mcp-interactions.db"))
 
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
@@ -187,13 +180,7 @@ func TestGenericInteractionToolsAreOptionalAndHandleBased(t *testing.T) {
 
 func TestResolvedInteractionSurvivesMCPDisconnectAndProcessRestart(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "mcp-restart.db")
-	database, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, databasePath)
 
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
@@ -264,14 +251,7 @@ func TestResolvedInteractionSurvivesMCPDisconnectAndProcessRestart(t *testing.T)
 		t.Fatalf("close pre-restart database: %v", closeErr)
 	}
 
-	restartedDB, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen database: %v", err)
-	}
-	t.Cleanup(func() { _ = restartedDB.Close() })
-	if migrationErr := tangentdb.RunMigrations(restartedDB); migrationErr != nil {
-		t.Fatalf("RunMigrations after restart: %v", migrationErr)
-	}
+	restartedDB := testdb.Open(t, databasePath)
 	restartedService, err := interaction.NewService(
 		interaction.NewStore(restartedDB),
 		interaction.NewEnvelopeDefinitionCatalog(envelopeService, tangentmcp.HostVersion),

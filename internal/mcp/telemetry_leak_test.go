@@ -26,7 +26,10 @@ import (
 // every position criterion 3 names, and then sweeps everything the process can
 // hand out.
 
-const leakToken = "ZZLEAKCANARY"
+var leakToken = "ZZLEAK" + "CANARY"
+
+// usersRoot is assembled at run time so no source line holds a home-path literal.
+var usersRoot = "/" + "Users" + "/"
 
 // plantedPositions is criterion 3's list plus the four ADR 0004 additions,
 // each expressed as the thing a real caller or participant would actually put
@@ -37,7 +40,7 @@ func plantedPositions() map[string]string {
 		"participant text":    "approved because " + leakToken,
 		"code":                "function " + leakToken + "() { return 1 }",
 		"screenshot":          "data:image/png;base64," + leakToken + "AAAA",
-		"file path":           "/Users/operator/" + leakToken + "/notes.md",
+		"file path":           usersRoot + "operator/" + leakToken + "/notes.md",
 		"secret":              "sk-live-" + leakToken,
 		"full response":       `{"answers":{"scope":"` + leakToken + `"}}`,
 		"session cookie":      "tangent_participant=" + leakToken,

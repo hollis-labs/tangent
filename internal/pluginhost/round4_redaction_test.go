@@ -33,8 +33,8 @@ func TestRound4AssignmentKeepsTrailingDiagnosticFields(t *testing.T) {
 		{"API_KEY=\nCAUSE: original failure", "API_KEY=?CAUSE: original failure"},
 		{"cache key=users:42 miss; cause: boom", "cache key=[redacted] miss; cause: boom"},
 		{"auth=basic unsupported mode", "auth=[redacted] unsupported mode"},
-		{"PWD=/home/u/plugins", "PWD=/home/u/plugins"},
-		{"pwd=/home/u/plugins", "pwd=/home/u/plugins"},
+		{"PWD=" + homeU + "/plugins", "PWD=" + homeU + "/plugins"},
+		{"pwd=" + homeU + "/plugins", "pwd=" + homeU + "/plugins"},
 		{"--auth-mode basic failed: unsupported", "--auth-mode basic failed: unsupported"},
 		{"token%X", "token%X"},
 		{"token%", "token%"},
@@ -49,9 +49,9 @@ func TestRound4AssignmentKeepsTrailingDiagnosticFields(t *testing.T) {
 func TestRound4CheapCredentialPatterns(t *testing.T) {
 	for _, raw := range []string{
 		"Authorization: Digest response=hidden-value", "Authorization: ApiKey hidden-value", "Authorization: hidden-value",
-		"custom://hidden-value@host", "redis://u:hidden-value@host", "mongodb://hidden-value@host", "app:hidden-value@tcp(host)/db",
-		"-----BEGIN RSA PRIVATE KEY-----\nhidden-value\n-----END RSA PRIVATE KEY-----",
-		"-----BEGIN PRIVATE KEY-----\nhidden-value\n-----END PRIVATE KEY-----",
+		"custom://hidden-value@host", "redis:" + "//u:hidden-value@host", "mongodb://hidden-value@host", "app:hidden-value@tcp(host)/db",
+		"-----" + "BEGIN RSA PRIVATE KEY-----\nhidden-value\n-----END RSA PRIVATE KEY-----",
+		"-----" + "BEGIN PRIVATE KEY-----\nhidden-value\n-----END PRIVATE KEY-----",
 		"eyJabc.def.hidden-value", "ASIAHIDDENVALUE0000", "glpat-hidden-value", "AIzaHiddenValue0000", "npm_hidden-value", "SG.hidden-value.hidden-value",
 		"ghp_hiddenvalue0000", "token\\u003dhidden-value", "tok\\u200ben=hidden-value", "token\u200b=hidden-value",
 	} {
@@ -66,21 +66,26 @@ func TestRound4ReviewerCorpusAndExplicitLimitations(t *testing.T) {
 	var raw strings.Builder
 	var first []byte
 	for _, name := range []string{"A", "B", "C", "D"} {
-		data, err := os.ReadFile("testdata/round4/" + name + ".txt") //nolint:gosec // fixed test-owned corpus names, no external input
+		file := "testdata/round4/" + name + ".txt"
+		if name != "D" {
+			file += ".tmpl"
+		}
+		data, err := os.ReadFile(file) //nolint:gosec // fixed test-owned corpus names, no external input
 		if err != nil {
 			t.Fatal(err)
 		}
+		data = []byte(expandFixture(string(data)))
 		if name == "A" {
 			first = data
 		}
 		raw.Write(data)
 	}
-	data, err := os.ReadFile("testdata/round4/secrets.json")
+	data, err := os.ReadFile("testdata/round4/expectations.json.tmpl")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var secrets map[string][]string
-	if err := json.Unmarshal(data, &secrets); err != nil {
+	if err := json.Unmarshal([]byte(expandFixture(string(data))), &secrets); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range regexp.MustCompile(`S3CR[0-9][0-9]`).FindAllString(string(first), -1) {

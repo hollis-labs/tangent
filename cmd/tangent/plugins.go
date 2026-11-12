@@ -65,8 +65,8 @@ func pluginUsage(out io.Writer) {
   list            show installed plugins, including ones that will not load
   dir             print the install directory
 
-The install directory is `+pluginpkg.DirEnv+` when set, otherwise
-~/.tangent/plugins.
+The install directory is `+pluginpkg.DirEnv+` when set, otherwise the
+plugins directory inside Tangent's data directory.
 New plugins are disabled until explicitly enabled. Settings provides live
 enable, disable and reload controls for a running host; CLI changes require restart.
 `)

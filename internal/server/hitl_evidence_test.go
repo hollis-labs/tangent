@@ -50,7 +50,7 @@ func TestHITLEvidenceRoutesUseStoredItemAndIndex(t *testing.T) {
 		},
 		preview: hitl.ArtifactPreview{Status: "available", Kind: "text", Content: "checks passed"},
 	}
-	srv, err := New(Config{Envelope: envelopeService, HITL: fake})
+	srv, err := newTest(Config{Envelope: envelopeService, HITL: fake})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestHITLEvidenceRoutesReturnUsefulBoundedFailureStates(t *testing.T) {
 				t.Fatalf("envelope.New: %v", err)
 			}
 			fake := &fakeHITLEvidenceService{fakeHITLService: &fakeHITLService{}, err: test.err}
-			srv, err := New(Config{Envelope: envelopeService, HITL: fake})
+			srv, err := newTest(Config{Envelope: envelopeService, HITL: fake})
 			if err != nil {
 				t.Fatalf("New: %v", err)
 			}
@@ -108,7 +108,7 @@ func TestHITLEvidenceRoutesReturnUsefulBoundedFailureStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	srv, err := New(Config{Envelope: envelopeService, HITL: &fakeHITLService{}})
+	srv, err := newTest(Config{Envelope: envelopeService, HITL: &fakeHITLService{}})
 	if err != nil {
 		t.Fatalf("New without evidence service: %v", err)
 	}

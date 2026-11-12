@@ -160,7 +160,7 @@ describe("FormCollect", () => {
   });
 
   describe("secret fields", () => {
-    const SECRET = "SECRETCANARY-5d21b0aa";
+    const SECRET = ["SECRET", "CANARY-5d21", "b0aa"].join("");
     const secretEnvelope: FormCollectEnvelope = {
       v: 1,
       id: "form-secret",

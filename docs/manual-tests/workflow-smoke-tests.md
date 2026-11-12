@@ -20,13 +20,14 @@ make build
 3. Check the three health probes before blaming a workflow for anything:
 
 ```bash
-curl -fsS http://127.0.0.1:7842/healthz              # liveness — touches nothing
-curl -fsS http://127.0.0.1:7842/readyz | jq .        # readiness — must be "ok"
-curl -fsS http://127.0.0.1:7842/healthz/capability   # which kinds can be served
+curl -fsS http://127.0.0.1:7842/healthz                                              # liveness — touches nothing, open
+curl -fsS -H "Authorization: Bearer $KEY" http://127.0.0.1:7842/api/health/ready | jq .  # readiness — must be "ok"
+curl -fsS -H "Authorization: Bearer $KEY" http://127.0.0.1:7842/api/health/capability   # which kinds can be served
 ```
 
-   A 200 from `/healthz` is **not** evidence Tangent can serve. `/readyz` is.
-   `/healthz/capability/{kind}` answers for one kind.
+   `$KEY` is an API key holding `tangent.view` (`tangent identity key create --name probe --scope tangent.view --stdout`).
+   A 200 from `/healthz` is **not** evidence Tangent can serve. `/api/health/ready` is.
+   `/api/health/capability/{kind}` answers for one kind.
 
 4. Confirm the process is serving the build you think it is:
 

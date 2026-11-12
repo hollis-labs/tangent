@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // The store assertions run against a real SQLite file with the real migration
@@ -16,13 +17,7 @@ import (
 
 func newStore(t *testing.T) (*SQLStore, *sql.DB) {
 	t.Helper()
-	database, err := tangentdb.Open(t.TempDir() + "/tangent.db")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("migrate: %v", migrateErr)
-	}
+	database := testdb.Open(t, t.TempDir()+"/tangent.db")
 	t.Cleanup(func() { _ = tangentdb.Close(database) })
 	store, err := NewSQLStore(database)
 	if err != nil {

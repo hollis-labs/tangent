@@ -1,6 +1,6 @@
 // AUTO-GENERATED FILE — DO NOT EDIT MANUALLY
 // @definition-source sha256:345adbee66b97104eabdbcdf3c3fbfaed9adb5421b817eb10a7e198866cf29db
-// Generated from libs/ui-go v0.4.0 (envelopes) — do not edit.
+// Generated from libs/ui-go v0.1.0 (envelopes) — do not edit.
 // Run `make generate-envelopes` to regenerate.
 //
 // Coverage: 40 registered kinds — 18 go-envelopes core,

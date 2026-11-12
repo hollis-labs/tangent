@@ -365,8 +365,8 @@ func ClassifyCatalogEntry(entry CatalogEntry, servingURL string) *Finding {
 			Mode:   ModeUpstreamAbsent,
 			Check:  "tether catalog entry",
 			Detail: fmt.Sprintf("no catalog entry for %q at %s", entry.ID, entry.Path),
-			Action: "Add the Tangent upstream to the Tether catalog (`transport: sse`, " +
-				"`url: <base>/sse`, `enabled: true`) and refresh the gateway.",
+			Action: "Add the Tangent upstream to the Tether catalog (`transport: http`, " +
+				"`url: <base>/mcp`, `enabled: true`) and refresh the gateway.",
 		}
 	case !entry.Enabled:
 		return &Finding{
@@ -375,20 +375,22 @@ func ClassifyCatalogEntry(entry CatalogEntry, servingURL string) *Finding {
 			Detail: fmt.Sprintf("catalog entry %q is present but disabled", entry.ID),
 			Action: "Set `enabled: true` in the catalog entry and refresh the gateway.",
 		}
-	case entry.Transport != "sse":
+	case entry.Transport != "http" && entry.Transport != "streamable_http":
 		return &Finding{
 			Mode:  ModeCatalogStale,
 			Check: "tether catalog entry",
-			Detail: fmt.Sprintf("catalog entry %q declares transport %q; Tangent publishes the legacy "+
-				"stream at /sse for this gateway", entry.ID, entry.Transport),
-			Action: "Set `transport: sse` in the catalog entry and refresh the gateway.",
+			Detail: fmt.Sprintf("catalog entry %q declares transport %q; Tangent serves MCP over Streamable HTTP at /mcp "+
+				"(the legacy /sse stream is gone)", entry.ID, entry.Transport),
+			Action: "Set `transport: http` in the catalog entry and refresh the gateway.",
 		}
-	case !strings.HasPrefix(entry.URL, strings.TrimSuffix(servingURL, "/")):
+	case !strings.HasSuffix(strings.TrimSuffix(entry.URL, "/"), "/mcp"):
+		// The host part is not compared: the gateway reaches Tangent through the proxy's public name,
+		// not the loopback address the smoke run serves on.
 		return &Finding{
 			Mode:   ModeCatalogStale,
 			Check:  "tether catalog entry",
-			Detail: fmt.Sprintf("catalog entry %q points at %s but MCP is serving at %s", entry.ID, entry.URL, servingURL),
-			Action: "Point the catalog entry's `url` at the address that is serving, then refresh the gateway.",
+			Detail: fmt.Sprintf("catalog entry %q points at %s, which is not the /mcp endpoint (MCP is serving at %s/mcp)", entry.ID, entry.URL, strings.TrimSuffix(servingURL, "/")),
+			Action: "Point the catalog entry's `url` at `<base>/mcp`, then refresh the gateway.",
 		}
 	}
 	return nil
@@ -432,7 +434,7 @@ func ClassifyReadiness(report health.ReadinessReport, where string) *Finding {
 		}
 		action := check.Action
 		if action == "" {
-			action = "Read the full report at " + where + "/readyz."
+			action = "Read the full report at " + where + "/api/health/ready."
 		}
 		return &Finding{
 			Mode:   ModeCapabilityUnhealthy,
@@ -472,7 +474,7 @@ func ClassifyCapabilitySummary(report health.CapabilitySummaryReport, where stri
 	}
 	action := report.Action
 	if action == "" {
-		action = "Query the kind at " + where + "/healthz/capability/{kind} for its materialization state."
+		action = "Query the kind at " + where + "/api/health/capability/{kind} for its materialization state."
 	}
 	return &Finding{
 		Mode:  ModeCapabilityUnhealthy,

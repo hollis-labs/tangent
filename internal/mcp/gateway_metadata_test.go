@@ -11,7 +11,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -19,6 +18,7 @@ import (
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/telemetry"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // These tests reproduce CW-20260907-0022 at the MCP boundary: Tether's
@@ -35,14 +35,7 @@ const (
 
 func newGatewayTestServer(t *testing.T) *tangentmcp.Server {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "gateway.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("db.RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "gateway.db"))
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
@@ -246,6 +239,7 @@ func TestGatewayMetadataKeySetIsTinyAndDefinedOnce(t *testing.T) {
 // while serving a forwarded call.
 func registerUpstreamProbe(t *testing.T, server *tangentmcp.Server, recorder *telemetry.Recorder) {
 	t.Helper()
+	server.ScopeToolForTest("probe.upstream")
 	mcpsdk.AddTool(server.MCP(), &mcpsdk.Tool{Name: "probe.upstream", Description: "test probe"},
 		func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ map[string]any) (*mcpsdk.CallToolResult, any, error) {
 			recorder.Emit(ctx, telemetry.Event{

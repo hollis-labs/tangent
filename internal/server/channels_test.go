@@ -65,7 +65,7 @@ func newChannelTestServer(t *testing.T, fake *fakeChannelService) *Server {
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	srv, err := New(Config{Envelope: envelopeService, Channels: fake})
+	srv, err := newTest(Config{Envelope: envelopeService, Channels: fake})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

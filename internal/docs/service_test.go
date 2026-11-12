@@ -9,23 +9,16 @@ import (
 	"path/filepath"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func newTestService(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "docs-test.db")
-	database, err := tangentdb.Open(dbPath)
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err = tangentdb.RunMigrations(database); err != nil {
-		t.Fatalf("db.RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, dbPath)
 	envSvc, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

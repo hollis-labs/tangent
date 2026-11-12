@@ -2,15 +2,12 @@ package mcp_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -18,6 +15,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // newHITLAuthServer builds an MCP server with verified producer credentials
@@ -25,14 +23,7 @@ import (
 // goHITL, by the go-hitl Service. It returns the database for inspection.
 func newHITLAuthServer(t *testing.T, goHITL bool) (*tangentmcp.Server, *sql.DB) {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "auth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatal(migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "auth.db"))
 	env, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -50,12 +41,9 @@ func newHITLAuthServer(t *testing.T, goHITL bool) (*tangentmcp.Server, *sql.DB) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))), "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	options := []tangentmcp.Option{
-		tangentmcp.WithCallerAuth(auth), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService),
+		tangentmcp.WithCallers(tangentmcp.Callers{Gateway: []string{"alpha", "beta"}}),
+		tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService),
 	}
 	if goHITL {
 		options = append(options, tangentmcp.WithHITLWire(gohitl.New(database, catalog)))
@@ -77,7 +65,7 @@ func TestVerifiedGatewayCallerScopeIsIdenticalOnBothBackends(t *testing.T) {
 	for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
 		t.Run(name, func(t *testing.T) {
 			server, database := newHITLAuthServer(t, goHITL)
-			httpServer := httptest.NewServer(server.HTTPHandler())
+			httpServer := httptest.NewServer(server.HTTPHandlerWith(testKeys))
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			t.Cleanup(cancel)

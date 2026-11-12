@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func TestRestartRecoveryPreservesEveryLifecycleAndResumesIdempotently(t *testing.T) {
@@ -94,14 +94,7 @@ func TestRestartRecoveryPreservesEveryLifecycleAndResumesIdempotently(t *testing
 	if closeErr := store.db.Close(); closeErr != nil {
 		t.Fatalf("close pre-restart database: %v", closeErr)
 	}
-	restartedDB, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen database: %v", err)
-	}
-	t.Cleanup(func() { _ = restartedDB.Close() })
-	if migrationErr := tangentdb.RunMigrations(restartedDB); migrationErr != nil {
-		t.Fatalf("RunMigrations after restart: %v", migrationErr)
-	}
+	restartedDB := testdb.Open(t, databasePath)
 	restartedStore := NewStore(restartedDB)
 	restarted := newTestService(t, restartedStore)
 	report, err := restarted.RecoverAfterRestart(ctx)

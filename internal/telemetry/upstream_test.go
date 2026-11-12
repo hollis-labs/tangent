@@ -34,7 +34,7 @@ func TestParseTraceparentAcceptsOnlyWellFormedVersion00(t *testing.T) {
 		"all-zero trace":   "00-00000000000000000000000000000000-" + upstreamSpanHex + "-01",
 		"all-zero span":    "00-" + upstreamTraceHex + "-0000000000000000-01",
 		"a sentence":       "please trace this call for me thanks",
-		"path-shaped":      "00-/Users/someone/private/file-" + upstreamSpanHex + "-01",
+		"path-shaped":      "00-" + usersRoot + "someone/private/file-" + upstreamSpanHex + "-01",
 		"embedded newline": "00-" + upstreamTraceHex + "-" + upstreamSpanHex + "-01\ninjected",
 	} {
 		t.Run(name, func(t *testing.T) {

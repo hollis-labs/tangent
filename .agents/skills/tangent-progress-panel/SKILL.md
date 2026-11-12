@@ -57,7 +57,7 @@ read it back with `tangent_interaction_await` or `tangent_interaction_get`.
 ## Through the Tether gateway
 
 - Use `{ "completion": { "mode": "async", "reply_to": "msg://agent/agent-mux/agt_YOURS" } }`. The result's `handle.url` is a loopback address; give the
-  operator `https://tangent.nanite.cloud/r/<room_id>`. The panel also appears in the Inbox under
+  operator `https://tangent.example.test/r/<room_id>`. The panel also appears in the Inbox under
   **Structured interactions**.
 - The operator must elevate once (token entry, any Approve or Reply action) before answering, and reload
   the room after elevating.

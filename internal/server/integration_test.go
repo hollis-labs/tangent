@@ -18,7 +18,6 @@ import (
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
-	"github.com/hollis-labs/tangent/internal/server"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 	tangentws "github.com/hollis-labs/tangent/internal/ws"
 )
@@ -111,7 +110,8 @@ func newRig(t *testing.T) *rig {
 	telemetrySink := &recordingTelemetrySink{}
 	wsHandler.SetTelemetry(telemetry.New(telemetry.WithSink(telemetrySink)))
 
-	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "")
+	mcpSrv, err := tangentmcp.New(envSvc, dispatcher, mgr, "",
+		tangentmcp.WithAuthorizer(func(context.Context, string, string) error { return nil }))
 	if err != nil {
 		t.Fatalf("mcp.New: %v", err)
 	}
@@ -144,19 +144,6 @@ func newRig(t *testing.T) *rig {
 	if regErr := tangentmcp.RegisterSynthesisNotesOnDispatcher(dispatcher, triageHandler); regErr != nil {
 		t.Fatalf("RegisterSynthesisNotesOnDispatcher: %v", regErr)
 	}
-
-	httpSrv, err := server.New(server.Config{
-		Port:        0, // ignored — we wrap the mux ourselves below.
-		Logger:      logger,
-		Envelope:    envSvc,
-		MCP:         mcpSrv,
-		WSHandler:   wsHandler,
-		RoomManager: mgr,
-	})
-	if err != nil {
-		t.Fatalf("server.New: %v", err)
-	}
-	_ = httpSrv // we don't ListenAndServe; we test the WS handler via its own httptest server below.
 
 	// Spin up an httptest server for the WS endpoint. We don't need
 	// the full router for the integration test — the MCP client uses

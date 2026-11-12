@@ -194,7 +194,7 @@ your checkout.
 ```bash
 cerberus resource status tangent-dev    # what the supervisor believes
 cerberus resource deploy tangent-dev    # rebuild and restart — the way to restart
-cerberus resource doctor  tangent-dev   # reads /readyz, not just supervisor state
+cerberus resource doctor  tangent-dev   # reads /api/health/ready (needs a tangent.view key), not just supervisor state
 ```
 
 Do not run `./tangent` by hand while a supervisor owns the same port: you get
@@ -251,7 +251,7 @@ runtime is singular before debugging anything else:
 ```bash
 curl -fsS http://127.0.0.1:7842/healthz          # -> {"status":"ok","probe":"liveness"}
 lsof -nP -iTCP:7842 -sTCP:LISTEN                 # -> exactly one PID
-curl -fsS http://127.0.0.1:7842/readyz | jq .    # -> "status":"ok" and five passing checks
+curl -fsS -H "Authorization: Bearer $KEY" http://127.0.0.1:7842/api/health/ready | jq .    # -> "status":"ok" and five passing checks
 ```
 
 If `lsof` shows more than one listener, or `healthz` answers but your
@@ -261,11 +261,11 @@ authorities. Stop the unmanaged copy, not the supervised one.
 `/healthz` proves only that the process is responding — it deliberately
 touches no dependency, because the supervisor restarts on it and a probe
 that failed on a slow query would restart a repairable process in a loop.
-**A 200 from `/healthz` is not evidence that Tangent can serve.** `/readyz`
-is: it checks the database, the schema version against the version the
+**A 200 from `/healthz` is not evidence that Tangent can serve.** `/api/health/ready`
+(a key holding `tangent.view`) is: it checks the database, the schema version against the version the
 running binary embeds, the definition registry, the renderer host, and the
 delivery worker, and returns 503 with a per-check `operator_action` when any
-of them fails. Per-kind answers are at `/healthz/capability/{kind}`, and the
+of them fails. Per-kind answers are at `/api/health/capability/{kind}`, and the
 same three reports are available over MCP as `tangent_health_get` for a
 client that has no HTTP path to the host. The MCP report additionally carries
 the plugin inventory — which plugins loaded, which refused and why — so that is
@@ -273,7 +273,7 @@ read rather than inferred from a tool list, which cannot see a plugin that
 contributes a kind and no tool.
 
 A common real finding here is a schema behind the binary: `/healthz` answers,
-`/readyz` reports `migrations: fail`, and the fix is `tangent --migrate-only`
+`/api/health/ready` reports `migrations: fail`, and the fix is a redeploy (the database module migrates at start)
 followed by a redeploy — not a restart loop.
 
 **A supervisor's `status: running` is not a live probe.** It reports what the
@@ -1094,189 +1094,18 @@ review kind, submitted through `tangent_session_advance`. The room appears in th
 same Inbox as other requests. See [GitHub PR reviews](github-pr-review.md) for
 installation, the plugin tool, authentication and operator actions.
 
-## Caller authentication through a proxy
+## Caller authentication
 
-Direct, unmarked loopback MCP remains tokenless for local clients. Every
-non-loopback peer or request carrying proxy/forwarding headers needs a bearer
-credential, on both `/mcp` and `/sse` (including each legacy SSE POST). Host and
-Origin are not proof of a local peer: the pilot's Caddy rewrites both.
-Missing or invalid credentials return HTTP 401 with a Bearer challenge before
-MCP dispatch. Supplying a bad credential never falls back to local access.
-Caddy adds `X-Forwarded-For` by default: authentication takes effect as soon as
-this binary is installed, even before `X-Tangent-Via` is configured. Provision
-and configure every existing gateway/client credential before deploying it;
-the marker is not an activation switch.
+Every caller of `/mcp` presents an API key from Tangent's own identity service as `Authorization: Bearer <key>`; there is
+no tokenless local access and no second listener. The key's scopes decide what it may do (each tool needs exactly one,
+`tangent.mcp` reaches the endpoint, and deciding is a signed-in person's, never a key's). The key's name is the caller:
+`standalone-local:<name>` for an ordinary key, `gateway:<name>` for a key listed in `tangent.gateway_producers`, and a
+gateway also listed in `tangent.trusted_forwarders` may attest the session it forwards for, in the headers
+`X-Forwarded-User-Id` and `X-Tether-Session-Id`. Argument fields such as `caller.scope` are ignored: the credential
+decides. Create the first owner with `tangent identity setup --username NAME` and a key with `tangent identity key create
+--name NAME --scope tangent.mcp --scope tangent.view ... --stdout`.
 
-Set `TANGENT_MCP_TOKENS` in the service's protected EnvironmentFile to a
-comma-separated list of `producer=SHA256(token)` entries. Digests are exactly
-64 hexadecimal characters; producer names match `[a-z][a-z0-9_-]{0,63}`.
-Duplicate names or digests and malformed entries fail startup without echoing
-values. Unset configuration boots normally and refuses proxied MCP. Only
-hashes are kept by the server; provision bearer values with at least 32 bytes
-of cryptographically random entropy through
-the owner's secret store, separately from the digest configuration. Do not
-put bearer values in URLs, command arguments, source control, or logs.
-
-The Tether alert producer is `tether`, with credential reference
-`tangent-mcp-tether-alert`. Its client supplies `Authorization: Bearer <token>`
-for every request. An authenticated producer is bound to `gateway:<producer>`;
-application IDs, requester scopes, and principal labels in tool arguments
-cannot select another producer's authority. Existing local-owned items stay
-local-owned. There is no automatic ownership migration. Legacy SSE sessions
-are isolated per producer, including from tokenless local clients.
-
-### Trusted gateway session scopes
-
-By default each producer remains one authority and forwarded identity headers
-are ignored. To trust a configured gateway to attest upstream sessions, set
-`TANGENT_MCP_TRUSTED_FORWARDERS=tether-gateway` alongside its token digest.
-This is a comma-separated opt-in list; duplicate or unconfigured producer names
-fail startup. Trust only a gateway that strips incoming identity headers and
-rebuilds them from its authenticated, daemon-resolved caller context.
-
-After authenticating that producer's bearer, Tangent accepts exactly one of
-each matching header:
-
-```text
-X-Forwarded-User-Id: session:<uuid>
-X-Tether-Session-Id: <uuid>
-```
-
-The UUID must be canonical lowercase `8-4-4-4-12` hexadecimal text. A duplicate,
-partial, mismatched or malformed pair returns a fixed HTTP 400 before MCP
-protocol dispatch, without echoing supplied values. Invalid credentials still
-return 401 first. A valid pair binds the caller to
-`gateway:tether-gateway/session:<uuid>`. With both headers absent the binding is
-`gateway:tether-gateway`. Other producers ignore the headers and retain their
-own binding. Tool arguments cannot select either binding.
-
-Parent and session scopes are disjoint: no prefix inheritance, automatic
-migration, or parent access to session-owned records. Room, surface, interaction,
-inbox, idempotency and one-time-secret delivery use the effective scope. Turns
-await/ack also use that scope, independently of the turn's argument-supplied
-`session_id` label. Dropping headers cannot recover a session's objects. A
-trusted gateway credential can attest any session, so the gateway's upstream
-authentication remains part of this boundary.
-
-With a valid session pair, optional `X-Tether-Agent-Urn`,
-`X-Tether-Workstream-Id`, `X-Tether-Launch-Id`, `X-Tether-Project-Id` and
-`X-Tether-Logical-Agent-Id` are retained as forwarder attribution. Each must be
-a single nonempty value of at most 512 printable ASCII bytes (`0x21`–`0x7e`, no
-spaces). Invalid supplied labels return the same fixed 400. Without a session
-pair they are ignored. These labels never grant authority or change idempotency.
-They are host-owned context recorded under `forwarder_attribution` in admission
-audit-event metadata, separate from request/source/metadata assertions. An
-idempotent retry retains the original admission evidence. Bearer values and raw
-forwarded identity headers are stripped before SDK dispatch.
-
-The current Tether gateway sends the pair only for `tools/call` over stateless
-HTTP; initialize and discovery may therefore use the parent binding. Legacy
-SSE clients must send the same identity on their GET stream and every POST.
-Each effective scope has its own SDK session registry, so a POST with another
-session or no session cannot address the existing stream. Legacy SSE retains
-the attribution from its opening GET; HTTP attribution is per request. Idle SSE
-registries are removed after streams and in-flight requests finish.
-
-Enable this opt-in only after the credential and proxied-ingress rollout below
-has passed its gateway/browser/WebSocket probes. Restart Tangent when changing
-configuration. Existing parent-owned records stay parent-owned, and disabling
-the opt-in does not make session-owned records parent-readable. Relay/provider
-and plugin tools remain refused for authenticated gateway callers.
-
-### Ingress rollout
-
-Turns await/ack narrow authenticated producers to their own items. Unknown or
-foreign session/item IDs return the same `not_found` error. Phase-1 tokenless
-local runner await/ack retains its existing operator-wide behavior. Browser
-routes, WebSockets, and HITL event streams keep their separate participant and
-operator-elevation controls.
-
-Relay and plugin tools return `not_authorized` to authenticated gateway
-producers before provider/plugin dispatch. Relay still uses argument-derived
-identities, and plugin callbacks use a local MCP session; neither preserves a
-producer binding end to end yet. Direct local callers retain those tools.
-`telemetry_query` remains shared operational telemetry and can expose other
-producers' identifiers. Tokenless local turns await/ack can read and acknowledge
-all producers' turns. These are accepted phase-1 limits, not producer isolation
-claims for those surfaces.
-
-For raw TCP forwarders, set `TANGENT_PROXIED_HTTP_ADDR=127.0.0.1:7844`
-to enable an additional loopback listener. It serves the same browser, API and
-WebSocket routes with their existing participant/origin controls, but every
-MCP/SSE request requires a token even without forwarding headers. The listener
-sets its own proxy marker, overwriting any caller-supplied value. The main
-listener keeps direct-local compatibility. The optional address must be a
-literal loopback IP and numeric port; invalid addresses or failure to bind
-either socket fail startup. Unset means no additional listener. Both sockets
-share HTTP deadlines and graceful shutdown.
-
-The pilot's hub-only TCP ingress at
-`~/.local/share/tangent-pilot/ingress/hub-only-proxy.py` listens on
-`100.112.71.40:7853` and admits only hub source IP `100.74.49.44`. The hub Caddy
-uses it for MCP/SSE and browser/inbox/WS, so keep the forwarder running and
-retarget its `TARGET_PORT` from `7843` to `7844` after enabling the proxied
-listener. Forwarding to the main port lets direct header-free hub requests
-appear as local and bypass MCP authentication. A successful public-Caddy probe
-does not test that raw-port path.
-
-Deploy in this order:
-
-1. Inventory both direct MCP clients and proxy upstreams. Provision the owner-held
-   producer credentials and matching server digests, and have each client owner
-   stage and verify its secret reference before installing the authenticated
-   binary. The hub Tether gateway uses producer `tether-gateway` and reference
-   `tangent-mcp-tether-gateway`; its one shared token represents one producer,
-   not separate hub-session authorities. Keep relay/plugin tools refused for
-   that gateway until their caller binding is implemented.
-2. Install the reviewed Tangent binary with the matching digest configuration
-   and verify the configured gateway immediately. Keep binary/configuration
-   backups. Ordinary Caddy forwarding headers already require authentication;
-   do not wait for the explicit marker to test existing clients.
-3. Enable the proxied listener and verify its socket is ready. Back up the
-   ingress user-unit configuration, set `TARGET_PORT=7844`, and restart the
-   forwarder. Preserve its source-IP allowlist and current Caddy Host/Origin
-   rewrites. From the hub, require 401 for tokenless and invalid-token MCP/SSE
-   requests directly to `100.112.71.40:7853`, including requests without proxy
-   headers. Verify the configured gateway still works.
-4. Where Caddy still targets the main listener, its operator can back up the
-   configuration and add the
-   [proxy marker fragment](../deploy/caddy/tangent-mcp-auth.caddy) inside the
-   existing Tangent `reverse_proxy` block, validate, and reload. This is optional
-   defense in depth for the dedicated proxied listener. Caddy must
-   overwrite `X-Tangent-Via: caddy`; any forwarding evidence requires auth,
-   even if the explicit marker is absent. This repository change does not edit
-   `/etc/caddy/Caddyfile` or reload Caddy.
-5. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
-   `https://tangent.nanite.cloud/mcp`; both must return 401. Repeat with
-   `Authorization: Bearer intentionally-invalid` and require 401. A tokenless
-   GET of `https://tangent.nanite.cloud/sse` must also return 401.
-6. Using two separately provisioned producer secret references, enqueue a HITL
-   item as producer A. Get that item as producer B while declaring A in the
-   caller arguments: require the tool's `not_found` error, matching an unknown
-   item. Producer A must still retrieve its own item. Supply secrets through
-   the client secret store, never shell arguments. Confirm the Tether producer
-   succeeds and run the existing local runner smoke. From both worker-1 and
-   the hub, load the Inbox, exercise participant elevation and API reads, and
-   confirm a room WebSocket upgrades and receives frames. Record statuses and item
-   IDs only, never authorization headers or bearer values.
-
-Before rolling back to a pre-authentication binary, stop the raw TCP forwarder
-and confirm port 7853 is unreachable from the hub; retargeting it to the main
-listener would reopen the bypass. **Close `/mcp` and `/sse`
-at Caddy first**, validate/reload the configuration, and confirm both routes are
-blocked from worker-1. A marker alone cannot protect an old binary. For example,
-place this block before the Tangent reverse proxy in its ordered `route` block:
-
-```caddy
-@mcp_rollback path /mcp /mcp/* /sse /sse/*
-respond @mcp_rollback 403
-```
-
-Only after those checks pass, restore the recorded binary/service configuration
-backups and restart Tangent. Retain the route blocks until an authenticated
-binary and marker configuration are restored and tested. This closes Caddy
-access only; keep the raw forwarder stopped until the authenticated proxied
-listener is restored and both raw-port and public-Caddy checks pass.
-Credential rotation requires updating the hash/client secret reference and
-restarting Tangent, which closes existing SSE sessions. There is no live
-revocation or configuration reload.
+`docs/client-table.md` lists every client, what it used before and what it holds after. A remote client reaches Tangent
+through an authenticated tunnel or a local TLS proxy of the operator's own (`tangent.allowed_hosts` names the extra Host
+values); the Caddy fragment and the dedicated proxied listener this section used to describe are gone, and a reverse
+proxy configuration is not shipped from here.

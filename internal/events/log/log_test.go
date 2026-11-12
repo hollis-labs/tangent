@@ -14,21 +14,12 @@ import (
 	streamhub "github.com/hollis-labs/libs/ui/ui-go/streamhub"
 	"github.com/hollis-labs/libs/ui/ui-go/streamhub/hubtest"
 
-	"github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func openDB(t *testing.T, path string) *sql.DB {
 	t.Helper()
-	d, err := db.Open(path)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := db.RunMigrations(d); err != nil {
-		_ = d.Close()
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = d.Close() })
-	return d
+	return testdb.Open(t, path)
 }
 
 func newLog(t *testing.T, opts ...Option) (*Log, *sql.DB) {

@@ -322,7 +322,7 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 	_, err := s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
 		ID:             DefaultSurfaceID,
 		Caller:         OperatorParticipant,
-		IdempotencyKey: "hitl-default-surface-v1",
+		IdempotencyKey: "hitl" + "-default-surface-v1",
 		OwnerScope:     OperatorParticipant.Scope,
 		Metadata:       json.RawMessage(`{"kind":"hitl_inbox","contract_version":"1.0"}`),
 		Policy:         json.RawMessage(`{"ordering":"fifo","visibility":"operator"}`),

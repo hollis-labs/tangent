@@ -10,6 +10,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/channelpane"
 	"github.com/hollis-labs/tangent/internal/relay"
+	"github.com/hollis-labs/tangent/internal/stopping"
 )
 
 // The channel pane's browser API (CW-20260907-0017).
@@ -86,6 +87,8 @@ func (h *channelHTTPHandler) send(w http.ResponseWriter, r *http.Request) {
 // contract exactly (see its own doc comment for why: a dropped or reordered
 // event can never become an alternate source of truth this way).
 func (h *channelHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
+	streamCtx, stopStream := stopping.Context(r)
+	defer stopStream()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -114,7 +117,7 @@ func (h *channelHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	defer lifetime.Stop()
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case <-lifetime.C:
 			return

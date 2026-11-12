@@ -1,9 +1,7 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -116,27 +114,15 @@ func permissionsPolicy() string {
 // but browser support for that clause has been inconsistent enough that a
 // working WebSocket is not worth betting on it.
 //
-// devFrontendURL non-empty means `make dev` is proxying to Vite. Vite injects
-// inline module scripts (the React Fast Refresh preamble) that no hash can
-// cover, so `script-src` relaxes to `'unsafe-inline'` there — and, because a
-// policy containing a hash ignores `'unsafe-inline'` entirely, the hash is
-// dropped in that mode rather than added alongside it. The sandboxed frame's
-// own policy still carries the hash, so untrusted scripts inside a preview stay
-// blocked in dev as well; what dev loses is the *parent* policy's redundancy,
-// not the sandbox.
-func contentSecurityPolicy(r *http.Request, devFrontendURL string) string {
+// There is no dev-proxy variant any more: the SPA's dev server serves its own pages,
+// and this policy is for the pages the backend itself serves (the embedded build).
+func contentSecurityPolicy(r *http.Request) string {
 	connect := []string{"'self'"}
 	if host := strings.TrimSpace(r.Host); host != "" {
 		connect = append(connect, "ws://"+host, "wss://"+host)
 	}
 
 	script := "script-src 'self' '" + sandboxFrameShimSHA256 + "'"
-	if devFrontendURL != "" {
-		script = "script-src 'self' 'unsafe-inline'"
-		if origin, ok := websocketOrigins(devFrontendURL); ok {
-			connect = append(connect, origin...)
-		}
-	}
 
 	return strings.Join([]string{
 		script,
@@ -173,19 +159,28 @@ func contentSecurityPolicy(r *http.Request, devFrontendURL string) string {
 	}, "; ")
 }
 
-// websocketOrigins returns the http and ws origins for a dev frontend URL, so
-// Vite's HMR socket is reachable while `make dev` is running.
-func websocketOrigins(devFrontendURL string) ([]string, bool) {
-	target, err := url.Parse(devFrontendURL)
-	if err != nil || target.Host == "" {
-		return nil, false
-	}
-	scheme := "ws"
-	if strings.EqualFold(target.Scheme, "https") {
-		scheme = "wss"
-	}
-	return []string{
-		fmt.Sprintf("%s://%s", strings.ToLower(target.Scheme), target.Host),
-		fmt.Sprintf("%s://%s", scheme, target.Host),
-	}, true
+// SecurityHeaders applies the response headers that belong on every response this process
+// emits: the document policy above, the permissions policy, and the cross-origin and framing
+// headers beside them. It wraps the whole handler rather than each route: a header applied per
+// route is a header the next route forgets.
+//
+// `Referrer-Policy: no-referrer` because design-iteration renders untrusted agent-authored HTML
+// and evidence payloads may carry links. `X-Content-Type-Options: nosniff` because the same
+// material must never be re-typed by a content sniffer. `X-Frame-Options` duplicates the
+// policy's `frame-ancestors` for browsers that read only the older header (artifact responses
+// set their own, later, and win). `Cross-Origin-Opener-Policy` severs `window.opener`;
+// `Cross-Origin-Resource-Policy` stops another site loading these responses as subresources.
+func SecurityHeaders(next http.Handler) http.Handler {
+	permissions := permissionsPolicy()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		header := w.Header()
+		header.Set("Referrer-Policy", "no-referrer")
+		header.Set("X-Content-Type-Options", "nosniff")
+		header.Set("Content-Security-Policy", contentSecurityPolicy(r))
+		header.Set("Permissions-Policy", permissions)
+		header.Set("X-Frame-Options", "DENY")
+		header.Set("Cross-Origin-Opener-Policy", "same-origin")
+		header.Set("Cross-Origin-Resource-Policy", "same-origin")
+		next.ServeHTTP(w, r)
+	})
 }

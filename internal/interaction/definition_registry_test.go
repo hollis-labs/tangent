@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/envelope"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // reusable authored material for a synthetic package. Written inline rather
@@ -74,14 +74,7 @@ const registryTestResponseSchema = `{
 
 func registryTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	database, err := db.Open(filepath.Join(t.TempDir(), "definition-registry.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if err := db.RunMigrations(database); err != nil {
-		t.Fatalf("RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "definition-registry.db"))
 	return database
 }
 

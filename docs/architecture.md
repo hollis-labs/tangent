@@ -96,12 +96,9 @@ which uses React Router to pick up the ID and connect over WS.
 
 ### MCP server (Streamable HTTP + SSE)
 
-MCP admission authenticates proxied/non-loopback callers using per-producer
-bearer digests from `TANGENT_MCP_TOKENS`. Verified bindings use
-`gateway:<producer>`; request fields remain attribution. Direct unmarked
-loopback callers retain local compatibility. Legacy SSE session registries are
-separate per producer. See [caller authentication](mcp-integration.md#caller-authentication-through-a-proxy)
-for configuration, the Caddy marker, and rollout order.
+MCP admission is by API key (Substrate identity module): every caller presents a key, its scopes decide what it may do,
+and its name is the caller (`standalone-local:<name>`, or `gateway:<producer>` for a configured gateway). See
+[caller authentication](mcp-integration.md#caller-authentication) and `docs/client-table.md`.
 
 `internal/mcp/` — built on `github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp`, the portfolio's
 shared MCP library, itself a thin wrapper around the official MCP Go SDK
@@ -1375,7 +1372,7 @@ trusting it.
   authenticated producers until they can preserve caller authority end to end;
   direct local callers retain them. Local turns await/ack is operator-wide,
   and shared telemetry may expose producer identifiers. See the
-  [phase-1 limits and rollout](mcp-integration.md#caller-authentication-through-a-proxy).
+  [phase-1 limits and rollout](mcp-integration.md#caller-authentication).
   Authorization is object-scoped (ADR 0004) but loopback admission is not
   authentication: a
   hostile local process running as the same user can still mint a participant

@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/hollis-labs/tangent/internal/health"
 )
 
@@ -29,10 +27,10 @@ import (
 //
 // `tangent_health_get` writes nothing, creates no room, touches no
 // participant state, and returns the same readiness and capability vocabulary
-// `/readyz` and `cerberus resource doctor` already print — so a finding
+// `/api/health/ready` and `cerberus resource doctor` already print — so a finding
 // derived from it reads in the words the operator is already holding. It is
 // also the only probe that reaches an agent behind the Tether gateway, which
-// speaks JSON-RPC and holds no HTTP client for `/readyz`.
+// speaks JSON-RPC and holds no HTTP client for `/api/health/ready`.
 const ReadOnlyProbeTool = "tangent_health_get"
 
 // probeTimeout bounds one HTTP probe. A smoke check that can hang is a smoke
@@ -43,6 +41,16 @@ const probeTimeout = 15 * time.Second
 type Endpoint struct {
 	BaseURL string
 	Client  *http.Client
+	// Key is the API key the probes present as a bearer token. Liveness
+	// (`/healthz`) needs none; readiness, capability and `/mcp` do, and a key
+	// that holds only tangent.mcp and tangent.view is enough for every probe.
+	Key string
+}
+
+// WithKey returns the endpoint presenting key on every probe.
+func (e Endpoint) WithKey(key string) Endpoint {
+	e.Key = key
+	return e
 }
 
 // NewEndpoint builds an endpoint with the standard probe timeout.
@@ -108,31 +116,31 @@ func (e Endpoint) Liveness(ctx context.Context) *Finding {
 	return nil
 }
 
-// Readiness reads `/readyz`.
+// Readiness reads `/api/health/ready`.
 //
 // A readiness failure answers 503 by design, so a non-200 here is a report to
 // read rather than a transport error — the body is decoded either way.
 func (e Endpoint) Readiness(ctx context.Context) (health.ReadinessReport, *Finding) {
-	body, err := e.getAllowingStatus(ctx, "/readyz", http.StatusOK, http.StatusServiceUnavailable)
+	body, err := e.getAllowingStatus(ctx, "/api/health/ready", http.StatusOK, http.StatusServiceUnavailable)
 	if err != nil {
-		return health.ReadinessReport{}, Unreachable("readiness /readyz", e.BaseURL, err)
+		return health.ReadinessReport{}, Unreachable("readiness /api/health/ready", e.BaseURL, err)
 	}
 	var report health.ReadinessReport
 	if err := json.Unmarshal(body, &report); err != nil {
-		return report, Unreachable("readiness /readyz", e.BaseURL, fmt.Errorf("undecodable body: %w", err))
+		return report, Unreachable("readiness /api/health/ready", e.BaseURL, fmt.Errorf("undecodable body: %w", err))
 	}
 	return report, ClassifyReadiness(report, e.BaseURL)
 }
 
-// CapabilitySummary reads `/healthz/capability`, the bounded per-kind answer.
+// CapabilitySummary reads `/api/health/capability`, the bounded per-kind answer.
 func (e Endpoint) CapabilitySummary(ctx context.Context) (health.CapabilitySummaryReport, *Finding) {
-	body, err := e.getAllowingStatus(ctx, "/healthz/capability", http.StatusOK, http.StatusServiceUnavailable)
+	body, err := e.getAllowingStatus(ctx, "/api/health/capability", http.StatusOK, http.StatusServiceUnavailable)
 	if err != nil {
-		return health.CapabilitySummaryReport{}, Unreachable("capability /healthz/capability", e.BaseURL, err)
+		return health.CapabilitySummaryReport{}, Unreachable("capability /api/health/capability", e.BaseURL, err)
 	}
 	var report health.CapabilitySummaryReport
 	if err := json.Unmarshal(body, &report); err != nil {
-		return report, Unreachable("capability /healthz/capability", e.BaseURL, fmt.Errorf("undecodable body: %w", err))
+		return report, Unreachable("capability /api/health/capability", e.BaseURL, fmt.Errorf("undecodable body: %w", err))
 	}
 	return report, ClassifyCapabilitySummary(report, e.BaseURL)
 }
@@ -267,60 +275,6 @@ func bound(text string) string {
 	return text[:limit] + "…"
 }
 
-// LegacySSESurface lists tools over the legacy `/sse` mount, using a real MCP
-// client session.
-//
-// `/sse` cannot be probed with a single POST the way `/mcp` can: the client
-// opens a long-lived stream, receives an `endpoint` event naming a
-// session-scoped POST URL, and reads replies back off the stream. Driving it
-// with the SDK client is what a legacy consumer actually does, and it is the
-// transport the Tether gateway dials — so a `/sse` that lists a different
-// surface than `/mcp` is the deployment defect this check is here to find.
-func (e Endpoint) LegacySSESurface(ctx context.Context) (Surface, *Finding) {
-	address := e.BaseURL + "/sse"
-	transport := &mcpsdk.SSEClientTransport{Endpoint: address, HTTPClient: e.Client}
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-smoke", Version: "1"}, nil)
-	session, err := client.Connect(ctx, transport, nil)
-	if err != nil {
-		return Surface{}, Unreachable("legacy /sse connect", address, err)
-	}
-	defer func() { _ = session.Close() }()
-
-	var names []string
-	listed, err := session.ListTools(ctx, nil)
-	if err != nil {
-		return Surface{}, Unreachable("legacy /sse tools/list", address, err)
-	}
-	for _, tool := range listed.Tools {
-		names = append(names, tool.Name)
-	}
-	return NewSurface(names), nil
-}
-
-// CallHealthReportOverSSE invokes [ReadOnlyProbeTool] over the legacy stream.
-func (e Endpoint) CallHealthReportOverSSE(ctx context.Context) (HealthReport, *Finding) {
-	address := e.BaseURL + "/sse"
-	transport := &mcpsdk.SSEClientTransport{Endpoint: address, HTTPClient: e.Client}
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-smoke", Version: "1"}, nil)
-	session, err := client.Connect(ctx, transport, nil)
-	if err != nil {
-		return HealthReport{}, Unreachable("legacy /sse connect", address, err)
-	}
-	defer func() { _ = session.Close() }()
-
-	called, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
-		Name: ReadOnlyProbeTool, Arguments: map[string]any{},
-	})
-	if err != nil {
-		return HealthReport{}, Unreachable("legacy /sse "+ReadOnlyProbeTool, address, err)
-	}
-	encoded, err := json.Marshal(called)
-	if err != nil {
-		return HealthReport{}, Unreachable("legacy /sse "+ReadOnlyProbeTool, address, err)
-	}
-	return decodeHealthReport("legacy /sse", encoded)
-}
-
 func (e Endpoint) get(ctx context.Context, path string) ([]byte, error) {
 	return e.getAllowingStatus(ctx, path, http.StatusOK)
 }
@@ -352,6 +306,9 @@ func (e Endpoint) do(request *http.Request, allowed []int) ([]byte, error) {
 	if client == nil {
 		client = &http.Client{Timeout: probeTimeout}
 	}
+	if e.Key != "" {
+		request.Header.Set("Authorization", "Bearer "+e.Key)
+	}
 	// #nosec G704 -- the URL is the operator-supplied deployment address this
 	// check exists to probe; there is no untrusted input on this path.
 	response, err := client.Do(request)
@@ -365,8 +322,26 @@ func (e Endpoint) do(request *http.Request, allowed []int) ([]byte, error) {
 	}
 	for _, status := range allowed {
 		if response.StatusCode == status {
-			return body, nil
+			return Unframe(body), nil
 		}
 	}
 	return nil, fmt.Errorf("HTTP %d from %s", response.StatusCode, request.URL.Path)
+}
+
+// Unframe returns the JSON-RPC message of a reply the host framed as one
+// server-sent event ("event: message" then "data: <json>"), which is how the
+// /mcp handler answers a POST that accepts text/event-stream. A body that is
+// not framed (a health document, a plain JSON reply) is returned as it came.
+func Unframe(body []byte) []byte {
+	text := string(body)
+	if !strings.HasPrefix(text, "event:") && !strings.HasPrefix(text, "data:") {
+		return body
+	}
+	var data []string
+	for _, line := range strings.Split(text, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), "data:"); ok {
+			data = append(data, strings.TrimPrefix(rest, " "))
+		}
+	}
+	return []byte(strings.Join(data, "\n"))
 }

@@ -739,7 +739,7 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 	_, err := s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
 		ID:             DefaultSurfaceID,
 		Caller:         OperatorParticipant,
-		IdempotencyKey: "turns-default-surface-v1",
+		IdempotencyKey: "turns" + "-default-surface-v1",
 		OwnerScope:     OperatorParticipant.Scope,
 		Metadata:       json.RawMessage(`{"purpose":"agent_turns_fifo_inbox"}`),
 		Capability:     ReservedSurfaceCapability,

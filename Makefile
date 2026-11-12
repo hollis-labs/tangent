@@ -1,19 +1,16 @@
-.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status install-macos install-macos-dry-run uninstall-macos
+.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes dev-config db-check
 
 # The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
-# (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
-# dev-facing target below runs on DEV_PORT against a workspace-local database
-# (.tangent/ is gitignored and removed by `make clean`). A different database
-# path is a different `.owner` lock file, so dev and stable can never collide
-# on the single-writer flock or the port. `./tangent` with no environment
-# still means the stable defaults; only make targets are pointed at dev.
+# (port 7842, the XDG data directory) so nothing agent-facing rewires; every
+# dev-facing target below runs on DEV_PORT against a workspace-local data
+# directory (.tangent/ is gitignored and removed by `make clean`). The port is
+# set through a Substrate config override (.tangent/substrate.dev.yaml, written
+# by `make dev-config`), the data through TANGENT_DATA_DIR. The first run needs
+# an owner: `TANGENT_DATA_DIR=$(DEV_DATA_DIR) SUBSTRATE_CONFIG=$(DEV_CONFIG) go run ./cmd/tangent identity setup --username NAME`.
 DEV_PORT ?= 7843
-DEV_DB_PATH ?= $(CURDIR)/.tangent/dev.db
-DEV_ENV = TANGENT_HTTP_PORT=$(DEV_PORT) TANGENT_DB_PATH=$(DEV_DB_PATH)
-
-# Default port for the Vite dev server. The Go server (in dev mode)
-# reverse-proxies non-API requests to this URL.
-DEV_FRONTEND_URL ?= http://localhost:5173
+DEV_DATA_DIR ?= $(CURDIR)/.tangent/data
+DEV_CONFIG ?= $(CURDIR)/.tangent/substrate.dev.yaml
+DEV_ENV = TANGENT_DATA_DIR=$(DEV_DATA_DIR) SUBSTRATE_CONFIG=$(DEV_CONFIG)
 
 # Keep this exact pin aligned with mise.toml. The package engine range remains
 # authoritative for compatible direct Node invocations.
@@ -75,14 +72,12 @@ install-plugins: build-go ## Install the pinned first-party plugins (tangent-plu
 		./tangent plugin install "$$dir"; \
 	done
 
-build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
-	./scripts/build-macos-app.sh
+dev-config: ## Write the dev instance's port override (.tangent/substrate.dev.yaml)
+	@mkdir -p $(dir $(DEV_CONFIG))
+	@printf 'httphost:\n  addr: "127.0.0.1:$(DEV_PORT)"\n' > $(DEV_CONFIG)
 
-db-migrate: ## Apply migrations to the DEV database (DEV_DB_PATH) and exit
-	$(DEV_ENV) go run ./cmd/tangent --migrate-only
-
-db-rollback: ## Roll back the most recent migration on the DEV database and exit
-	$(DEV_ENV) go run ./cmd/tangent --rollback-one
+db-check: dev-config ## Read-only integrity check of the DEV database
+	$(DEV_ENV) go run ./cmd/tangent database check
 
 # ── Codegen ────────────────────────────────────────────────────────────
 #
@@ -99,15 +94,13 @@ check-envelopes: check-node ## Fail if committed envelope types are stale
 
 # ── Dev ────────────────────────────────────────────────────────────────
 
-dev: check-node ## Run Go server (DEV_PORT, DEV_DB_PATH) + Vite dev server in parallel (Go proxies to Vite)
-	@echo "Starting Vite (port 5173) and the Tangent DEV server (port $(DEV_PORT), db $(DEV_DB_PATH), proxying to Vite)..."
-	@$(MAKE) -j 2 dev-ui dev-go
+dev: dev-go ## Run the Go DEV server (DEV_PORT, DEV_DATA_DIR); run `make dev-ui` beside it for Vite
 
 dev-ui: check-node
 	cd ui && npm run dev
 
-dev-go:
-	$(DEV_ENV) TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
+dev-go: dev-config
+	$(DEV_ENV) go run ./cmd/tangent
 
 # ── Test ───────────────────────────────────────────────────────────────
 
@@ -163,57 +156,16 @@ lint-go: ## golangci-lint (incl. the transport-boundary gate) + go vet + gofmt c
 		echo "golangci-lint not installed — skipping (install: https://golangci-lint.run)"; \
 	fi
 
+scan-public: ## Scan the working tree for secret-shaped literals and private paths (the framework's scanner)
+	go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree
+
 lint-frontend: check-node ## biome check
 	cd ui && npm run lint
 
-# ── Launch at login (macOS LaunchAgent) ────────────────────────────────
-#
-# The agent runs the headless daemon at login (RunAtLoad true, KeepAlive
-# false) from ~/Library/LaunchAgents/com.hollislabs.tangent.plist. The binary
-# path is hardcoded into the plist, so LAUNCH_AGENT_BINARY must be the
-# daemon's *installed* location; the workspace build below is the default
-# only so `make launch-agent-render` has something to show. The real install
-# is performed by the stable install script (CW-20260907-0020), not by hand.
-
-LAUNCH_AGENT_BINARY ?= $(CURDIR)/tangent
-LAUNCH_AGENT_PORT ?= 7842
-LAUNCH_AGENT_FLAGS = --binary "$(LAUNCH_AGENT_BINARY)" --port $(LAUNCH_AGENT_PORT) $(if $(LAUNCH_AGENT_DB),--db "$(LAUNCH_AGENT_DB)",)
-
-launch-agent-render: ## Print the LaunchAgent plist for LAUNCH_AGENT_BINARY; touches nothing
-	go run ./cmd/tangent-launchagent render $(LAUNCH_AGENT_FLAGS)
-
-launch-agent-install: ## Write and load the LaunchAgent (macOS; refuses if LAUNCH_AGENT_BINARY is missing)
-	go run ./cmd/tangent-launchagent install $(LAUNCH_AGENT_FLAGS)
-
-launch-agent-uninstall: ## Boot out and remove the LaunchAgent (macOS; idempotent)
-	go run ./cmd/tangent-launchagent uninstall
-
-launch-agent-status: ## Report the LaunchAgent and re-validate the binary path it hardcodes
-	go run ./cmd/tangent-launchagent status
-
-# ── Stable install (macOS) ────────────────────────────────────────────
-#
-# Places ./tangent and ./Tangent.app (from `make build` and `make build-app`
-# on a tagged tree) under ~/.local/bin and ~/Applications and runs the daemon
-# under the LaunchAgent. install is also the upgrade. INSTALL_FLAGS passes
-# through to cmd/tangent-install (e.g. --artifacts DIR --port 7842).
-
-INSTALL_FLAGS ?=
-
-install-macos-dry-run: ## Show what install-macos would do; probes only, changes nothing
-	./scripts/install-macos.sh install --dry-run $(INSTALL_FLAGS)
-
-install-macos: ## Install or upgrade the stable Tangent (daemon + app + LaunchAgent); refuses on any pre-check
-	./scripts/install-macos.sh install $(INSTALL_FLAGS)
-
-uninstall-macos: ## Remove the stable Tangent's daemon, app and LaunchAgent; keeps the database
-	./scripts/install-macos.sh uninstall $(INSTALL_FLAGS)
-
 # ── Maintenance ────────────────────────────────────────────────────────
 
-clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent, Tangent.app
+clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent
 	rm -f tangent
-	rm -rf Tangent.app Tangent.app-bin
 	rm -rf ui/dist
 	rm -rf ui/node_modules
 	rm -rf .tangent
