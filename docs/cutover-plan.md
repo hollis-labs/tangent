@@ -169,7 +169,16 @@ OLD=$HOME/.local/share/tangent-pilot
      `docs/client-table.md`'s; **the gateway key needs the full non-resolve set** (`tangent.mcp`, `tangent.view`,
      `tangent.draft`, `tangent.submit`, `tangent.cancel`, `tangent.close`, `tangent.withdraw`, `tangent.deliver`,
      `tangent.plugin`) to expose all 73 tools; with only `mcp` and `view` it sees 25 (rehearsed). Nothing gets
-     `tangent.resolve`: only the owner's session decides. An existing `--out` file is refused.
+     `tangent.resolve`: only the owner's session decides. An existing `--out` file is refused. The gateway key, whose
+     name is `tether-gateway` (its producer id is `gateway:tether-gateway`); no value appears on the command line or in
+     the output, the key lands only in the `--out` file:
+
+     ```sh
+     $NEWBIN identity key create --name tether-gateway \
+       --scope tangent.mcp --scope tangent.view --scope tangent.draft --scope tangent.submit \
+       --scope tangent.cancel --scope tangent.close --scope tangent.withdraw --scope tangent.deliver \
+       --scope tangent.plugin --out <dir>/tether-gateway.key
+     ```
 9. **Deploy**: `fleet-install deploy tangent --commit <sha12>`. Its preflight backs up the **migrated** database; its
    drop-in (`20-fleet-exec.conf`) clears and sets `ExecStart`, sets `SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR`,
    `TANGENT_PLUGIN_DIR` and `TimeoutStopSec=30`; its restart starts the unit; its health poll reads
