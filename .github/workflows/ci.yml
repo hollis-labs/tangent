@@ -23,6 +23,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The framework's own scanner, not a copy: secret-shaped literals and private paths in the tree.
+      # It runs on the tree as committed, before the frontend build: the built bundle in internal/webui/dist
+      # carries a vendored third-party string the secret rules match, and it is not ours to scan.
+      - name: Public-readiness scan
+        run: go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree
+
       - name: Set up Node (for envelope codegen and joined browser driver)
         uses: actions/setup-node@v4
         with:
@@ -64,13 +70,9 @@ jobs:
       - name: go vet
         run: go vet ${{ steps.server-packages.outputs.packages }}
 
-      # The framework's own scanner, not a copy: secret-shaped literals and private paths in the tree.
-      - name: Public-readiness scan
-        run: go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree
-
       - name: gofmt check
         run: |
-          unformatted=$(gofmt -l . | grep -v '^internal/server/ui_dist/' || true)
+          unformatted=$(gofmt -l . | grep -v '^internal/webui/dist/' || true)
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt: unformatted files:"
             echo "$unformatted"

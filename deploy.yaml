@@ -1,0 +1,46 @@
+# Tangent on Substrate: one binary with the SPA embedded, listening on 127.0.0.1:7843 (the live unit's port).
+#
+# FIRST DEPLOY (the pre-Substrate version is a plain file at ~/.local/bin/tangent, run by the user unit
+# tangent-pilot.service): the new build refuses to start on the old database layout and names `tangent
+# migrate-data`. Do not let this descriptor's restart be the first thing that touches the old data. The order
+# is in docs/cutover-plan.md: stop the unit, back up, run migrate-data, migrate-files, migrate-secrets and the
+# offline identity bootstrap with the new binary, then `fleet-install deploy tangent`, whose preflight backs up
+# the MIGRATED database. The old data directory (~/.local/share/tangent-pilot) is only ever read, so it stays the
+# rollback; the new data directory is a different one (~/.local/share/tangent-pilot-substrate, which does not exist before the
+# cutover; the plain ~/.local/share/tangent holds an older install and is not used).
+#
+# Settings that were environment variables or flags (the port, TANGENT_DB_PATH, the proxied listener, the
+# operator token) are keys in the file named by SUBSTRATE_CONFIG (httphost.addr, tangent.*); the drop-in below
+# sets it. The file itself is written by the operator (docs/cutover-plan.md), not here. The unit's other
+# Environment= lines and its four environment files are left alone: the ones with no reader any more are ignored.
+schema: fleet-deploy/v1
+app: tangent
+repo: hollis-labs/tangent
+artifact: {name: "tangent-{sha12}", tarball: "tangent_{version}_{os}_{arch}.tar.gz", sums: SHA256SUMS}
+targets:
+  - id: agent-os-tangent
+    when: {os: linux, arch: amd64}
+    hosts: [agent-os]
+    binary: tangent
+    install_root: ~/.local/share/fleet/releases/tangent
+    symlinks:
+      - path: ~/.local/bin/tangent         # the unit's ExecStart path; today a regular file, replaced by a symlink
+    unit_dropins:
+      - unit: tangent-pilot.service
+        name: 20-fleet-exec.conf
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=%h/.local/bin/tangent serve
+          Environment=SUBSTRATE_CONFIG=%h/.config/tangent-pilot/tangent.yaml
+          Environment=TANGENT_DATA_DIR=%h/.local/share/tangent-pilot-substrate
+          Environment=TANGENT_PLUGIN_DIR=%h/.local/share/tangent-pilot-substrate/plugins
+          # httphost drains for 10 s, then the process exits; twice that is the margin.
+          TimeoutStopSec=30
+    preflight:
+      # The migrated file: it exists before the first deploy (migrate-data runs first) and on every later one.
+      # The old ~/.local/share/tangent-pilot/tangent.db is not touched; it and the stopped unit are the rollback.
+      - {kind: sqlite_backup, db: ~/.local/share/tangent-pilot-substrate/tangent.db, dest: "{backup_dir}/tangent.pre-{version}.db"}   # ~18 MB
+      # - {kind: migration_check, db: ~/.local/share/tangent-pilot-substrate/tangent.db}   # enable once build-info.json carries a migration number
+    restart: {via: systemd-user, unit: tangent-pilot.service}
+    health: {url: "http://127.0.0.1:7843/healthz", expect_status: [200], timeout: 30s}

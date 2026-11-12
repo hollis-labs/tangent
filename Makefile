@@ -33,11 +33,11 @@ build: check-node generate-envelopes build-ui build-go ## Regenerate envelope ty
 
 build-ui: check-node ## Build frontend (Vite production build)
 	cd ui && npm run build
-	@touch internal/server/ui_dist/.gitkeep
+	@touch internal/webui/dist/.gitkeep
 
 # Explicit stamps cover toolchains that omit native VCS metadata in worktrees.
 # A source archive stays unstamped; an edited checkout never claims to be clean.
-build-go: ## Build Go binary (requires internal/server/ui_dist to exist)
+build-go: ## Build Go binary (requires internal/webui/dist to exist)
 	@set -eu; \
 	commit=$$(git rev-parse --verify HEAD 2>/dev/null || true); dirty=; \
 	if [ -n "$$commit" ]; then \
@@ -144,7 +144,7 @@ smoke: build-ui ## MCP smoke; TANGENT_SMOKE_ENV=1 adds the live DEV deployment, 
 lint: check-node lint-go lint-frontend ## All lint (Go + frontend)
 
 lint-go: ## golangci-lint (incl. the transport-boundary gate) + go vet + gofmt check
-	@unformatted=$$(gofmt -l . | grep -v '^ui/node_modules/' | grep -v '^internal/server/ui_dist/'); \
+	@unformatted=$$(gofmt -l . | grep -v '^ui/node_modules/' | grep -v '^internal/webui/dist/'); \
 	if [ -n "$$unformatted" ]; then \
 		echo "gofmt: unformatted files:"; echo "$$unformatted"; exit 1; \
 	fi
@@ -164,13 +164,13 @@ lint-frontend: check-node ## biome check
 
 # ── Maintenance ────────────────────────────────────────────────────────
 
-clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent
+clean: ## Remove ui/dist, ui/node_modules, internal/webui/dist build output, ./tangent
 	rm -f tangent
 	rm -rf ui/dist
 	rm -rf ui/node_modules
 	rm -rf .tangent
 	# Preserve the .gitkeep so go:embed still resolves.
-	find internal/server/ui_dist -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
+	find internal/webui/dist -mindepth 1 ! -name '.gitkeep' -delete 2>/dev/null || true
 
 install-hooks: ## Install lefthook (one-time setup)
 	@if ! command -v lefthook >/dev/null 2>&1; then \

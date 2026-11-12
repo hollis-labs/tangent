@@ -1,0 +1,54 @@
+name: build
+# Publishes the release tarballs (workflow artifacts only: no tag, no release, no install) that
+# `fleet-install` reads; deploy.yaml rides inside the linux/amd64 one. Modelled on Loom's build.yml.
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+  workflow_dispatch:
+    inputs: { ref: { description: "ref to build", required: false } }
+permissions: { contents: read }
+jobs:
+  build:
+    uses: hollis-labs/tools/.github/workflows/go-app-build.yml@145fb50d827a1af7e38236eda5751cee22970ba5   # tools main (extra_files, pre_test_cmd)
+    with:
+      app: tangent
+      main_pkg: ./cmd/tangent
+      # Must satisfy ui/package.json "engines". Node 24 is the range gui-tangent's #151 sets (>=24 <25); until that
+      # merges, main still says <23 and npm only warns (no engine-strict), so the build runs on 24 either way.
+      node_version: "24"
+      # The binary embeds internal/webui/dist, which the frontend build writes (vite outDir). The reusable
+      # workflow runs ui_cmd before the Go build in both its test job and its build job, so the tarball's
+      # binary always embeds a built UI; verify-ui below proves it on the published artifact. vite empties
+      # its output directory, so the tracked placeholder is put back: a missing tracked file would make
+      # Go stamp the build +dirty.
+      ui_cmd: "cd ui && npm ci && npm run build && touch ../internal/webui/dist/.gitkeep"
+      # The full race suite, lint, the scan and the envelope check run in ci.yml on the same commit; this
+      # job's test step is the vet the published binary is gated on.
+      test_cmd: "go vet ./..."
+      extra_files: deploy.yaml
+      ldflags_var: ""       # the version comes from the build info; there is no variable to set with -X
+      # The commit is a fact of the run. Dirtiness is not stamped: it is left to Go's own build info (vcs.modified), which
+      # the version string carries (`tangent version`: ...+dirty), so a build from a modified tree cannot say it is clean.
+      ldflags_extra: "-X github.com/hollis-labs/tangent/internal/buildinfo.Commit=${{ github.sha }}"
+
+  # The published linux/amd64 binary, as downloaded, serves the SPA and not an empty embed.
+  verify-ui:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist
+      - name: Verify checksums, the shipped descriptor and the embedded UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -c SHA256SUMS)
+          mkdir unpacked
+          tar -C unpacked -xzf dist/tangent_*_linux_amd64.tar.gz
+          test -f unpacked/deploy.yaml || { echo "deploy.yaml is not in the tarball" >&2; exit 1; }
+          cmp deploy.yaml unpacked/deploy.yaml
+          scripts/verify-ui-binary unpacked/tangent

@@ -188,6 +188,11 @@ func TestTheShippedBundleCarriesTheHashedShimVerbatim(t *testing.T) {
 		t.Fatalf("webui.Assets: %v", err)
 	}
 	if _, statErr := fs.Stat(dist, "index.html"); statErr != nil {
+		// A missing build is a skip on a laptop and a failure in CI: a skipped check that nobody reads is how the
+		// release build once embedded nothing (the frontend wrote to a directory the binary does not embed).
+		if os.Getenv("CI") != "" {
+			t.Fatal("no SPA build embedded: build the frontend before the Go tests (`make build-ui` populates internal/webui/dist)")
+		}
 		t.Skip("no SPA build embedded; `make build-ui` populates internal/webui/dist")
 	}
 
