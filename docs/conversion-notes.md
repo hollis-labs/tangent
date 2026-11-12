@@ -207,3 +207,21 @@ One bump of Substrate (`bac8c60` to `d453ac8`), nothing pinned between. What it 
   in CI and as `make scan-public`; the copied script is deleted.
 - Not in the pin, so still ours: the Host check (`internal/hostguard`), the cross-process open-and-migrate lock,
   `queue.reservation_secs`, the MCP JSON-response option.
+
+## Document security policy (ruling 4)
+
+Slice (c) deleted `internal/server/csp.go` with the static handler, so for a while the SPA's pages carried no policy.
+It is back (`internal/server/csp.go`, `server.SecurityHeaders`), applied outermost in `cmd/tangent/serve.go` so it is on every
+response, a refused Host included. What it does, unchanged from before except for the dev proxy:
+- `Content-Security-Policy` per request: `script-src 'self'` plus the hash of the SPA's sandbox shim (an `srcdoc` preview inherits
+  it), `connect-src 'self'` plus this Host's own `ws://`/`wss://` (so `network.fetch` is a barrier for every renderer),
+  `object-src`/`base-uri` none, `form-action 'self'`, `frame-ancestors 'none'`; no `default-src` or `frame-src` on purpose
+  (they would risk blocking `about:srcdoc` frames).
+- `Permissions-Policy` (everything denied, `clipboard-write=(self)`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options`,
+  `X-Frame-Options: DENY` (artifact responses set their own), `Cross-Origin-Opener-Policy`, `Cross-Origin-Resource-Policy`.
+- There is no report endpoint, and there never was one.
+- Dropped: the dev-proxy variant (`'unsafe-inline'` for Vite) and `mintParticipantSessions` (the identity module's sign-in is the
+  session now). The SPA's dev server serves its own pages.
+- Tests: `TestTheDocumentPolicyIsOnTheSPAResponses` (index, `/index.html`, two deep links, an asset, an API path, `/healthz`, through the
+  real chain), `TestAHostRefusalCarriesTheSecurityHeaders`, and the old suite in `internal/server/csp_test.go` (the hash recomputed from the SPA
+  source, the directives, the embedded bundle carrying the shim verbatim).

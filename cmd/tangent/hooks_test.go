@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net"
 	"os"
 	"path/filepath"
@@ -41,6 +42,12 @@ const testOwnerPassword = "a long test passphrase"
 // cancelled and joined on cleanup.
 func started(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mountSpec) (string, *tangent) {
 	t.Helper()
+	return startedWith(t, mounts, nil)
+}
+
+// startedWith is started serving the given SPA build instead of the embedded one.
+func startedWith(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mountSpec, assets fs.FS) (string, *tangent) {
+	t.Helper()
 	dir := filepath.Join(t.TempDir(), "data")
 	env := map[string]string{"TANGENT_DATA_DIR": dir}
 	override := filepath.Join(t.TempDir(), "override.yaml")
@@ -65,7 +72,7 @@ func started(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mount
 		t.Fatalf("create the owner: %v", err)
 	}
 	addr := make(chan net.Addr, 1)
-	tg := &tangent{app: run.App, ready: func(a net.Addr) { addr <- a }}
+	tg := &tangent{app: run.App, assets: assets, ready: func(a net.Addr) { addr <- a }}
 	var extra []mountSpec
 	if mounts != nil {
 		extra = mounts(ctx, tg)

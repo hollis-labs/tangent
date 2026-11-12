@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,6 +30,7 @@ type tangent struct {
 	app    *module.App
 	ready  func(net.Addr)
 	getenv func(string) string // os.Getenv when nil
+	assets fs.FS               // the embedded SPA when nil (tests serve their own)
 
 	// table is the route table of the running server (set once composed).
 	table atomic.Pointer[server.Table]
@@ -117,9 +119,12 @@ func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []http
 	if id == nil {
 		return nil, errors.New("the identity module must be started")
 	}
-	assets, err := webui.Assets()
-	if err != nil {
-		return nil, err
+	assets := t.assets
+	if assets == nil {
+		var err error
+		if assets, err = webui.Assets(); err != nil {
+			return nil, err
+		}
 	}
 	mux, _ := api.(*http.ServeMux)
 	if mux == nil {
@@ -130,7 +135,8 @@ func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []http
 	if err != nil {
 		return nil, err
 	}
-	return hostguard.Handler(cfg.AllowedHosts, id.Middleware(h)), nil
+	// Outermost: the security headers are on every response, including a refusal by the Host check.
+	return server.SecurityHeaders(hostguard.Handler(cfg.AllowedHosts, id.Middleware(h))), nil
 }
 
 // requireLoopback keeps the backend on the loopback interface: the Host check assumes it, and a
