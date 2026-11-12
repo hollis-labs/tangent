@@ -59,6 +59,9 @@ type interactionSubmitInput struct {
 	Request        map[string]any            `json:"request"`
 	ExternalRefs   map[string]any            `json:"external_refs,omitempty"`
 	Policy         map[string]any            `json:"policy,omitempty"`
+	// ReplyTo is the submitting agent's Tether URN: the operator's answer is
+	// mailed there. Required when the server runs with WithReplyToRequired.
+	ReplyTo string `json:"reply_to,omitempty" jsonschema:"Your own Tether URN (tether_whoami returns it). The operator answer is mailed there. Required."`
 }
 
 type interactionGetInput struct {
@@ -203,6 +206,17 @@ func (s *Server) handleInteractionSubmit(
 	ctx context.Context,
 	input interactionSubmitInput,
 ) (any, error) {
+	if s.requireReplyTo || input.ReplyTo != "" {
+		if err := validateReplyTo(input.ReplyTo); err != nil {
+			return nil, err
+		}
+	}
+	if input.ReplyTo != "" {
+		if input.ExternalRefs == nil {
+			input.ExternalRefs = map[string]any{}
+		}
+		input.ExternalRefs["reply_to"] = input.ReplyTo
+	}
 	return s.interactionResult(s.interactions.SubmitInteraction(ctx, interaction.SubmitInteractionInput{
 		ID: input.InteractionID, SurfaceID: input.SurfaceID, Caller: directMCPActor(ctx, input.Caller),
 		IdempotencyKey: input.IdempotencyKey, Definition: input.Definition,

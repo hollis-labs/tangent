@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	envelopes "github.com/hollis-labs/libs/ui/ui-go/envelopes"
@@ -19,6 +20,10 @@ import (
 // the caller asked for something else.
 const errorCodeIdempotencyConflict = "IDEMPOTENCY_CONFLICT"
 
+// errorCodeReplyToRequired is returned when a workflow call names no usable
+// Tether reply address.
+const errorCodeReplyToRequired = "REPLY_TO_REQUIRED"
+
 // completionInput selects how a named room workflow returns.
 //
 // The default is deliberately "wait": every third-party integration written
@@ -26,6 +31,27 @@ const errorCodeIdempotencyConflict = "IDEMPOTENCY_CONFLICT"
 // their exact behavior for interactions a human answers quickly.
 type completionInput struct {
 	Mode string `json:"mode,omitempty"`
+	// ReplyTo is the Tether URN of the agent that asked. When the operator
+	// answers (or the item ends another way) Tangent mails the outcome there,
+	// so the agent does not have to poll or hold a call open. Required.
+	ReplyTo string `json:"reply_to"`
+}
+
+// internalReplyTo is the reply address Tangent's own loopback callers use. It
+// is a valid reply_to that names no agent, and the delivery worker skips it.
+const internalReplyTo = "msg://app/tangent/internal"
+
+// validateReplyTo checks the agent's reply address. It is deliberately a shape
+// check only: Tangent cannot ask Tether whether the URN exists, and a typo
+// surfaces as a failed delivery the operator can see, not as a lost answer.
+func validateReplyTo(replyTo string) error {
+	const prefix = "msg://"
+	if !strings.HasPrefix(replyTo, prefix) || len(replyTo) <= len(prefix)+2 || strings.ContainsAny(replyTo, " \t\r\n") || len(replyTo) > 256 {
+		return toolErrorResult(errorCodeReplyToRequired, "completion.reply_to is required: pass your own Tether URN, "+
+			"for example msg://agent/agent-mux/agt_xxxxxxxxxx (tether_whoami returns it). Tangent mails the operator's "+
+			"answer there, so you do not have to poll or await.")
+	}
+	return nil
 }
 
 func (c completionInput) mode() string {
@@ -49,19 +75,30 @@ var completionPropertySchemaJSON = []byte(`{
       "enum": ["wait", "async"],
       "default": "wait",
       "description": "'wait' blocks up to 45 seconds and then returns a durable pending receipt. 'async' returns that receipt immediately. Both are successful results; neither cancels the interaction."
+    },
+    "reply_to": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^msg://\\S+$",
+      "description": "Your own Tether URN (tether_whoami returns it), for example msg://agent/agent-mux/agt_xxxxxxxxxx. When the operator answers, Tangent mails the outcome to this address: it arrives on your next turn, or immediately if you are idle. Use mode 'async' and carry on; you do not need to poll or await."
     }
   },
   "additionalProperties": false
 }`)
 
 // withCompletionMode returns schema with the shared completion selector added.
-func withCompletionMode(schema *jsonschema.Schema, name string) (*jsonschema.Schema, error) {
+func withCompletionMode(schema *jsonschema.Schema, name string, requireReplyTo bool) (*jsonschema.Schema, error) {
 	completion, err := buildSchema(completionPropertySchemaJSON, name+" completion")
 	if err != nil {
 		return nil, err
 	}
 	if schema.Properties == nil {
 		schema.Properties = map[string]*jsonschema.Schema{}
+	}
+	if requireReplyTo {
+		completion.Required = []string{"reply_to"}
+		schema.Required = append(schema.Required, "completion")
 	}
 	schema.Properties["completion"] = completion
 	return schema, nil
@@ -172,7 +209,7 @@ func (s *Server) advanceRoomEnvelopeDurable(
 
 	outcome, err := s.roomflow.Run(ctx, roomflow.Request{
 		RoomID: roomID, Envelope: request, Presented: presented,
-		Mode: completion.mode(), Caller: caller,
+		Mode: completion.mode(), Caller: caller, ReplyTo: completion.ReplyTo,
 	})
 	if err != nil {
 		if errors.Is(err, roomflow.ErrRoomNotFound) {

@@ -319,6 +319,10 @@ func New(cfg Config) (*Server, error) {
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox", authz.View, inboxHandler(cfg.Inbox))
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
 		registerParticipantRoute(mux, &participantRoutes, cfg, "GET /api/inbox/items/{interactionID}", authz.View, inboxItemHandler(cfg.Inbox))
+		if operator, ok := cfg.Inbox.(inboxOperator); ok {
+			registerParticipantRoute(mux, &participantRoutes, cfg, "POST /api/inbox/items/{interactionID}/archive", authz.Resolve, inboxArchiveHandler(operator))
+			registerParticipantRoute(mux, &participantRoutes, cfg, "DELETE /api/inbox/items/{interactionID}", authz.Resolve, inboxDeleteHandler(operator))
+		}
 	}
 
 	if cfg.HITL != nil {

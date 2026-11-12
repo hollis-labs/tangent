@@ -141,6 +141,18 @@ ORDER BY o.sequence`)
 	return entries, nil
 }
 
+// authorizeOperatorInbox admits the operator's own Inbox actions on one
+// interaction: anything the browser may list. Items from the verified gateway
+// and from other producers on reserved surfaces are the operator's to manage;
+// the old owner-scope check refused exactly the items agents send through the
+// gateway, which is why a form or review could never be cleared.
+func (s *Service) authorizeOperatorInbox(record InteractionRecord) error {
+	if s.browserMayView(InboxEntry{Interaction: record}) {
+		return nil
+	}
+	return ErrUnauthorized
+}
+
 // HideBrowserInboxItem hides a terminal request from the operator's Inbox;
 // canonical evidence and caller delivery remain available.
 func (s *Service) HideBrowserInboxItem(ctx context.Context, id string) error {
@@ -148,7 +160,7 @@ func (s *Service) HideBrowserInboxItem(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err = authz.Authorize(authz.Request{Kind: authz.KindCallerApplication, Scope: authz.CallerScope(""), OwnerScope: record.CallerScope, Capability: authz.View, Isolation: authz.AuthorityWide}); err != nil {
+	if err = s.authorizeOperatorInbox(record); err != nil {
 		return err
 	}
 	switch record.State {

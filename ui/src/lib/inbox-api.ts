@@ -1,3 +1,5 @@
+import { fetchWithElevation } from "@/lib/operator-elevation";
+
 export type InboxCategory = "approval" | "document" | "artifact" | "turn" | "workflow";
 
 export interface InboxEntry {
@@ -110,6 +112,37 @@ export async function fetchInboxItem(id: string, signal?: AbortSignal): Promise<
   });
   if (!response.ok) throw new Error(`Interaction unavailable (HTTP ${response.status}).`);
   return (await response.json()) as InboxEntry;
+}
+
+async function operatorAction(url: string, method: "POST" | "DELETE"): Promise<void> {
+  const response = await fetchWithElevation(url, {
+    method,
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`The action failed (HTTP ${response.status}).`);
+}
+
+/** Ends an open item as canceled; it moves to History. Any kind, operator only. */
+export function archiveInboxItem(id: string): Promise<void> {
+  return operatorAction(`/api/inbox/items/${encodeURIComponent(id)}/archive`, "POST");
+}
+
+/** Removes an item from the Inbox, ending it first when it is still open. */
+export function deleteInboxItem(id: string): Promise<void> {
+  return operatorAction(`/api/inbox/items/${encodeURIComponent(id)}`, "DELETE");
+}
+
+/** The whole item (request, answer, state) as a JSON file the operator can keep. */
+export function downloadInboxItem(entry: InboxEntry): void {
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${entry.interaction.definition_binding.kind.replace(/^tangent\./, "")}-${entry.interaction.interaction_id.slice(0, 8)}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Ids of interactions whose full request or reply text contains `query`. */

@@ -282,6 +282,9 @@ type Request struct {
 	Presented *envelopes.Envelope
 	Mode      string
 	Caller    interaction.ActorBinding
+	// ReplyTo is the Tether URN the outcome is mailed to. Stored on the
+	// interaction's external refs; the reply delivery observer reads it there.
+	ReplyTo string
 }
 
 // presented returns the envelope to show the participant.
@@ -546,6 +549,7 @@ func (s *Service) ensureInteraction(
 			"legacy_room_id":     request.RoomID,
 			"legacy_envelope_id": request.Envelope.ID,
 			"legacy_envelope":    json.RawMessage(presented),
+			"reply_to":           request.ReplyTo,
 		})),
 		Policy: json.RawMessage(mustJSON(map[string]any{
 			"completion":           completionMode(request.Mode),

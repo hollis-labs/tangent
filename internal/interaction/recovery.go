@@ -62,6 +62,10 @@ type DeliveryClaim struct {
 type ClaimDeliveryParams struct {
 	LeaseOwner    string
 	LeaseDuration time.Duration
+	// DestinationKind restricts the claim to deliveries bound to that
+	// destination kind (the "kind" of destination_binding). Empty claims any
+	// kind except tether_mail, which only the reply-mail worker may claim.
+	DestinationKind string
 }
 
 type CompleteDeliveryParams struct {
@@ -213,7 +217,7 @@ func (s *Store) ClaimNextDelivery(ctx context.Context, params ClaimDeliveryParam
 	}
 	defer rollback(tx)
 	now := s.now()
-	claim, found, err := nextEligibleDelivery(ctx, tx, now)
+	claim, found, err := nextEligibleDelivery(ctx, tx, now, params.DestinationKind)
 	if err != nil {
 		return DeliveryClaim{}, err
 	}
@@ -392,6 +396,7 @@ func nextEligibleDelivery(
 	ctx context.Context,
 	tx *sql.Tx,
 	now time.Time,
+	destinationKind string,
 ) (interruptedDelivery, bool, error) {
 	row := tx.QueryRowContext(ctx, `
 	SELECT kind, id, interaction_id, resolution_id, destination_binding,
@@ -415,8 +420,10 @@ FROM (
      OR (n.lifecycle_state = 'retryable_failure'
          AND n.next_eligible_at IS NOT NULL AND n.next_eligible_at <= ?)
 )
+WHERE CASE WHEN ? = '' THEN COALESCE(json_extract(destination_binding, '$.kind'), '') <> ?
+           ELSE json_extract(destination_binding, '$.kind') = ? END
 ORDER BY created_at, id
-LIMIT 1`, now, now)
+LIMIT 1`, now, now, destinationKind, DestinationKindTetherMail, destinationKind)
 	delivery, err := scanDeliveryClaim(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return interruptedDelivery{}, false, nil

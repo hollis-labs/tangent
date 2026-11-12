@@ -4,16 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { InboxEntry } from "@/lib/inbox-api";
 import Inbox from "./Inbox";
 
-const { fetchInbox, fetchInboxItem, searchInbox } = vi.hoisted(() => ({
-  fetchInbox: vi.fn(),
-  fetchInboxItem: vi.fn(),
-  searchInbox: vi.fn(),
-}));
+const { fetchInbox, fetchInboxItem, searchInbox, archiveInboxItem, deleteInboxItem } = vi.hoisted(
+  () => ({
+    fetchInbox: vi.fn(),
+    fetchInboxItem: vi.fn(),
+    searchInbox: vi.fn(),
+    archiveInboxItem: vi.fn(),
+    deleteInboxItem: vi.fn(),
+  }),
+);
 vi.mock("@/lib/inbox-api", async (original) => ({
   ...(await original<typeof import("@/lib/inbox-api")>()),
   fetchInbox,
   fetchInboxItem,
   searchInbox,
+  archiveInboxItem,
+  deleteInboxItem,
 }));
 vi.mock("./InboxItemBody", () => ({
   InboxItemBody: ({ entry }: { entry: InboxEntry }) => (
@@ -79,6 +85,8 @@ beforeEach(() => {
     return found;
   });
   searchInbox.mockResolvedValue([]);
+  archiveInboxItem.mockResolvedValue(undefined);
+  deleteInboxItem.mockResolvedValue(undefined);
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -110,6 +118,34 @@ describe("unified Inbox", () => {
     fireEvent.click(screen.getByRole("button", { name: "Expand interaction" }));
     expect(screen.getByRole("complementary", { name: "Inbox queue" })).toHaveClass("md:hidden");
     expect(screen.getByRole("button", { name: "Show inbox queue" })).toBeInTheDocument();
+  });
+  it("gives an open workflow the shared header: its title and copy-link and copy-id controls", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    renderInbox();
+    fireEvent.click(await screen.findByText("Request workflow"));
+    await screen.findByText("Interactive workflow in room-a");
+    const header = screen.getByRole("button", { name: "Back to inbox" })
+      .parentElement as HTMLElement;
+    expect(within(header).getByText("Request workflow")).toBeInTheDocument();
+    fireEvent.click(within(header).getByRole("button", { name: "Copy object id" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("workflow"));
+    fireEvent.click(within(header).getByRole("button", { name: "Copy direct link" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/\/inbox\/items\/workflow$/)),
+    );
+  });
+  it("lets the operator archive and delete an open item of any kind from the shared header", async () => {
+    renderInbox();
+    fireEvent.click(await screen.findByText("Request workflow"));
+    await screen.findByText("Interactive workflow in room-a");
+    const header = screen.getByRole("button", { name: "Back to inbox" })
+      .parentElement as HTMLElement;
+    fireEvent.click(within(header).getByRole("button", { name: "Archive" }));
+    await waitFor(() => expect(archiveInboxItem).toHaveBeenCalledWith("workflow"));
+    fireEvent.click(within(header).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteInboxItem).toHaveBeenCalledWith("workflow"));
+    expect(within(header).getByRole("button", { name: "Download" })).toBeEnabled();
   });
   it("preserves the selected answer when a workflow resolves and after reopening", async () => {
     const request = entry("workflow", 4, "tangent.approval-queue");
