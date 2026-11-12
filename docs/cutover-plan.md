@@ -106,7 +106,8 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
    the proxy edit (section 9) and the Tether catalog plan (step 12). Announce to the agents that use the Tangent tools
    that they will be unavailable for the window (section 13).
 6. **A dry run of the installer**, run by the driver against the *published* artifact (not a local build):
-   `fleet-install deploy tangent --commit <sha12> --dry-run`. Read against the published artifact on the
+   `fleet-install deploy tangent --repo hollis-labs/tangent --commit <sha12> --dry-run` (`--repo` is needed the first time; without it
+   the installer stops with `no repo known for tangent`). Read against the published artifact on the
    host (2026-11-12, run 43291537913): it checks the checksum, prints the version, skips the preflight while the migrated
    database does not exist, and says it would place the release, flip `~/.local/bin/tangent` to it, write
    `tangent-pilot.service.d/20-fleet-exec.conf`, restart the unit and poll `/healthz` on `7843`. It does **not** print that
@@ -205,7 +206,7 @@ OLD=$HOME/.local/share/tangent-pilot
        --scope tangent.cancel --scope tangent.close --scope tangent.withdraw --scope tangent.deliver \
        --scope tangent.plugin --out <dir>/tether-gateway.key
      ```
-9. **Deploy**: `fleet-install deploy tangent --commit <sha12>`. Its preflight backs up the **migrated** database; its
+9. **Deploy**: `fleet-install deploy tangent --repo hollis-labs/tangent --commit <sha12>` (`--repo` the first time only). Its preflight backs up the **migrated** database; its
    drop-in (`20-fleet-exec.conf`) clears and sets `ExecStart`, sets `SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR`,
    `TANGENT_PLUGIN_DIR` and `TimeoutStopSec=30`; its restart starts the unit; its health poll reads
    `http://127.0.0.1:7843/healthz`. Then read the **effective** environment, names only: `systemctl --user show
@@ -292,6 +293,50 @@ after:   route "/mcp"             -> upstream 127.0.0.1:7843, Host rewritten to 
          route everything else    -> unchanged
 ```
 
+The same change as Caddy text, from the stanza that serves Tangent's public names (nothing else in the stanza changes: the
+foreign-`Origin` 403, the tailnet-member gate on the browser handle, the `Host` and `Origin` rewrites, the
+`Content-Security-Policy` and `Set-Cookie` `header_down` lines):
+
+```
+before:
+    # MCP and SSE: no browser, no identity gate (agents on the tailnet use these).
+    @tangent_mcp path /mcp /mcp/* /sse /sse/*
+    handle @tangent_mcp {
+        reverse_proxy 127.0.0.1:7844 {
+            header_up Host 127.0.0.1:7844
+        }
+    }
+after:
+    # MCP: no browser, no tailnet gate; Tangent itself requires an identity API key on /mcp (401 without).
+    @tangent_mcp path /mcp /mcp/*
+    handle @tangent_mcp {
+        reverse_proxy 127.0.0.1:7843 {
+            header_up Host 127.0.0.1:7843
+        }
+    }
+```
+
+`/sse` then falls into the browser handle: a tailnet member gets Tangent's 404, anyone else the tailnet gate's refusal.
+Run `caddy validate`, then reload (not restart) Caddy.
+
+**The `Set-Cookie` line stays (A2 with the proxy as it is).** The browser handle already appends `; Secure` to every
+`Set-Cookie` (`header_down Set-Cookie "^(.*)$" "$1; Secure"`), and A2 makes Tangent send `Secure` itself, so the attribute
+is doubled. Tested in real Chrome over https through a scratch Caddy with that exact line and `identity.secure_cookies:
+always` (the published `ea25046` build, 2026-11-12): sign-in 200 with `Set-Cookie: tangent_session=...; Path=/; Expires=...;
+HttpOnly; Secure; SameSite=Strict; Secure`; the browser stored one cookie with `secure`, `httpOnly` and `SameSite=Strict`;
+the room page opened its WebSocket through the proxy and received frames; a reload stayed signed in; a write with the cookie
+reached Tangent (404 for a missing item, not 401 or 403); sign-out (204) cleared the cookie and the next reload showed the
+sign-in form. Leaving the line alone also means a rollback to the old build needs no change to the proxy's cookie handling.
+The scratch proxy had no tailnet gate (none exists on a scratch host).
+
+**The gateway's credential file.** The catalog entry for Tangent has one credential field, `proxy_service_token_file`, an
+absolute path. From the Tether source (a worktree, not the deployed binary: confirm against the binary), the gateway
+accepts a regular file owned by the hub's user, mode `0600`, holding a token of `A-Za-z0-9-._~+/=` (up to 4096 bytes,
+surrounding whitespace trimmed). A key written by `tangent identity key create --out` is such a file (checked on a scratch
+key: mode `0600`, 48 bytes with a trailing newline). The hub runs as the same user as the Tangent unit here. So the key is
+minted into a **new** file inside a `0700` directory that user owns, never at the old file's path (an existing `--out` is
+refused anyway), and the catalog plan changes that one field and nothing else (step 12).
+
 Port `7844` no longer exists after the cutover; a proxy still pointing there loses Tangent for every gateway client.
 The proxy's `/mcp` route does not check a token itself (read from its configuration), so after this change the identity
 key check inside Tangent is the only protection on `/mcp` beyond the tailnet address the proxy listens on: every client
@@ -311,7 +356,8 @@ To roll back, at any point before real use:
 4. `systemctl --user start tangent-pilot`: the old binary runs on the old files. `~/.local/share/tangent-pilot-substrate`
    is left in place (it is the new build's, and nothing reads it); remove it only to try again, never to roll back.
 5. Restore the client changes already made: the proxy route (section 9, reverse the port change and put `/sse` back), the
-   gateway's catalog credential (a catalog plan and a hub reload again), and each client's old configuration.
+   gateway's catalog credential (a catalog plan and a hub reload again), and each client's old configuration. The proxy's
+   `Set-Cookie` line was never changed (section 9), so the cookie handling needs nothing.
 
 Anything written to the new database after the cutover is not in the old one: the stop in step 1 is the freeze that keeps
 that loss at zero if the rollback happens before real use. The plugins in the old tree are the old binaries and work with
