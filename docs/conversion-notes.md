@@ -429,6 +429,14 @@ What the backend now requires of the SPA, in one place; keep it current.
 - **No operator-token elevation.** The old `TANGENT_OPERATOR_TOKEN` elevation is gone; the sign-in session is what
   decides, so `OperatorTokenPrompt` has no backend to prompt for.
 
+## Known behaviour (not a regression of the port)
+
+- **The UI-command channel (agent control of the open view) is not switched on.** `ws.Handler.SetUICommands` has no caller
+  outside tests, in the old tree and here, so the page's `view.publish`, `view.active`, `ui.control` and `ui.ack` frames are
+  refused with `ui_command_rejected` (`ui command: verified binding required`). The page sends `view.active` on every room
+  open and its header shows `host refused channel`; nothing else depends on it. Follow-up CW-20261112-0128: wire it (a broker
+  and a binding resolver for the owner's session) or stop the page sending frames the host always refuses.
+
 ## Cutover notes (host-run, in this order)
 
 The operator-facing runbook, with the rehearsal record, the proxy findings and the rollback, is `docs/cutover-plan.md`; these
