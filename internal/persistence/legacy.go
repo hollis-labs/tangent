@@ -252,7 +252,36 @@ func requireFinalLegacy(ctx context.Context, from string) error {
 	if integrity != "ok" {
 		return fmt.Errorf("migrate: integrity_check of %s: %q", from, integrity)
 	}
+	var virtual int
+	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE sql LIKE 'CREATE VIRTUAL TABLE%'`).Scan(&virtual); err != nil {
+		return err
+	}
+	if virtual > 0 {
+		return fmt.Errorf("migrate: %s has a virtual table, which the copy would drop; stopping", from)
+	}
 	return nil
+}
+
+// requireKnownTablesAndIndexes refuses an old file with a table or index the new schema does not
+// have, before any row is copied. (Views and triggers are compared by definition once the new
+// file has them: sameDefinitions.) schema_migrations and its index are the old migrator's own
+// bookkeeping and are deliberately not carried: the new file has goose's table.
+func requireKnownTablesAndIndexes(ctx context.Context, conn *sql.Conn) error {
+	rows, err := conn.QueryContext(ctx, `SELECT type, name FROM old.sqlite_master
+		WHERE type IN ('table','index') AND name NOT LIKE 'sqlite\_%' ESCAPE '\' AND name NOT IN ('schema_migrations','version_unique')
+		AND NOT EXISTS (SELECT 1 FROM main.sqlite_master m WHERE m.type = old.sqlite_master.type AND m.name = old.sqlite_master.name)`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		var typ, name string
+		if err = rows.Scan(&typ, &name); err != nil {
+			return err
+		}
+		return fmt.Errorf("migrate: the old database has a %s %q the new schema does not know; stopping rather than dropping it", typ, name)
+	}
+	return rows.Err()
 }
 
 // dataTables lists the tables of schema db ("main" or "old"), excluding bookkeeping.
@@ -327,6 +356,9 @@ func copyTables(ctx context.Context, st *store.Store, from string, counts map[st
 	}
 	defer func() { _, _ = conn.ExecContext(context.Background(), `DETACH DATABASE old`) }()
 
+	if err = requireKnownTablesAndIndexes(ctx, conn); err != nil {
+		return nil, err
+	}
 	oldTables, err := dataTables(ctx, conn, "old")
 	if err != nil {
 		return nil, err
@@ -371,8 +403,9 @@ func copyTables(ctx context.Context, st *store.Store, from string, counts map[st
 		n, _ := res.RowsAffected()
 		counts[t] = int(n)
 	}
-	// AUTOINCREMENT counters: sqlite_sequence is not a table the loop copies.
-	if _, err = tx.ExecContext(ctx, `DELETE FROM main.sqlite_sequence`); err != nil {
+	// AUTOINCREMENT counters: sqlite_sequence is not a table the loop copies. goose's own version
+	// table is AUTOINCREMENT too, and its counter stays.
+	if _, err = tx.ExecContext(ctx, `DELETE FROM main.sqlite_sequence WHERE name != 'goose_db_version'`); err != nil {
 		return nil, fmt.Errorf("migrate: reset the sequence counters: %w", err)
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO main.sqlite_sequence (name, seq) SELECT name, seq FROM old.sqlite_sequence`); err != nil {
@@ -470,6 +503,9 @@ func verify(ctx context.Context, st *store.Store, from string, tables []string) 
 		}
 	}
 	if err = sameDefinitions(ctx, old, cur); err != nil {
+		return err
+	}
+	if err = sameSequences(ctx, old, cur); err != nil {
 		return err
 	}
 	var integrity string
@@ -570,6 +606,45 @@ func typeHistogram(ctx context.Context, q querier, table, col string) (string, e
 		fmt.Fprintf(&b, "%s=%d;", t, n)
 	}
 	return b.String(), rows.Err()
+}
+
+// sameSequences requires the AUTOINCREMENT counters (sqlite_sequence) to be equal on both sides:
+// a counter can be above max(id) when rows were deleted, and a lower one would reuse ids.
+func sameSequences(ctx context.Context, old, cur querier) error {
+	read := func(q querier) (map[string]int64, error) {
+		rows, err := q.QueryContext(ctx, `SELECT name, seq FROM sqlite_sequence WHERE name != 'goose_db_version'`)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = rows.Close() }()
+		out := map[string]int64{}
+		for rows.Next() {
+			var n string
+			var v int64
+			if err = rows.Scan(&n, &v); err != nil {
+				return nil, err
+			}
+			out[n] = v
+		}
+		return out, rows.Err()
+	}
+	o, err := read(old)
+	if err != nil {
+		return err
+	}
+	n, err := read(cur)
+	if err != nil {
+		return err
+	}
+	if len(o) != len(n) {
+		return fmt.Errorf("migrate: sqlite_sequence has %d counters in the old database and %d in the new one", len(o), len(n))
+	}
+	for k, v := range o {
+		if n[k] != v {
+			return fmt.Errorf("migrate: the counter of %s is %d in the old database and %d in the new one", k, v, n[k])
+		}
+	}
+	return nil
 }
 
 // sameDefinitions requires every table, index, view and trigger of the old file to exist in the

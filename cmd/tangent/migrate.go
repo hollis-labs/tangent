@@ -6,21 +6,20 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
+	"path/filepath"
 	"sort"
 
-	"github.com/hollis-labs/tangent/internal/appdirs"
 	"github.com/hollis-labs/tangent/internal/persistence"
 )
 
 // migrateData is `tangent migrate-data`: a one-way copy of a pre-Substrate Tangent database into
 // the new file. It runs before the modules start, because it builds the new database itself and
 // an old database makes them refuse to start. The old file is only ever read.
-func migrateData(ctx context.Context, getenv func(string) string, args []string, out io.Writer) error {
+func migrateData(ctx context.Context, args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("migrate-data", flag.ContinueOnError)
 	fs.SetOutput(out)
 	from := fs.String("from", "", "the pre-Substrate tangent.db to copy (required; copy an online backup, not the live file)")
-	to := fs.String("to", "", "the new database to create (default: tangent.db in the data directory)")
+	to := fs.String("to", "", "the new database to create (required: a default nobody typed is how a file lands in the wrong place)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -30,24 +29,20 @@ func migrateData(ctx context.Context, getenv func(string) string, args []string,
 	if fs.NArg() > 0 {
 		return fmt.Errorf("migrate-data: unexpected argument %q", fs.Arg(0))
 	}
-	target := *to
-	if target == "" {
-		dirs, err := appdirs.Resolve(getenv)
-		if err != nil {
-			return err
-		}
-		if err = os.MkdirAll(dirs.Data, 0o700); err != nil {
-			return err
-		}
-		target = dirs.Database()
-		// An empty file is what a start that failed early leaves; nothing in it is data.
-		if fi, err := os.Stat(target); err == nil && fi.Size() == 0 {
-			if err = os.Remove(target); err != nil {
-				return err
-			}
-		}
+	if *to == "" {
+		return errors.New("migrate-data: --to is required")
 	}
-	rep, err := persistence.MigrateLegacy(ctx, *from, target)
+	src, err := filepath.Abs(*from)
+	if err != nil {
+		return err
+	}
+	target, err := filepath.Abs(*to)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "migrate-data\n  read only: %s\n  create:    %s\n", src, target)
+	fmt.Fprintln(out, "  the old file is opened read-only and never written; the new file is built under a temporary name and installed only after every check passes; an existing target is refused")
+	rep, err := persistence.MigrateLegacy(ctx, src, target)
 	if err != nil {
 		return err
 	}
@@ -64,6 +59,6 @@ func migrateData(ctx context.Context, getenv func(string) string, args []string,
 			fmt.Fprintf(out, "  %-40s %d\n", n, rep.Rows[n])
 		}
 	}
-	fmt.Fprintln(out, "verified: row counts, per-row digests, value-type histograms, EXCEPT in both directions, object definitions, integrity_check, foreign_key_check; the old file was not modified")
+	fmt.Fprintln(out, "verified: row counts, per-row digests, value-type histograms, EXCEPT in both directions, object definitions, AUTOINCREMENT counters (sqlite_sequence), integrity_check, foreign_key_check; the old file was not modified. The old migrator's schema_migrations table is not copied (the new file has goose's own table); no other object was left behind")
 	return nil
 }

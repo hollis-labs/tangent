@@ -28,7 +28,7 @@ func bootWith(ctx context.Context, getenv func(string) string, mutate func(map[s
 	raw, _ := json.Marshal(cfg)
 	fsys, root := persistence.Migrations()
 	database.UseMigrationFS(fsys, root)
-	return boot.StartWith(ctx, substrateApp, substrateModules, string(raw), bootOptions(getenv))
+	return boot.StartWith(ctx, substrateApp, substrateModules, string(raw), bootOptions(getenv, true, substrateModules))
 }
 
 // started boots the real stack on a temp data directory and serves the full handler chain, plus

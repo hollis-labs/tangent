@@ -23,8 +23,10 @@ Each says what was seen, and what was done meanwhile.
    handlers: `httphost.Serve` calls `http.Server.Shutdown`, which does not end hijacked or streaming connections, so
    each streaming handler must watch the application context itself (the test does), or shutdown waits out the
    10 s grace period and returns an error.
-4. **G6a: `/sse`.** The module's `/mcp` mount is Streamable HTTP only. Tangent also serves the legacy SSE transport at
-   `/sse` for older MCP clients. Needs a decision: which clients still use it.
+4. **G6a: `/sse`: dropped.** The module's `/mcp` mount is Streamable HTTP only; Tangent also served the legacy SSE
+   transport at `/sse`. The live instance's log (from 2026-10-24) shows `/sse` requested five times in total, all
+   on 2026-10-24 between 18:53 and 19:13 UTC, each under two seconds (probes, not sessions), never since, while
+   `/mcp` has thousands of requests. Removed.
 5. **G6b: JSON responses.** The old server runs the MCP SDK `Stateless` and `JSONResponse`; libs go-mcp's handler
    (used by the `mcp` module) sets `Stateless` only, so a client sending `Accept: text/event-stream` gets an SSE-framed
    reply where it got JSON.
@@ -32,7 +34,8 @@ Each says what was seen, and what was done meanwhile.
    selected, the first caller of `POST /api/setup` becomes the owner (`*`). There is no config key to close it and
    no programmatic way to create the owner or a key (`Service` has `User`, `Verify` and key rotation only). The plan
    forbids first-run setup over HTTP, so the product path waits for the framework's offline bootstrap. Tests create
-   their owner through `/api/setup` on a throwaway data directory only.
+   their owner through `/api/setup` on a throwaway data directory only, and so do hand checks of the built binary
+   on a throwaway data directory (nothing real is behind it).
 7. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
    `libs/ui/ui-go` (0.4.0 to 0.1.0) and `libs/harness/core` (0.13.0 to 0.16.0) to the BOM versions and the existing
    packages still build and vet.
@@ -44,7 +47,7 @@ Each says what was seen, and what was done meanwhile.
 
 ## Data: the one-way copy
 
-`tangent migrate-data --from <old tangent.db> [--to <new file>]` builds the new database under a temporary name and
+`tangent migrate-data --from <old tangent.db> --to <new file>` (both required; it prints both absolute paths first) builds the new database under a temporary name and
 renames it into place only after every check passes; it refuses an existing target.
 
 - The old file is only ever read (`mode=ro`; `immutable=1` when there is no WAL content so no `-shm` is created). It
@@ -56,7 +59,13 @@ renames it into place only after every check passes; it refuses an existing targ
 - Proof: row counts; a sha256 over every row of every table as `quote()`d text plus `typeof()`; the `typeof()`
   histogram of every column; `EXCEPT` in both directions on the attached files; the SQL text of every table, index,
   view and trigger equal to the old file's; `integrity_check`; `foreign_key_check` equal to the old file's.
-  `AUTOINCREMENT` counters (`sqlite_sequence`) are copied.
+  `AUTOINCREMENT` counters (`sqlite_sequence`) are copied and compared (a counter above `max(id)` is kept).
+- `schema_migrations` (the old migrator's bookkeeping) and its index are not copied; the new file has goose's own
+  table. Nothing else is left behind: a table or index in the old file that the new schema lacks, a virtual table,
+  or a view or trigger whose definition differs, stops the migration (before install).
+- Only one instance is migrated: the one the live service uses. The two old `~/.tangent` directories (one on the
+  server, one on a laptop) are neither read nor written; no default of the ported binary resolves there (the data
+  directory is `TANGENT_DATA_DIR`, else `$XDG_DATA_HOME/tangent`; `TestDefaultsNeverResolveToTheOldDirectory`).
 - The schema is, character for character, the one the old binary ended at (its migrations 0001 to 0024):
   `internal/persistence/testdata/legacy_schema.txt`, compared by `TestSchemaEqualsLegacy`. The old migrator's
   `schema_migrations` bookkeeping table is the only object not carried.
@@ -81,6 +90,13 @@ values (G2), the plugin binaries.
 | (none) | `SUBSTRATE_CONFIG`: YAML file holding any override |
 
 The table grows as slices land.
+
+## Read-only commands
+
+Only serving (the default command) starts the modules that open files and creates the data directory. `version`,
+`config`, `health`, `help` and `--help` start config, logging, health and cli only and create nothing
+(`TestReadOnlyCommandsCreateNothing`, empty HOME). `plan` (cmd/tangent/plan.go) decides; `TestRootHasNoValueFlags`
+keeps its word-splitting honest.
 
 ## Testing rule
 

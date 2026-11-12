@@ -154,6 +154,60 @@ func TestMigrateLegacy(t *testing.T) {
 	}
 }
 
+// A counter above max(id) (rows were deleted before the migration) must survive: a lower one
+// would hand out ids that were used before.
+func TestMigrateLegacyKeepsSequenceAboveMax(t *testing.T) {
+	dir := t.TempDir()
+	from, to := filepath.Join(dir, "old.db"), filepath.Join(dir, "new.db")
+	makeLegacy(t, from)
+	db, err := sql.Open("sqlite", from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`DELETE FROM inbox_order WHERE interaction_id = 'i2'`); err != nil {
+		t.Fatal(err)
+	}
+	var seq, top int
+	if err = db.QueryRow(`SELECT (SELECT seq FROM sqlite_sequence WHERE name='inbox_order'), (SELECT max(sequence) FROM inbox_order)`).Scan(&seq, &top); err != nil || seq != 2 || top != 1 {
+		t.Fatalf("setup: seq %d max %d err %v", seq, top, err)
+	}
+	_ = db.Close()
+	if _, err = MigrateLegacy(context.Background(), from, to); err != nil {
+		t.Fatal(err)
+	}
+	st := openNew(t, to)
+	if err = st.DB().QueryRow(`SELECT seq FROM sqlite_sequence WHERE name='inbox_order'`).Scan(&seq); err != nil || seq != 2 {
+		t.Fatalf("the counter was lowered to %d (%v), want 2", seq, err)
+	}
+}
+
+// Something in the old file the new schema does not know stops the copy before any row moves.
+func TestMigrateLegacyRefusesUnknownObjects(t *testing.T) {
+	for name, ddl := range map[string]string{
+		"table": `CREATE TABLE stray (id INTEGER)`,
+		"index": `CREATE INDEX stray_idx ON surfaces(owner_scope)`,
+		"view":  `CREATE VIEW stray_view AS SELECT id FROM surfaces`,
+	} {
+		dir := t.TempDir()
+		from, to := filepath.Join(dir, "old.db"), filepath.Join(dir, "new.db")
+		makeLegacy(t, from)
+		db, err := sql.Open("sqlite", from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(ddl); err != nil {
+			t.Fatal(err)
+		}
+		_ = db.Close()
+		if _, err = MigrateLegacy(context.Background(), from, to); err == nil {
+			t.Errorf("%s: an unknown object was accepted", name)
+		}
+		if _, err = os.Stat(to); err == nil {
+			t.Errorf("%s: a refused migration left a target", name)
+		}
+	}
+}
+
 func TestMigrateLegacyRefusals(t *testing.T) {
 	dir := t.TempDir()
 	from, to := filepath.Join(dir, "old.db"), filepath.Join(dir, "new.db")

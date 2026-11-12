@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 
 	"github.com/hollis-labs/substrate/boot"
 	"github.com/hollis-labs/substrate/module"
@@ -22,16 +23,29 @@ import (
 // Immediately before the database module starts (it migrates as soon as it opens the file), a
 // pre-Substrate database is refused. The path is read from the config the module will read, so
 // the guard needs no copy of the override merge rule.
-func bootOptions(getenv func(string) string) boot.Options {
+//
+// prepare says whether the data directory may be created: only serving does (see plan). Read-only
+// commands start no module that opens a file and create nothing.
+func bootOptions(getenv func(string) string, prepare bool, started []string) boot.Options {
+	// A hook that names a module that is not started is an error, so the guard is installed only
+	// with the database module.
+	var before map[string]boot.Hook
+	if slices.Contains(started, "database") {
+		before = map[string]boot.Hook{"database": databaseGuard}
+	}
 	return boot.Options{
 		AfterConfig: func(_ context.Context, app *module.App) error {
 			dirs, err := appdirs.Resolve(getenv)
 			if err != nil {
 				return err
 			}
-			if err = dirs.Prepare(); err != nil {
-				return fmt.Errorf("prepare the data directory %s: %w", dirs.Data, err)
+			if prepare {
+				if err = dirs.Prepare(); err != nil {
+					return fmt.Errorf("prepare the data directory %s: %w", dirs.Data, err)
+				}
 			}
+			// A path the operator's override made absolute is theirs; a relative one (including
+			// the manifest default) is placed in the data directory, never silently replaced.
 			anchor := func(def, modName, key string, nested ...string) {
 				m, _ := app.Config[modName].(map[string]any)
 				if m == nil {
@@ -46,8 +60,12 @@ func bootOptions(getenv func(string) string) boot.Options {
 					}
 					m = child
 				}
-				if p, _ := m[key].(string); p == "" || !filepath.IsAbs(p) {
+				p, _ := m[key].(string)
+				switch {
+				case p == "":
 					m[key] = def
+				case !filepath.IsAbs(p):
+					m[key] = filepath.Join(dirs.Data, p)
 				}
 			}
 			anchor(dirs.Database(), "database", "path", "sqlite")
@@ -55,16 +73,18 @@ func bootOptions(getenv func(string) string) boot.Options {
 			anchor(dirs.Secrets(), "secrets", "state_dir")
 			return nil
 		},
-		Before: map[string]boot.Hook{
-			"database": func(_ context.Context, app *module.App) error {
-				db, _ := app.Config["database"].(map[string]any)
-				sq, _ := db["sqlite"].(map[string]any)
-				p, _ := sq["path"].(string)
-				if p == "" {
-					p = app.Name + ".db" // the database module's default, relative to the working directory
-				}
-				return persistence.RefuseLegacy(filepath.Clean(p))
-			},
-		},
+		Before: before,
 	}
+}
+
+// databaseGuard refuses a pre-Substrate database, judged from the config the database module
+// will read.
+func databaseGuard(_ context.Context, app *module.App) error {
+	db, _ := app.Config["database"].(map[string]any)
+	sq, _ := db["sqlite"].(map[string]any)
+	p, _ := sq["path"].(string)
+	if p == "" {
+		p = app.Name + ".db" // the database module's default, relative to the working directory
+	}
+	return persistence.RefuseLegacy(filepath.Clean(p))
 }

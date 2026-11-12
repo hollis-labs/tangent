@@ -32,12 +32,13 @@ func main() {
 func run(ctx context.Context, getenv func(string) string) error {
 	if args := os.Args[1:]; len(args) > 0 && args[0] == "migrate-data" {
 		// Before the modules start: see migrate.go.
-		return migrateData(ctx, getenv, args[1:], os.Stdout)
+		return migrateData(ctx, args[1:], os.Stdout)
 	}
 	fsys, root := persistence.Migrations()
 	database.UseMigrationFS(fsys, root)
 
-	started, err := boot.StartWith(ctx, substrateApp, substrateModules, substrateConfigJSON, bootOptions(getenv))
+	modules, prepare := plan(os.Args[1:])
+	started, err := boot.StartWith(ctx, substrateApp, modules, substrateConfigJSON, bootOptions(getenv, prepare, modules))
 	if err != nil {
 		return err
 	}
