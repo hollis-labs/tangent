@@ -37,6 +37,7 @@ import { PageShell } from "../components/layout/PageShell";
 import { useUiChannelAttachment } from "../hooks/useUiCommands";
 import { createRoomLifecycle, type RoomLifecycle } from "../lib/room-lifecycle";
 import { fetchRoomState } from "../lib/rooms-api";
+import { UI_COMMAND_CHANNEL_ENABLED } from "../lib/ui-command-channel";
 import {
   type ConnectionState,
   connect,
@@ -153,7 +154,8 @@ export default function Room({
         setError(err.message);
       },
     });
-    const detachUi = client.uiTransport ? attachUi(client.uiTransport) : () => {};
+    const detachUi =
+      UI_COMMAND_CHANNEL_ENABLED && client.uiTransport ? attachUi(client.uiTransport) : () => {};
     const lifecycle = createRoomLifecycle(initialRoomRef.current, client);
     lifecycleRef.current = lifecycle;
     return () => {
