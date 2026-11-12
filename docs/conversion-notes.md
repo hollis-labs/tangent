@@ -264,3 +264,21 @@ Removed in their own commit; each can come back as its own task.
   The remaining mentions are history (`CHANGELOG.md`, `docs/adr/`, `docs/manual-tests/`) and the removal notes themselves.
   Stale prose elsewhere in `docs/architecture.md` and `docs/mcp-integration.md` about loopback admission and the old listeners reconciles
   at release, not here.
+
+## MCP over stdio (Substrate local trust, PR #20)
+
+Tangent does not serve MCP over stdio, and the old binary never did. It is not wired in this port: a second process on the
+same database would start the delivery and reply-mail workers and the recovery pass twice, and the cross-process
+open-and-migrate lock is not in the framework yet. It would need a client-only boot as well. If it is wired later:
+`StdioOptions{LocalTrust: true, LocalScopes: <explicit list>}` in code, never from config, never the default `*` (which holds
+`tangent.resolve`), with the list leaving out the decision and administration scopes (`stdioScopes` in
+`cmd/tangent/stdio_test.go` is the list that holds today: what a plugin may use and `tangent.mcp`).
+
+What is held now (`cmd/tangent/stdio_test.go`, through the module's own `ServeStdio` over pipes on the real stack):
+`TestStdioScopesNeverHoldTheDecision`, and `TestStdioUnderLocalTrustRefusesEveryToolOutsideItsScopes`, which derives from the
+published tool names and their scopes every tool needing `tangent.resolve` or `tangent.admin` and requires each to be
+refused under local trust. **No resolve action is reachable as an MCP tool**: that set is empty (`TestNoToolNeedsTheDecisionScope`
+too); deciding is the browser's, at a user session, on the user-only routes. (`tangent_interaction_definition_resolve`
+resolves a definition reference, not an item awaiting a decision.) Because the set is empty the refusal check is also run with a
+narrowed local list ({view}) and requires every other tool to be refused, which shows the per-tool scope check holds under local
+trust; it was break-checked by widening the list.
