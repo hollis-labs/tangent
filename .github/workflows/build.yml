@@ -13,9 +13,9 @@ jobs:
     with:
       app: tangent
       main_pkg: ./cmd/tangent
-      # Must satisfy ui/package.json "engines": the frontend build must not run on a Node the package refuses.
-      # gui-tangent's Node 24 change (#151) lands this as "24"; whichever of the two merges second sets it.
-      node_version: "22"
+      # Must satisfy ui/package.json "engines". Node 24 is the range gui-tangent's #151 sets (>=24 <25); until that
+      # merges, main still says <23 and npm only warns (no engine-strict), so the build runs on 24 either way.
+      node_version: "24"
       # The binary embeds internal/webui/dist, which the frontend build writes (vite outDir). The reusable
       # workflow runs ui_cmd before the Go build in both its test job and its build job, so the tarball's
       # binary always embeds a built UI; verify-ui below proves it on the published artifact. vite empties
