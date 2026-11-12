@@ -13,6 +13,8 @@ jobs:
     with:
       app: tangent
       main_pkg: ./cmd/tangent
+      # Must satisfy ui/package.json "engines": the frontend build must not run on a Node the package refuses.
+      # gui-tangent's Node 24 change (#151) lands this as "24"; whichever of the two merges second sets it.
       node_version: "22"
       # The binary embeds internal/webui/dist, which the frontend build writes (vite outDir). The reusable
       # workflow runs ui_cmd before the Go build in both its test job and its build job, so the tarball's
@@ -25,7 +27,9 @@ jobs:
       test_cmd: "go vet ./..."
       extra_files: deploy.yaml
       ldflags_var: ""       # the version comes from the build info; there is no variable to set with -X
-      ldflags_extra: "-X github.com/hollis-labs/tangent/internal/buildinfo.Commit=${{ github.sha }} -X github.com/hollis-labs/tangent/internal/buildinfo.Dirty=false"
+      # The commit is a fact of the run. Dirtiness is not stamped: it is left to Go's own build info (vcs.modified), which
+      # the version string carries (`tangent version`: ...+dirty), so a build from a modified tree cannot say it is clean.
+      ldflags_extra: "-X github.com/hollis-labs/tangent/internal/buildinfo.Commit=${{ github.sha }}"
 
   # The published linux/amd64 binary, as downloaded, serves the SPA and not an empty embed.
   verify-ui:
