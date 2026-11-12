@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status install-macos install-macos-dry-run uninstall-macos
+.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes db-migrate db-rollback
 
 # The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
 # (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
@@ -74,9 +74,6 @@ install-plugins: build-go ## Install the pinned first-party plugins (tangent-plu
 		"$$dir/bin/tangent-plugin-$$p" --manifest > "$$dir/plugin.yaml"; \
 		./tangent plugin install "$$dir"; \
 	done
-
-build-app: check-node generate-envelopes build-ui ## Build Tangent.app (Wails, CGO on, macOS host-only): binary + Info.plist + icon, verified by packagecheck
-	./scripts/build-macos-app.sh
 
 db-migrate: ## Apply migrations to the DEV database (DEV_DB_PATH) and exit
 	$(DEV_ENV) go run ./cmd/tangent --migrate-only
@@ -169,54 +166,10 @@ scan-public: ## Scan the working tree for secret-shaped literals and private pat
 lint-frontend: check-node ## biome check
 	cd ui && npm run lint
 
-# ── Launch at login (macOS LaunchAgent) ────────────────────────────────
-#
-# The agent runs the headless daemon at login (RunAtLoad true, KeepAlive
-# false) from ~/Library/LaunchAgents/com.hollislabs.tangent.plist. The binary
-# path is hardcoded into the plist, so LAUNCH_AGENT_BINARY must be the
-# daemon's *installed* location; the workspace build below is the default
-# only so `make launch-agent-render` has something to show. The real install
-# is performed by the stable install script (CW-20260907-0020), not by hand.
-
-LAUNCH_AGENT_BINARY ?= $(CURDIR)/tangent
-LAUNCH_AGENT_PORT ?= 7842
-LAUNCH_AGENT_FLAGS = --binary "$(LAUNCH_AGENT_BINARY)" --port $(LAUNCH_AGENT_PORT) $(if $(LAUNCH_AGENT_DB),--db "$(LAUNCH_AGENT_DB)",)
-
-launch-agent-render: ## Print the LaunchAgent plist for LAUNCH_AGENT_BINARY; touches nothing
-	go run ./cmd/tangent-launchagent render $(LAUNCH_AGENT_FLAGS)
-
-launch-agent-install: ## Write and load the LaunchAgent (macOS; refuses if LAUNCH_AGENT_BINARY is missing)
-	go run ./cmd/tangent-launchagent install $(LAUNCH_AGENT_FLAGS)
-
-launch-agent-uninstall: ## Boot out and remove the LaunchAgent (macOS; idempotent)
-	go run ./cmd/tangent-launchagent uninstall
-
-launch-agent-status: ## Report the LaunchAgent and re-validate the binary path it hardcodes
-	go run ./cmd/tangent-launchagent status
-
-# ── Stable install (macOS) ────────────────────────────────────────────
-#
-# Places ./tangent and ./Tangent.app (from `make build` and `make build-app`
-# on a tagged tree) under ~/.local/bin and ~/Applications and runs the daemon
-# under the LaunchAgent. install is also the upgrade. INSTALL_FLAGS passes
-# through to cmd/tangent-install (e.g. --artifacts DIR --port 7842).
-
-INSTALL_FLAGS ?=
-
-install-macos-dry-run: ## Show what install-macos would do; probes only, changes nothing
-	./scripts/install-macos.sh install --dry-run $(INSTALL_FLAGS)
-
-install-macos: ## Install or upgrade the stable Tangent (daemon + app + LaunchAgent); refuses on any pre-check
-	./scripts/install-macos.sh install $(INSTALL_FLAGS)
-
-uninstall-macos: ## Remove the stable Tangent's daemon, app and LaunchAgent; keeps the database
-	./scripts/install-macos.sh uninstall $(INSTALL_FLAGS)
-
 # ── Maintenance ────────────────────────────────────────────────────────
 
-clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent, Tangent.app
+clean: ## Remove ui/dist, ui/node_modules, internal/server/ui_dist build output, ./tangent
 	rm -f tangent
-	rm -rf Tangent.app Tangent.app-bin
 	rm -rf ui/dist
 	rm -rf ui/node_modules
 	rm -rf .tangent

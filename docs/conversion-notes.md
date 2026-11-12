@@ -195,9 +195,7 @@ wires it. `/mcp` needs the scope `tangent.mcp` (the mcp module's own). The healt
 that no longer exists. `tangent plugin install|enable|disable|remove|list|dir` are back (they touch no database).
 `internal/smoke` boots the built binary on a throwaway data directory with a first-run owner and a probe key.
 
-**Known open after this slice.** The desktop shell (`cmd/tangent-app`, `internal/appshell`) still imports the removed
-boot API and does not build (it needs Wails and GTK, which this host lacks; slice f, after the owner decides). The
-`tangent session` and maintenance commands (`--db-check`, `--db-backup`, restore, retention) are not ported and
+**Known open after this slice.** The `tangent session` and maintenance commands (`--db-check`, `--db-backup`, restore, retention) are not ported and
 `internal/db` still carries the old golang-migrate helpers that ~36 test files use to build a test database
 (`internal/testdb` is the replacement; moving them is mechanical and not done). `ui/` is untouched (slice e).
 
@@ -246,3 +244,23 @@ response, a refused Host included. What it does, unchanged from before except fo
 - Tests: `TestTheDocumentPolicyIsOnTheSPAResponses` (index, `/index.html`, two deep links, an asset, an API path, `/healthz`, through the
   real chain), `TestAHostRefusalCarriesTheSecurityHeaders`, and the old suite in `internal/server/csp_test.go` (the hash recomputed from the SPA
   source, the directives, the embedded bundle carrying the shim verbatim).
+
+## Removed: the desktop app, the LaunchAgent and installer, the Caddy snippet (owner's decision, slice f)
+
+Removed in their own commit; each can come back as its own task.
+- **Wails desktop app:** `cmd/tangent-app`, `internal/appshell`, `packaging/macos` (Info.plist, icon), `scripts/build-macos-app.sh`,
+  `cmd/tangent-packagecheck` and `internal/packagecheck` (they only verified `Tangent.app`), the `build-app` target and the
+  Wails requirement in `go.mod`.
+- **LaunchAgent and macOS installer:** `cmd/tangent-launchagent`, `cmd/tangent-install`, `internal/launchagent`,
+  `internal/installer`, `scripts/install-macos.sh`, the `launch-agent-*`, `install-macos*` and `uninstall-macos` targets,
+  `docs/launch-at-login.md`, `docs/installing.md`.
+- **Caddy snippet for remote MCP:** `deploy/caddy/tangent-mcp-auth.caddy`, and the section of `docs/mcp-integration.md` that
+  described the proxy marker, `TANGENT_MCP_TOKENS` and the proxied listener (replaced by a short "Caller authentication"
+  section; `docs/architecture.md` points at it).
+- **CI and hooks:** the macOS `go-desktop` job is gone; the `go` job no longer filters two packages out of `go list` (nothing needs
+  gtk/webkit or `pkg-config` any more, and `go build ./...` and `go vet ./...` now work on a Linux host without them); `lefthook.yml` and
+  `scripts/pre-push-go-test.sh` lost their pkg-config exclusions.
+- **Checked:** `grep` finds no remaining importer of any removed package; `go build ./...` and `go vet ./...` pass over the whole module.
+  The remaining mentions are history (`CHANGELOG.md`, `docs/adr/`, `docs/manual-tests/`) and the removal notes themselves.
+  Stale prose elsewhere in `docs/architecture.md` and `docs/mcp-integration.md` about loopback admission and the old listeners reconciles
+  at release, not here.

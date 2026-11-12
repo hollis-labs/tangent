@@ -58,8 +58,7 @@ import (
 // Config is everything Boot needs that a caller might reasonably vary.
 // Every field mirrors an environment variable cmd/tangent has always read;
 // Boot itself reads no environment — the caller resolves env/flags and
-// passes the result, so cmd/tangent-app can supply its own values without
-// route through cmd/tangent's flag set.
+// passes the result, so an embedder can supply its own values.
 type Config struct {
 	// DB is the host's database handle (the database module's single writer).
 	// Boot never closes it.
@@ -126,7 +125,7 @@ type Config struct {
 	// subprocess plugin's cached plugin/health verdict can refuse a caller's
 	// tool or route call (CW-20260911-0069). Named for the opt-out rather than
 	// the feature so the zero value — what any caller gets that never sets
-	// this field, including cmd/tangent-app and every test boot — is the safe
+	// this field, including every test boot — is the safe
 	// default: gate ON. An operator turns it off on purpose; nothing turns it
 	// off by omission.
 	DisablePluginHealthGate bool
@@ -176,7 +175,7 @@ type Config struct {
 }
 
 // Services is the constructed service graph. Callers that only need to
-// listen and serve can ignore it; internal/smoke and cmd/tangent-app use it
+// listen and serve can ignore it; internal/smoke uses it
 // to reach individual services directly (a health probe, a room lookup)
 // without going through HTTP.
 type Services struct {

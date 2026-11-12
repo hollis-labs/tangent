@@ -20,22 +20,8 @@ set -euo pipefail
 parallel="${TANGENT_PREPUSH_PARALLEL:-2}"
 timeout="${TANGENT_PREPUSH_TIMEOUT:-20m}"
 
-# cmd/tangent-app and internal/appshell link Wails (GTK/webkit via pkg-config) on
-# Linux. Without pkg-config they cannot build, so they are skipped here; CI
-# runs them.
-skip_wails=0
-if [ "$(uname -s)" = Linux ] && ! command -v pkg-config >/dev/null 2>&1; then
-  skip_wails=1
-  echo "pre-push: pkg-config not found: skipping cmd/tangent-app and internal/appshell (CI runs them)"
-fi
-
 all_packages() {
-  local pkgs
-  pkgs=$(go list ./...) || return 1
-  if [ "$skip_wails" = 1 ]; then
-    pkgs=$(printf '%s\n' "$pkgs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$' || true)
-  fi
-  printf '%s\n' "$pkgs"
+  go list ./...
 }
 
 # changed_packages prints the import path of every package that has a changed
@@ -65,9 +51,6 @@ else
     fi
   fi
   pkgs=$(changed_packages "$base")
-  if [ "$skip_wails" = 1 ]; then
-    pkgs=$(printf '%s\n' "$pkgs" | grep -v -e '/cmd/tangent-app$' -e '/internal/appshell$' || true)
-  fi
   # go.mod / go.sum changes can break any package; a build catches that
   # without running every suite.
   if git diff --name-only "$base"...HEAD | grep -qE '^go\.(mod|sum)$'; then

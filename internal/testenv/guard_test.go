@@ -22,7 +22,7 @@ import (
 func TestNoUnisolatedBinaryRuns(t *testing.T) {
 	tools := map[string]bool{"go": true, "node": true, "npm": true, "git": true, "pgrep": true, "plutil": true}
 	legacy := []string{
-		"internal/smoke/", "internal/pluginhost/", "internal/plugins/", "internal/launchagent/",
+		"internal/smoke/", "internal/pluginhost/", "internal/plugins/",
 		"internal/mcp/tether_", "internal/server/", "internal/db/ownership_test.go",
 	}
 	root := filepath.Join("..", "..")

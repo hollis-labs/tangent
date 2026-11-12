@@ -11,10 +11,9 @@ import (
 // # `~/.tangent/plugins/`, and why not XDG
 //
 // Tangent has two path conventions today and they disagree: the database is at
-// `~/.tangent/tangent.db` (`internal/db/db.go`), and the desktop shell's
-// preferences are under `os.UserConfigDir()` (`internal/appshell/prefs.go`). A
-// plugin directory cannot be consistent with both; it picks one or invents a
-// third.
+// `~/.tangent/tangent.db` (`internal/db/db.go`), and the removed desktop shell kept its
+// preferences under `os.UserConfigDir()`. A plugin directory could not be consistent with
+// both; it picked one or invented a third.
 //
 // It picks the database's, and the deciding reason is not the obvious one.
 //
@@ -49,8 +48,7 @@ const (
 	// DirEnv overrides the install root.
 	//
 	// It exists for the same reasons TANGENT_DB_PATH does, and it is wired the
-	// same way — including into the launch agent plist
-	// (`internal/launchagent`), which is the half that is not about tests. A
+	// same way. A
 	// packaged install that relocates the database and not the plugins would
 	// split a plugin from the database it was installed alongside.
 	DirEnv = "TANGENT_PLUGIN_DIR"

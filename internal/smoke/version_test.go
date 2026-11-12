@@ -13,10 +13,9 @@ import (
 // This file is the version gate (CW-20260907-0019).
 //
 // The release version has exactly one source: the "version" field of
-// ui/package.json. scripts/build-macos-app.sh already stamps Tangent.app's
-// Info.plist from it; this test makes every other place a version appears in
-// prose agree with it, so a release cannot be cut with a README, CHANGELOG,
-// and bundle that disagree — which is how the tree came to say 0.1.0, v0.11.0,
+// ui/package.json. This test makes every place a version appears in
+// prose agree with it, so a release cannot be cut with a README and CHANGELOG
+// that disagree — which is how the tree came to say 0.1.0, v0.11.0,
 // and v0.12.0 about itself at the same time.
 //
 // The same rule the tool-count gate applies: a number in prose is only allowed
