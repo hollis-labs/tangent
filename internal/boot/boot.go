@@ -27,6 +27,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/channelpane"
+	"github.com/hollis-labs/tangent/internal/childkeys"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/effect"
@@ -148,6 +149,11 @@ type Config struct {
 	// still write their outbox rows (the observer is part of the transition
 	// transaction), so turning the stream back on drains whatever accrued.
 	EventsDisabled bool
+
+	// MCPURL is the address a plugin child calls back to (the host's own /mcp). ChildKeys, when
+	// set, gives each child its own short-lived key; without it a child has no credential.
+	MCPURL    string
+	ChildKeys *childkeys.Leases
 
 	// ReplyToOptional lets room workflows through without completion.reply_to,
 	// a rollout window while agents catch up (config tangent.reply_to_optional).
@@ -387,7 +393,8 @@ func Boot(cfg Config) (*Services, *server.Table, io.Closer, error) {
 	}
 	closer.config = configStore
 	pluginHost, pluginErr := plugins.LoadInstalled(
-		context.Background(), logger, envSvc, pluginRoot, cfg.DisablePluginHealthGate, plugins.WithConfigStore(configStore))
+		context.Background(), logger, envSvc, pluginRoot, cfg.DisablePluginHealthGate,
+		plugins.WithConfigStore(configStore), plugins.WithCallback(cfg.MCPURL, cfg.ChildKeys))
 	if pluginErr != nil {
 		return release(fmt.Errorf("load installed plugins: %w", pluginErr))
 	}

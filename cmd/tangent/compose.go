@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/hollis-labs/substrate/module"
 	"github.com/hollis-labs/substrate/modules/database"
@@ -15,6 +17,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/appdirs"
 	"github.com/hollis-labs/tangent/internal/boot"
+	"github.com/hollis-labs/tangent/internal/childkeys"
 	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/server"
@@ -85,6 +88,15 @@ func (t *tangent) compose(cfg settings.Settings) (*boot.Services, *server.Table,
 			dbPath, _ = sq["path"].(string)
 		}
 	}
+	issuer, err := newKeyIssuer(app, id)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	// Each plugin child gets its own key, a few minutes long and renewed while it lives.
+	childKeys, err := childkeys.New(issuer, access.PluginChildScopes(), childKeyLifetime, childKeyRenewal, slog.Default())
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	services, table, closer, err := boot.Boot(boot.Config{
 		DB:                      st.DB(),
 		DBPath:                  dbPath,
@@ -96,6 +108,8 @@ func (t *tangent) compose(cfg settings.Settings) (*boot.Services, *server.Table,
 		Verifier:                id.Verify,
 		HITLBackend:             getenv(gohitl.EnvBackend),
 		RoomURLBase:             "http://" + httpAddr(app),
+		MCPURL:                  "http://" + httpAddr(app) + "/mcp",
+		ChildKeys:               childKeys,
 		ManagedResource:         getenv(envManagedResource),
 		OTel:                    getenv(envOpenTelemetry) != "",
 		DisablePluginHealthGate: getenv(envDisablePluginHealthGate) != "",
@@ -114,6 +128,12 @@ func (t *tangent) compose(cfg settings.Settings) (*boot.Services, *server.Table,
 	activeTools.Store(services.MCP)
 	return services, table, closer, nil
 }
+
+// A plugin child's key lives ten minutes and is replaced every three while the child runs.
+const (
+	childKeyLifetime = 10 * time.Minute
+	childKeyRenewal  = 3 * time.Minute
+)
 
 // httpAddr is the address the host listens on, as configured.
 func httpAddr(app *module.App) string {

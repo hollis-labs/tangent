@@ -49,16 +49,36 @@ Each says what was seen, and what was done meanwhile.
    the shipped binary's own commands) and sign in with an ordinary `POST /api/login`. The commands start only the
    modules they need (`plan.go`): no listener, no tool server.
 
-7. **Plugin children cannot call back (found in slice c; needs a decision).** A subprocess plugin reaches Tangent's tools
-   through `/mcp` at `TANGENT_MCP_URL` (`pkg/plugin/hostclient`) with no credential: it was a local caller. `/mcp` now
-   refuses a request without one, so the first-party `runner`, `tesseract` and `torque` plugins can no longer drive
-   Tangent (the runner's turn never reaches the inbox; `TestInstalledRunnerCarriesATurnThroughTheInbox` is skipped with
-   this reference, and was green on the old binary). Two designs (see `docs/client-table.md`): (A) the host mints a
-   per-child identity API key, hands it over in the child's environment, and `hostclient` presents it; this follows the
-   identity model but only works once the plugins repository is built against the new `hostclient`; (B) the host gives
-   each child its own URL with a per-child secret, served from a mount the host owns: works with the shipped plugin
-   binaries, but is a second door beside identity. Recommended: A, with B only as a bridge if the plugin release cannot
-   land with the cutover. Waiting for the driver/owner.
+7. **Plugin children cannot call back: decided (driver, option A) and done.** A subprocess plugin reaches Tangent's tools through
+   `/mcp` at `TANGENT_MCP_URL` (`pkg/plugin/hostclient`). `/mcp` refuses a request without a credential, so the host now
+   mints one key per child through the identity service (`internal/childkeys`): named `plugin-<id>`, scopes = what the
+   plugin host holds (view, draft, submit, cancel, close, withdraw, deliver, plugin) plus `tangent.mcp`, never resolve,
+   admin or a wildcard (`access.PluginChildScopes`, `TestPluginChildScopesNeverDecide`). It lives ten minutes and is
+   renewed every three while the child lives; the one before the previous is revoked at each renewal (two are live at
+   most), and both are revoked, and the file removed, when the incarnation ends (`pluginhost.ChildSpec.Credential`: the
+   attempt's key is also ended when the next attempt starts, so a child that failed to start leaves none).
+   *Delivery:* the child's environment carries `TANGENT_MCP_KEY_FILE`, the path of a 0600 file in a 0700 directory
+   (`<plugin root>/.state/<id>/run/mcp-key`) that the host rewrites on every renewal, not the key itself: a running
+   process's environment cannot change, so a key literal could not be renewed. `hostclient` reads the file on every
+   request (`TANGENT_MCP_KEY` carries a literal for a host that does not renew). Also fixed: `TANGENT_MCP_URL` is now the
+   address the host really listens on (it used to read `TANGENT_HTTP_PORT`, which nothing sets any more).
+   *Partition:* a `plugin-` key stays in the unlabeled caller partition, as the in-process plugin host does, so a child
+   moving from a loopback caller to a key moves no data (and a gateway producer cannot take that prefix).
+   *Revocation, a Gap for Substrate:* `identity.Service` has `CreateKey` but no exported revoke; the host calls the
+   module's own published `DELETE /api/identity/keys/` handler in-process (`cmd/tangent/childkeys.go`). An exported
+   `RevokeKey(ctx, id)` would replace that. If a revoke fails the key still expires on its own within ten minutes.
+   *Verified:* `TestAPluginChildCallsBackWithItsOwnKeyAndLosesItWhenItStops` (real stack: a view tool succeeds, every deciding
+   route and `GET /api/identity/keys` refuse the key, a renewal reaches the next call, both keys are 401 once the child
+   stops, the file is gone; break-checked by removing the close) and the runner end-to-end test is back
+   (`TestInstalledRunnerCarriesATurnThroughTheInbox`, no longer skipped): the shipped binary starts the real runner plugin,
+   built from the pinned plugins commit against this tree's `hostclient` (the smoke harness replaces the `tangent` module
+   with the working tree for the fixture), and a turn goes through the inbox.
+   *What the plugins repository must change (do not push there; the driver was told):* nothing in the plugin sources. In
+   `tangent-runner`, `tangent-tesseract` and `tangent-torque` (the three whose `main.go` imports `pkg/plugin/hostclient`)
+   bump the `github.com/hollis-labs/tangent` requirement from `v0.20.0` to the first Tangent release that carries this
+   `hostclient`, refresh `go.sum`, and cut a release of the three plugins; then move `tangent-plugins.version` and
+   `tangent-plugins.smoke-ref` here to it. At the cutover the installed plugin binaries must be reinstalled
+   (`make install-plugins`): a binary built with the old `hostclient` presents no key and is refused.
 8. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
    `libs/ui/ui-go` (0.4.0 to 0.1.0) and `libs/harness/core` (0.13.0 to 0.16.0) to the BOM versions and the existing
    packages still build and vet.

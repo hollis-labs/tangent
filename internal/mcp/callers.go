@@ -11,6 +11,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/authz"
+	"github.com/hollis-labs/tangent/internal/childkeys"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/roomflow"
 )
@@ -70,7 +71,7 @@ type callerSet struct {
 func newCallerSet(c Callers) (*callerSet, error) {
 	set := &callerSet{gateway: map[string]bool{}, forwarders: map[string]bool{}}
 	for _, name := range c.Gateway {
-		if !callerName.MatchString(name) || set.gateway[name] {
+		if !callerName.MatchString(name) || set.gateway[name] || strings.HasPrefix(name, childkeys.NamePrefix) {
 			return nil, fmt.Errorf("mcp: gateway producer %q is not a distinct caller name", name)
 		}
 		set.gateway[name] = true
@@ -134,6 +135,12 @@ func (s *Server) callerMiddleware(next mcpsdk.MethodHandler) mcpsdk.MethodHandle
 		}
 		name, valid := keyName(principal.Display)
 		if !valid {
+			return next(ctx, method, req)
+		}
+		if strings.HasPrefix(name, childkeys.NamePrefix) {
+			// A plugin child's key (minted by the host, internal/childkeys): the child stays in the
+			// unlabeled partition the in-process plugin host has, so a child moving from a loopback
+			// caller to a key moves no data.
 			return next(ctx, method, req)
 		}
 		if s.callers != nil && s.callers.gateway[name] {

@@ -33,11 +33,6 @@ func TestInstalledRunnerCarriesATurnThroughTheInbox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots the shipped binary with its installed plugins; skipped under -short")
 	}
-	// A plugin child reaches Tangent through /mcp at TANGENT_MCP_URL (pkg/plugin/hostclient) and
-	// presents no credential, which /mcp now refuses. Which credential a child holds, and how the
-	// shipped plugin binaries come to present it, is an open decision in docs/conversion-notes.md
-	// (Gap: plugin children). Until it is made the loop cannot run end to end.
-	t.Skip("plugin children hold no /mcp credential yet: see docs/conversion-notes.md, gap on plugin children")
 	endpoint, _ := bootShippedBinaryWithPluginDir(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()

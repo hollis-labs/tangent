@@ -12,6 +12,7 @@ package access
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 
 	libauth "github.com/hollis-labs/libs/security/auth"
@@ -89,6 +90,16 @@ func PluginHostPrincipal() libauth.Principal {
 		ID:       "tangent:plugin-host",
 		Scopes:   []string{View, Draft, Submit, Cancel, Close, Withdraw, Deliver, Plugin},
 	}
+}
+
+// MCP is the scope that reaches /mcp at all (the mcp module's own, "<app>.mcp").
+const MCP = "tangent.mcp"
+
+// PluginChildScopes is what the key the host mints for a plugin child holds: what a plugin may
+// use (the plugin host's scopes) and the right to reach /mcp. Never the decision or
+// administration; TestPluginChildScopesNeverDecide holds that.
+func PluginChildScopes() []string {
+	return append(slices.Clone(PluginHostPrincipal().Scopes), MCP)
 }
 
 // AuthorizeTool is the MCP authorizer: the caller in ctx must be verified and

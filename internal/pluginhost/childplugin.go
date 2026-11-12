@@ -43,6 +43,10 @@ type ChildSpec struct {
 	Cleanup       func() error
 	ResolveConfig func(context.Context) (pluginconfig.Runtime, error)
 	ConfigApplied func(context.Context, string) error
+	// Credential, when set, is asked for the child's credential each time the child is about to be
+	// started. It returns the environment entries to add and a release the host calls when that
+	// incarnation ends (stopped, failed to start, or replaced by the next attempt).
+	Credential func(context.Context) (env []string, release func(), err error)
 }
 
 var ErrChildGone = driver.ErrGone
@@ -73,6 +77,7 @@ type ChildPlugin struct {
 	lifecycle       *driver.Lifecycle
 	gate            *driver.HealthGate
 	owner           driver.Owner
+	release         func() // ends the current incarnation's credential
 	active          context.Context
 	cancel          context.CancelFunc
 	status          plugin.PluginStatus
@@ -221,6 +226,15 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 			return driver.Plan{}, err
 		}
 	}
+	env := append([]string(nil), p.spec.Env...)
+	if p.spec.Credential != nil {
+		extra, release, err := p.spec.Credential(ctx)
+		if err != nil {
+			return driver.Plan{}, fmt.Errorf("pluginhost: credential for %s: %w", p.ID(), err)
+		}
+		p.swapRelease(release) // an attempt that never ran leaves its key behind otherwise
+		env = append(env, extra...)
+	}
 	p.mu.Lock()
 	p.configSecrets = append([]string(nil), runtime.Secrets...)
 	p.configApply = nil
@@ -236,7 +250,7 @@ func (p *ChildPlugin) plan(ctx context.Context) (driver.Plan, error) {
 	return driver.Plan{Spec: driver.Spec{
 		ID: p.ID(), ExpectedID: p.ID(), ExpectedVersion: p.spec.Version,
 		Command: p.spec.Command, Args: p.spec.Args, Dir: p.spec.WorkDir,
-		Env:         driver.InheritEnv(append(append([]string(nil), p.spec.Env...), "PWD="+dir)...),
+		Env:         driver.InheritEnv(append(env, "PWD="+dir)...),
 		Redact:      redactRawDiagnostic,
 		Secrets:     runtime.Secrets,
 		StderrBytes: pluginStderrBytes,
@@ -268,13 +282,29 @@ func (p *ChildPlugin) activate(ctx context.Context, owner driver.Owner, proc *dr
 }
 func (p *ChildPlugin) revoke(_ context.Context, owner driver.Owner) error {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	var release func()
 	if p.owner == owner && p.cancel != nil {
 		p.cancel()
 		p.active = nil
 		p.cancel = nil
+		release, p.release = p.release, nil
+	}
+	p.mu.Unlock()
+	if release != nil {
+		release()
 	}
 	return nil
+}
+
+// swapRelease installs the release of the incarnation about to start and ends the previous one's.
+func (p *ChildPlugin) swapRelease(next func()) {
+	p.mu.Lock()
+	previous := p.release
+	p.release = next
+	p.mu.Unlock()
+	if previous != nil {
+		previous()
+	}
 }
 
 func (p *ChildPlugin) Unload() error {
@@ -288,6 +318,7 @@ func (p *ChildPlugin) Unload() error {
 		return nil
 	}
 	err := l.Disable(context.Background())
+	p.swapRelease(nil) // a child that never reached activate still holds the last attempt's key
 	p.mu.Lock()
 	p.status = plugin.PluginStatus{}
 	p.mu.Unlock()

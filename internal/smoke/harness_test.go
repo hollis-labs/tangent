@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -241,6 +242,70 @@ func smokePlugins() []string {
 	return names
 }
 
+// pinnedPluginBuild builds the plugin at the pinned source commit against THIS tree's
+// pkg/plugin/hostclient. The plugin's callback to /mcp has to present the key the host mints for
+// its child (internal/childkeys), which the released hostclient does not do yet: until the plugins
+// repository takes the new hostclient, the fixture replaces the module with the working tree so
+// the shipped path is measured, not a stub. The plugin's own code is the pinned commit's, untouched.
+//
+// Checksums for the modules the build adds are not looked up in the public database: the commit
+// pins the source, and this is a test fixture built from a read-only module-cache copy.
+func pinnedPluginBuild(name, ref, workRoot, output string) (*exec.Cmd, error) {
+	module := "github.com/hollis-labs/plugins/tangent-" + name + "@" + ref
+	// #nosec G204 -- a fixed module path at the pinned source commit.
+	listing, err := exec.Command("go", "mod", "download", "-json", module).Output()
+	if err != nil {
+		return nil, fmt.Errorf("fetch %s: %w", module, err)
+	}
+	var downloaded struct{ Dir string }
+	if err = json.Unmarshal(listing, &downloaded); err != nil || downloaded.Dir == "" {
+		return nil, fmt.Errorf("fetch %s: no directory in %q", module, listing)
+	}
+	source := filepath.Join(workRoot, "src", name)
+	if err = copyTree(downloaded.Dir, source); err != nil {
+		return nil, err
+	}
+	goVersion, err := exec.Command("go", "list", "-m", "-f", "{{.GoVersion}}", "github.com/hollis-labs/tangent").Output()
+	if err != nil {
+		return nil, fmt.Errorf("this tree's go version: %w", err)
+	}
+	tree, err := filepath.Abs(repoRoot())
+	if err != nil {
+		return nil, err
+	}
+	edit := exec.Command("go", "mod", "edit", "-replace", "github.com/hollis-labs/tangent="+tree, "-go="+strings.TrimSpace(string(goVersion))) // #nosec G204 -- fixed arguments.
+	edit.Dir = source
+	if output, editErr := edit.CombinedOutput(); editErr != nil {
+		return nil, fmt.Errorf("replace the tangent module: %w\n%s", editErr, output)
+	}
+	build := exec.Command("go", "build", "-o", output, "./cmd/tangent-plugin-"+name) // #nosec G204 -- fixed arguments.
+	build.Dir = source
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GONOSUMDB=*", "GOWORK=off")
+	return build, nil
+}
+
+// copyTree copies a read-only module-cache directory into a writable one.
+func copyTree(from, to string) error {
+	return filepath.WalkDir(from, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(from, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(to, relative)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o750)
+		}
+		data, err := os.ReadFile(path) // #nosec G304,G122 -- a module-cache directory this test just resolved.
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o600) // #nosec G703 -- a path under this test's temp directory.
+	})
+}
+
 func buildFirstPartyPlugins() (map[string]string, error) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(), pluginsFixtureRefFile))
 	if err != nil {
@@ -271,10 +336,10 @@ func buildFirstPartyPlugins() (map[string]string, error) {
 			build = exec.Command("go", "build", "-o", built, "./cmd/"+binaryName)
 			build.Dir = filepath.Join(source, "tangent-"+name)
 		} else {
-			module := "github.com/hollis-labs/plugins/tangent-" + name + "/cmd/" + binaryName
-			// #nosec G204 -- a fixed module path at the pinned source commit.
-			build = exec.Command("go", "install", module+"@"+ref)
-			build.Env = append(os.Environ(), "GOBIN="+filepath.Join(dir, "bin"))
+			var err error
+			if build, err = pinnedPluginBuild(name, ref, root, built); err != nil {
+				return nil, err
+			}
 		}
 		if output, err := build.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("build %s: %w\n%s", binaryName, err, output)
