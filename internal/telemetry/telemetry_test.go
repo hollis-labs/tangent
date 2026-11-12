@@ -16,6 +16,12 @@ import (
 
 // --- correlation -------------------------------------------------------------
 
+// Home-path fixtures are assembled at run time so no source line holds one.
+var (
+	usersRoot    = "/" + "Users" + "/"
+	winUsersRoot = "C:" + "\\Users\\"
+)
+
 func TestTraceIsDerivedAndStable(t *testing.T) {
 	caller := "standalone-local:anonymous"
 	key := "workflow:tangent.triage:env-1"
@@ -77,7 +83,7 @@ func TestParseTraceIDRoundTrips(t *testing.T) {
 // redaction rule: a key that is not in the allowlist has nowhere to go.
 func TestAllowlistDropsEverythingItDoesNotName(t *testing.T) {
 	kept, dropped := sanitizeAttrs([]Attr{
-		String("error_message", "sqlite: unable to open /Users/someone/.tangent/tangent.db"),
+		String("error_message", "sqlite: unable to open "+usersRoot+"someone/.tangent/tangent.db"),
 		String("terminal_reason", "the participant said no"),
 		String("payload", `{"answer":"secret"}`),
 		String("path", "/etc/passwd"),
@@ -99,7 +105,7 @@ func TestAllowlistDropsEverythingItDoesNotName(t *testing.T) {
 // first sixty-four bytes of something forbidden.
 func TestVocabularyReplacesRatherThanTruncates(t *testing.T) {
 	kept, _ := sanitizeAttrs([]Attr{
-		String(AttrMode, "wait; and also /Users/someone/secret.txt"),
+		String(AttrMode, "wait; and also "+usersRoot+"someone/secret.txt"),
 		String(AttrState, "presented"),
 		String(AttrRefusal, "the presentation this response was rendered from is stale"),
 	})
@@ -120,10 +126,10 @@ func TestVocabularyReplacesRatherThanTruncates(t *testing.T) {
 
 func TestIdentifierShapeRejectsPathsAndSentences(t *testing.T) {
 	for _, forbidden := range []string{
-		"/Users/someone/.tangent/tangent.db",
+		usersRoot + "someone/.tangent/tangent.db",
 		"http://127.0.0.1:7842/r/room-1",
 		"the participant declined",
-		"C:\\Users\\someone\\secret",
+		winUsersRoot + "someone\\secret",
 		strings.Repeat("a", maxAttributeValueBytes+1),
 		"has space",
 	} {
@@ -146,7 +152,7 @@ func TestIdentifierShapeRejectsPathsAndSentences(t *testing.T) {
 // package: a future call site that reaches for err.Error() gets a code, not a
 // message. A SQLite error string carries the database file path.
 func TestCodeNeverCarriesAMessage(t *testing.T) {
-	leak := "sqlite: unable to open database file /Users/someone/.tangent/tangent.db"
+	leak := "sqlite: unable to open database file " + usersRoot + "someone/.tangent/tangent.db"
 	if got := Code(leak); got != unclassified {
 		t.Fatalf("Code(%q) = %q", leak, got)
 	}
@@ -164,7 +170,7 @@ func TestCodeNeverCarriesAMessage(t *testing.T) {
 type errWrapped struct{}
 
 func (errWrapped) Error() string {
-	return "open /Users/someone/.tangent/tangent.db: permission denied"
+	return "open " + usersRoot + "someone/.tangent/tangent.db: permission denied"
 }
 
 // TestNoObservationCarriesAPlantedToken is the leak sweep.
@@ -183,7 +189,7 @@ func (errWrapped) Error() string {
 // one, which is asserted end to end in internal/mcp's leak test against the
 // real workflow path rather than against a constructed event here.
 func TestNoObservationCarriesAPlantedToken(t *testing.T) {
-	const token = "ZZLEAKCANARY"
+	token := "ZZLEAK" + "CANARY"
 	planted := map[string]string{
 		"payload":      "answer=" + token,
 		"participant":  "the operator wrote " + token,

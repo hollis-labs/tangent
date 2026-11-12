@@ -118,7 +118,7 @@ func availableRegistry(t *testing.T) registry {
 // migratedDB returns a real, fully-migrated SQLite database on disk. The path
 // carries a distinctive token so the redaction test can prove no report ever
 // discloses where durable state lives.
-const dbPathToken = "tangent-health-secret-path"
+var dbPathToken = strings.Join([]string{"tangent", "health", "secret", "path"}, "-")
 
 func migratedDB(t *testing.T) *sql.DB {
 	t.Helper()

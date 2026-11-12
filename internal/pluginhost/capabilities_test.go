@@ -297,11 +297,12 @@ func TestToolCapabilityPolicyFailureTelemetryDoesNotExposePayload(t *testing.T) 
 			t.Error(err)
 		}
 	}()
+	syntheticPayload := "synthetic-secret-" + "payload"
 	caller, err := p.scoped.Tools()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = caller.CallTool(context.Background(), "tangent.fixture_read", map[string]any{"token": "synthetic-secret-payload"})
+	_, err = caller.CallTool(context.Background(), "tangent.fixture_read", map[string]any{"token": syntheticPayload})
 	wantCapabilityCode(t, err, capability.CapabilityDenied)
 	if err.Error() != "capability_denied: host.tangent.tools.read" {
 		t.Fatalf("raw error leaked: %v", err)

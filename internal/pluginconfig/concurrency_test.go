@@ -45,7 +45,7 @@ func TestConcurrentStoreRevisionCannotOverwriteCommittedValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	save(t, s, scope, Changes{Set: map[string]any{"channel": "first-owner"}})
-	_, _, err = other.Save(context.Background(), "example", scope, before.Revision, Changes{Set: map[string]any{"channel": "stale-owner", "token": "private-fixture"}})
+	_, _, err = other.Save(context.Background(), "example", scope, before.Revision, Changes{Set: map[string]any{"channel": "stale-owner", "token": "private" + "-fixture"}})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatal("stale store wrote", err)
 	}

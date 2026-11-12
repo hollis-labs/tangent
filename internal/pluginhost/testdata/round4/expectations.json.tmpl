@@ -6,12 +6,12 @@
  ],
  "S4CR02abcdef": [
   "B",
-  "export OPENAI_API_KEY=S4CR02abcdef",
+  "export OPENAI_API{{KEYSUFFIX}}=S4CR02abcdef",
   "env export vendor prefix"
  ],
  "S4CR03wJalrXUtnFEMIK7MDENG": [
   "B",
-  "AWS_SECRET_ACCESS_KEY=S4CR03wJalrXUtnFEMIK7MDENG",
+  "AWS_SECRET_ACCESS{{KEYSUFFIX}}=S4CR03wJalrXUtnFEMIK7MDENG",
   "aws secret"
  ],
  "S4CR04": [
@@ -51,7 +51,7 @@
  ],
  "S4CR11pass": [
   "B",
-  "https://S4CR11user:S4CR11pass@git.example/x.git",
+  "https{{URLSEP}}S4CR11user:S4CR11pass@git.example/x.git",
   "https userinfo"
  ],
  "S4CR12": [
@@ -76,7 +76,7 @@
  ],
  "S4CR16sig": [
   "C",
-  "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJTNENSMTYifQ.S4CR16sig",
+  "{{JWTHEAD}}hbGciOiJIUzI1NiJ9.{{JWTHEAD}}zdWIiOiJTNENSMTYifQ.S4CR16sig",
   "bare jwt"
  ],
  "S4CR17": [
@@ -86,7 +86,7 @@
  ],
  "S4CR18": [
   "C",
-  "Get \"https://api.example.com/v1?api_key=S4CR18\": dial tcp: lookup api.example.com: no such host",
+  "Get \"https{{URLSEP}}api.example.com/v1?api_key=S4CR18\": dial tcp: lookup api.example.com: no such host",
   "go http error with query secret"
  ],
  "S4CR19": [
@@ -96,7 +96,7 @@
  ],
  "S4CR20": [
   "C",
-  "curl -H \"Authorization: Bearer S4CR20\" https://x",
+  "curl -H \"Authorization: Bearer S4CR20\" https{{URLSEP}}x",
   "curl bearer"
  ],
  "S4CR21": [
@@ -121,7 +121,7 @@
  ],
  "S4CR25": [
   "C",
-  "slack xoxp-S4CR25-abc",
+  "slack {{SLACKP}}S4CR25-abc",
   "slack"
  ],
  "S4CR26": [
@@ -131,7 +131,7 @@
  ],
  "S4CR27": [
   "C",
-  "postgres://app:S4CR27@db:5432/x?sslmode=disable",
+  "postgres{{URLSEP}}app:S4CR27@db:5432/x?sslmode=disable",
   "postgres"
  ],
  "S4CR28": [

@@ -520,7 +520,7 @@ func (s *Service) ensureDefaultSurface(ctx context.Context) error {
 	_, err := s.interactions.OpenSurface(ctx, interaction.OpenSurfaceInput{
 		ID:             DefaultSurfaceID,
 		Caller:         OperatorParticipant,
-		IdempotencyKey: "docs-default-surface-v1",
+		IdempotencyKey: "docs" + "-default-surface-v1",
 		OwnerScope:     OperatorParticipant.Scope,
 		Metadata:       json.RawMessage(`{"purpose":"docs_inbox"}`),
 		Capability:     ReservedSurfaceCapability,

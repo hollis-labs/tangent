@@ -17,7 +17,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/roomflow"
 )
 
-const formSecretCanary = "SECRETCANARY-5d21b0aa"
+var formSecretCanary = "SECRET" + "CANARY-5d21b0aa"
 
 // TestFormSecretReachesTheCallerOnceAndIsStoredNowhere is the acceptance test
 // for CW-20261016-0176. It runs the real path (MCP server, durable

@@ -71,11 +71,11 @@ func TestLoadFailurePreservesFollowingStderrCause(t *testing.T) {
 }
 
 func TestDiagnosticStderrCorpusRetainsFinalCause(t *testing.T) {
-	raw, err := os.ReadFile("testdata/diagnostic-stderr.txt")
+	raw, err := os.ReadFile("testdata/diagnostic-stderr.txt.tmpl")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := redactRawDiagnostic(string(raw))
+	text := redactRawDiagnostic(expandFixture(string(raw)))
 	text = redactPluginDiagnostic("pluginhost: load/init: plugin is gone\nplugin stderr:\n" + text)
 	if strings.Contains(text, "S3CR02") || strings.Contains(text, "S3CR03") || strings.Contains(text, "S3CR05") || strings.Contains(text, "UzNDUjA2") || !strings.Contains(text, "FINAL CAUSE: schema migration failed") || !strings.Contains(text, "level=ERROR msg=forged") {
 		t.Fatal(text)

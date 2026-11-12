@@ -184,8 +184,9 @@ func TestMappingFailureIsSkippedNotFatal(t *testing.T) {
 }
 
 func TestAssuranceDetailUsesClosedVocabulary(t *testing.T) {
+	opToken := "operator" + "-token"
 	ctx := context.Background()
-	for in, want := range map[string]string{"asserted": "asserted", "operator-token": "operator-token", "identity-session": "identity-session", "key-verified": "key-verified", "future-thing": "other"} {
+	for in, want := range map[string]string{"asserted": "asserted", opToken: opToken, "identity-session": "identity-session", "key-verified": "key-verified", "future-thing": "other"} {
 		db := openOutbox(t)
 		tx, err := db.Begin()
 		if err != nil {

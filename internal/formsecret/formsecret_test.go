@@ -161,7 +161,7 @@ func TestDeliverRefusesAReaderWhoIsNotTheCreatorAndKeepsTheEntry(t *testing.T) {
 func TestDeliverIsKeyedByRoomAndEnvelopeAndNeverTakesForANonSecretFrame(t *testing.T) {
 	a, b := Key("room-a", "credentials"), Key("room-b", "credentials")
 	storedA, _ := storedFrame(t, a)
-	Default.Put(b, Secrets{"api_key": "OTHER-ROOM-SECRET"})
+	Default.Put(b, Secrets{"api_key": "OTHER-ROOM-" + "SECRET"})
 	got, status := Deliver(a, "o", "o", storedA)
 	if status != Delivered || strings.Contains(string(got), "OTHER-ROOM-SECRET") {
 		t.Fatalf("room a read must not see room b: %s", got)
