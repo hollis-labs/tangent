@@ -27,7 +27,7 @@ import (
 // wrong package.
 func TestRestoredDatabaseReconcilesDeliveryObligations(t *testing.T) {
 	ctx := context.Background()
-	store, databasePath := openTestStore(t)
+	store, databasePath := openLegacyMigratedStore(t)
 	service := newTestService(t, store)
 	surface := mustOpenSurface(t, service, "restore-reconciliation")
 

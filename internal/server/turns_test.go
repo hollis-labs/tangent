@@ -14,12 +14,12 @@ import (
 	"strings"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/testdb"
 	"github.com/hollis-labs/tangent/internal/turns"
 )
 
@@ -31,14 +31,7 @@ type turnsTestApp struct {
 func startTurnsTestApp(t *testing.T) *turnsTestApp {
 	t.Helper()
 	databasePath := filepath.Join(t.TempDir(), "turns-server-test.db")
-	database, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("tangentdb.Open: %v", err)
-	}
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		_ = database.Close()
-		t.Fatalf("RunMigrations: %v", migrationErr)
-	}
+	database := testdb.Open(t, databasePath)
 	envelopeService, err := envelope.New(context.Background())
 	if err != nil {
 		_ = database.Close()

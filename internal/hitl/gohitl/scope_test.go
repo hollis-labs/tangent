@@ -7,23 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func newWire(t *testing.T) *gohitl.Wire {
 	t.Helper()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err = tangentdb.RunMigrations(db); err != nil {
-		t.Fatal(err)
-	}
+	db := testdb.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	envelopes, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatal(err)

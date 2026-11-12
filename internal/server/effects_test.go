@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // The effect route's transport-level proof.
@@ -268,14 +268,7 @@ func startEffectAppAs(
 	authorities ...effect.Authority,
 ) *effectApp {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "effects.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("run migrations: %v", migrateErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "effects.db"))
 	store, err := effect.NewSQLStore(database)
 	if err != nil {
 		t.Fatalf("effect.NewSQLStore: %v", err)

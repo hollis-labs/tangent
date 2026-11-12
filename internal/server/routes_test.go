@@ -13,7 +13,6 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/channelpane"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -21,6 +20,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/room"
 	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // The route table is the only place a route's authority is written, so these
@@ -35,14 +35,7 @@ func buildTable(t *testing.T) *server.Table {
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "routes.db"))
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrateErr := tangentdb.RunMigrations(database); migrateErr != nil {
-		t.Fatalf("run migrations: %v", migrateErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "routes.db"))
 	effectStore, err := effect.NewSQLStore(database)
 	if err != nil {
 		t.Fatalf("effect.NewSQLStore: %v", err)

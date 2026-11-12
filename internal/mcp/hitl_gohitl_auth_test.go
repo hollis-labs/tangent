@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl"
@@ -16,6 +15,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // newHITLAuthServer builds an MCP server with verified producer credentials
@@ -23,14 +23,7 @@ import (
 // goHITL, by the go-hitl Service. It returns the database for inspection.
 func newHITLAuthServer(t *testing.T, goHITL bool) (*tangentmcp.Server, *sql.DB) {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "auth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatal(migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "auth.db"))
 	env, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatal(err)

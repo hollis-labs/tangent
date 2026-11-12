@@ -13,11 +13,11 @@ import (
 	"github.com/hollis-labs/libs/mesh/core/hitl"
 	"github.com/hollis-labs/libs/mesh/core/hitl/hitltest"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/hitl/sqlstore"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func newStore(t *testing.T) hitl.Store {
@@ -28,14 +28,7 @@ func newStore(t *testing.T) hitl.Store {
 
 func newDBStore(t *testing.T) (*sql.DB, hitl.Store) {
 	t.Helper()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "tangent.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err := tangentdb.RunMigrations(db); err != nil {
-		t.Fatal(err)
-	}
+	db := testdb.Open(t, filepath.Join(t.TempDir(), "tangent.db"))
 	return db, sqlstore.New(db, newCatalog(t, db))
 }
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 type testDefinitionCatalog struct{}
@@ -224,14 +224,7 @@ func TestServiceSubmitReturnsImmediateStableHandleAcrossRestart(t *testing.T) {
 	if closeErr := store.db.Close(); closeErr != nil {
 		t.Fatalf("close database: %v", closeErr)
 	}
-	database, err := tangentdb.Open(databasePath)
-	if err != nil {
-		t.Fatalf("reopen database: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatalf("RunMigrations after restart: %v", migrationErr)
-	}
+	database := testdb.Open(t, databasePath)
 	restarted := newTestService(t, NewStore(database))
 	reopened, err := restarted.OpenSurface(context.Background(), testOpenSurfaceInput("restart-surface"))
 	if err != nil || reopened.SurfaceID != surface.SurfaceID || reopened.Created {

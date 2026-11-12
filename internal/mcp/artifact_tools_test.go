@@ -12,13 +12,13 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/hollis-labs/tangent/internal/artifacts"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // artifactRig is a Tangent MCP server with the artifact tools wired to a real
@@ -35,14 +35,7 @@ type artifactRig struct {
 func newArtifactRig(t *testing.T) *artifactRig {
 	t.Helper()
 	ctx := context.Background()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "artifact-mcp.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(database) })
-	if err = tangentdb.RunMigrations(database); err != nil {
-		t.Fatalf("db.RunMigrations: %v", err)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "artifact-mcp.db"))
 	envSvc, err := envelope.New(ctx)
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)

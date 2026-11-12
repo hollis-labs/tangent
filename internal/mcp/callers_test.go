@@ -14,7 +14,6 @@ import (
 
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 	"github.com/hollis-labs/tangent/internal/channel"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
@@ -23,6 +22,7 @@ import (
 	tangentmcp "github.com/hollis-labs/tangent/internal/mcp"
 	"github.com/hollis-labs/tangent/internal/relay"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/testdb"
 	"github.com/hollis-labs/tangent/internal/turns"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -56,14 +56,7 @@ func newCallerAuthServer(t *testing.T) (*tangentmcp.Server, *turns.Service) {
 
 func newCallerAuthServerWithForwarders(t *testing.T, forwarders string) (*tangentmcp.Server, *turns.Service, *sql.DB) {
 	t.Helper()
-	database, err := tangentdb.Open(filepath.Join(t.TempDir(), "auth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	if migrationErr := tangentdb.RunMigrations(database); migrationErr != nil {
-		t.Fatal(migrationErr)
-	}
+	database := testdb.Open(t, filepath.Join(t.TempDir(), "auth.db"))
 	env, err := envelope.New(context.Background())
 	if err != nil {
 		t.Fatal(err)

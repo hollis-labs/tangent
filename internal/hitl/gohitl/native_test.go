@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/envelope"
 	"github.com/hollis-labs/tangent/internal/envelope/extensions"
 	tangenthitl "github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/hitl/gohitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 func outboxKinds(t *testing.T, db *sql.DB) []string {
@@ -37,14 +37,7 @@ func outboxKinds(t *testing.T, db *sql.DB) []string {
 // recovers its kind from the request, and the one approval.resolved is emitted.
 func TestPreFlipNativeApprovalCanBeWithdrawnThroughTheLibAndEmitsOnce(t *testing.T) {
 	ctx := context.Background()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "t.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err = tangentdb.RunMigrations(db); err != nil {
-		t.Fatal(err)
-	}
+	db := testdb.Open(t, filepath.Join(t.TempDir(), "t.db"))
 	envelopes, err := envelope.New(ctx)
 	if err != nil {
 		t.Fatal(err)
