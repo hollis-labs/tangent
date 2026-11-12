@@ -28,3 +28,16 @@ func TestParse(t *testing.T) {
 		}
 	}
 }
+
+func TestParseReplyMailKeys(t *testing.T) {
+	s, err := Parse(map[string]any{"reply_to_optional": true, "tether_url": " https://tether.example.test ", "tether_sender": "msg://agent/x/y"})
+	if err != nil || !s.ReplyToOptional || s.TetherURL != "https://tether.example.test" || s.TetherSender != "msg://agent/x/y" {
+		t.Fatalf("got %+v, %v", s, err)
+	}
+	if _, err = Parse(map[string]any{"reply_to_optional": "yes"}); err == nil {
+		t.Fatal("a non-boolean reply_to_optional was accepted")
+	}
+	if _, err = Parse(map[string]any{"tether_url": 3}); err == nil {
+		t.Fatal("a non-string tether_url was accepted")
+	}
+}

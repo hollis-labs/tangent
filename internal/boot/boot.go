@@ -149,7 +149,16 @@ type Config struct {
 	// transaction), so turning the stream back on drains whatever accrued.
 	EventsDisabled bool
 
-	// ReplyMailSender overrides the Tether sender built from TANGENT_TETHER_*
+	// ReplyToOptional lets room workflows through without completion.reply_to,
+	// a rollout window while agents catch up (config tangent.reply_to_optional).
+	ReplyToOptional bool
+	// ReplyMailURL, ReplyMailToken and ReplyMailFrom address the Tether service
+	// operator answers are mailed through. Any of them empty leaves reply mail
+	// unconfigured and deliveries queued. The token is a secret the host
+	// supplies; it is never read from config.
+	ReplyMailURL, ReplyMailToken, ReplyMailFrom string
+
+	// ReplyMailSender overrides the Tether sender built from ReplyMailURL, ReplyMailToken and ReplyMailFrom
 	// (tests only).
 	ReplyMailSender replymail.Sender
 
@@ -621,8 +630,8 @@ func Boot(cfg Config) (*Services, *server.Table, io.Closer, error) {
 		mcp.WithRelay(channelStore, relayStore),
 	}
 	// reply_to is required unless an operator opts out for a rollout window
-	// (TANGENT_REPLY_TO_OPTIONAL=1): agents need their prompts updated first.
-	if os.Getenv("TANGENT_REPLY_TO_OPTIONAL") != "1" {
+	// (tangent.reply_to_optional): agents need their prompts updated first.
+	if !cfg.ReplyToOptional {
 		mcpOptions = append(mcpOptions, mcp.WithReplyToRequired())
 	}
 	useGoHITL, backendErr := gohitl.Enabled(cfg.HITLBackend)

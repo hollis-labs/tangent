@@ -15,7 +15,7 @@ URN. Tether delivers it on the agent's next turn, or at once if the agent is idl
 - Room-backed tools (`tangent_form_collect`, `tangent_approval_queue`, `tangent_diff_review`,
   `tangent_design_iteration`, ... and `tangent_session_advance`): `completion.reply_to`.
 - `tangent_interaction_submit`: top-level `reply_to`.
-- Required when the server runs with `WithReplyToRequired` (production boot does unless `TANGENT_REPLY_TO_OPTIONAL=1`, a rollout switch while agents catch up). A call
+- Required when the server runs with `WithReplyToRequired` (production boot does unless `tangent.reply_to_optional: true` in the config, a rollout switch while agents catch up). A call
   without a usable `msg://...` address is refused with `REPLY_TO_REQUIRED`.
 - Tangent's own plugins use `msg://app/tangent/internal`, which names no agent and is skipped.
 - Stored on the interaction's `external_refs.reply_to`.
@@ -28,10 +28,10 @@ resolution deliveries for answers, terminal notifications for everything else. T
 Tether's notify endpoint:
 
 ```
-POST {TANGENT_TETHER_URL}/messages/notify
-Authorization: Bearer {TANGENT_TETHER_TOKEN}      (send-only service credential)
+POST {tangent.tether_url}/messages/notify
+Authorization: Bearer {token}      (send-only service credential; TANGENT_TETHER_TOKEN in the environment until the secrets step)
 Idempotency-Key: tangent:resolution:<interaction id>:<revision>
-{"from": TANGENT_TETHER_SENDER, "to": reply_to, "kind": "response", "payload": {...}}
+{"from": tangent.tether_sender, "to": reply_to, "kind": "response", "payload": {...}}
 ```
 
 Network errors, 429 and 5xx retry with backoff (30 s doubling to 4 h, 12 attempts). Other 4xx

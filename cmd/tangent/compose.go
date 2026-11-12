@@ -33,6 +33,7 @@ const (
 	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
 	envListLegacyToolNames     = "TANGENT_MCP_LEGACY_TOOL_NAMES"
 	envEventsDisabled          = "TANGENT_EVENTS_DISABLED"
+	envTetherToken             = "TANGENT_TETHER_TOKEN" //nolint:gosec // the variable name, not a credential
 )
 
 // activeTools is the live MCP server, for the tools/list filter that must be
@@ -101,6 +102,12 @@ func (t *tangent) compose(cfg settings.Settings) (*boot.Services, *server.Table,
 		DisablePluginHealthGate: getenv(envDisablePluginHealthGate) != "",
 		ListLegacyToolNames:     getenv(envListLegacyToolNames) != "",
 		EventsDisabled:          getenv(envEventsDisabled) == "1",
+		ReplyToOptional:         cfg.ReplyToOptional,
+		ReplyMailURL:            cfg.TetherURL,
+		ReplyMailFrom:           cfg.TetherSender,
+		// The send-only token moves to the secrets module with slice (d); until
+		// then the host's environment supplies it, never the config file.
+		ReplyMailToken: getenv(envTetherToken),
 	})
 	if err != nil {
 		return nil, nil, nil, err

@@ -5,6 +5,9 @@
 //	  allowed_hosts: []        # extra Host values (besides loopback) served behind a local TLS proxy
 //	  gateway_producers: []    # API key names that are gateway producers (tether-gateway, a machine's gateway)
 //	  trusted_forwarders: []   # the producers among them trusted to attest the session they forward for
+//	  reply_to_optional: false # rollout switch: accept room workflows with no completion.reply_to
+//	  tether_url: ""           # Tether base URL operator answers are mailed to (with tether_sender)
+//	  tether_sender: ""        # the sender URN on that mail; the send-only token is a secret, not config
 //
 // An unknown key or a bad value is refused at start with a message that names the key.
 package settings
@@ -25,6 +28,9 @@ type Settings struct {
 	AllowedHosts      []string
 	GatewayProducers  []string
 	TrustedForwarders []string
+	ReplyToOptional   bool
+	TetherURL         string
+	TetherSender      string
 }
 
 // Parse reads the block (nil for a missing one).
@@ -39,7 +45,9 @@ func Parse(raw any) (Settings, error) {
 	}
 	var unknown []string
 	for k := range block {
-		if k != "allowed_hosts" && k != "gateway_producers" && k != "trusted_forwarders" {
+		switch k {
+		case "allowed_hosts", "gateway_producers", "trusted_forwarders", "reply_to_optional", "tether_url", "tether_sender":
+		default:
 			unknown = append(unknown, k)
 		}
 	}
@@ -68,6 +76,22 @@ func Parse(raw any) (Settings, error) {
 		return s, fmt.Errorf("tangent.allowed_hosts must be a list of strings")
 	}
 	var err error
+	switch v := block["reply_to_optional"].(type) {
+	case nil:
+	case bool:
+		s.ReplyToOptional = v
+	default:
+		return s, fmt.Errorf("tangent.reply_to_optional must be true or false")
+	}
+	for key, dst := range map[string]*string{"tether_url": &s.TetherURL, "tether_sender": &s.TetherSender} {
+		switch v := block[key].(type) {
+		case nil:
+		case string:
+			*dst = strings.TrimSpace(v)
+		default:
+			return s, fmt.Errorf("tangent.%s must be a string", key)
+		}
+	}
 	if s.GatewayProducers, err = names(block, "gateway_producers"); err != nil {
 		return s, err
 	}
