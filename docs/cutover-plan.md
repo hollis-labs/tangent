@@ -297,7 +297,8 @@ To roll back, at any point before real use:
 
 Anything written to the new database after the cutover is not in the old one: the stop in step 1 is the freeze that keeps
 that loss at zero if the rollback happens before real use. The plugins in the old tree are the old binaries and work with
-the old host. Keep the old tree, the backup and the scratch copies until the owner is satisfied.
+the old host. Keep the old tree, the backup and the scratch copies until the owner is satisfied. A backup copy of the
+unit file, dated 2026-10-30, sits beside it: a second copy to read from, not the procedure.
 
 ## 11. Rehearsal
 
@@ -383,19 +384,20 @@ The full table is `docs/client-table.md`; at the cutover:
 
 | Client | Change | Who |
 |---|---|---|
-| Every agent that calls `/mcp` | holds an identity key by its producer name, in its own MCP configuration as an `Authorization: Bearer` header | the owner mints (step 8); each client's owner installs |
+| Every agent that calls `/mcp` through a Tether gateway | nothing: the gateway's one upstream credential is the only one that matters (the checked machines reach Tangent only through a gateway) | n/a |
+| A direct caller of `/mcp` (one found: a Tether worker's own MCP configuration names a `tangent` server over HTTP at the public URL, with **no** bearer in the file; six session directories on that machine name one in stdio style, not traced) | today it is refused: the old proxied listener marks every request it carries and a marked request without a token is 401 `MCP authentication required` (`internal/mcp/caller_auth.go`, checked). After the cutover it is 401 as well. **Recommendation: remove the entry and let those sessions use the gateway like every other machine**; the alternative is a key of its own in its configuration. A Tether worker configuration change, through Agent Ops after the owner agrees | the owner decides; Agent Ops |
 | The Tether gateway | the credential line in its catalog entry becomes the gateway producer's key (URL unchanged); catalog plan, then hub reload | the driver, Agent Ops |
 | A machine's own gateway producer | its own key, listed in `tangent.gateway_producers` | the owner mints; that machine's operator installs |
 | The browser | signs in with the owner's account; same origin | the owner |
-| The Cerberus definition for Tangent (the service and the ingress helper) | **no apply, deploy or reload of its Tangent resources during or after the window until it is updated**: the command becomes `tangent serve`, the env file drops the variables with no reader (section 14) and carries the new ones, and the ingress helper is retired or repointed; an apply of the old definition could rewrite the unit with the bare command and the old variables | the Cerberus owner (what an apply does to the unit has been asked of Cerberus; not yet answered) |
+| The Cerberus definition for Tangent (the service and the ingress helper) | **no apply, deploy or reload of its Tangent resources during or after the window until it is updated**: the command becomes `tangent serve`, the env file drops the variables with no reader (section 14) and carries the new ones, and the ingress helper is retired or repointed; an apply of the old definition could rewrite the unit with the bare command and the old variables | the Cerberus owner. Known (read-only look): an apply or deploy of the definition **regenerates the base unit** from it (bare command, a stale env file of its own from mid October) and would drop the hand-written unit's `EnvironmentFile` for `tether.env`; whether it leaves the drop-in directory alone was not tested. The live unit is hand-written and differs from the definition. So: no apply, deploy or reload **before**, during or after the window; afterwards the owner updates the definition (command `tangent serve`, `SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR`, `TANGENT_PLUGIN_DIR`, no old variables) or removes it, and removes the stale ingress resource (inactive, not needed). Losing the `tether.env` line is harmless after the cutover (the reply token is in the secrets store); `TANGENT_TESSERACT_*` still come from the Tesseract drop-in |
 | Cerberus (resource health, `cerberus resource doctor`) | `/healthz` is unchanged and open; readiness is `/api/health/ready` and needs a `tangent.view` key | whoever owns the Cerberus definition |
 | `make smoke` | `TANGENT_SMOKE_KEY` | the operator running it |
-| Fleet monitors that poll `/readyz` or `/healthz/capability` | repoint to `/healthz` (open) or hold a `tangent.view` key and the `/api/health/...` path | the owner knows which exist; **cannot be enumerated from the repository**: see the placeholder below |
+| Fleet monitors that poll `/readyz` or `/healthz/capability` | repoint to `/healthz` (open) or hold a `tangent.view` key and the `/api/health/...` path | **none found** on the primary host (Cerberus's status for the resource is systemd-based; no timer or proxy health check; the log shows four `GET /healthz` in late October from an unrecorded source and no `/readyz` or capability call). Other hosts: the work laptop, two lab machines, two utility machines and the build machine were not checked, and the owner's laptop's Cerberus was not checked |
 
-> **PLACEHOLDER, to be filled before this goes to the owner (Agent Ops is asked for it): the list of callers and
-> monitors.** Who holds each of today's MCP tokens; which machines have their own gateway producer; what polls `/readyz`
-> or `/healthz/capability`. Without this list the clients table above is not complete and the cutover item does not
-> proceed.
+> **PLACEHOLDER, still open (Agent Ops is asked for it): who holds each of today's `TANGENT_MCP_TOKENS`, and which
+> machines have a gateway producer of their own.** Fleet checked the primary host, six worker machines and the owner's
+> laptop (above); the machines listed as unchecked, and the laptop gateway's truncated server list, remain. The cutover
+> item does not go to the owner until this is filled or the owner accepts the unchecked set.
 | Plugin children | none by hand: the host mints their keys; they are reinstalled (step 13) | the driver |
 
 **Agents lose the Tangent tools** from the stop in step 1 until step 12 completes (the gateway cannot reach Tangent through
