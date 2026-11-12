@@ -1,5 +1,6 @@
-import { Settings } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useOptionalSession } from "@/auth/SignInGate";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { cn } from "@/lib/utils";
 
@@ -7,6 +8,7 @@ import { cn } from "@/lib/utils";
 // agent creates. Interaction discovery and history belong to the Inbox.
 export function TabStrip() {
   const { pathname } = useLocation();
+  const session = useOptionalSession();
   const inboxActive =
     pathname === "/" || pathname.startsWith("/inbox") || pathname.startsWith("/r/");
   const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -41,6 +43,22 @@ export function TabStrip() {
         <NavLink to="/settings" aria-label="Settings" className={linkClass}>
           <Settings size={18} />
         </NavLink>
+        {session ? (
+          <>
+            <span className="text-xs text-fg-muted" data-testid="signed-in-as">
+              {session.profile.display_name || session.profile.username}
+            </span>
+            <button
+              type="button"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={() => void session.signOut()}
+              className="rounded p-2 text-fg-muted hover:text-fg focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              <LogOut size={18} />
+            </button>
+          </>
+        ) : null}
       </div>
     </nav>
   );

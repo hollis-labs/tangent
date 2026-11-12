@@ -43,7 +43,6 @@ import type {
 import type { TriageEnvelope, TriageResponse } from "./components/envelopes/Triage";
 import type { WizardEnvelope, WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
-import { syncPlugins } from "./lib/plugin-loader";
 import "./index.css";
 
 // Each envelope renderer is its own chunk, fetched when a room first presents
@@ -344,17 +343,8 @@ if (!rootEl) {
   throw new Error("Tangent: #root not found in index.html");
 }
 
-// Sync plugins from /api/plugins/registry (CW-20260911-0035 minimal proof).
-// Fire-and-forget: plugin load failures should not block app boot. It runs after the
-// first render so it never queues ahead of the first route's own data requests, and
-// still within a second so plugin contributions are not noticeably late.
 createRoot(rootEl).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
-if (typeof window.requestIdleCallback === "function") {
-  window.requestIdleCallback(() => void syncPlugins(), { timeout: 1000 });
-} else {
-  window.setTimeout(() => void syncPlugins(), 0);
-}
