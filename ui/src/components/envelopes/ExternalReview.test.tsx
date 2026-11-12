@@ -31,7 +31,17 @@ const refusedPaths = [
   "//evil.test/api/plugins/x/a",
   "https://evil.test/api/plugins/x/a",
 ];
-const reply = (value: unknown, ok = true) => ({ ok, json: async () => value });
+const reply = (value: unknown, ok = true) => ({
+  ok,
+  json: async () => value,
+  clone: () => ({ json: async () => value }),
+});
+const notJSON = () => {
+  const failure = async () => {
+    throw new SyntaxError("Unexpected token");
+  };
+  return { ok: false, status: 404, json: failure, clone: () => ({ json: failure }) };
+};
 afterEach(() => vi.unstubAllGlobals());
 describe("external review", () => {
   it("keeps history read-only without contacting the plugin", () => {
@@ -98,7 +108,10 @@ describe("external review", () => {
         .fn()
         .mockResolvedValueOnce(reply({ status: "open", message: "Ready" }))
         .mockResolvedValueOnce(
-          reply({ message: "The commit changed. Request a new review." }, false),
+          reply(
+            { code: "stale_review", message: "The commit changed. Request a new review." },
+            false,
+          ),
         ),
     );
     const submit = vi.fn();
@@ -136,5 +149,22 @@ describe("external review", () => {
         unmount();
       }
     }
+  });
+  it("says the plugin is unavailable when its answer is not an API error body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(notJSON()));
+    render(
+      <ExternalReview envelope={envelope} roomID="room-1" onSubmit={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("The review plugin is unavailable.");
+  });
+  it("says the plugin is unavailable when an OK answer is not JSON", async () => {
+    const failure = async () => {
+      throw new SyntaxError("Unexpected token");
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: failure }));
+    render(
+      <ExternalReview envelope={envelope} roomID="room-1" onSubmit={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("The review plugin is unavailable.");
   });
 });
