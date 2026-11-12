@@ -19,7 +19,7 @@ What the move to the Substrate backend changed in `ui/`, what is verified, and w
    "Your session ended" on a mid-use 401, who-is-signed-in and Sign out in the nav bar. A room socket refused
    `not_authorized` re-checks the session, so a revoked session returns to sign-in instead of showing a scope message.
    The plugin registry sync runs after sign-in.
-5. **The SPA builds where the binary embeds it.** Vite wrote to `internal/server/ui_dist`, the port embeds
+5. **The SPA builds where the binary embeds it** (sub-tangent's #154). Vite wrote to `internal/server/ui_dist`, the port embeds
    `internal/webui/dist`: `make build` made a binary with no SPA and the shim-hash test skipped silently.
 
 ## Verified in a real browser
@@ -48,5 +48,5 @@ built bundle (`TestSandboxFrameShimMatchesTheSPA`, `TestTheShippedBundleCarriesT
 - Static assets have no ETag revalidation (framework request filed).
 - A non-owner's refused decision shows the server's text ("required scope: tangent.resolve"), not friendlier copy.
 - `POST /api/rooms/<unknown>/close` answers 500 (Torque CW-20261112-0124, backend); the SPA does not call it.
-- CI runs `npm run build` before `scan-public --tree`; the built Excalidraw chunk trips a gcp-api-key rule (false
-  positive) that needs the owner's allowlist triage.
+- The built Excalidraw chunk trips a gcp-api-key rule (a false positive in a vendored string); #154 runs the CI scan
+  before the build.
