@@ -113,8 +113,16 @@ func (l *Leases) Open(ctx context.Context, pluginID, dir string) (*Lease, []stri
 	return lease, []string{KeyFileEnv + "=" + lease.path}, nil
 }
 
-// rotate mints a new key, publishes it, and revokes the one before the previous.
+// rotate revokes the key before the current one, then mints a new key and publishes it, so no more
+// than two keys are live at any instant (the current one stays one cycle for requests in flight).
 func (e *Lease) rotate(ctx context.Context) error {
+	e.mu.Lock()
+	stale := e.previous
+	e.previous = ""
+	e.mu.Unlock()
+	if stale != "" {
+		e.revoke(ctx, stale)
+	}
 	secret, id, err := e.leases.issuer.Create(ctx, e.name, e.leases.scopes, e.leases.ttl)
 	if err != nil {
 		return fmt.Errorf("childkeys: mint a key for %s: %w", e.name, err)
@@ -130,12 +138,8 @@ func (e *Lease) rotate(ctx context.Context) error {
 		return fmt.Errorf("childkeys: %w", err)
 	}
 	e.mu.Lock()
-	stale := e.previous
 	e.previous, e.current = e.current, id
 	e.mu.Unlock()
-	if stale != "" {
-		e.revoke(ctx, stale)
-	}
 	return nil
 }
 
