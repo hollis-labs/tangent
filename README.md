@@ -5,7 +5,7 @@ server, and a React SPA embedded in it, opened in a browser when chat is the wro
 MCP-speaking agent — Claude Code, Nanite, Cursor, Codex, Gemini CLI — can
 summon a room, hand it a decision, and get a structured response back.
 
-> **Pre-release.** The source version is **`v0.20.0`**. Tangent has tagged builds that its
+> **Pre-release.** The source version is **`v0.21.0`**. Tangent has tagged builds that its
 > author runs day to day, but it is not a supported release and has no
 > outside consumers. It's being built in the open: the code, the docs, and
 > this README describe what exists today, not a pitch for what's planned.
@@ -16,8 +16,8 @@ summon a room, hand it a decision, and get a structured response back.
 
 ## What it is today
 
-- **One transport, one envelope schema.** MCP (Streamable HTTP + legacy SSE)
-  is the only agent-facing surface. A room workflow's structured response is
+- **One transport, one envelope schema.** MCP (Streamable HTTP at `/mcp`, with an
+  identity API key) is the only agent-facing surface. A room workflow's structured response is
   the same envelope schema Nanite renders with.
 - **Rooms, not sessions.** A room (`/r/<roomID>`) projects a durable
   *interaction* into a browser. Multiple tabs and callers can hold a room at
@@ -46,7 +46,7 @@ Source support does not install a messaging plugin or activate message delivery.
    ┌──────────┐
    │ Tangent  │   room surface, envelope renderer, durable HITL inbox
    └──────────┘
-        │  plugin (in-process MCP client, same authority as any local caller)
+        │  plugin (a separate process on `/mcp` with a key the host mints for it)
    Torque, Tesseract   plugins that sync a board or log a review —
                         Tangent's binary takes no dependency on either
 ```
@@ -109,17 +109,22 @@ make install-plugins    # optional: first-party plugins at tangent-plugins.versi
 Run:
 
 ```bash
-./tangent
+# once: create the owner (password from the prompt) and a key for your agent
+./tangent identity setup --username NAME
+./tangent identity key create --name claude-code \
+  --scope tangent.mcp --scope tangent.view --scope tangent.submit --out claude-code.key
+
+./tangent serve        # `./tangent` alone does the same
 # tangent listening addr=127.0.0.1:7842
-# MCP server ready http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
 ```
 
-Wire it into Claude Code:
+Sign in to the page at http://127.0.0.1:7842 as the owner. Data lives in `$XDG_DATA_HOME/tangent`
+(`TANGENT_DATA_DIR` moves it); the port is `httphost.addr` in the file `SUBSTRATE_CONFIG` names.
+Wire it into Claude Code (a request to `/mcp` without the key is 401; there is no `/sse`):
 
 ```bash
-claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
-# or, if your claude rejects --transport http:
-claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp \
+  --header "Authorization: Bearer $(cat claude-code.key)"
 ```
 
 For Cursor, Codex, curl verification, and troubleshooting, see
@@ -139,20 +144,21 @@ installation order in [the plugin guide](docs/writing-a-plugin.md).
 # after the Quickstart's clone and installs:
 make install-hooks     # lefthook: pre-commit / pre-push
 make build             # frontend → embedded into Go binary → ./tangent
-make dev               # Go server proxies non-API requests to Vite at :5173
+make dev               # Go dev server on :7843; `make dev-ui` runs Vite, which proxies to it
 make lint              # gofmt + go vet + golangci-lint + biome
 make test              # go test -race + vitest
 make verify-supported  # test + lint + check-envelopes under the pinned Node
 ```
 
-Database operations (`--db-check`, `--db-backup`, `--db-restore`,
-`--db-repair`, `--retention-plan`, `--erase-interaction`) are documented in
-[`docs/database-operations.md`](docs/database-operations.md).
+Database operations: `tangent database check [--db PATH]` and `tangent database backup --to PATH`
+(read-only). Restore is by hand: stop the service, move the damaged `tangent.db` aside, copy a
+backup into place. The retention, erase, purge and close commands are not available in v0.21.0
+(`docs/conversion-notes.md`, "Operator commands"); `docs/database-operations.md` describes the
+older build.
 
 Start with [`docs/inbox.md`](docs/inbox.md) for the operator guide.
 
 More: [`docs/architecture.md`](docs/architecture.md) (system shape and the
 canonical limitations list), [`docs/adr/`](docs/adr/) (accepted decision
 records), [`docs/developing.md`](docs/developing.md) (contributor
-onboarding), [`docs/installing.md`](docs/installing.md) (macOS install and
-upgrade).
+onboarding).

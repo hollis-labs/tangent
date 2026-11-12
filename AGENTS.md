@@ -24,7 +24,7 @@ something new.
   not an exception — the boundary `0007` §6 and this file protect is that
   Tangent's own binary takes no application dependency, not which direction a
   write travels. `0006` is superseded by `0007`; read `0007` instead.
-- `cmd/tangent/main.go` — server entry point, flags and signal handling.
+- `cmd/tangent/main.go` — entry point: the Substrate host, the `serve`, `identity`, `migrate-*` and `database` commands.
 - `internal/webui/embed.go` — the `//go:embed all:dist` directive. Vite
   writes to `internal/webui/dist/` so the embed resolves relative to the
   package.
@@ -43,7 +43,7 @@ something new.
   plugin host and the loader for the plugins this Tangent has **installed**.
   There is no compiled-in roster: each plugin is its own
   program (`cmd/tangent-plugin-*` in the plugins monorepo), installed into
-  `~/.tangent/plugins/` with `tangent plugin install` (`make install-plugins`
+  `<data dir>/plugins` (`TANGENT_PLUGIN_DIR` overrides) with `tangent plugin install` (`make install-plugins`
   does the first-party ones), spawned through plugin-host Lifecycle over the
   protocol-2 plugin-sdk wire,
   restarted with backoff if it crashes, and gated on its health. `go list -deps ./cmd/tangent` names no

@@ -99,24 +99,33 @@ a definition name. `tangent_inbox_search` also accepts a request such as
 
 ## Install
 
-The latest **git tag** is `v0.11.0`. Everything the foundation phase added —
-resumable completion, multi-connection rooms, the definition registry, scoped
-authorization, renderer trust classes, health, telemetry, and the database
-operations — is **untagged**, so build from source to get it.
+The latest **git tag** is `v0.21.0`. Build from source: `go install` yields a
+binary without the web UI, so it is not an install path (see the README).
 
 ```bash
-# Latest tagged release:
-go install github.com/hollis-labs/tangent/cmd/tangent@v0.11.0
-
-# Current behaviour (untagged):
 git clone https://github.com/hollis-labs/tangent.git
 cd tangent
-make build         # produces ./tangent
+make build         # produces ./tangent, web UI embedded
 ```
 
-Pin a tag when you want a stable surface; build from source when you need the
-behaviour this document describes. Do not mix the two on one machine — see
+Check out a tag when you want a stable surface; build `main` when you need the
+behaviour this document describes. Do not run two builds on one machine — see
 "Managed runtime" below.
+
+## Identity and keys
+
+MCP is served **only** at `/mcp` (Streamable HTTP). Every request needs
+`Authorization: Bearer <identity API key>`; without one the answer is 401. The
+owner and key are created offline with the CLI:
+
+```bash
+tangent identity setup --username NAME
+tangent identity key create --name claude-code \
+  --scope tangent.mcp --scope tangent.view --scope tangent.submit \
+  --out key.file
+```
+
+See "Caller authentication" below for what the scopes decide.
 
 ## Run
 
@@ -124,16 +133,19 @@ behaviour this document describes. Do not mix the two on one machine — see
 tangent
 ```
 
-Default port is `7842`; override with `TANGENT_HTTP_PORT=7900` if it
-collides. Expected startup logs:
+Default port is `7842`. To change it, set `httphost.addr` in the YAML file
+named by `SUBSTRATE_CONFIG`:
+
+```yaml
+httphost:
+  addr: "127.0.0.1:7900"
+```
+
+Data lives in `TANGENT_DATA_DIR`, else `$XDG_DATA_HOME/tangent`; the database is
+`<data dir>/tangent.db`. The only startup log line is:
 
 ```
-level=INFO msg="loaded envelope types" count=<go-envelopes core catalog>
-level=INFO msg="registered tangent envelope extensions" plugin=tangent count=<total registered kinds>
-level=INFO msg="MCP server ready" http_url=http://127.0.0.1:7842/mcp sse_url=http://127.0.0.1:7842/sse
-level=INFO msg="WebSocket bridge ready" ws_url=ws://127.0.0.1:7842/ws
-level=INFO msg="tangent ready" url=http://127.0.0.1:7842/
-level=INFO msg="tangent listening" addr=127.0.0.1:7842 dev_frontend_url=""
+tangent listening addr=127.0.0.1:7842
 ```
 
 When an agent invokes a workflow tool, Tangent prints a room URL like
@@ -143,7 +155,7 @@ also works on most systems but the canonical form matches the bind.)
 
 ## Managed runtime (single launch authority)
 
-Tangent binds a fixed port and holds room state in `~/.tangent`, so it
+Tangent binds a fixed port and holds room state in its data directory, so it
 must have exactly **one** launch authority on a given machine. Two
 supervisors racing for `:7842` produce a bind failure and a split room
 store, and the loser looks to agents like an MCP server that connects
@@ -174,7 +186,7 @@ lands in the install you rely on:
 | | Stable | Dev |
 |---|---|---|
 | Port | `7842` (the daemon default) | `7843` (`DEV_PORT`) |
-| Database | `~/.tangent/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` (`DEV_DB_PATH`) |
+| Database | `<data dir>/tangent.db` (the daemon default) | `<repo>/.tangent/dev.db` (`DEV_DB_PATH`) |
 | Launch authority | launchd user agent, headless daemon ([`launch-at-login.md`](./launch-at-login.md)) | `make dev` or `make dev-go` in your checkout |
 | MCP endpoint | `http://127.0.0.1:7842/mcp` | `http://127.0.0.1:7843/mcp` |
 
@@ -202,8 +214,8 @@ two launch authorities racing for it and a split room store. `status: running`
 is supervisor bookkeeping, not a probe — reconcile it against `/healthz` (see
 "Cold-start check" below).
 
-Behind Tether, declare Tangent as an MCP upstream (`transport: sse`, pointing
-at `<base>/sse`) and reach it through `mux`:
+Behind Tether, declare Tangent as an MCP upstream (`transport: http`, pointing
+at `<base>/mcp`) and reach it through `mux`:
 
 ```bash
 mux mcp --proxy --only tangent        # Tangent tools under their own names
@@ -231,17 +243,17 @@ whole story:
 
 ```bash
 make build && ./tangent          # serves http://127.0.0.1:7842/
-claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp \
+  --header "Authorization: Bearer $(cat key.file)"
 ```
 
-Nothing else may start it. Override the port with `TANGENT_HTTP_PORT` if 7842
-is taken, and point your agent's MCP URL at the same port. `make smoke` (with
+Nothing else may start it. Set `httphost.addr` (see "Run") if 7842 is taken,
+and point your agent's MCP URL at the same port. `make smoke` (with
 no `TANGENT_SMOKE_ENV`) works here too: it boots its own copy on a reserved
 port against a temp database and never touches your running instance.
 
 The managed and direct paths are mutually exclusive per machine. Pick one,
-record it, and do not let a `go install`ed binary and a workspace build both
-claim the port.
+record it, and do not let two builds both claim the port.
 
 ### Cold-start check
 
@@ -296,31 +308,18 @@ failures, and capability denials. It carries no payload, participant text,
 path, session, effect handle, or URL — by construction rather than by
 filtering.
 
-> **Fixed — legacy `/sse` sessions no longer go stale.** The server's 30s
-> `ReadTimeout` used to tear down a quiet `GET /sse` stream and drop its MCP
-> session, after which every later call answered `404 session not found` and a
-> pooling gateway kept serving a dead session id. `longLivedMCPHandler` now
-> clears the read deadline as well as the write one for `/mcp` and `/sse`, so
-> an idle SSE subscription survives. `/mcp` (Streamable HTTP) is still the
-> better choice for anything long-lived, and a `404 session not found` from an
-> older deployment still means "reconnect", not "server down" — check that the
-> serving process is the build on disk with `TANGENT_SMOKE_ENV=1 make smoke`
-> before chasing it further.
-
 ## Claude Code
 
 Verified against the `claude` CLI as of **2026-05-08**:
 
 ```bash
-claude mcp add --transport http tangent http://127.0.0.1:7842/mcp
+claude mcp add --transport http tangent http://127.0.0.1:7842/mcp \
+  --header "Authorization: Bearer $(cat key.file)"
 ```
 
-If your `claude` rejects `--transport http` (older versions), fall back
-to SSE — Tangent serves both:
-
-```bash
-claude mcp add --transport sse tangent http://127.0.0.1:7842/sse
-```
+`key.file` is the key from "Identity and keys" above. There is no SSE
+transport and no `/sse` endpoint; a `claude` that cannot speak `--transport
+http` needs upgrading.
 
 Confirm it registered:
 
@@ -766,7 +765,8 @@ Add an entry pointing at Tangent:
 {
   "mcpServers": {
     "tangent": {
-      "url": "http://127.0.0.1:7842/mcp"
+      "url": "http://127.0.0.1:7842/mcp",
+      "headers": { "Authorization": "Bearer <key>" }
     }
   }
 }
@@ -791,6 +791,9 @@ dials the already-running process, it does not launch one:
 url = "http://127.0.0.1:7842/mcp"
 ```
 
+Codex must also send `Authorization: Bearer <key>` on every request; configure
+the header the way your Codex build supports.
+
 Per-tool approval is optional; without it Codex prompts on each call:
 
 ```toml
@@ -798,8 +801,7 @@ Per-tool approval is optional; without it Codex prompts on each call:
 approval_mode = "auto"
 ```
 
-Repeat the block per tool you want pre-approved. `/sse` works as a
-legacy fallback if your Codex build rejects Streamable HTTP.
+Repeat the block per tool you want pre-approved.
 
 ## Verification (no agent required)
 
@@ -807,6 +809,7 @@ Confirm the MCP surface is up and advertises the current tool set:
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq '.result.tools[].name'
@@ -837,8 +840,11 @@ diagnostics (`tangent_definition_list`, `tangent_definition_get`,
 deploy, boot it on a scratch database and port:
 
 ```bash
-TANGENT_DB_PATH=$(mktemp -d)/t.db TANGENT_HTTP_PORT=17842 ./tangent &
+# scratch data dir, plus a config with httphost.addr "127.0.0.1:17842"
+TANGENT_DATA_DIR=$(mktemp -d) SUBSTRATE_CONFIG=./scratch.yaml ./tangent &
+# create an owner and key in that data dir first (see "Identity and keys")
 curl -fsS -X POST http://127.0.0.1:17842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   | jq -r '.result.tools[].name' | sort
@@ -856,18 +862,22 @@ One-shot probes for the new surfaces:
 
 ```bash
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_session_create","arguments":{"title":"doc-smoke"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_session_list","arguments":{"active_only":true}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tangent_session_phase_advance","arguments":{"roomID":"<room-id>","to_phase":"drafting","reason":"move into drafting"}}}'
 
 curl -fsS -X POST http://127.0.0.1:7842/mcp \
+  -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"tangent_session_phase_output_set","arguments":{"roomID":"<room-id>","phase":"drafting","key":"outline","value":{"title":"V1"}}}}'
 ```
@@ -1012,7 +1022,7 @@ push into a room another partition owns. Refusals are **403-shaped
 (`ROOM_FORBIDDEN`) within an authority** and **404-shaped (`ROOM_NOT_FOUND`)
 across authorities**; adapters must not collapse the two.
 
-**Origin guard.** `/mcp`, `/sse`, and `/ws` now carry the same-origin guard
+**Origin guard.** `/mcp` and `/ws` now carry the same-origin guard
 `/api/hitl/*` has always had. It permits header-less non-browser clients,
 so MCP clients and the `curl` recipes in this document are unaffected; what it
 refuses is a browser request that declares itself cross-site.
@@ -1045,20 +1055,14 @@ days). An invalid value stops startup. It cannot outlast the browser session.
   see.** The room belongs to another caller partition (403-shaped) or another
   authority (404-shaped). `session_list` and `session_get` stay authority-wide;
   closing and advancing do not.
-- **Port `7842` is in use.** Run `TANGENT_HTTP_PORT=7900 tangent` (or
-  any free port) and update your agent's MCP URL to match.
-- **Transport mismatch.** If the modern Streamable HTTP endpoint
-  (`/mcp`) doesn't connect, try the SSE endpoint (`/sse`) — Tangent
-  serves both. Don't mix them within one client config.
-- **`claude mcp add` rejects `--transport http`.** Use
-  `--transport sse` and the `/sse` URL. The two transports are
-  equivalent for the current tool surface.
-- **`go install` vs fresh-clone build.** `go install` is the simplest path to
-  the latest tagged binary (`@v0.11.0`); build-from-source is required for the
-  untagged foundation behaviour this document describes. The two are not
-  API-compatible across releases — pin a tag until you have a reason not to,
-  and never let both a `go install`ed binary and a workspace build supervise
-  the same port.
+- **`/mcp` returns 401.** The request carried no `Authorization: Bearer <key>`
+  header, or the key is revoked or lacks `tangent.mcp`. See "Identity and keys".
+- **Port `7842` is in use.** Set `httphost.addr` in the `SUBSTRATE_CONFIG` YAML
+  to any free port and update your agent's MCP URL to match.
+- **Transport.** `/mcp` (Streamable HTTP) is the only MCP transport; `/sse` was
+  removed. A client that can only speak SSE cannot connect.
+- **No web UI.** A binary from `go install` has none. Build from source with
+  `make build`, and never let two builds supervise the same port.
 - **Browser shows "No component registered for ..."** The envelope
   `type` on the wire is not one of Tangent's registered workflow kinds.
   The bundled tools pin the type for you; if you're calling the session
@@ -1082,7 +1086,7 @@ days). An invalid value stops startup. It cannot outlast the browser session.
 - **Two Tangent processes point at the same DB.** The single-writer flock
   on `<db>.owner` refuses the second one, and two binaries at different
   migration levels must never share a database. Give each long-lived process
-  its own `TANGENT_DB_PATH` (and port); that is exactly how the dev instance
+  its own `TANGENT_DATA_DIR` (and port); that is exactly how the dev instance
   is kept apart from stable (see "Two instances" above).
 
 For more, see the manual e2e recipe's troubleshooting section.

@@ -1,7 +1,7 @@
 # Tangent kinds
 
 What Tangent can show an operator and what comes back. This is the catalog as the
-running host reports it (`tangent_definition_list`: 22 kinds, host v0.20.0 plus the
+running host reports it (`tangent_definition_list`: 22 kinds, host v0.21.0 plus the
 artifact work), with the MCP tool that opens each one, the agent skill that teaches it,
 and where it is tested by hand. Counts drift; the host is the authority, this page is
 the map.
