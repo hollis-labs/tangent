@@ -14,14 +14,14 @@ DEV_ENV = TANGENT_DATA_DIR=$(DEV_DATA_DIR) SUBSTRATE_CONFIG=$(DEV_CONFIG)
 
 # Keep this exact pin aligned with mise.toml. The package engine range remains
 # authoritative for compatible direct Node invocations.
-SUPPORTED_NODE_VERSION ?= 22.12.0
+SUPPORTED_NODE_VERSION ?= 24
 MISE ?= mise
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[1m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-node: ## Fail clearly unless Node satisfies ui/package.json engines
-	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); const range = require("./ui/package.json").engines.node; if (major !== 22 || minor < 12) { console.error(`Unsupported Node.js $${process.version}; Tangent requires $${range}. Run: make verify-supported`); process.exit(1); }'
+	@node -e 'const major = Number(process.versions.node.split(".")[0]); const range = require("./ui/package.json").engines.node; if (major !== 24) { console.error(`Unsupported Node.js $${process.version}; Tangent requires $${range}. Run: make verify-supported`); process.exit(1); }'
 
 verify-supported: ## Run all checks with the pinned Node runtime, without trusting repo config
 	@command -v $(MISE) >/dev/null 2>&1 || { echo "mise is required (https://mise.jdx.dev/)" >&2; exit 1; }

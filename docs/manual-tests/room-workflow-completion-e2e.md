@@ -12,7 +12,7 @@ These are the tests to run first; the manual walk-through below is for
 confirming the browser half with your own eyes.
 
 ```bash
-mise --no-config exec node@22.12.0 -- make build-ui
+mise --no-config exec node@24 -- make build-ui
 go test -race ./internal/mcp -count=1 \
   -run '^(TestRoomWorkflows_|TestRoomWorkflow_|TestOperatorCompletionSurvivesCallerWriteTimeout|TestLostCallerTransportNeverTerminalizes)'
 go test -race ./internal/interaction ./internal/room ./internal/db -count=1

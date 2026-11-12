@@ -9,9 +9,12 @@ import { defineConfig, type Plugin } from "vite";
 //   - Build output is written to ../internal/server/ui_dist so the Go
 //     `//go:embed all:ui_dist` directive in internal/server/static.go
 //     can resolve it without any post-build copy step.
-//   - Dev server runs on the Vite default (5173). The Go server, when
-//     started with TANGENT_DEV_FRONTEND_URL=http://localhost:5173,
-//     reverse-proxies non-API requests to it.
+//   - Dev server runs on the Vite default (5173) and proxies /api, /mcp and
+//     /ws to the Go dev server (TANGENT_DEV_BACKEND, default
+//     http://127.0.0.1:7843, the `make dev` instance). The Go server does not
+//     proxy to Vite. The proxy rewrites Origin to the backend's own, so the
+//     backend's same-origin checks see the request as it would be in the
+//     embedded build, and the session cookie it sets is host-only for the page.
 //
 // The Nanite-style importmap / shared-chunk pattern is intentionally
 // omitted: it exists to support runtime-loaded plugins, which Tangent
@@ -64,6 +67,10 @@ function excalidrawFonts(): Plugin {
   };
 }
 
+const BACKEND = process.env.TANGENT_DEV_BACKEND ?? "http://127.0.0.1:7843";
+
+const backendProxy = { target: BACKEND, changeOrigin: true };
+
 export default defineConfig({
   plugins: [react(), tailwindcss(), excalidrawFonts()],
   resolve: {
@@ -72,8 +79,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: Number(process.env.TANGENT_DEV_UI_PORT ?? 5173),
     strictPort: true,
+    proxy: {
+      "/api": backendProxy,
+      "/mcp": backendProxy,
+      "/ws": { ...backendProxy, ws: true },
+    },
   },
   build: {
     // Output directly into the Go embed target (see internal/server/static.go).

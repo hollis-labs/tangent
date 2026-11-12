@@ -15,7 +15,7 @@ check is proving.
 ## 1. Boot a production build
 
 ```bash
-mise --no-config exec node@22.12.0 -- make build
+mise --no-config exec node@24 -- make build
 ./tangent
 ```
 
