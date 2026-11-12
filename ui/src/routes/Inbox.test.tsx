@@ -143,9 +143,11 @@ describe("unified Inbox", () => {
       .parentElement as HTMLElement;
     fireEvent.click(within(header).getByRole("button", { name: "Archive" }));
     await waitFor(() => expect(archiveInboxItem).toHaveBeenCalledWith("workflow"));
+    expect(within(header).getByRole("button", { name: "Download" })).toBeEnabled();
     fireEvent.click(within(header).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(deleteInboxItem).toHaveBeenCalledWith("workflow"));
-    expect(within(header).getByRole("button", { name: "Download" })).toBeEnabled();
+    // A deleted item leaves the pane once the call resolves.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to inbox" })).toBeNull());
   });
   it("preserves the selected answer when a workflow resolves and after reopening", async () => {
     const request = entry("workflow", 4, "tangent.approval-queue");

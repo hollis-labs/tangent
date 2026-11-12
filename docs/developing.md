@@ -8,7 +8,7 @@ the scaffold — [`writing-a-plugin.md`](./writing-a-plugin.md).
 ## Prerequisites
 
 - **Go** at the version `go.mod`'s `go` line names, or newer.
-- **Node 22.12.0**. The repo pins this via [`mise.toml`](../mise.toml);
+- **Node 24**. The repo pins this via [`mise.toml`](../mise.toml);
   run `mise install` after cloning.
 - **`lefthook`** for the pre-commit / pre-push hooks:
   `brew install lefthook`.
@@ -35,11 +35,13 @@ embedded by `make build` — so it is not an install path.
 make dev
 ```
 
-Runs the Go **dev** server on `:7843` (`make dev-ui` runs Vite on `:5173` beside it). The
-Go server no longer proxies to Vite (the old `TANGENT_DEV_FRONTEND_URL` is gone), so the
-Vite dev server has to proxy `/api`, `/mcp` and `/ws` to `:7843` itself (a task for the
-GUI work). The first run needs an owner: `tangent identity setup --username NAME` with the
-same environment (see the top of the Makefile).
+Runs the Go **dev** server on `:7843`. `make dev-ui` runs Vite on `:5173` beside it. The Go
+server does not proxy to Vite (the old `TANGENT_DEV_FRONTEND_URL` is gone), so the Vite dev server
+proxies `/api`, `/mcp` and `/ws` to the Go server itself (`ui/vite.config.ts`). Open
+`http://localhost:5173`. Two environment variables move the pair: `TANGENT_DEV_BACKEND` (default
+`http://127.0.0.1:7843`) and `TANGENT_DEV_UI_PORT` (default `5173`). The first run needs an owner:
+`tangent identity setup --username NAME` with the same environment (see the top of the Makefile),
+then sign in on the page.
 
 ### Two instances: stable and dev
 
@@ -96,7 +98,7 @@ make smoke              # boot the shipped binary; derive and check the MCP surf
 ```
 
 `make verify-supported` is the gate to trust: it runs everything through
-`mise --no-config exec node@22.12.0` rather than whatever Node the shell
+`mise --no-config exec node@24` rather than whatever Node the shell
 happens to have.
 
 `make smoke` builds `./cmd/tangent`, boots it on a reserved port against a

@@ -16,8 +16,8 @@ restarts the server and retrieves the terminal results through fresh MCP Get
 and Await calls. Run it with the supported Node baseline:
 
 ```bash
-mise --no-config exec node@22.12.0 -- make build-ui
-mise --no-config exec node@22.12.0 -- \
+mise --no-config exec node@24 -- make build-ui
+mise --no-config exec node@24 -- \
   go test -race ./internal/server \
   -run '^TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart$' -count=1 -v
 ```

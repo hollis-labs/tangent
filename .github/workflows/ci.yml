@@ -26,7 +26,7 @@ jobs:
       - name: Set up Node (for envelope codegen and joined browser driver)
         uses: actions/setup-node@v4
         with:
-          node-version: "22.12.0"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: ui/package-lock.json
 
@@ -98,7 +98,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
           cache-dependency-path: |
             ui/package-lock.json

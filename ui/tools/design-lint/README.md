@@ -2,15 +2,15 @@
 
 This private npm package keeps the design-rules parser separate from Tangent's
 TypeScript 7 compiler. TypeScript 5.9.3 and typescript-eslint 8.46.4 satisfy each
-other's peers and run under Tangent's pinned Node 22.12.0. eslint-visitor-keys
+other's peers and run under Tangent's pinned Node 24. eslint-visitor-keys
 stays on the compatible 4.x line. All dependencies come from the npm registry;
 the lockfile pins the toolchain. Biome remains the app's primary linter.
 
 From the repository root:
 
 ```sh
-mise --no-config exec node@22.12.0 -- npm ci --prefix ui/tools/design-lint
-mise --no-config exec node@22.12.0 -- npm --prefix ui run check:design
+mise --no-config exec node@24 -- npm ci --prefix ui/tools/design-lint
+mise --no-config exec node@24 -- npm --prefix ui run check:design
 ```
 
 The frontend CI job installs this package with `npm ci` and runs the same
