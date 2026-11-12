@@ -74,6 +74,6 @@ func run(ctx context.Context, getenv func(string) string) error {
 	// `tangent` with no command serves, like `tangent serve`.
 	rootCmd.RunE = func(c *cobra.Command, args []string) error { return serve.RunE(c, args) }
 	rootCmd.Args = cobra.NoArgs
-	rootCmd.AddCommand(serve)
+	rootCmd.AddCommand(serve, stdioCmd())
 	return rootCmd.ExecuteContext(ctx)
 }

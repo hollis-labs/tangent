@@ -42,6 +42,19 @@ Each says what was seen, and what was done meanwhile.
    owner must confirm before cutover, and `internal/smoke`'s catalog classification still expects `transport: sse` and
    `url: <base>/sse` for Tangent's entry: it must change with the catalog entry (a correctly migrated entry would read
    `CATALOG_STALE` today).
+   **Settled for the main client.** The live catalog entry is already `http` at the public name plus `/mcp`, and Tether
+   builds http upstreams with libs `go-mcp/client` over go-sdk v1.8.0's `StreamableClientTransport`.
+   `TestGoMCPClientOverStreamableHTTP` drives the real host with that client (identity `tether-proxy`, a key): initialize,
+   tools/list and a tool call all work against the module as it answers today. The JSON-response option is not needed
+   for it.
+7b. **G9: the MCP SDK's DNS-rebinding guard refuses the gateway's public Host.** Found by
+   `TestProxiedGatewayKeepsItsForwardedSessionHeaders`: behind the local TLS proxy the gateway arrives with the public
+   name in `Host`; the Host check accepts it (listed in `allowed_hosts`, loopback peer, `X-Forwarded-Proto: https`), but
+   go-sdk's `StreamableHTTPHandler` (libs go-mcp, `DisableLocalhostProtection` unset) answers `403 Forbidden: invalid
+   Host header` for any non-loopback Host on a loopback listener. Worked around in Tangent: `mcpLoopbackHost`
+   (`cmd/tangent/serve.go`) presents the loopback name to `/mcp` only for a request that came through the Host check's
+   proxy validation (which keeps `X-Forwarded-Proto` for no other request). A framework fix would be an option on the
+   `mcp` module to disable the SDK guard when `allowed_hosts` is set; for the Framework Agent.
 6. **G8: identity had no offline bootstrap and `/api/setup` was open on an empty database. Closed by the pin at `d453ac8`.**
    `tangent identity setup --username NAME` creates the first owner on the host (password from a no-echo prompt or the
    first line of stdin, never an argument or the environment) and `tangent identity key create --name N --scope S...
@@ -195,8 +208,11 @@ how the host admits it, not to Tangent's scopes.
 `identity-session` (rank 3 in `interaction.AssuranceRank`, so it supersedes the presenter a lower assurance opened, as
 the operator session did). API-key callers are recorded as `standalone-local:<key name>` / `key-verified`, gateway
 producers as `gateway:<name>` / `adapter-verified`; `identity-session` maps to the event stream's `actor.verified: "token"` (a person proved themselves, which `operator-token`
-was) and `key-verified` to `"claimed"`: an agent's key is not a person, so the two are not collapsed (ruling 2; the
-proposed vocabulary is in the driver's mail). Both are accepted, distinct, in the payload's assurance vocabulary
+was) and `key-verified` to `"claimed"`: an agent's key is not a person, so the two are not collapsed (ruling 2, decided:
+the closed set `token`, `claimed`, `none` is an architect ruling and the port does not change it; `adapter-verified` keeps
+reporting `other`; `operator-token` and `loopback-unverified` stay valid in history with no new producer, because old rows
+carry them). A possible follow-up, for after the migration and for the libs vocabulary's owner, not opened here: a fourth
+value for a verified machine credential, so `key-verified` need not be reported as `claimed`. Both are accepted, distinct, in the payload's assurance vocabulary
 (`internal/events/approval.go`). Existing `participant_sessions` rows (1 282 in the rehearsal copy)
 are migrated history the new code never reads. Cross-origin protection: `Sec-Fetch-Site`/`Origin` on every route
 (`sameOriginGuard`), and identity requires the SPA to send `X-Requested-With` on every unsafe request (for gui-tangent).
@@ -291,7 +307,13 @@ Removed in their own commit; each can come back as its own task.
 
 ## MCP over stdio (Substrate local trust, PR #20)
 
-Tangent does not serve MCP over stdio, and the old binary never did. It is not wired in this port: a second process on the
+Tangent does not serve MCP over stdio. **Dropped, and nothing used it:** the old binary had no stdio MCP code either
+(`cmd/tangent/main.go` and `maintenance.go` in `../tangent-previous` have no such command or transport), no client in
+`docs/client-table.md` uses it, and the only `stdio` mentions in the docs are about agent adapters (Claude/Codex
+streaming) and other tools' stdio servers. A stdio client should use the running server's HTTP endpoint, `POST <base>/mcp`
+(Streamable HTTP) with an identity API key as `Authorization: Bearer`. `tangent mcp` exists only to say so and exits
+non-zero (`TestTheStdioCommandSaysWhatToUseInstead`), so a client configured for it is told instead of getting "unknown
+command". It is not wired in this port: a second process on the
 same database would start the delivery and reply-mail workers and the recovery pass twice, and the cross-process
 open-and-migrate lock is not in the framework yet. It would need a client-only boot as well. If it is wired later:
 `StdioOptions{LocalTrust: true, LocalScopes: <explicit list>}` in code, never from config, never the default `*` (which holds
@@ -306,3 +328,47 @@ too); deciding is the browser's, at a user session, on the user-only routes. (`t
 resolves a definition reference, not an item awaiting a decision.) Because the set is empty the refusal check is also run with a
 narrowed local list ({view}) and requires every other tool to be refused, which shows the per-tool scope check holds under local
 trust; it was break-checked by widening the list.
+
+
+## For the GUI agent (gui-tangent)
+
+What the backend now requires of the SPA, in one place; keep it current.
+
+- **Sign-in.** The first owner is created offline on the host (`tangent identity setup`); `POST /api/setup` is always
+  refused (403 `setup_offline`), so the SPA has no first-run screen that creates an owner. Sign in with
+  `POST /api/login` (username, password); the session lasts 12 h. Deciding (answering an inbox item, approving, the
+  inbox archive and delete routes) needs the signed-in user session and `tangent.resolve`, which only the owner holds; an
+  API key or plugin key is refused on every deciding route whatever its scopes.
+- **`X-Requested-With`** on every unsafe request (`POST`, `PUT`, `PATCH`, `DELETE`): identity's CSRF rule. Same-origin only
+  (`Sec-Fetch-Site`/`Origin` are checked on every route).
+- **Health paths.** `/api/health/ready` and `/api/health/capability` (session or key with `tangent.view`);
+  `/readyz` and `/healthz/capability` are gone; `/healthz` stays open.
+- **Form-collect repair stays in the SPA.** `repairFormSchema` is browser-side and the new GUI must keep it.
+- **What a browser session holds.** The owner's session carries the scopes of the owner; the tool and route scope table is
+  `internal/mcp/tool_scopes.go` and `internal/server` (`access`), and each route's scope is in the route table
+  (`TestEveryAgentCredentialIsRefusedOnEveryDecidingRoute` lists the deciding ones).
+- **Security headers.** CSP is set on every response (`internal/server/csp.go`): `script-src 'self'` plus the shim's
+  sha256, `connect-src` self plus ws/wss, no inline script beyond that shim. A new bundle must keep to it.
+- **No operator-token elevation.** The old `TANGENT_OPERATOR_TOKEN` elevation is gone; the sign-in session is what
+  decides, so `OperatorTokenPrompt` has no backend to prompt for.
+
+## Cutover notes (host-run, in this order)
+
+1. Merge the port, tag Tangent, then bump the three plugin modules (`runner`, `tesseract`, `torque`) to that tag and
+   release them in `hollis-labs/plugins`; only then cut over, with the plugins reinstalled (`make install-plugins`).
+2. Stop the old Tangent. Take an online backup of its database.
+3. `tangent migrate-data`, `tangent migrate-files`, `tangent migrate-secrets --dry-run`, then `tangent migrate-secrets`
+   (section above). Create the owner (`tangent identity setup`) and one key per client class and producer
+   (`tangent identity key create`); put the keys in the clients' own configuration.
+4. Config block: `tangent.allowed_hosts` (the public name), `gateway_producers` and `trusted_forwarders` (the Tether
+   gateway's key name), `reply_to_optional`, `tether_url`, `tether_sender`, `tether_token_ref`.
+5. The Tether catalog entry is already transport `http` at the public name plus `/mcp`; only its credential changes (an
+   identity key for the producer instead of the proxy service token). After cutover refresh the catalog and compare the
+   tool list with the 73 names (the gateway does not refresh http upstreams on notifications, so plugin tools registered
+   after start appear on a refresh).
+6. **An old plugin binary must fail loudly.** A plugin not reinstalled still presents no key: `/mcp` answers it `401`
+   (`TestMCPWithoutACredentialIsRefused`), and the child's calls into the host fail. That the plugin host's health shows it is NOT tested here: check the
+   plugin host's health after start, and treat a plugin whose calls get 401 as not reinstalled.
+7. Cerberus' doctor reads `/readyz`; that is a Cerberus change (`/api/health/ready` with a key holding `tangent.view`, or
+   `/healthz`), routed by the driver.
+8. Rollback: the old data directory and database are untouched, the keychain entries are kept; start the previous binary.

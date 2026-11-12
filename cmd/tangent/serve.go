@@ -45,6 +45,22 @@ func (t *tangent) serveCmd(ctx context.Context) *cobra.Command {
 	}
 }
 
+// stdioRefusal is what `tangent mcp` says. The command exists only so a client configured for stdio
+// is told why and what to use, instead of "unknown command".
+const stdioRefusal = "tangent does not serve MCP over stdio: a second process on the same database would run the " +
+	"delivery and reply-mail workers twice. Connect to the running server's HTTP endpoint instead: " +
+	"POST <base>/mcp (Streamable HTTP) with an identity API key as an Authorization: Bearer header."
+
+func stdioCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "mcp",
+		Short:  "Not available: MCP is served over HTTP at /mcp",
+		Hidden: true,
+		Args:   cobra.ArbitraryArgs,
+		RunE:   func(*cobra.Command, []string) error { return errors.New(strings.TrimSuffix(stdioRefusal, ".")) },
+	}
+}
+
 // mountSpec is an extra mount with the scope that guards it (tests; the app's own mounts come
 // from the packages that own them).
 type mountSpec struct {
@@ -136,7 +152,23 @@ func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []http
 		return nil, err
 	}
 	// Outermost: the security headers are on every response, including a refusal by the Host check.
-	return server.SecurityHeaders(hostguard.Handler(cfg.AllowedHosts, id.Middleware(h))), nil
+	return server.SecurityHeaders(hostguard.Handler(cfg.AllowedHosts, mcpLoopbackHost(id.Middleware(h)))), nil
+}
+
+// mcpLoopbackHost shows /mcp the loopback name for a request the Host check has already accepted
+// from the local TLS proxy. The MCP SDK refuses any non-loopback Host on a loopback listener (its
+// DNS-rebinding guard), which would refuse the Tether gateway arriving under the public name.
+// Only a request that came through hostguard's proxy validation carries X-Forwarded-Proto (it
+// strips it otherwise), so the rewrite cannot be claimed by an unvalidated Host. Nothing else
+// reads Host on /mcp: the caller is the key, not an origin.
+func mcpLoopbackHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) && r.Header.Get("X-Forwarded-Proto") == "https" {
+			r = r.Clone(r.Context())
+			r.Host = "127.0.0.1"
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requireLoopback keeps the backend on the loopback interface: the Host check assumes it, and a

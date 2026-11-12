@@ -308,8 +308,10 @@ const (
 )
 
 var (
-	classVocab     = map[string]bool{"approval": true}
-	outcomeVocab   = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
+	classVocab   = map[string]bool{"approval": true}
+	outcomeVocab = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
+	// operator-token and loopback-unverified have no producer since the Substrate port, but rows written
+	// before it carry them: keep them valid.
 	assuranceVocab = map[string]bool{"asserted": true, "loopback-unverified": true, "operator-token": true, "identity-session": true, "key-verified": true, "other": true}
 	principalKind  = map[string]bool{"operator": true, "agent": true, "service": true}
 )

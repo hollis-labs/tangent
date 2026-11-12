@@ -48,6 +48,12 @@ func started(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mount
 // startedWith is started serving the given SPA build instead of the embedded one.
 func startedWith(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mountSpec, assets fs.FS) (string, *tangent) {
 	t.Helper()
+	return startedFull(t, mounts, assets, nil)
+}
+
+// startedFull also sets the app's own "tangent" config block (gateway producers, allowed hosts).
+func startedFull(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mountSpec, assets fs.FS, block map[string]any) (string, *tangent) {
+	t.Helper()
 	dir := filepath.Join(t.TempDir(), "data")
 	env := map[string]string{"TANGENT_DATA_DIR": dir}
 	override := filepath.Join(t.TempDir(), "override.yaml")
@@ -58,6 +64,9 @@ func startedWith(t *testing.T, mounts func(ctx context.Context, tg *tangent) []m
 	ctx, cancel := context.WithCancel(context.Background())
 	run, err := bootWith(ctx, func(k string) string { return env[k] }, func(cfg map[string]any) {
 		cfg["httphost"] = map[string]any{"addr": "127.0.0.1:0"}
+		if block != nil {
+			cfg["tangent"] = block
+		}
 	})
 	if err != nil {
 		cancel()
