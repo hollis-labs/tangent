@@ -45,7 +45,7 @@ then sign in on the page.
 
 ### Two instances: stable and dev
 
-The daemon's own defaults (`:7842`, `~/.tangent/tangent.db`) belong to the
+The daemon's own defaults (`:7842`, `$XDG_DATA_HOME/tangent/tangent.db`) belong to the
 **stable** install the operator uses every day. Nothing agent-facing rewires
 for the split: agents configured for `http://127.0.0.1:7842/mcp` keep reaching
 stable. Point an agent at dev explicitly (`http://127.0.0.1:7843/mcp`) rather
@@ -66,7 +66,7 @@ database or on the port; two binaries at different migration levels never share 
 database, which is the failure this layout prevents (`bab0b89` exists because it
 happened once).
 
-`./tangent` with no environment still means the stable defaults. Do not run it
+`./tangent` with no environment still means the stable defaults (and needs `tangent identity setup` once, before the first sign-in). Do not run it
 by hand while a supervisor owns that instance; see
 [`mcp-integration.md`](./mcp-integration.md#managed-runtime-single-launch-authority)
 for who supervises what on the reference machine.
@@ -102,8 +102,8 @@ make smoke              # boot the shipped binary; derive and check the MCP surf
 happens to have.
 
 `make smoke` builds `./cmd/tangent`, boots it on a reserved port against a
-database in a temp directory, and checks direct `/mcp`, legacy `/sse`, one
-read-only tool call, and the three health probes. It touches no live instance
+database in a temp directory, and checks direct `/mcp`, one
+read-only tool call, and the health probes (`/healthz`, `/api/health/ready`, `/api/health/capability`). It touches no live instance
 and no shared catalog, and because `internal/smoke` carries no build tag,
 `go test ./...` runs it too. `TANGENT_SMOKE_ENV=1 make smoke` also checks a live
 deployment — see [`mcp-smoketest.md`](./mcp-smoketest.md).
@@ -240,9 +240,9 @@ place on purpose: a limitation copied into four documents rots in three of
 them, which is precisely how the direction document this repository retired
 came to mislead its readers. What follows is the contributor-facing subset.
 
-- Localhost only, single-user. Object access is scoped (ADR 0004), but loopback
-  admission is not authentication: a hostile local process running as the same
-  user can still mint a browser participant session.
+- Localhost only, single-user. Every request needs an identity session or key; deciding an
+  approval needs the owner's session (`tangent.resolve`). The stable install's data directory is
+  its trust boundary.
 - `standalone-local` caller partitions are advisory, not a security boundary.
   Any local caller can assert any partition; isolation is enforced only across
   authorities. See
@@ -280,7 +280,7 @@ came to mislead its readers. What follows is the contributor-facing subset.
 
 ## Persistence layer
 
-Local state lives in SQLite. The stable install uses `~/.tangent/tangent.db`;
+Local state lives in SQLite. The stable install uses `$XDG_DATA_HOME/tangent/tangent.db`;
 the dev instance uses `<repo>/.tangent/data/tangent.db` (`TANGENT_DATA_DIR` selects;
 see "Two instances" above). The stable install's data directory is `$XDG_DATA_HOME/tangent`.
 
@@ -291,14 +291,10 @@ make db-check                      # read-only integrity check
 sqlite3 .tangent/data/tangent.db
 ```
 
-When you add a migration, create matching files in
-`internal/db/migrations/`:
-
-- `000N_name.up.sql`
-- `000N_name.down.sql`
-
-Migrations are embedded into the Go binary, so every schema change must
-land with both directions present.
+When you add a migration, add a goose file in
+`internal/persistence/migrations/sqlite/` (next number, `-- +goose Up` and `-- +goose Down`
+sections, as the existing ones). `internal/db/migrations/` is the old chain, kept only for the
+`migrate-*` commands: do not add to it. Migrations are embedded into the Go binary.
 
 ## Adding a new envelope kind
 

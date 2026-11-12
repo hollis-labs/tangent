@@ -8,9 +8,8 @@ pre-Substrate database is migrated.
 
 Each says what was seen, and what was done meanwhile.
 
-1. **G1: Node range.** `ui/package.json` requires `node >=22.12 <23` (and `mise.toml` pins 22.12.0); the migration
-   hosts have Node 24. Open: the port moves the UI onto the BOM-pinned kits, which may lift the range. Not blocking
-   the backend.
+1. **G1: Node range.** Closed: `ui/package.json` requires `node >=24 <25`, `mise.toml` pins 24, and the Makefile
+   and CI build on Node 24.
 2. **G2: plugin configuration secrets.** The plugin host keeps declared secret values only in the OS keychain
    (`internal/pluginconfig/keychain.go`, service `hollis-labs.tangent.plugin-config`, no file fallback; Secret Service
    over DBus on Linux) and their references in `<plugin root>/.state/config/config.sqlite`. The live instance holds
@@ -448,16 +447,18 @@ notes are the short form it expands.
 3. `tangent migrate-data`, `tangent migrate-files`, `tangent migrate-secrets --dry-run`, then `tangent migrate-secrets`
    (section above). Create the owner (`tangent identity setup`) and one key per client class and producer
    (`tangent identity key create`); put the keys in the clients' own configuration.
-4. Config block: `tangent.allowed_hosts` (the public name), `gateway_producers` and `trusted_forwarders` (the Tether
-   gateway's key name), `reply_to_optional`, `tether_url`, `tether_sender`, `tether_token_ref`.
+4. Config block: `identity.secure_cookies: always` (proxy style A, decided by the owner; `docs/cutover-plan.md` section 9),
+   `gateway_producers` and `trusted_forwarders` (the Tether
+   gateway's key name), `reply_to_optional`, `tether_url`, `tether_sender`, `tether_token_ref`. `tangent.allowed_hosts` is
+   for proxy style B only (the proxy passes the public name in `Host`); style A, the one chosen, leaves it unset.
 5. The Tether catalog entry for Tangent is already transport `http` at the public name plus `/mcp` (read from the live
    catalog; the `/sse` in the G6a paragraph describes the repository descriptor, not the live host). Its URL does not
    change; only its credential does, to an identity key for the gateway producer instead of the proxy service token.
    That credential change is a catalog plan and takes effect at a Tether hub reload, which restarts every gateway child.
    Order: approve the plan, apply it, then reload the hub (a plan does not survive a hub restart); do it after Tangent is
    up with the key minted and the producer listed in `tangent.gateway_producers` and `trusted_forwarders`. The gateway
-   arrives under the public Host, so the G9 workaround (`mcpLoopbackHost`) is on the live path from the first request:
-   keep `TestProxiedGatewayKeepsItsForwardedSessionHeaders`. `internal/smoke`'s catalog check reports `CATALOG_STALE` for
+   arrives with a loopback `Host` under style A (the proxy rewrites it); the G9 workaround (`mcpLoopbackHost`) is on the
+   path only under style B. Keep `TestProxiedGatewayKeepsItsForwardedSessionHeaders` either way. `internal/smoke`'s catalog check reports `CATALOG_STALE` for
    an `sse` entry or a URL not ending in `/mcp`. After cutover refresh the catalog and compare the tool list with the 73
    names (the gateway does not refresh http upstreams on notifications, so plugin tools registered after start appear on
    a refresh).

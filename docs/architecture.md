@@ -83,18 +83,14 @@ Every interface preserves:
 
 ### HTTP server with embedded SPA
 
-`internal/server/` — a single `net/http` server on port `7842`
-(`TANGENT_HTTP_PORT` overrides). The Vite production build is embedded
-into the Go binary via a `//go:embed all:ui_dist` directive inside the
-`internal/server` package (the path is relative to that package, and
-the `all:` prefix is required so dotfiles like `.gitkeep` get included
-in the embedded FS). One `tangent` executable serves both API and
-frontend. In dev mode
-(`make dev`) the server proxies non-API routes to Vite at `:5173` for
-HMR. Rooms are exposed at `/r/<roomID>` and fall through to the SPA,
+`internal/server/` — the API routes on the Substrate host's one listener, `127.0.0.1:7842` by default
+(`httphost.addr`, set in the file `SUBSTRATE_CONFIG` names). The Vite production build is embedded
+into the Go binary (`internal/webui`) and served by the host. One `tangent` executable serves both API and
+frontend. In dev mode (`make dev`, `make dev-ui`) Vite on `:5173` proxies `/api`, `/mcp` and `/ws` to the Go
+server. Rooms are exposed at `/r/<roomID>` and fall through to the SPA,
 which uses React Router to pick up the ID and connect over WS.
 
-### MCP server (Streamable HTTP + SSE)
+### MCP server (Streamable HTTP)
 
 MCP admission is by API key (Substrate identity module): every caller presents a key, its scopes decide what it may do,
 and its name is the caller (`standalone-local:<name>`, or `gateway:<producer>` for a configured gateway). See
@@ -103,14 +99,14 @@ and its name is the caller (`standalone-local:<name>`, or `gateway:<producer>` f
 `internal/mcp/` — built on `github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp`, the portfolio's
 shared MCP library, itself a thin wrapper around the official MCP Go SDK
 (`github.com/modelcontextprotocol/go-sdk`). Mounts `/mcp` (Streamable
-HTTP) and `/sse` (legacy SSE) on the same port as the SPA. Runs in
+HTTP) on the same port as the SPA; there is no `/sse`. Runs in
 **stateless + JSONResponse** mode: one-shot `tools/list` and
 `tools/call` calls succeed without a prior `initialize`, which keeps
 the curl smoke probes simple and matches what Claude Code's HTTP
 transport actually does. Stateful behaviour returns when a session-bound
-workflow needs it. Both transports clear the server-wide read *and* write
-deadlines (`longLivedMCPHandler`), which is what keeps a legacy `/sse`
-subscription from being torn down mid-session by the 30s `ReadTimeout`.
+workflow needs it. The handler clears the server-wide read *and* write
+deadlines (`longLivedMCPHandler`), which keeps a long-lived call from being torn down mid-session
+by the 30s `ReadTimeout`.
 
 The tool surface is **derived, never written down**. It has been recorded
 incorrectly in this repository more times than correctly, so no count appears
@@ -289,10 +285,9 @@ connections rather than one socket, each with a server-issued `connection_id`:
   `tangent_session_list`. None of it is folded into interaction status.
 
 Every connection carries a `ParticipantBinding`, established by the ws
-handler's `ParticipantResolver` before the upgrade is accepted. Today that is
-an explicitly unverified loopback operator; it is the seam
-[ADR 0004](adr/0004-caller-participant-and-room-access-authority.md) replaces
-with a participant session, including the ability to refuse the upgrade. A
+handler's `ParticipantResolver` before the upgrade is accepted. It comes from the
+caller's verified identity session (`participant.Gate`), and the upgrade is refused (403) without one
+([ADR 0004](adr/0004-caller-participant-and-room-access-authority.md)). A
 connection holds no capability and grants none.
 
 ### Durable HITL operator surface
@@ -514,9 +509,9 @@ from this pane today — a known, recorded limitation, not an oversight.
 ### Persistence layer
 
 `internal/db/` + `internal/room/` — Tangent persists room rows and
-resolved envelope history in SQLite at `~/.tangent/tangent.db`
-(`TANGENT_DB_PATH` overrides). Schema changes are managed with embedded
-`golang-migrate` migrations. On startup Tangent opens the DB, applies
+resolved envelope history in SQLite at `<data dir>/tangent.db`
+(`$XDG_DATA_HOME/tangent`, or `TANGENT_DATA_DIR`). Schema changes are managed with embedded
+goose migrations (`internal/persistence/migrations/sqlite/`). On startup Tangent opens the DB, applies
 migrations, hydrates prior room state into the manager, and keeps active
 in-memory `Pending` state only for envelopes that are currently awaiting
 a browser response.
@@ -1058,55 +1053,16 @@ should do — but the *session*, not the URL, is thereafter the authority. A
 second browser on the same machine gets its own session and its own audit
 trail.
 
-**Browser participant sessions.** A same-origin loopback document navigation
-with no session cookie mints one: an `HttpOnly`, `SameSite=Lax`, `Path=/`
-cookie naming a durable row that stores only the SHA-256 of the cookie value.
-Sessions survive a restart, have no idle expiry (a local tool must not log its
-user out mid-decision), expire absolutely after 30 days, rotate when an
-assurance change binds a verified principal, and are revoked with
-`tangent --revoke-participant-sessions` or, while serving,
-`tangent session revoke --all | --id-prefix <8 hex>`. A minted session
-(`loopback-unverified`) receives `view`, `draft`, and participant-cause
-`cancel` — not `resolve`, not `close`, not `administer`.
+**Browser sessions.** A browser is a signed-in identity session (Substrate identity module): the owner signs in on the
+page, the session cookie is `HttpOnly` and `SameSite=Strict` (`Secure` with `identity.secure_cookies: always`), and it
+lasts 12 hours. Opening a room URL without a session does not mint one. The participant recorded for the session
+is `user:<id>` with assurance `identity-session`.
 
-**Operator elevation (CW-20261016-0174).** Loopback admission is producible by
-any local process, including the agent that enqueued an approval, so it must
-not decide anything. `resolve` — and presenting a HITL item, which binds the
-participant allowed to resolve it — requires an `operator-token` session.
-`POST /api/session/elevate` with `{"token": "..."}` verifies the value of
-`TANGENT_OPERATOR_TOKEN` (constant-time, on SHA-256 digests; 5 failures per
-session per minute, with a process-wide flood *alert* — never a refusal — above
-10 per minute) and rotates the session to `operator-token` assurance, which
-resolutions then record as `participant_assurance`. How long operator
-authority lasts is `TANGENT_ELEVATION_TTL` (CW-20261020-0033): `always` (the
-default) does not lapse by time, `never` lasts one minute, `<N>d` lasts N days.
-When it lapses the session reads as minted again and keeps its original
-absolute expiry. Every mode is bounded by the 30-day browser session, which an
-elevation never extends, so `always` means *until revoked or until the session
-ends, whichever comes first*. `POST /api/session/de-elevate` revokes an
-elevation at any time (it rotates the session back to the minted template).
-`GET /api/session` reports `elevation_ttl` and, while elevated,
-`elevation_expires_at`. The end of an elevation is stamped when it is granted
-(`participant_sessions.elevated_until`: the earlier of the session's expiry and
-the elevation moment plus the lifetime in force then). Reading a session applies
-the earlier of that stamp and the elevation moment plus the *current* lifetime:
-shortening the setting takes effect on the next request, and lengthening it
-applies to new elevations only, so a lapsed elevation never revives. At startup
-a shorter lifetime is also written onto the elevations still live, so shortening
-and then lengthening across restarts cannot bring one back. An elevation
-granted before stamping existed keeps the 12 hours it was granted under. A live WebSocket re-reads its session before every
-answer frame, so revocation, expiry, and a lapsed elevation reach open tabs.
-A higher-assurance participant may resolve an item a lower-assurance identity
-presented (journaled as `interaction.presenter_superseded`); never the reverse.
-
-The guarantee holds only against principals limited to loopback HTTP/WS (MCP
-agents, scripts, proxied tailnet devices). It is not protection against a
-same-user process with a shell, which can write `participant_assurance` in
-SQLite directly, read the token from `/proc/<pid>/environ`, or run
-`tangent session revoke`; that needs OS-level separation. An unset token, or one shorter than 32 bytes, fails
-closed: nothing can be resolved from a browser, and startup logs one warning
-naming the variable. Unelevated requests are refused 403
-`assurance_insufficient`, which the UI answers with an operator-token prompt.
+**Deciding.** Routes that resolve, close or administer are `UserOnly`: they need that session *and*
+`tangent.resolve`, which only the owner holds. An API key never decides, whatever scopes it carries, and a
+request with no credential is 401. There is no operator token and no elevation step (the operator-token model
+was removed in v0.21.0). A higher-assurance participant may resolve an item a lower-assurance identity presented
+(journaled as `interaction.presenter_superseded`); never the reverse.
 
 The `/ws` upgrade requires a valid session immediately, with no grace period.
 That is the change that stops a room UUID from being an answer credential. A
@@ -1143,7 +1099,7 @@ user still gets something debuggable.
 
 **Browser APIs.** `/api/hitl/*` and `/api/rooms` are the only routes the SPA
 calls. Both are participant-session authenticated, origin guarded, and
-`Cache-Control: no-store`. The same-origin guard also covers `/mcp`, `/sse`,
+`Cache-Control: no-store`. The same-origin guard also covers `/mcp`
 and `/ws`; it permits header-less non-browser clients, so MCP clients are
 unaffected. Every response carries `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a
@@ -1230,9 +1186,9 @@ into a silent one; separating them is what closes that.
 | Surface | Question | Touches |
 |---|---|---|
 | `GET /healthz` | Is this process responding? | Nothing. No database, no lock, no registry read. |
-| `GET /readyz` | Can it serve traffic right now? | Database ping + one statement, schema version against the version this binary embeds, definition registry, renderer host, delivery-worker authorization. |
-| `GET /healthz/capability` | Which kinds can it serve? | The materialized registry. Bounded listing of everything unservable. |
-| `GET /healthz/capability/{kind}` | Can it serve *this* kind? | One definition's materialization state and effect posture. |
+| `GET /api/health/ready` | Can it serve traffic right now? | Database ping + one statement, schema version against the version this binary embeds, definition registry, renderer host, delivery-worker authorization. |
+| `GET /api/health/capability` | Which kinds can it serve? | The materialized registry. Bounded listing of everything unservable. |
+| `GET /api/health/capability/{kind}` | Can it serve *this* kind? | One definition's materialization state and effect posture. |
 | `tangent_health_get` (MCP) | All three, over the channel the work arrives on. | The same reporter. |
 | `tangent_telemetry_query` (MCP) | What happened to this invocation, this kind, or this check? | The append-only `telemetry_events` table, plus the in-process metric snapshot. |
 

@@ -24,12 +24,16 @@ Decided by the owner (2026-11-12):
 2. The two older `~/.tangent` directories are **not migrated and not touched** (cleanup follow-up CW-20261112-0115). The
    port migrates exactly one instance, the one the service uses.
 3. The Wails desktop app, the LaunchAgent and installer, and the Caddy snippet are dropped.
-
-Still the owner's, because it is his proxy: **which of the two proxy styles in section 9 runs in front of Tangent.** This
-plan recommends the first (the proxy as it is, one port change).
+4. Proxy style A (section 9): the proxy stays as it is, with one port change and `identity.secure_cookies: always`.
+   Decided by the owner (2026-11-12). Style B is not used.
 
 The order, fixed by the driver: merge the port (done), tag Tangent, bump and release the three plugin modules against
 that tag, then cut over with the plugins reinstalled.
+
+`tangent-plugins.version` (and `smoke-ref`) in the v0.21.0 tag still name the plugins built against the old client, which
+sends no key. Until a later commit bumps them to the plugin release, `make install-plugins` installs plugins that get 401
+on `/mcp`. Reinstall the plugins from the plugin release (or from a Tangent commit that carries the bumped pin), not from
+the bare tag.
 
 ## 2. What runs today (read from the host, names only)
 
@@ -254,6 +258,8 @@ only a green readiness line.
 
 The proxy is the owner's. Two styles work; this is what the scratch tests showed (section 11), with a scratch proxy that
 rewrites headers as described. Browser on `https://<public name>`.
+
+**Decided by the owner (2026-11-12): style A.** The rows for style B are kept as the record of what was tested.
 
 | Case | Proxy sends | Tangent config | Result |
 |---|---|---|---|

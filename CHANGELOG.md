@@ -7,103 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.21.0] - 2026-11-12
+
+This release moves Tangent onto the Substrate framework. The code is a clean break; the data is not: `migrate-data`,
+`migrate-files` and `migrate-secrets` carry one existing instance into the new layout (see `docs/cutover-plan.md`).
+Read **Changed** and **Removed** before upgrading.
+
 ### Added
 
-- Operator elevation lifetime is a setting (CW-20261020-0033, CW-20261019-0043).
-  `TANGENT_ELEVATION_TTL` is `always` (default), `never` (one minute) or `<N>d`;
-  an invalid value stops startup, naming the variable. It replaces the fixed
-  12 hours, so the default no longer lapses after 12 hours. Every mode is
-  bounded by the 30-day browser session, which elevation still does not extend
-  (CW-20261016-0174): `always` is until revoked or the session ends.
-  `POST /api/session/de-elevate` revokes an elevation (same-origin, needs a live
-  session) by rotating it back to a minted session, and `GET /api/session`
-  additionally reports `elevation_ttl` and `elevation_expires_at`. The end of an
-  elevation is stamped when it is granted (migration 0023, `elevated_until`);
-  lengthening the lifetime later applies to new elevations only and never
-  revives one that lapsed, shortening is immediate and is persisted onto live
-  elevations at startup, and an elevation granted before stamping keeps its
-  12 hours.
+- Sign-in goes through the Substrate identity module. The first owner is created offline with `tangent identity setup`
+  and agent keys with `tangent identity key create --name ... --scope ... --out <file>`. `identity.secure_cookies:
+  always` marks the session cookie `Secure`. The owner's session lasts 12 hours.
+- A new data directory (`TANGENT_DATA_DIR`, else `$XDG_DATA_HOME/tangent`) holds the database, artifacts and plugin
+  state. The commands `tangent migrate-data`, `tangent migrate-files` and `tangent migrate-secrets` copy an existing
+  instance's rows, files and keyring secrets into it, verify the copy, and never write the old files.
+  `tangent database check` and `tangent database backup --to <file>` open the database read-only.
+- Configuration is a Substrate YAML file (`SUBSTRATE_CONFIG`): `httphost.addr` (loopback, default `127.0.0.1:7842`),
+  `database.sqlite.path`, and the Tangent keys `tangent.gateway_producers`, `tangent.trusted_forwarders`,
+  `tangent.reply_to_optional`, `tangent.tether_url`, `tangent.tether_sender` and `tangent.tether_token_ref`.
+- Health is served at `/api/health/ready` and `/api/health/capability[/{kind}]` (scope `tangent.view`); liveness is the
+  host's `/healthz`.
+- A release build: tagged builds publish per-platform tarballs, and the linux/amd64 one carries `deploy.yaml`
+  (the service unit drop-in and descriptor for the fleet installer). The web UI builds on Node 24.
+- A WebSocket `response.accepted` frame (`{type, envelopeId, revision, outcome: resolved|canceled}`) is sent to the
+  sender once a response or cancel is durably accepted; a refused one gets none. The page shows the item as sent from it
+  (`docs/architecture.md`).
+- Artifact inbox (ADR 0015): `tangent.artifact-item` is a durable Inbox item for an agent-sent HTML mock, screenshot or
+  image, with `tangent_artifact_create`, `_update`, `_get`, `_message`, `_await` and `_withdraw` over MCP. It supports
+  revisions, a message thread, request-changes and an optional sign-off. Files live under `TANGENT_ARTIFACT_DIR`
+  (default `<data dir>/artifacts`). HTML runs in a sandboxed frame with `connect-src 'none'`. `excalidraw`, `flow`,
+  `mermaid`, `vega-lite`, `d2`, `pdf`, `video` and `figma` have viewers.
+- `tangent-artifacts` agent skill and shadcn/ui mock template (`.agents/skills/tangent-artifacts/`); the
+  `tangent_artifact_create` description points to it. `tangent-progress-panel` documents the five item statuses.
+- Approval events: HITL transitions write `approval.requested` and `approval.resolved` to a transactional outbox; a
+  relay appends them to a SQLite journal kept for 400 days, streamed by `GET /api/hitl/events` with `Last-Event-ID`
+  resume and gap frames. `TANGENT_EVENTS_DISABLED=1` turns the journal and relay off; outbox rows keep queuing.
+- `TANGENT_HITL_BACKEND=gohitl` (default `native`) serves the `tangent_hitl_*` tools from the go-hitl library over the
+  same rows; any other value stops startup.
+- `tangent_form_collect` fields marked `secret: true` (or `type: password`) are masked, never stored and never autosaved;
+  the creating caller receives the value once. An undelivered value comes back as a tombstone with
+  `meta.secret_unavailable`. Malformed field schemas are refused at creation, and the browser form repairs shapes already
+  stored.
+- Operator answers to room workflows are mailed to the asking agent's `completion.reply_to` (required unless
+  `tangent.reply_to_optional: true`); unconfigured, answers stay queued. Every Inbox item can be archived
+  (`POST /api/inbox/items/{id}/archive`), deleted (`DELETE /api/inbox/items/{id}`) or downloaded.
+- `make install-plugins` installs the first-party plugins from the plugins monorepo at the commit in
+  `tangent-plugins.version`; `TANGENT_PLUGINS_SRC` builds from a local checkout.
 
-- `tangent-artifacts` agent skill and a shadcn/ui mock template (CW-20261024-0072):
-  which artifact type to send, and how an agent builds a React mock from shadcn
-  registry source (found through the gateway's shadcn tools) as one HTML file that
-  runs under the artifact sandbox. The create tool's description points to it.
+### Changed
+
+- **Deciding is a signed-in person's.** Routes that resolve an approval need an identity session and `tangent.resolve`,
+  which only the owner holds. No API key can resolve, whatever its scopes. Agents may acknowledge delivery
+  (`tangent.deliver`) and withdraw their own requests (`tangent.withdraw`).
+- **MCP is served at `/mcp` only, with identity API keys.** Gateway callers present a key; producers named in
+  `tangent.gateway_producers` are treated as gateways, and those also in `tangent.trusted_forwarders` may attest the
+  session they forward for. A request without a key is 401. This replaces `TANGENT_MCP_TOKENS`,
+  `TANGENT_MCP_TRUSTED_FORWARDERS` and `TANGENT_PROXIED_HTTP_ADDR`.
+- An envelope's `action_url`, `state_url` and an app-board `sync.endpoint` must be a clean
+  `/api/plugins/<plugin>/...` path, or the envelope is refused when created. Stored records are left alone, and the page
+  refuses to call one that fails the rule.
+- Inbox archive, plugin enable, disable and reload, channel read and sign-out refuse a request body with 400.
+- Room workflows sent through the Tether gateway, and items that producers send to the operator surfaces, are visible
+  in the operator's browser Inbox (they read "This interaction is unavailable" before).
+- Design iteration: clicking a region only selects it; **Send selection** submits.
+- The single-page app is served without `ETag` or `Last-Modified`; assets are revalidated by content-hashed name.
+- Go 1.26.11 (GO-2026-6809, crypto/x509). The web UI needs Node 24.
 
 ### Removed
 
-- **The `tangent.whiteboard` kind and the `tldraw` dependency.** Chrispian's call,
-  made while the artifact kinds were built: Excalidraw covers diagrams and the
-  new artifact item covers agent-sent visuals. Gone with it are the
-  `tangent_whiteboard` MCP tool, the room's `whiteboard` projection in
-  `tangent_session_get`, the browser renderer and its draft storage, the
-  `tangent-whiteboard` skill, the manual test and mock-call script, and the
-  `https://cdn.tldraw.com` entry in the document CSP (`img-src` and `font-src`
-  now admit no external origin). Rooms that already hold whiteboard state keep
-  the stored rows but no longer project them.
+- The operator-token elevation: `TANGENT_OPERATOR_TOKEN`, `TANGENT_ELEVATION_TTL`, `POST /api/session/elevate` and
+  `de-elevate`, the participant cookie and `tangent session list|revoke`.
+- The legacy `/sse` transport and the second listener on port 7844; there is one listener.
+- First-run setup over HTTP, the `/readyz` and `/healthz/capability` paths, and the backend's SPA serving, CSP headers
+  and `TANGENT_DEV_FRONTEND_URL`.
+- The Wails desktop app, the macOS LaunchAgent and its installer, and the Caddy snippet.
+- The `tangent.whiteboard` kind, the `tangent_whiteboard` tool and skill, the `tldraw` dependency and its CDN entry in
+  the document CSP. Rooms that already hold whiteboard state keep the stored rows but no longer project them.
+- **Commands not ported** (the old binary refuses the new database): `--retention-plan`, `--retention-apply`,
+  `--retention-history`, `--erase-interaction`, `--erase-surface`, `--erase-exchange`, `--erase-channel`,
+  `--erase-drafts`, `--purge-surface`, `--close-surface`, `--expire-capabilities`, `--external-deletion-report`
+  (follow-up CW-20261112-0122); `--db-restore`, `--db-drain`, `--db-repair`; `--db-compact` is deferred.
 
-### Fixed
+### Known behaviour
 
-- Room workflows sent through the Tether gateway (`tangent_triage`, `tangent_diff_review`,
-  `tangent_form_collect` and the rest) are now visible to the operator (CW-20261025-0002). They land
-  on a per-room surface, which the browser Inbox did not list for another authority, so the room
-  said "This interaction is unavailable" and the agent's call waited for nothing. The browser now
-  lists every item from the verified gateway authority. The participant authorization rule is
-  unchanged.
-
-- **The operator's browser Inbox now lists items that authenticated producers send to the
-  reserved operator surfaces** (docs, artifacts, turns, approvals). Items that came through
-  the gateway carry the producer's own authority and were hidden from the browser, so
-  opening one answered "This interaction is unavailable". (A later fix, CW-20261025-0002,
-  extends this to every item from the verified gateway, including room workflows on their own
-  surfaces.)
-
-### Security
-
-- Go toolchain 1.26.10 (`go` directive and CI pin) for GO-2026-6809 (crypto/x509); no behavior change.
-- A browser session minted from loopback admission no longer holds `resolve`:
-  any local process (or anything a reverse proxy forwards with a loopback
-  Host) could mint one and approve its own HITL request. Resolving, and
-  presenting a HITL item, now require operator elevation with
-  `TANGENT_OPERATOR_TOKEN` via `POST /api/session/elevate`, which rotates the
-  session to `operator-token` assurance; resolutions record it. An unset or
-  short (< 32 bytes) token fails closed. **Deploy prerequisite:** provision
-  `TANGENT_OPERATOR_TOKEN` before upgrading, or browser approvals become
-  unresolvable (CW-20261016-0174).
-  Elevation lifetime is `TANGENT_ELEVATION_TTL` (see Added; this entry first
-  shipped it as a fixed 12 hours); live WebSockets re-check their session before
-  each answer, so revocation reaches open tabs. Failed attempts are limited
-  per session; a process-wide flood only raises an alert. **Threat model:**
-  this stops principals limited to loopback HTTP/WS (agents, scripts,
-  proxied devices). It does not stop a same-user process with a shell, which
-  can edit the SQLite session rows, read the token from
-  `/proc/<pid>/environ`, or run `tangent session revoke`.
-- Assurance-ordered presenter takeover: an `operator-token` participant may
-  resolve an item presented by a lower-assurance identity in the same scope
-  (journaled as `interaction.presenter_superseded`); never the reverse. Items
-  presented before the upgrade, and docs/turns auto-presentations, stay
-  resolvable and record `operator-token` (CW-20261016-0174).
-
-### Added
-
-- `tangent session revoke --all | --id-prefix <8 hex>` and
-  `tangent session list`, safe to run while serving (CW-20261016-0174).
-
-- `internal/hitl/sqlstore`: a go-hitl `Store` (`libs/mesh/core/hitl`) over
-  Tangent's `interactions` tables (no migration), run against the lib's
-  `hitltest` storecontract and conformance scenarios. Not yet wired into the
-  running service (CW-20261016-0031).
-- **Artifact inbox** (ADR 0015, CW-20261024-0061 to -0065). `tangent.artifact-item`
-  is a durable Inbox item for an agent-sent HTML mock, screenshot or image,
-  with the docs lifecycle (read, archive, delete, download, copy, copy direct
-  link) plus a maximize view, a revision switcher, a message thread with
-  request-changes, and an optional sign-off. The agent revises the same item
-  in place with `tangent_artifact_update`, and reads replies with
-  `tangent_artifact_get` and `tangent_artifact_await`. Files live on disk under
-  `TANGENT_ARTIFACT_DIR` (default: `artifacts` beside the database); revisions
-  and messages are in migration `0024`. HTML runs in a sandboxed frame with no
-  network access of its own. `excalidraw`, `flow` (React Flow, auto-laid-out),
-  `mermaid` and `vega-lite` artifacts render in the Inbox, and `d2` is drawn on the
-  server with the `d2` command (`TANGENT_D2_BIN`); `pdf`, `video` and `figma` have viewers too.
+- The UI-command channel (agents driving the open view) is not switched on, so `view.active` is refused. It was not
+  in the old build either (CW-20261112-0128).
 
 ## [v0.20.0] - 2026-10-16
 
@@ -1635,7 +1623,8 @@ _None — first release._
   the lifetime of the server process. No persistence, no recovery
   across restarts.
 
-[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/hollis-labs/tangent/compare/v0.21.0...HEAD
+[v0.21.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.21.0
 [v0.20.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.20.0
 [v0.19.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.19.0
 [v0.18.0]: https://github.com/hollis-labs/tangent/releases/tag/v0.18.0
