@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
-import { OperatorTokenPrompt } from "./components/OperatorTokenPrompt";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { TabStrip } from "./components/TabStrip";
 import { UiChannelProvider } from "./hooks/useUiCommands";
@@ -29,7 +28,6 @@ function Layout() {
           </Suspense>
         </RouteErrorBoundary>
       </div>
-      <OperatorTokenPrompt />
     </div>
   );
 }

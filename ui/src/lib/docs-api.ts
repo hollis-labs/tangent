@@ -3,7 +3,7 @@
  * Contract version 1.0 (CW-20260917-0009).
  */
 
-import { fetchWithElevation } from "@/lib/operator-elevation";
+import { apiFetch } from "@/lib/api";
 
 export type DocState =
   | "submitted"
@@ -86,7 +86,7 @@ export class DocsAPIError extends Error {
 }
 
 async function requestJSON<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetchWithElevation(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: {
       Accept: "application/json",

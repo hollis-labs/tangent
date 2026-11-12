@@ -44,7 +44,6 @@ import type { TriageEnvelope, TriageResponse } from "./components/envelopes/Tria
 import type { WizardEnvelope, WizardResponse } from "./components/envelopes/Wizard";
 import { type EnvelopeComponentProps, register } from "./lib/envelope-registry";
 import { syncPlugins } from "./lib/plugin-loader";
-import { seedShellClientIdentity } from "./lib/ws-client";
 import "./index.css";
 
 // Each envelope renderer is its own chunk, fetched when a room first presents
@@ -344,10 +343,6 @@ const rootEl = document.getElementById("root");
 if (!rootEl) {
   throw new Error("Tangent: #root not found in index.html");
 }
-
-// Before the router's first navigation drops the query string: the desktop
-// shell's stable client id and kind ride in on the window URL.
-seedShellClientIdentity();
 
 // Sync plugins from /api/plugins/registry (CW-20260911-0035 minimal proof).
 // Fire-and-forget: plugin load failures should not block app boot. It runs after the
