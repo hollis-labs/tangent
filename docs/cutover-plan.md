@@ -100,10 +100,11 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
    `fleet-install deploy tangent --commit <sha12> --dry-run`. It must show the plain binary at `~/.local/bin/tangent`
    being kept (as `tangent.pre-fleet-install`) and the drop-in path `20-fleet-exec.conf`. Nothing proceeds until it does.
 7. **Precondition: the frontend.** A signed-in owner must be able to decide an inbox item in a real browser against the
-   release build: gui-tangent's slices S2 to S4 (sign-in, embedded build) and the ExternalReview path fix. Pull requests:
-   #155 (sign-in), #151 (Node 24 and dev proxy), #159 (ExternalReview path check), #154 (the release build that embeds
-   the SPA); S2 and S4 numbers to be added when they exist. The cutover does not start until each is merged and the check
-   has been done by hand on the release artifact.
+   release build. The pull requests are merged: #151 (Node 24 and dev proxy), #152 and #153 (one request layer,
+   operator elevation removed), #155 (sign-in), #159 (ExternalReview path check) and #154 (the release build that embeds
+   the SPA). What remains is the check by hand: on scratch, against the **published artifact** (not a local build), sign in
+   as the owner in a real browser and decide an inbox item; the evidence goes to the driver. The server-side hardening
+   that goes with it (#161 envelope paths, #162 body-less owner routes) is merged or the owner accepts it unmerged.
 8. Read `docs/client-table.md` against the producer list: each producer gets a key, or is retired.
 
 ## 6. The window (host-run, in this order)
