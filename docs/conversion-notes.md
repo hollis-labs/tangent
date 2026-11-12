@@ -352,8 +352,8 @@ The old binary's maintenance flags and `tangent session` (from `../tangent-previ
   identity's). `--db-compact` is deferred (low value).
 - **Not available after cutover until ported** (content-removing governance operations built around the old single-writer
   lock, which the framework does not have across processes; the old binary refuses the new database, so they are gone until
-  someone ports them; the owner is being asked which are used, none showed in any timer, schedule, unit or shell history on
-  the server host):
+  someone ports them; the owner uses none of them and decided to cut over without them; none showed in any timer, schedule, unit or
+  shell history on the server host. Follow-up task CW-20261112-0122 covers reviewing and porting any that are wanted later):
   - `--retention-plan`: report which interactions and surfaces are past their retention window.
   - `--retention-apply`: redact every record past its window (needed `--confirm`).
   - `--retention-history`: print the retention operation log.
