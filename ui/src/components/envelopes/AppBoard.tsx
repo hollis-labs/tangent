@@ -59,6 +59,7 @@ import { useMemo, useState } from "react";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
+import { isPluginRoutePath } from "@/lib/plugin-route";
 import { cn } from "@/lib/utils";
 
 export type BoardBadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -291,28 +292,6 @@ export function applyFilters(
       return chosen.some((value) => values.includes(value));
     }),
   );
-}
-
-/**
- * Whether a caller-supplied sync endpoint is one this board may POST to.
- *
- * A same-origin path under the host's reserved plugin prefix, and nothing else:
- * no scheme, no host, no protocol-relative `//`, no `..`. A board is not a
- * general fetch surface — the effect broker is what mediates a renderer acting
- * on the world, and letting an envelope name an arbitrary URL here would be a
- * second, unreviewed one. Whether the named route will *accept* the request is
- * still the server's decision; this only stops the request being aimed
- * somewhere else entirely.
- *
- * Exported for its tests, because "a caller cannot point the board at an
- * arbitrary URL" is a claim about this function.
- */
-export function isPluginRoutePath(endpoint: string | undefined): endpoint is string {
-  if (!endpoint) return false;
-  if (!endpoint.startsWith("/api/plugins/")) return false;
-  if (endpoint.startsWith("//")) return false;
-  if (endpoint.includes("..")) return false;
-  return !/[\s?#]/.test(endpoint);
 }
 
 /**

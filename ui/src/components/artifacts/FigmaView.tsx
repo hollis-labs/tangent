@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react";
+import { figmaURL } from "./figma-url";
 import { useArtifactText } from "./useArtifactText";
 import type { ViewerProps } from "./viewer-types";
 
@@ -17,7 +18,13 @@ export default function FigmaView({ itemID, revision, title }: ViewerProps) {
         Loading…
       </p>
     );
-  const link = text.trim();
+  const link = figmaURL(text);
+  if (!link)
+    return (
+      <p role="alert" className="p-4">
+        This artifact is not a Figma link.
+      </p>
+    );
   const embed = `https://www.figma.com/embed?embed_host=tangent&url=${encodeURIComponent(link)}`;
   return (
     <div className="flex h-full flex-col">

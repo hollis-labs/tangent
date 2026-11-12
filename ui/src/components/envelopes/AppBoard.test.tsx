@@ -9,7 +9,6 @@ import {
   applyStagedColumns,
   type BoardCardData,
   CARD_DRAG_TYPE,
-  isPluginRoutePath,
 } from "./AppBoard";
 
 const cards: BoardCardData[] = [
@@ -334,29 +333,6 @@ const syncBlock = {
 function syncEnvelope(): AppBoardEnvelope {
   return envelope({ sync: syncBlock });
 }
-
-describe("isPluginRoutePath", () => {
-  it("accepts a same-origin path under the reserved plugin prefix", () => {
-    expect(isPluginRoutePath("/api/plugins/torque-board/sync")).toBe(true);
-  });
-
-  it("refuses anything that could aim the board somewhere else", () => {
-    // A board is not a general fetch surface; the effect broker is what
-    // mediates a renderer acting on the world.
-    for (const endpoint of [
-      undefined,
-      "",
-      "https://evil.test/steal",
-      "//evil.test/steal",
-      "/api/hitl/items/1/resolve",
-      "/api/plugins/../hitl",
-      "/api/plugins/x/sync?to=elsewhere",
-      "/api/plugins/x/sync#frag",
-    ]) {
-      expect(isPluginRoutePath(endpoint)).toBe(false);
-    }
-  });
-});
 
 describe("applyStagedColumns", () => {
   const columns = [

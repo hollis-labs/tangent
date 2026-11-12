@@ -734,7 +734,7 @@ export function Dashboard({ envelope, onSubmit, onCancel, roomID }: DashboardPro
               <div className="mt-4 flex flex-wrap gap-2">
                 {tile.room_id ? (
                   <a
-                    href={`/r/${tile.room_id}`}
+                    href={`/r/${encodeURIComponent(tile.room_id)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="rounded-full border border-zinc-700 px-2 py-1 text-xs text-zinc-200"
