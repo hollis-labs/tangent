@@ -12,9 +12,9 @@ import { defineConfig, type Plugin, type ProxyOptions } from "vite";
 //   - Dev server runs on the Vite default (5173) and proxies /api, /mcp and
 //     /ws to the Go dev server (TANGENT_DEV_BACKEND, default
 //     http://127.0.0.1:7843, the `make dev` instance). The Go server does not
-//     proxy to Vite. The proxy rewrites Origin to the backend's own, so the
-//     backend's same-origin checks see the request as they would in the
-//     embedded build.
+//     proxy to Vite. The proxy is dev only: it rewrites Origin to the backend's
+//     own so the backend's same-origin checks pass. The embedded build has no
+//     proxy; there the page origin already is the backend origin.
 //
 // The Nanite-style importmap / shared-chunk pattern is intentionally
 // omitted: it exists to support runtime-loaded plugins, which Tangent
