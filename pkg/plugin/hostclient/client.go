@@ -105,13 +105,7 @@ func New() (*Client, error) {
 	}
 	pool := gmcpclient.NewPool(
 		gmcpclient.WithIdentity("tangent-plugin", "0.1.0"),
-		gmcpclient.WithHTTPClient(func(_ map[string]string, timeoutSeconds int) *http.Client {
-			client := &http.Client{Transport: &keyTransport{base: http.DefaultTransport}}
-			if timeoutSeconds > 0 {
-				client.Timeout = time.Duration(timeoutSeconds) * time.Second
-			}
-			return client
-		}),
+		gmcpclient.WithHTTPClient(func(_ map[string]string, timeoutSeconds int) *http.Client { return newHTTPClient(timeoutSeconds) }),
 	)
 	if err := pool.Register(poolServerName, gmcpclient.ServerConfig{
 		Transport: gmcpclient.TransportHTTP,
@@ -120,6 +114,20 @@ func New() (*Client, error) {
 		return nil, fmt.Errorf("hostclient: register %s: %w", url, err)
 	}
 	return &Client{pool: pool}, nil
+}
+
+// newHTTPClient is the client the pool dials the host with. It follows no redirects: the key is
+// added in the transport, so a redirect to another host would carry it there. The host answers /mcp
+// itself; a redirect is returned to the caller as the response it is.
+func newHTTPClient(timeoutSeconds int) *http.Client {
+	client := &http.Client{
+		Transport:     &keyTransport{base: http.DefaultTransport},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	if timeoutSeconds > 0 {
+		client.Timeout = time.Duration(timeoutSeconds) * time.Second
+	}
+	return client
 }
 
 // keyTransport presents the plugin's key as a bearer credential on every request. The key is read

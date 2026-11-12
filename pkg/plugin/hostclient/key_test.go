@@ -56,3 +56,26 @@ func TestTheKeyIsReadFromTheFileOnEveryRequest(t *testing.T) {
 		t.Fatal("a missing key file was ignored")
 	}
 }
+
+// The key is added in the transport, so a redirect would send it to wherever the redirect points.
+// The client the pool uses refuses to follow one.
+func TestTheKeyIsNotCarriedAcrossARedirect(t *testing.T) {
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the redirect target was reached with Authorization %q", r.Header.Get("Authorization"))
+	}))
+	defer other.Close()
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL, http.StatusTemporaryRedirect)
+	}))
+	defer host.Close()
+	t.Setenv(KeyEnv, "a-key")
+	t.Setenv(KeyFileEnv, "")
+	res, err := newHTTPClient(0).Get(host.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("status %d: the redirect was followed", res.StatusCode)
+	}
+}

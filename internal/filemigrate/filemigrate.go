@@ -107,12 +107,31 @@ func Copy(ctx context.Context, opts Options) (Report, error) {
 		}
 		rep.Revisions = n
 	}
+	var installed []string
 	for i, name := range present {
 		if err := installTree(staged[i], filepath.Join(to, name)); err != nil {
-			return rep, err
+			return rep, installFailure(to, present, staged, i, installed, err)
 		}
+		installed = append(installed, name)
 	}
 	return rep, nil
+}
+
+// installFailure says what state an install that failed part-way left: which trees are in place,
+// which staging directories remain (verified, safe to rename by hand), and what to do. A rerun
+// refuses on the trees already installed, so the message has to say so.
+func installFailure(to string, present, staged []string, failed int, installed []string, err error) error {
+	left := staged[failed:]
+	return fmt.Errorf("installing %s failed: %w. Already installed under %s: %s. Staging directories left, verified against the source: %s. "+
+		"Rename each staging directory to its final name (drop \".migrating\") once the cause is fixed, or remove the installed trees and the staging directories and run again",
+		present[failed], err, to, listOrNone(installed), strings.Join(left, ", "))
+}
+
+func listOrNone(list []string) string {
+	if len(list) == 0 {
+		return "none"
+	}
+	return strings.Join(list, ", ")
 }
 
 func contains(list []string, s string) bool {

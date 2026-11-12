@@ -245,6 +245,14 @@ func requireFinalLegacy(ctx context.Context, from string) error {
 	if version != legacyFinalVersion {
 		return fmt.Errorf("migrate: %s is at old schema version %d, want %d; open it once with the previous Tangent to finish its migrations", from, version, legacyFinalVersion)
 	}
+	// The copy carries the AUTOINCREMENT counters. SQLite creates sqlite_sequence with the first
+	// AUTOINCREMENT table, and the final schema has several, so a file without it is not that schema.
+	if err = db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE name = 'sqlite_sequence'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("migrate: %s has no sqlite_sequence, so it has no AUTOINCREMENT table: it is not the final pre-Substrate schema", from)
+	}
 	var integrity string
 	if err = db.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil {
 		return err

@@ -103,3 +103,13 @@ func TestAPluginChildCallsBackWithItsOwnKeyAndLosesItWhenItStops(t *testing.T) {
 		t.Error("the key file outlived the child")
 	}
 }
+
+// The host revokes a plugin child's key through the identity module's own DELETE handler, found by
+// exact method and path. If the module moves or renames it, this fails instead of the first
+// revocation failing at run time.
+func TestTheKeyRevocationRouteIsStillPublished(t *testing.T) {
+	_, tg := started(t, nil)
+	if _, err := newKeyIssuer(tg.app, identity.From(tg.app)); err != nil {
+		t.Fatalf("%v: the identity module's revoke route changed (%s %s)", err, http.MethodDelete, revokeRoute)
+	}
+}

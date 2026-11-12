@@ -1,8 +1,8 @@
-// Package hostguard keeps Basalisk answering only to the names it is meant to have. The
+// Package hostguard keeps Tangent answering only to the names it is meant to have. The
 // backend binds loopback; a browser pointed at it from another site (DNS rebinding) arrives
 // with a Host the app does not serve, and is refused before any handler sees it.
 //
-// Served Hosts are loopback names and addresses, plus an operator list (basalisk.allowed_hosts)
+// Served Hosts are loopback names and addresses, plus an operator list (tangent.allowed_hosts)
 // for a local TLS proxy that forwards a public name. A request for a listed name is believed
 // only when it comes from a loopback peer carrying exactly one X-Forwarded-Proto: https. Every
 // other forwarding header is dropped, because none of them may choose the host, origin or
@@ -19,8 +19,8 @@ import (
 
 // Handler refuses requests for hosts that are not served and strips forwarding headers.
 // allowed lists extra host names exactly as a client sends them in Host (lower case, with a
-// port only when the client sends one): "basalisk.example.test" does not admit
-// "basalisk.example.test:8443".
+// port only when the client sends one): "tangent.example.test" does not admit
+// "tangent.example.test:8443".
 func Handler(allowed []string, next http.Handler) http.Handler {
 	names := make([]string, len(allowed))
 	for i, a := range allowed {

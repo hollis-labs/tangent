@@ -267,6 +267,12 @@ One bump of Substrate (`bac8c60` to `d453ac8`), nothing pinned between. What it 
 - Not in the pin, so still ours: the Host check (`internal/hostguard`), the cross-process open-and-migrate lock,
   `queue.reservation_secs`, the MCP JSON-response option.
 
+## Pin da9f59b
+
+`d453ac8` to `da9f59b` (the driver's note on the first read): BOM `security/auth` v0.3.1 and a Go floor of 1.26.11
+(GO-2026-6859). `go.mod` says `go 1.26.11`; hosts with 1.26.10 fetch the toolchain on first build. The full gate was run
+again after the bump.
+
 ## Document security policy (ruling 4)
 
 Slice (c) deleted `internal/server/csp.go` with the static handler, so for a while the SPA's pages carried no policy.

@@ -1,6 +1,6 @@
 module github.com/hollis-labs/tangent
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/coder/websocket v1.8.15
@@ -12,10 +12,10 @@ require (
 	github.com/hollis-labs/libs/harness/core v0.16.0
 	github.com/hollis-labs/libs/mcp/plugin-mcp v0.6.0
 	github.com/hollis-labs/libs/mesh/core v0.6.0
-	github.com/hollis-labs/libs/security/auth v0.3.0
+	github.com/hollis-labs/libs/security/auth v0.3.1
 	github.com/hollis-labs/libs/security/secrets v0.1.0
 	github.com/hollis-labs/libs/ui/ui-go v0.1.0
-	github.com/hollis-labs/substrate v0.1.1-0.20261112162132-d453ac897397
+	github.com/hollis-labs/substrate v0.1.1-0.20261112164520-da9f59bb59b7
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
