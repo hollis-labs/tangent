@@ -141,7 +141,10 @@ type Route struct {
 	// scopes an API key holds. Every route whose scope is access.Resolve is
 	// UserOnly; routes whose pattern says "deliver" are not.
 	UserOnly bool
-	Handler  http.Handler
+	// NoBody marks a route that takes no request body at all: it refuses a non-empty one with 400 once the
+	// participant gate has passed (see participantNoBody).
+	NoBody  bool
+	Handler http.Handler
 }
 
 // Method and Path split Pattern.
@@ -241,6 +244,19 @@ func (rt *router) handle(pattern, scope string, userOnly bool, handler http.Hand
 	rt.routes = append(rt.routes, Route{Pattern: pattern, Scope: scope, UserOnly: userOnly, Handler: handler})
 }
 
+// participantNoBody registers a browser route that takes no request body. The page never sends one to
+// these routes, and a request that carries one did not come from the page's own call (an envelope can aim the
+// owner's POST at a same-origin route and the browser attaches the envelope's JSON), so it is refused with 400.
+// The refusal runs after the participant gate, so a caller that may not use the route still gets the gate's answer.
+func (rt *router) participantNoBody(pattern string, capability authz.Capability, handler http.HandlerFunc) {
+	rt.participant(pattern, capability, RefuseBody(handler).ServeHTTP)
+	for i := range rt.routes {
+		if rt.routes[i].Pattern == pattern {
+			rt.routes[i].NoBody = true
+		}
+	}
+}
+
 // participant registers a browser route: the caller must be a signed-in user,
 // holding the scope the capability maps to. The scope is checked by the host
 // before the handler runs, and again here against the session's grants, so the
@@ -303,7 +319,7 @@ func New(cfg Config) (*Table, error) {
 		rt.participant("GET /api/inbox/search", authz.View, inboxSearchHandler(cfg.Inbox))
 		rt.participant("GET /api/inbox/items/{interactionID}", authz.View, inboxItemHandler(cfg.Inbox))
 		if operator, ok := cfg.Inbox.(inboxOperator); ok {
-			rt.participant("POST /api/inbox/items/{interactionID}/archive", authz.Resolve, inboxArchiveHandler(operator))
+			rt.participantNoBody("POST /api/inbox/items/{interactionID}/archive", authz.Resolve, inboxArchiveHandler(operator))
 			rt.participant("DELETE /api/inbox/items/{interactionID}", authz.Resolve, inboxDeleteHandler(operator))
 		}
 	}
@@ -446,7 +462,7 @@ func New(cfg Config) (*Table, error) {
 		register("GET /api/channels/events", authz.View, channelHandler.events)
 		register("GET /api/channels/{channelID}", authz.View, channelHandler.get)
 		register("POST /api/channels/{channelID}/messages", authz.Draft, channelHandler.send)
-		register("POST /api/channels/{channelID}/read", authz.Draft, channelHandler.markRead)
+		rt.participantNoBody("POST /api/channels/{channelID}/read", authz.Draft, channelHandler.markRead)
 	}
 
 	if cfg.Effects != nil && cfg.EffectContext != nil {

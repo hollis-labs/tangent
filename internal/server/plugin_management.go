@@ -14,7 +14,7 @@ func registerPluginManagement(rt *router) {
 		writeHITLJSON(w, http.StatusOK, cfg.PluginHost.Inventory(r.Context()))
 	})
 	for _, action := range []string{"enable", "disable", "reload"} {
-		rt.participant("POST /api/plugin-management/{pluginID}/"+action, authz.Resolve, func(w http.ResponseWriter, r *http.Request) {
+		rt.participantNoBody("POST /api/plugin-management/{pluginID}/"+action, authz.Resolve, func(w http.ResponseWriter, r *http.Request) {
 			id := r.PathValue("pluginID")
 			var err error
 			if action == "reload" {

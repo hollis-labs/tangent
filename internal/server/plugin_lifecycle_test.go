@@ -58,6 +58,13 @@ func TestRuntimePluginRoutesAndManagementKeepTheirGuards(t *testing.T) {
 			t.Errorf("enable with %s = %d, want 403", name, got)
 		}
 	}
+	// The owner's own session, carrying an envelope's JSON (a cross-aimed write), is refused and changes nothing.
+	for _, action := range []string{enable, disable, reload} {
+		res, _ := app.do(t, http.MethodPost, action, callerOwner, `{"room_id":"r","envelope_id":"e"}`, nil)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s with a body = %d, want 400", action, res.StatusCode)
+		}
+	}
 	if got := call(enable, callerOwner); got != http.StatusOK {
 		t.Fatalf("enable = %d", got)
 	}
