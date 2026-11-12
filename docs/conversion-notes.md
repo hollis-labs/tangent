@@ -370,7 +370,7 @@ behaviour no longer exists, with the reason.
 The one `t.Skip` the branch adds: `no SPA build embedded; make build-ui populates internal/webui/dist`, in `internal/server/csp_test.go` (the sandbox-frame shim must match the SPA), which needs a built SPA and skips when the embedded directory holds only its placeholder (CI runs `npm run build`
 first, so it runs there).
 
-Found while writing these, not changed: an owner `POST /api/rooms/<unknown id>/close` answers 500 (`insert legacy room
+Found while writing these, not changed (filed in Torque): an owner `POST /api/rooms/<unknown id>/close` answers 500 (`insert legacy room
 surface: constraint failed: FOREIGN KEY`) where 404 would be expected. `internal/mcp/browser_rooms.go` and
 `internal/interaction/legacy_room.go` are unchanged from main, so it predates the branch.
 
@@ -439,15 +439,17 @@ What the backend now requires of the SPA, in one place; keep it current.
    (`tangent identity key create`); put the keys in the clients' own configuration.
 4. Config block: `tangent.allowed_hosts` (the public name), `gateway_producers` and `trusted_forwarders` (the Tether
    gateway's key name), `reply_to_optional`, `tether_url`, `tether_sender`, `tether_token_ref`.
-5. The Tether catalog entry for Tangent: read it first (the driver's two reads disagree: `http` at the public name plus
-   `/mcp`, or `sse` at `<base>/sse`). Either way it must end as transport `http` at `<base>/mcp` with an identity key for
-   the producer as its credential (instead of the proxy service token). **A gateway entry change takes effect only at a
-   Tether hub reload, which restarts every gateway child**; so make the entry change, then reload the hub, in the cutover
-   window and after Tangent is up with the key minted and the producer listed in `tangent.gateway_producers` and
-   `trusted_forwarders`. `internal/smoke`'s catalog check reports `CATALOG_STALE` for an `sse` entry or a URL not ending in
-   `/mcp`. After cutover refresh the catalog and compare the
-   tool list with the 73 names (the gateway does not refresh http upstreams on notifications, so plugin tools registered
-   after start appear on a refresh).
+5. The Tether catalog entry for Tangent is already transport `http` at the public name plus `/mcp` (read from the live
+   catalog; the `/sse` in the G6a paragraph describes the repository descriptor, not the live host). Its URL does not
+   change; only its credential does, to an identity key for the gateway producer instead of the proxy service token.
+   That credential change is a catalog plan and takes effect at a Tether hub reload, which restarts every gateway child.
+   Order: approve the plan, apply it, then reload the hub (a plan does not survive a hub restart); do it after Tangent is
+   up with the key minted and the producer listed in `tangent.gateway_producers` and `trusted_forwarders`. The gateway
+   arrives under the public Host, so the G9 workaround (`mcpLoopbackHost`) is on the live path from the first request:
+   keep `TestProxiedGatewayKeepsItsForwardedSessionHeaders`. `internal/smoke`'s catalog check reports `CATALOG_STALE` for
+   an `sse` entry or a URL not ending in `/mcp`. After cutover refresh the catalog and compare the tool list with the 73
+   names (the gateway does not refresh http upstreams on notifications, so plugin tools registered after start appear on
+   a refresh).
 6. **An old plugin binary must fail loudly.** A plugin not reinstalled still presents no key: `/mcp` answers it `401`
    (`TestMCPWithoutACredentialIsRefused`), and the child's calls into the host fail. That the plugin host's health shows it is NOT tested here: check the
    plugin host's health after start, and treat a plugin whose calls get 401 as not reinstalled.
