@@ -6,7 +6,8 @@
 # is in docs/cutover-plan.md: stop the unit, back up, run migrate-data, migrate-files, migrate-secrets and the
 # offline identity bootstrap with the new binary, then `fleet-install deploy tangent`, whose preflight backs up
 # the MIGRATED database. The old data directory (~/.local/share/tangent-pilot) is only ever read, so it stays the
-# rollback; the new data directory is a different one (~/.local/share/tangent).
+# rollback; the new data directory is a different one (~/.local/share/tangent-pilot-substrate, which does not exist before the
+# cutover; the plain ~/.local/share/tangent holds an older install and is not used).
 #
 # Settings that were environment variables or flags (the port, TANGENT_DB_PATH, the proxied listener, the
 # operator token) are keys in the file named by SUBSTRATE_CONFIG (httphost.addr, tangent.*); the drop-in below
@@ -32,14 +33,14 @@ targets:
           ExecStart=
           ExecStart=%h/.local/bin/tangent serve
           Environment=SUBSTRATE_CONFIG=%h/.config/tangent-pilot/tangent.yaml
-          Environment=TANGENT_DATA_DIR=%h/.local/share/tangent
-          Environment=TANGENT_PLUGIN_DIR=%h/.local/share/tangent/plugins
+          Environment=TANGENT_DATA_DIR=%h/.local/share/tangent-pilot-substrate
+          Environment=TANGENT_PLUGIN_DIR=%h/.local/share/tangent-pilot-substrate/plugins
           # httphost drains for 10 s, then the process exits; twice that is the margin.
           TimeoutStopSec=30
     preflight:
       # The migrated file: it exists before the first deploy (migrate-data runs first) and on every later one.
       # The old ~/.local/share/tangent-pilot/tangent.db is not touched; it and the stopped unit are the rollback.
-      - {kind: sqlite_backup, db: ~/.local/share/tangent/tangent.db, dest: "{backup_dir}/tangent.pre-{version}.db"}   # ~18 MB
-      # - {kind: migration_check, db: ~/.local/share/tangent/tangent.db}   # enable once build-info.json carries a migration number
+      - {kind: sqlite_backup, db: ~/.local/share/tangent-pilot-substrate/tangent.db, dest: "{backup_dir}/tangent.pre-{version}.db"}   # ~18 MB
+      # - {kind: migration_check, db: ~/.local/share/tangent-pilot-substrate/tangent.db}   # enable once build-info.json carries a migration number
     restart: {via: systemd-user, unit: tangent-pilot.service}
     health: {url: "http://127.0.0.1:7843/healthz", expect_status: [200], timeout: 30s}
