@@ -431,6 +431,9 @@ What the backend now requires of the SPA, in one place; keep it current.
 
 ## Cutover notes (host-run, in this order)
 
+The operator-facing runbook, with the rehearsal record, the proxy findings and the rollback, is `docs/cutover-plan.md`; these
+notes are the short form it expands.
+
 1. Merge the port, tag Tangent, then bump the three plugin modules (`runner`, `tesseract`, `torque`) to that tag and
    release them in `hollis-labs/plugins`; only then cut over, with the plugins reinstalled (`make install-plugins`).
 2. Stop the old Tangent. Take an online backup of its database.
