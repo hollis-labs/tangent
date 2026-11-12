@@ -76,7 +76,7 @@ func Check(ctx context.Context, path string) (Report, error) {
 
 // Backup writes a complete, checkpointed copy of src to dst with VACUUM INTO, from a read
 // transaction, so it is consistent while a server runs. It refuses an existing dst (or one with
-// a -wal/-shm/-journal beside it), never writes src, verifies the copy with Check, and removes
+// a -wal/-shm/-journal beside it), never changes src's content (SQLite may leave empty -wal/-shm beside an unheld WAL file), verifies the copy with Check, and removes
 // the copy if it is damaged. The copy is private (0600).
 func Backup(ctx context.Context, src, dst string) (Report, error) {
 	if !filepath.IsAbs(src) || !filepath.IsAbs(dst) {
