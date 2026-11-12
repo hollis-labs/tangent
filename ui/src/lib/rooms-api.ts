@@ -11,6 +11,7 @@
 // contract change.
 
 /** One room as the tab strip renders it. */
+import { apiFetch } from "@/lib/api";
 export interface RoomSummary {
   id: string;
   title?: string;
@@ -67,7 +68,7 @@ export async function closeRoom(roomID: string): Promise<void> {
 }
 
 async function requestRooms<T>(url: string, init: RequestInit): Promise<T> {
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     ...init,
     headers: { Accept: "application/json", ...(init.headers ?? {}) },
     // The session cookie is HttpOnly and same-origin; sending it is the whole

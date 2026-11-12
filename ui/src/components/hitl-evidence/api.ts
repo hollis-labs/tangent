@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import type { ArtifactPreview, EvidenceAPIError, TangentReferenceView } from "./types";
 
 export class EvidenceRequestError extends Error {
@@ -34,7 +35,7 @@ async function evidenceRequest<T>(
   operation: "reference" | "preview",
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch(
+  const response = await apiFetch(
     `/api/hitl/items/${encodeURIComponent(itemID)}/evidence/${evidenceIndex}/${operation}`,
     { headers: { Accept: "application/json" }, signal },
   );

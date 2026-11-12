@@ -1,5 +1,6 @@
 import { Button, Callout } from "@hollis-labs/design-components";
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { fetchWithElevation } from "@/lib/operator-elevation";
 
 interface PluginState {
@@ -10,7 +11,7 @@ interface PluginState {
 }
 
 async function readInventory(signal: AbortSignal): Promise<PluginState[]> {
-  const response = await fetch("/api/plugin-management", {
+  const response = await apiFetch("/api/plugin-management", {
     signal,
     credentials: "same-origin",
     headers: { Accept: "application/json" },

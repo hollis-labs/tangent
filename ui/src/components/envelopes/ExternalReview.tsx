@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import type { TangentExternalReviewEnvelope } from "@/generated/envelope-types";
+import { apiFetch } from "@/lib/api";
 import type { EnvelopeComponentProps } from "@/lib/envelope-registry";
 
 interface ReviewState {
@@ -40,7 +41,7 @@ export function ExternalReview({
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(stateURL, {
+        const response = await apiFetch(stateURL, {
           method: "POST",
           credentials: "same-origin",
           signal: controller.signal,
@@ -83,7 +84,7 @@ export function ExternalReview({
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(action ? data.action_url : data.state_url, {
+      const response = await apiFetch(action ? data.action_url : data.state_url, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },

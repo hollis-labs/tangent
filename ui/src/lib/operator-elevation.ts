@@ -12,6 +12,8 @@
 // input after submit. The server rotates the session cookie on success, so the
 // retry carries the elevated session automatically.
 
+import { apiFetch } from "@/lib/api";
+
 export const ELEVATE_PATH = "/api/session/elevate";
 export const ASSURANCE_INSUFFICIENT = "assurance_insufficient";
 
@@ -76,7 +78,7 @@ export async function submitOperatorToken(token: string): Promise<boolean> {
   }
   setState({ ...state, submitting: true, error: "" });
   try {
-    const response = await fetch(ELEVATE_PATH, {
+    const response = await apiFetch(ELEVATE_PATH, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ token }),
@@ -117,8 +119,8 @@ async function isAssuranceRefusal(response: Response): Promise<boolean> {
  * retried exactly once. A dismissed prompt returns the original refusal.
  */
 export async function fetchWithElevation(input: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(input, init);
+  const response = await apiFetch(input, init);
   if (!(await isAssuranceRefusal(response))) return response;
   if (!(await requestOperatorElevation())) return response;
-  return fetch(input, init);
+  return apiFetch(input, init);
 }

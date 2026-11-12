@@ -2,6 +2,7 @@
 // routes (Tangent core has no Tether client). Nothing here is stored: the
 // roster is whatever Tether reports, and "unavailable" is a first-class state.
 
+import { apiFetch } from "@/lib/api";
 import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export interface RosterSession {
@@ -49,7 +50,10 @@ function isAgent(value: unknown): value is RosterAgent {
 /** Never throws: any failure to reach a roster is an unavailable roster. */
 export async function fetchChatRoster(signal?: AbortSignal): Promise<Roster> {
   try {
-    const response = await fetch(ROSTER_URL, { headers: { Accept: "application/json" }, signal });
+    const response = await apiFetch(ROSTER_URL, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
     if (!response.ok) return ROSTER_UNAVAILABLE;
     const body = (await response.json()) as Partial<Roster>;
     if (!body.available || !Array.isArray(body.agents)) {

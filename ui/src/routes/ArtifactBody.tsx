@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArtifactViewer, isTextArtifact } from "@/components/artifacts/ArtifactViewer";
 import { Markdown } from "@/components/markdown";
+import { apiFetch } from "@/lib/api";
 import {
   type ArtifactMessage,
   type ArtifactView,
@@ -178,7 +179,7 @@ export function ArtifactBody(props: Props) {
           "Could not copy. Check your browser's clipboard permission.",
         );
       } else if (item.type === "image") {
-        const blob = await (await fetch(artifactContentURL(item.item_id, shown))).blob();
+        const blob = await (await apiFetch(artifactContentURL(item.item_id, shown))).blob();
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         flash("Copied");
       } else {
