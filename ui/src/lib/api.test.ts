@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { apiFetch, readApiError } from "./api";
+import { apiFetch, onUnauthorized, readApiError } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -76,4 +76,38 @@ it("falls back to the status when the body is not the flat shape", async () => {
     code: "http_error",
     message: "Request failed (HTTP 502).",
   });
+});
+
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), { status });
+}
+
+it("tells listeners the session ended on a 401, but not on a wrong password", async () => {
+  const heard = vi.fn();
+  const stop = onUnauthorized(heard);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValueOnce(json(401, { code: "invalid_login", message: "no" })),
+  );
+  await apiFetch("/api/login", { method: "POST" });
+  expect(heard).not.toHaveBeenCalled();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValueOnce(json(401, { code: "unauthorized", message: "no" })),
+  );
+  await apiFetch("/api/inbox");
+  expect(heard).toHaveBeenCalledTimes(1);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValueOnce(json(401, { code: "unauthorized", message: "no" })),
+  );
+  await apiFetch("https://example.test/x");
+  expect(heard).toHaveBeenCalledTimes(1);
+  stop();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValueOnce(json(401, { code: "unauthorized", message: "no" })),
+  );
+  await apiFetch("/api/inbox");
+  expect(heard).toHaveBeenCalledTimes(1);
 });

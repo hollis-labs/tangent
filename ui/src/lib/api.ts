@@ -1,10 +1,11 @@
 // The one way the SPA talks to Tangent's own HTTP API.
 //
 // Tangent signs the owner in through the identity module: a session cookie, sent
-// by the browser on every same-origin request (`fetch` does so by default). Identity's CSRF rule asks the
-// page to say, on every unsafe request, that it is a page: `X-Requested-With`.
+// by the browser on every same-origin request (`fetch` does so by default).
+// Identity's CSRF rule asks the page to say, on every unsafe request, that it is a page: `X-Requested-With`.
 // `apiFetch` adds it, and only for a same-origin path, so a caller-supplied
-// absolute URL never receives a header meant for Tangent.
+// absolute URL never receives a header meant for Tangent. A 401 that is not a
+// wrong password means the session is gone: listeners (`onUnauthorized`) hear it.
 //
 // Errors from Tangent are flat: `{ "code", "message", "details"? }`. `readApiError`
 // reads that shape and nothing older. A body that is not that shape (a proxy's
@@ -14,6 +15,27 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** The value sent as `X-Requested-With`. Identity checks only that the header is present. */
 export const REQUESTED_WITH = "tangent";
+
+/**
+ * 401 codes that mean "those credentials were wrong", not "your session ended".
+ * Every other 401 from Tangent is the signed-out signal.
+ */
+const CREDENTIAL_CODES = new Set(["invalid_login"]);
+
+const unauthorizedListeners = new Set<() => void>();
+
+/** Calls `listener` whenever a request is answered 401 because the session is gone. */
+export function onUnauthorized(listener: () => void): () => void {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
+async function signalIfSignedOut(response: Response): Promise<void> {
+  if (response.status !== 401) return;
+  const { code } = await readApiError(response);
+  if (CREDENTIAL_CODES.has(code)) return;
+  for (const listener of [...unauthorizedListeners]) listener();
+}
 
 export interface ApiError {
   status: number;
@@ -32,7 +54,13 @@ function isSameOriginPath(input: string): boolean {
  * passes through untouched (`fetch` already sends the session cookie to the
  * same origin).
  */
-export function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const response = await send(input, init);
+  if (isSameOriginPath(input)) await signalIfSignedOut(response);
+  return response;
+}
+
+function send(input: string, init?: RequestInit): Promise<Response> {
   if (!init) return fetch(input);
   const method = (init.method ?? "GET").toUpperCase();
   if (!isSameOriginPath(input) || !UNSAFE_METHODS.has(method)) return fetch(input, init);
