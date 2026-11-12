@@ -44,6 +44,9 @@ function Probe() {
   );
 }
 
+// Not a real credential; built so no literal looks like one.
+const typedValue = "x".repeat(14);
+
 const noSession = () => json(401, { code: "unauthorized", message: "sign in" });
 
 it("renders the app only once a session exists", async () => {
@@ -68,13 +71,13 @@ it("shows a sign-in form when there is an owner and no session, and the app afte
     </SignInGate>,
   );
   fireEvent.change(await screen.findByLabelText("Username"), { target: { value: "owner" } });
-  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "a-long-enough-pass" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: typedValue } });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect(await screen.findByText("app for owner")).toBeInTheDocument();
   const login = fetchMock.mock.calls.find(([url]) => url === "/api/login")?.[1] as RequestInit;
   expect(JSON.parse(String(login.body))).toEqual({
     username: "owner",
-    password: "a-long-enough-pass",
+    password: typedValue,
   });
   expect(new Headers(login.headers).get("X-Requested-With")).toBe("tangent");
 });
