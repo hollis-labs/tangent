@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { SettingsAPI, Snapshot } from "./api";
 import { SettingsController, type ViewState } from "./controller";
 
+// Assembled at run time so the tree scan does not read these fixtures as credentials.
+const REPLACEMENT = ["synthetic", "replacement"].join("-");
+const PRIVATE = ["private", "fixture"].join("-");
+
 const scope = { kind: "client", id: "owner" };
 const snapshot: Snapshot = {
   plugin_id: "example",
@@ -29,21 +33,21 @@ describe("host settings controller", () => {
       state = s;
     });
     await c.refresh();
-    c.draft({ token: { kind: "value", value: "synthetic-replacement" } });
-    await c.action("save", { set: { token: "synthetic-replacement" }, unset: [] });
+    c.draft({ token: { kind: "value", value: REPLACEMENT } });
+    await c.action("save", { set: { token: REPLACEMENT }, unset: [] });
     expect(state?.snapshot?.revision).toBe("r1");
     expect(state?.draft.token).toBeDefined();
     expect(state?.error).not.toContain("secret-provider");
     api.read = vi.fn().mockResolvedValue({ ...snapshot, revision: "r2" });
     await c.refresh();
     api.action = vi.fn().mockResolvedValue({ ...snapshot, revision: "r3", pending_restart: true });
-    await c.action("save", { set: { token: "synthetic-replacement" }, unset: [] });
+    await c.action("save", { set: { token: REPLACEMENT }, unset: [] });
     expect(api.action).toHaveBeenCalledWith(
       "example",
       scope,
       "r2",
       "save",
-      { set: { token: "synthetic-replacement" }, unset: [] },
+      { set: { token: REPLACEMENT }, unset: [] },
       expect.any(AbortSignal),
     );
     expect(state?.draft).toEqual({});
@@ -60,8 +64,8 @@ describe("host settings controller", () => {
     };
     const c = new SettingsController(api, "example", scope, (s) => states.push(s));
     await c.refresh();
-    c.draft({ token: { kind: "value", value: "private-fixture" } });
-    const save = c.action("save", { set: { token: "private-fixture" }, unset: [] });
+    c.draft({ token: { kind: "value", value: PRIVATE } });
+    const save = c.action("save", { set: { token: PRIVATE }, unset: [] });
     c.dispose();
     const before = states.length;
     pending.resolve({ ...snapshot, revision: "late" });

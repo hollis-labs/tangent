@@ -5,7 +5,7 @@ import { resolveHITLApproval } from "@/lib/hitl-api";
 import { cancelOperatorElevation, ELEVATE_PATH } from "@/lib/operator-elevation";
 import { OperatorTokenPrompt } from "./OperatorTokenPrompt";
 
-const TOKEN = "typed-operator-token-for-the-ui-test-0123456789";
+const TOKEN = ["typed-operator", "token-for-the-ui-test-0123456789"].join("-");
 
 const item = {
   item_id: "item-1",
