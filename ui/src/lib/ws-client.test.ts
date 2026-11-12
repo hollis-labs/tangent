@@ -219,6 +219,46 @@ describe("ws-client", () => {
       globalThis.WebSocket = originalWS;
     }
   });
+  it("reports a response.accepted frame and ignores one that is malformed", () => {
+    const originalWS = globalThis.WebSocket;
+    Object.assign(MockWebSocket, { instances: [] });
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    try {
+      const onResponseAccepted = vi.fn();
+      const onError = vi.fn();
+      connect("room-a", {
+        wsURL: "ws://example.test/ws",
+        clientID: "tab-1",
+        heartbeatMs: 0,
+        onEnvelope: vi.fn(),
+        onResponseAccepted,
+        onError,
+      });
+      const socket = MockWebSocket.instances[0];
+      socket.emitOpen();
+      socket.emitMessage(
+        JSON.stringify({
+          type: "response.accepted",
+          envelopeId: "env-1",
+          revision: 7,
+          outcome: "resolved",
+        }),
+      );
+      expect(onResponseAccepted).toHaveBeenCalledWith({
+        envelopeId: "env-1",
+        revision: 7,
+        outcome: "resolved",
+      });
+      socket.emitMessage(
+        JSON.stringify({ type: "response.accepted", envelopeId: "env-1", outcome: "maybe" }),
+      );
+      expect(onResponseAccepted).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+      globalThis.WebSocket = originalWS;
+    }
+  });
   it("carries the tab client id and reports connection, sync, and refusal frames", () => {
     const originalWS = globalThis.WebSocket;
     Object.assign(MockWebSocket, { instances: [] });

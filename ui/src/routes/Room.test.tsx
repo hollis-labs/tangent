@@ -37,7 +37,7 @@ import {
   type EnvelopeComponentProps,
   register,
 } from "../lib/envelope-registry";
-import type { ConnectionState, ServerError } from "../lib/ws-client";
+import type { ConnectionState, ResponseAccepted, ServerError } from "../lib/ws-client";
 import Room from "./Room";
 
 const switchRoom = vi.fn();
@@ -583,6 +583,64 @@ describe("<Room> submissions the server refuses", () => {
     expect(screen.getByTestId("form-collect-input-headline")).toHaveValue("Launch week");
   });
 
+  it("shows a done state when the host accepts the response, and not before", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("form-4", formCollectEnvelope("form-4"), 3);
+    });
+    fireEvent.change(await screen.findByTestId("form-collect-input-headline"), {
+      target: { value: "Launch week" },
+    });
+    fireEvent.click(screen.getByTestId("form-collect-submit"));
+    expect(screen.getByText("Sending your response…")).toBeInTheDocument();
+
+    // A connection frame is not an acknowledgement, and neither is an ack for
+    // another envelope or another revision.
+    await act(async () => {
+      handlers.onConnectionState?.(resolverState());
+      handlers.onResponseAccepted?.({ envelopeId: "other", revision: 3, outcome: "resolved" });
+      handlers.onResponseAccepted?.({ envelopeId: "form-4", revision: 2, outcome: "resolved" });
+    });
+    expect(screen.getByText("Sending your response…")).toBeInTheDocument();
+
+    await act(async () => {
+      handlers.onResponseAccepted?.({ envelopeId: "form-4", revision: 3, outcome: "resolved" });
+    });
+    expect(screen.getByText("Response sent.")).toBeInTheDocument();
+    expect(screen.queryByText("Sending your response…")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("form-collect-root")).not.toBeInTheDocument();
+
+    // The next presentation replaces the done state.
+    await act(async () => {
+      handlers.onEnvelope?.("form-5", formCollectEnvelope("form-5"), 1);
+    });
+    await screen.findByTestId("form-collect-root");
+    expect(screen.queryByText("Response sent.")).not.toBeInTheDocument();
+  });
+
+  it("says cancelled when the host accepts a cancel", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onEnvelope?.("form-6", formCollectEnvelope("form-6"), 1);
+    });
+    fireEvent.click(await screen.findByTestId("form-collect-cancel"));
+    expect(cancel).toHaveBeenCalledWith("form-6", 1);
+    await act(async () => {
+      handlers.onResponseAccepted?.({ envelopeId: "form-6", revision: 1, outcome: "canceled" });
+    });
+    expect(screen.getByText("Cancelled.")).toBeInTheDocument();
+  });
+
   it("clears the pane when the server does not refuse the submission", async () => {
     const handlers = mockConnectOnce();
     register("tangent.form-collect", FormCollectAdapter);
@@ -787,6 +845,7 @@ type CapturedHandlers = {
   onEnvelope: ((id: string, envelope: unknown, revision: number) => void) | null;
   onServerError: ((error: ServerError) => void) | null;
   onConnectionState: ((state: ConnectionState) => void) | null;
+  onResponseAccepted: ((ack: ResponseAccepted) => void) | null;
 };
 
 // Captures the server-facing callbacks Room registers, so a test can play the
@@ -796,6 +855,7 @@ function mockConnectOnce(): CapturedHandlers {
     onEnvelope: null,
     onServerError: null,
     onConnectionState: null,
+    onResponseAccepted: null,
   };
   connectMock.mockImplementationOnce(
     (
@@ -804,11 +864,13 @@ function mockConnectOnce(): CapturedHandlers {
         onEnvelope: (id: string, envelope: unknown, revision: number) => void;
         onServerError?: (error: ServerError) => void;
         onConnectionState?: (state: ConnectionState) => void;
+        onResponseAccepted?: (ack: ResponseAccepted) => void;
       },
     ) => {
       handlers.onEnvelope = opts.onEnvelope;
       handlers.onServerError = opts.onServerError ?? null;
       handlers.onConnectionState = opts.onConnectionState ?? null;
+      handlers.onResponseAccepted = opts.onResponseAccepted ?? null;
       return {
         isConnected: () => true,
         submitResponse,

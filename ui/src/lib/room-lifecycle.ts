@@ -1,4 +1,10 @@
-import type { ConnectionState, ServerError, SurfaceSync, WSClient } from "./ws-client";
+import type {
+  ConnectionState,
+  ResponseAccepted,
+  ServerError,
+  SurfaceSync,
+  WSClient,
+} from "./ws-client";
 
 export type ActiveRoomEnvelope = {
   envelopeId: string;
@@ -14,6 +20,12 @@ export type RoomLifecycle = {
   switchRoom: (roomID: string) => boolean;
   submit: (response: unknown) => boolean;
   cancel: () => boolean;
+  /**
+   * True when the host acknowledged the response or cancel this tab sent and
+   * has not since shown anything else: the same envelope id and the revision it
+   * was sent with, while a send is outstanding. Anything else is not ours.
+   */
+  receiveAccepted: (accepted: ResponseAccepted) => boolean;
   /**
    * Records what the participant is looking at inside the pending
    * interaction, without settling it (ADR 0007 §5). Nothing about the
@@ -135,6 +147,11 @@ export function createRoomLifecycle(initialRoomID: string, client: WSClient): Ro
       pending = null;
       return true;
     },
+    receiveAccepted: (accepted) =>
+      pending === null &&
+      lastPresented !== null &&
+      lastPresented.envelopeId === accepted.envelopeId &&
+      lastPresented.revision === accepted.revision,
     connectionState: () => connection,
     receiveConnectionState: (state) => {
       connection = state;
