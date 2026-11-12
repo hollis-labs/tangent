@@ -398,12 +398,16 @@ func (c *EnvelopeDefinitionCatalog) ValidateInteractionRequest(
 	if err := json.Unmarshal(request, &data); err != nil {
 		return fmt.Errorf("%w: decode request JSON: %w", ErrDefinitionValidation, err)
 	}
-	if len(material.RequestSchema) == 0 {
-		return nil
+	if len(material.RequestSchema) != 0 {
+		if err := validateAgainstPinnedSchema(
+			material.RequestSchema, defaultSchemaURI(binding, material.SchemaIdentity, "request"),
+			data, binding, "request"); err != nil {
+			return err
+		}
 	}
-	return validateAgainstPinnedSchema(
-		material.RequestSchema, defaultSchemaURI(binding, material.SchemaIdentity, "request"),
-		data, binding, "request")
+	// Host rule on top of the pinned schema (the schema is a contract that may not move without a version):
+	// the callable paths an envelope names must be clean plugin routes.
+	return refuseUnsafeRouteURLs(binding.Kind, data)
 }
 
 // ValidateInteractionResponse checks a terminal response against the pinned
