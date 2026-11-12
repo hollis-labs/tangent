@@ -336,6 +336,39 @@ narrowed local list ({view}) and requires every other tool to be refused, which 
 trust; it was break-checked by widening the list.
 
 
+## Operator commands: ported, dropped, not available
+
+The old binary's maintenance flags and `tangent session` (from `../tangent-previous/cmd/tangent/maintenance.go`,
+`session.go`):
+
+- **Ported:** `tangent database check [--db PATH]` (integrity and foreign-key check, opened read-only, creates nothing) and
+  `tangent database backup --to PATH [--db PATH]` (`VACUUM INTO` from a read transaction, so consistent beside a running
+  server; refuses an existing target, never writes the source, verifies the copy and removes a damaged one, mode 0600).
+  Both run before any module starts and take the data directory's database by default. They replace `--db-check` and
+  `--db-backup`.
+- **Dropped:** `--db-restore` (stop Tangent, move the damaged `tangent.db` (and its `-wal`/`-shm`) aside, copy the backup
+  into place as `tangent.db`, start), `--db-drain` and `--db-repair` (they served the old trigger and single-writer scheme;
+  goose owns the schema now), `tangent session list|revoke` (participant sessions no longer exist; the owner's session is
+  identity's). `--db-compact` is deferred (low value).
+- **Not available after cutover until ported** (content-removing governance operations built around the old single-writer
+  lock, which the framework does not have across processes; the old binary refuses the new database, so they are gone until
+  someone ports them; the owner is being asked which are used, none showed in any timer, schedule, unit or shell history on
+  the server host):
+  - `--retention-plan`: report which interactions and surfaces are past their retention window.
+  - `--retention-apply`: redact every record past its window (needed `--confirm`).
+  - `--retention-history`: print the retention operation log.
+  - `--erase-interaction`: redact one interaction's caller payload, drafts, resolution and adapter text.
+  - `--erase-surface`: redact every payload on one surface, including the legacy room copy.
+  - `--erase-exchange`: redact one relay exchange's body and its receipts' and outbox row's free text.
+  - `--erase-channel`: the same for every exchange in one channel, both directions.
+  - `--erase-drafts`: delete one interaction's draft revisions and write their tombstones.
+  - `--purge-surface`: delete a surface and everything that cascades from it.
+  - `--close-surface`: close a surface and cancel its outstanding interactions (removed no content).
+  - `--expire-capabilities`: delete every expired or revoked host-mediated effect handle.
+  - `--external-deletion-report`: list the external references one interaction holds that Tangent cannot delete.
+  Supporting flags `--actor`, `--policy-ref`, `--backup-dir`, `--dry-run` and `--confirm` go with them. `internal/retention`
+  and its documentation stay in the tree.
+
 ## For the GUI agent (gui-tangent)
 
 What the backend now requires of the SPA, in one place; keep it current.

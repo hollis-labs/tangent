@@ -45,6 +45,9 @@ func run(ctx context.Context, getenv func(string) string) error {
 		// Before the modules start: see migrate.go.
 		return migrateData(ctx, args[1:], os.Stdout)
 	}
+	if args := os.Args[1:]; len(args) > 0 && args[0] == "database" {
+		return databaseCommand(ctx, args[1:], getenv, os.Stdout)
+	}
 	if args := os.Args[1:]; len(args) > 0 && args[0] == "migrate-files" {
 		return migrateFiles(ctx, args[1:], os.Stdout)
 	}

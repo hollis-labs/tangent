@@ -161,6 +161,10 @@ func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []http
 // Only a request that came through hostguard's proxy validation carries X-Forwarded-Proto (it
 // strips it otherwise), so the rewrite cannot be claimed by an unvalidated Host. Nothing else
 // reads Host on /mcp: the caller is the key, not an origin.
+//
+// FRAMEWORK GAP G9 (conversion-notes.md), requested of the Framework Agent: an option on the mcp module
+// to disable the SDK's guard when allowed_hosts is set. Remove this wrapper when it exists; keep
+// TestProxiedGatewayKeepsItsForwardedSessionHeaders.
 func mcpLoopbackHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) && r.Header.Get("X-Forwarded-Proto") == "https" {
