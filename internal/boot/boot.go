@@ -111,7 +111,7 @@ type Config struct {
 
 	// PluginDir is the installed-plugin root. Empty resolves through
 	// pluginpkg.DefaultRoot, which honors TANGENT_PLUGIN_DIR and otherwise
-	// uses ~/.tangent/plugins. It is a field so a test can point a boot at a
+	// uses the plugins directory inside the data directory. It is a field so a test can point a boot at a
 	// directory it owns rather than at the operator's real plugins.
 	PluginDir string
 	// ConfigScopes are host-selected client/environment/project overlays. The

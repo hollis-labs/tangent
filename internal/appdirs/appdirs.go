@@ -16,11 +16,13 @@ const (
 	// DataDirEnv overrides the whole data directory.
 	DataDirEnv = "TANGENT_DATA_DIR"
 
-	// DatabaseFile, SigningKeyFile, SecretsDir and ArtifactsDir are the names inside the data directory.
+	// DatabaseFile, SigningKeyFile, SecretsDir, ArtifactsDir and PluginsDir are the names inside the
+	// data directory.
 	DatabaseFile   = "tangent.db"
 	SigningKeyFile = "identity-signing.key"
 	SecretsDir     = "secrets"
 	ArtifactsDir   = "artifacts"
+	PluginsDir     = "plugins"
 )
 
 // Dirs are the resolved directories.
@@ -56,6 +58,9 @@ func (d Dirs) Secrets() string { return filepath.Join(d.Data, SecretsDir) }
 
 // Artifacts is where artifact bodies are kept.
 func (d Dirs) Artifacts() string { return filepath.Join(d.Data, ArtifactsDir) }
+
+// Plugins is the install root for plugins (TANGENT_PLUGIN_DIR overrides it, see pluginpkg).
+func (d Dirs) Plugins() string { return filepath.Join(d.Data, PluginsDir) }
 
 // Prepare creates the data directory (0700) and the database file (0600) when missing and
 // tightens both when they exist, so private data is never readable by other users. The
