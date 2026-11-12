@@ -33,9 +33,8 @@ func newHost(t *testing.T) *host {
 	base, tg := started(t, nil)
 	jar, _ := cookiejar.New(nil)
 	h := &host{t: t, base: base, tg: tg, owner: &http.Client{Jar: jar, Timeout: 20 * time.Second}}
-	// Test only: the owner is made through first-run setup on a throwaway data directory (the
-	// offline identity bootstrap is the framework's, gap G8).
-	h.ownerDo("POST", "/api/setup", map[string]any{"display_name": "Owner", "username": "owner", "password": "a long test passphrase"})
+	// `started` made the owner offline; the session is an ordinary sign-in.
+	h.ownerDo("POST", "/api/login", map[string]any{"username": "owner", "password": testOwnerPassword})
 	return h
 }
 

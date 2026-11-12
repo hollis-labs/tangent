@@ -47,6 +47,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/room"
+	"github.com/hollis-labs/tangent/internal/stopping"
 	"github.com/hollis-labs/tangent/internal/telemetry"
 	"github.com/hollis-labs/tangent/internal/uicommand"
 )
@@ -294,7 +295,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// readLoop runs until the conn closes or the context is cancelled.
-	h.readLoop(r.Context(), rm, connection)
+	streamCtx, stopStream := stopping.Context(r)
+	defer stopStream()
+	h.readLoop(streamCtx, rm, connection)
 
 	// A socket is a replaceable presentation attachment. Read-loop exit only
 	// updates connection state; explicit Room/Manager close is the authority

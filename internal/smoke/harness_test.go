@@ -119,13 +119,17 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 	if err := os.WriteFile(override, []byte(fmt.Sprintf("httphost:\n  addr: \"127.0.0.1:%d\"\nidentity:\n  bcrypt_cost: 4\n", port)), 0o600); err != nil {
 		t.Fatalf("write config override: %v", err)
 	}
-	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
-	command.Env = append(os.Environ(),
+	env := append(os.Environ(),
 		"HOME="+root,
 		"TANGENT_DATA_DIR="+filepath.Join(root, "data"),
 		"SUBSTRATE_CONFIG="+override,
 		"TANGENT_PLUGIN_DIR="+pluginDir,
 	)
+	// The owner and the smoke key are made the way production makes them: by the host's offline
+	// commands, before the server starts. POST /api/setup is always refused.
+	key := createOwnerAndKey(t, binary, env)
+	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
+	command.Env = env
 	var logs strings.Builder
 	command.Stdout = &logs
 	command.Stderr = &logs
@@ -162,7 +166,7 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		listening := endpoint.Listening(ctx)
 		cancel()
 		if listening {
-			return withOwnerAndKey(t, endpoint), pluginDir
+			return withOwnerSession(t, endpoint, key), pluginDir
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -328,44 +332,63 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 	return pluginDir
 }
 
+// smokePassphrase is the owner's passphrase in the smoke data directory. #nosec G101 -- a throwaway
+// passphrase for an owner that exists only in this test's data directory.
+const smokePassphrase = "a long smoke passphrase" // #nosec G101 -- throwaway, see above.
+
+// createOwnerAndKey runs `tangent identity setup` and `tangent identity key create` against the
+// booted binary's data directory and returns the key. The password goes in on stdin, never in an
+// argument or the environment; the key comes back on stdout.
+func createOwnerAndKey(t *testing.T, binary string, env []string) string {
+	t.Helper()
+	run := func(stdin string, args ...string) string {
+		command := exec.Command(binary, args...) // #nosec G204 -- the binary is the one this test just built.
+		command.Env = env
+		command.Stdin = strings.NewReader(stdin)
+		var stdout, stderr strings.Builder
+		command.Stdout, command.Stderr = &stdout, &stderr
+		if err := command.Run(); err != nil {
+			t.Fatalf("tangent %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
+		}
+		return strings.TrimSpace(stdout.String())
+	}
+	run(smokePassphrase+"\n", "identity", "setup", "--username", "owner")
+	args := []string{"identity", "key", "create", "--name", "smoke", "--stdout"}
+	for _, scope := range smokeKeyScopes {
+		args = append(args, "--scope", scope)
+	}
+	key := run("", args...)
+	if key == "" {
+		t.Fatal("no smoke key was minted")
+	}
+	return key
+}
+
 // owners are the signed-in owner sessions of the booted binaries, by base URL.
 var owners sync.Map
 
-// withOwnerAndKey makes the booted binary's owner and a key for the probes. Test only: a
-// throwaway data directory has no owner until first-run setup makes one (the framework's
-// offline bootstrap is gap G8). The key holds every scope a tool needs except the decision, so the surface it lists is the whole
-// published one.
-func withOwnerAndKey(t *testing.T, endpoint smoke.Endpoint) smoke.Endpoint {
+// withOwnerSession signs the owner in (an ordinary login) for the tests that act as the person,
+// and returns the endpoint carrying the smoke key.
+func withOwnerSession(t *testing.T, endpoint smoke.Endpoint, key string) smoke.Endpoint {
 	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	client := &http.Client{Jar: jar, Timeout: 15 * time.Second}
-	post := func(path string, body map[string]any) map[string]any {
-		encoded, _ := json.Marshal(body)
-		request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL+path, bytes.NewReader(encoded))
-		request.Header.Set("Content-Type", "application/json")
-		request.Header.Set("X-Requested-With", "smoke")
-		request.Header.Set("Origin", endpoint.BaseURL)
-		response, err := client.Do(request)
-		if err != nil {
-			t.Fatalf("POST %s: %v", path, err)
-		}
-		defer func() { _ = response.Body.Close() }()
-		raw, _ := io.ReadAll(response.Body)
-		if response.StatusCode/100 != 2 {
-			t.Fatalf("POST %s: %s: %s", path, response.Status, raw)
-		}
-		var out map[string]any
-		_ = json.Unmarshal(raw, &out)
-		return out
+	encoded, _ := json.Marshal(map[string]any{"username": "owner", "password": smokePassphrase})
+	request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL+"/api/login", bytes.NewReader(encoded))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Requested-With", "smoke")
+	request.Header.Set("Origin", endpoint.BaseURL)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("POST /api/login: %v", err)
 	}
-	// #nosec G101 -- a throwaway passphrase for an owner that exists only in this test's data directory.
-	post("/api/setup", map[string]any{"display_name": "Owner", "username": "owner", "password": "a long smoke passphrase"})
-	key, _ := post("/api/identity/keys", map[string]any{"name": "smoke", "scopes": smokeKeyScopes})["key"].(string)
-	if key == "" {
-		t.Fatal("no smoke key was minted")
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode/100 != 2 {
+		raw, _ := io.ReadAll(response.Body)
+		t.Fatalf("POST /api/login: %s: %s", response.Status, raw)
 	}
 	owners.Store(endpoint.BaseURL, client)
 	return endpoint.WithKey(key)

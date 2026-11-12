@@ -15,6 +15,7 @@ import (
 
 	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/interaction"
+	"github.com/hollis-labs/tangent/internal/stopping"
 )
 
 const (
@@ -253,6 +254,8 @@ func (h *artifactsHTTPHandler) rendered(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *artifactsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
+	streamCtx, stopStream := stopping.Context(r)
+	defer stopStream()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -280,7 +283,7 @@ func (h *artifactsHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 	defer lifetime.Stop()
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-streamCtx.Done():
 			return
 		case <-lifetime.C:
 			return

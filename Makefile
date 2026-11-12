@@ -1,4 +1,4 @@
-.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status install-macos install-macos-dry-run uninstall-macos
+.PHONY: help check-node verify-supported build build-ui build-go build-app dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes db-migrate db-rollback launch-agent-render launch-agent-install launch-agent-uninstall launch-agent-status install-macos install-macos-dry-run uninstall-macos
 
 # The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
 # (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
@@ -162,6 +162,9 @@ lint-go: ## golangci-lint (incl. the transport-boundary gate) + go vet + gofmt c
 	else \
 		echo "golangci-lint not installed — skipping (install: https://golangci-lint.run)"; \
 	fi
+
+scan-public: ## Scan the working tree for secret-shaped literals and private paths (the framework's scanner)
+	go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree
 
 lint-frontend: check-node ## biome check
 	cd ui && npm run lint

@@ -80,7 +80,7 @@ func (t *tangent) serveWith(ctx context.Context, extra []mountSpec) error {
 	}
 	mounts := make([]httphost.Mount, 0, len(extra))
 	for _, route := range table.Outside() {
-		mounts = append(mounts, httphost.Mount{Pattern: route.Pattern, Handler: untilShutdown(ctx, route.Handler)})
+		mounts = append(mounts, httphost.Mount{Pattern: route.Pattern, Handler: route.Handler})
 	}
 	for _, m := range extra {
 		if !m.Open {
@@ -88,7 +88,7 @@ func (t *tangent) serveWith(ctx context.Context, extra []mountSpec) error {
 		}
 		mounts = append(mounts, m.Mount)
 	}
-	handler, err := t.handler(cfg, untilShutdown(ctx, table.API()), mounts)
+	handler, err := t.handler(cfg, table.API(), mounts)
 	if err != nil {
 		return err
 	}

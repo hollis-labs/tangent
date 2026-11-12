@@ -74,6 +74,10 @@ jobs:
       - name: go vet
         run: go vet ${{ steps.server-packages.outputs.packages }}
 
+      # The framework's own scanner, not a copy: secret-shaped literals and private paths in the tree.
+      - name: Public-readiness scan
+        run: go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree
+
       - name: gofmt check
         run: |
           unformatted=$(gofmt -l . | grep -v '^internal/server/ui_dist/' || true)

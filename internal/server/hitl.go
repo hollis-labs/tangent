@@ -18,6 +18,7 @@ import (
 	"github.com/hollis-labs/tangent/internal/hitl"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/participant"
+	"github.com/hollis-labs/tangent/internal/stopping"
 )
 
 const (
@@ -172,7 +173,9 @@ func (h *hitlHTTPHandler) events(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), h.eventLifetime)
+	stopCtx, stopStream := stopping.Context(r)
+	defer stopStream()
+	ctx, cancel := context.WithTimeout(stopCtx, h.eventLifetime)
 	defer cancel()
 	stream, err := h.eventStream.open(ctx, r)
 	if err != nil {

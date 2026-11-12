@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
 	"os"
 	"sync/atomic"
 
@@ -33,7 +32,7 @@ const (
 	envDisablePluginHealthGate = "TANGENT_PLUGIN_HEALTH_GATE_DISABLE"
 	envListLegacyToolNames     = "TANGENT_MCP_LEGACY_TOOL_NAMES"
 	envEventsDisabled          = "TANGENT_EVENTS_DISABLED"
-	envTetherToken             = "TANGENT_TETHER_TOKEN" //nolint:gosec // the variable name, not a credential
+	envTetherSendOnly          = "TANGENT_TETHER_TOKEN"
 )
 
 // activeTools is the live MCP server, for the tools/list filter that must be
@@ -107,7 +106,7 @@ func (t *tangent) compose(cfg settings.Settings) (*boot.Services, *server.Table,
 		ReplyMailFrom:           cfg.TetherSender,
 		// The send-only token moves to the secrets module with slice (d); until
 		// then the host's environment supplies it, never the config file.
-		ReplyMailToken: getenv(envTetherToken),
+		ReplyMailToken: getenv(envTetherSendOnly),
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -123,18 +122,6 @@ func httpAddr(app *module.App) string {
 		return addr
 	}
 	return "127.0.0.1:8080"
-}
-
-// untilShutdown cancels a request's context when the application's does:
-// httphost's Shutdown does not end streams or hijacked connections, so every
-// long-lived handler must see the application end.
-func untilShutdown(app context.Context, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
-		defer context.AfterFunc(app, cancel)()
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 // toolScope is the scope a tool needs on the running server (tests).

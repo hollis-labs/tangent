@@ -157,3 +157,24 @@ func TestOverridePathsAreHonoured(t *testing.T) {
 		_ = run.Stop(context.Background())
 	}
 }
+
+// The offline owner and key commands open the database and the signing key and serve nothing: no
+// listener, no tool server.
+func TestPlanForTheIdentityCommands(t *testing.T) {
+	for _, args := range [][]string{{"identity", "setup", "--username", "owner"}, {"identity", "key", "create", "--stdout"}} {
+		mods, prepare := plan(args)
+		if !prepare {
+			t.Errorf("%v: the data directory must be created for the owner to live in it", args)
+		}
+		for _, m := range []string{"database", "identity", "secrets", "auth", "cli"} {
+			if !slices.Contains(mods, m) {
+				t.Errorf("%v does not start %s", args, m)
+			}
+		}
+		for _, m := range []string{"httphost", "mcp"} {
+			if slices.Contains(mods, m) {
+				t.Errorf("%v starts %s, which serves", args, m)
+			}
+		}
+	}
+}

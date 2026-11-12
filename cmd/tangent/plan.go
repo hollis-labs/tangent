@@ -13,6 +13,9 @@ var readOnly = []string{"config", "logging", "health", "cli"}
 // config, health, help, completion) starts no module that opens a file and creates nothing, so
 // running one without TANGENT_DATA_DIR cannot touch the live directory of the app name.
 //
+// The identity commands (the offline owner and key bootstrap) are the exception: they open the
+// database and the signing key but listen on nothing.
+//
 // Every argument that does not start with "-" counts as a command word. That is right only while
 // the root command has no global flag that takes a value; TestRootHasNoValueFlags fails when one
 // is added, and then plan must learn it.
@@ -28,6 +31,11 @@ func plan(args []string) (modules []string, prepare bool) {
 	}
 	if len(words) == 0 || words[0] == "serve" {
 		return substrateModules, true
+	}
+	if words[0] == "identity" {
+		// The offline owner and key commands work on the database and the signing key and
+		// serve nothing; they create the data directory, which is where the owner has to live.
+		return pick(append(slices.Clone(readOnly), "secrets", "auth", "database", "identity")), true
 	}
 	return pick(readOnly), false
 }

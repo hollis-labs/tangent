@@ -41,12 +41,14 @@ Each says what was seen, and what was done meanwhile.
    owner must confirm before cutover, and `internal/smoke`'s catalog classification still expects `transport: sse` and
    `url: <base>/sse` for Tangent's entry: it must change with the catalog entry (a correctly migrated entry would read
    `CATALOG_STALE` today).
-6. **G8: identity has no offline bootstrap and `/api/setup` is open on an empty database.** With the identity module
-   selected, the first caller of `POST /api/setup` becomes the owner (`*`). There is no config key to close it and
-   no programmatic way to create the owner or a key (`Service` has `User`, `Verify` and key rotation only). The plan
-   forbids first-run setup over HTTP, so the product path waits for the framework's offline bootstrap. Tests create
-   their owner through `/api/setup` on a throwaway data directory only, and so do hand checks of the built binary
-   on a throwaway data directory (nothing real is behind it).
+6. **G8: identity had no offline bootstrap and `/api/setup` was open on an empty database. Closed by the pin at `d453ac8`.**
+   `tangent identity setup --username NAME` creates the first owner on the host (password from a no-echo prompt or the
+   first line of stdin, never an argument or the environment) and `tangent identity key create --name N --scope S...
+   (--out PATH | --stdout)` a key. `POST /api/setup` is always refused (403 `setup_offline`). The tests create the owner
+   the same way before the server serves (`identity.Service.SetupOwner`, which the command calls; the smoke harness runs
+   the shipped binary's own commands) and sign in with an ordinary `POST /api/login`. The commands start only the
+   modules they need (`plan.go`): no listener, no tool server.
+
 7. **Plugin children cannot call back (found in slice c; needs a decision).** A subprocess plugin reaches Tangent's tools
    through `/mcp` at `TANGENT_MCP_URL` (`pkg/plugin/hostclient`) with no credential: it was a local caller. `/mcp` now
    refuses a request without one, so the first-party `runner`, `tesseract` and `torque` plugins can no longer drive
@@ -60,7 +62,7 @@ Each says what was seen, and what was done meanwhile.
 8. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
    `libs/ui/ui-go` (0.4.0 to 0.1.0) and `libs/harness/core` (0.13.0 to 0.16.0) to the BOM versions and the existing
    packages still build and vet.
-9. **Hygiene.** `scripts/scan-public --tree` reports 86 findings in the inherited tree (test fixtures that look like
+9. **Hygiene.** `scan-public --tree` (now the framework's: `go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree`, the copy in scripts/ is gone; CI step and `make scan-public`) reported 86 findings in the inherited tree (test fixtures that look like
    secrets, redaction test data, macOS home paths, two private-network addresses and two internal host names in
    `docs/mcp-integration.md`, a personal home path in `tangent.cerberus.yaml`). Most sit in code the port deletes; the
    rest are fixed or, where provably not a secret, proposed to the driver for the allowlist. None has been
@@ -191,3 +193,17 @@ Tangent is in use on the machines these tests run on. `internal/testenv` isolate
 a test starts (HOME and every XDG variable in a temporary tree, a clean environment); `TestNoUnisolatedBinaryRuns`
 fails when a test file starts a process any other way, with a short list of pre-Substrate test files exempt until the
 code they test is ported or removed. `scripts/test` runs `go test` under the same isolation.
+
+## Pin d453ac8
+
+One bump of Substrate (`bac8c60` to `d453ac8`), nothing pinned between. What it changed here:
+- The offline owner and key commands (gap 6 above).
+- `httphost.Stopping(r)`: every long-lived handler (the five event streams and `/ws`) takes its context from
+  `internal/stopping.Context(r)`, which ends with the request or when the server begins to stop. `untilShutdown` is gone;
+  the SIGTERM timing tests (`TestG5ShutdownWithOpenConnections`) are unchanged and pass.
+- Identity refuses to create a signing key when the database already holds users or keys and no key file exists
+  (`identity.allow_new_signing_key` overrides). For this app: a restored database without its key file will not start.
+- `scan-public` is the framework's command (`go run github.com/hollis-labs/substrate/cmd/substrate scan-public --tree`),
+  in CI and as `make scan-public`; the copied script is deleted.
+- Not in the pin, so still ours: the Host check (`internal/hostguard`), the cross-process open-and-migrate lock,
+  `queue.reservation_secs`, the MCP JSON-response option.

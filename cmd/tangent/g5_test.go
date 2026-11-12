@@ -17,24 +17,28 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/hollis-labs/substrate/modules/httphost"
+
+	"github.com/hollis-labs/tangent/internal/stopping"
 )
 
 // Gap G5 (answered: they do; the real /ws is Tangent's own mount, so these stand-ins sit under /g5): do WebSocket upgrades and long-lived streams survive the whole chain (Host check,
 // identity middleware, guard, apierr.Normalize, handler)? These mounts stand in for Tangent's
 // /ws and event streams: an echo socket and a stream with a heartbeat.
-func g5Mounts(ctx context.Context, _ *tangent) []mountSpec {
+func g5Mounts(_ context.Context, _ *tangent) []mountSpec {
 	ws := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, nil) // default: same-origin only
 		if err != nil {
 			return
 		}
 		defer func() { _ = c.CloseNow() }()
+		ctx, stop := stopping.Context(r)
+		defer stop()
 		for {
-			typ, b, err := c.Read(r.Context())
+			typ, b, err := c.Read(ctx)
 			if err != nil {
 				return
 			}
-			if err = c.Write(r.Context(), typ, b); err != nil {
+			if err = c.Write(ctx, typ, b); err != nil {
 				return
 			}
 		}
@@ -48,14 +52,14 @@ func g5Mounts(ctx context.Context, _ *tangent) []mountSpec {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
 		fl.Flush()
+		ctx, stop := stopping.Context(r)
+		defer stop()
 		beat := time.NewTicker(streamBeat)
 		defer beat.Stop()
 		n := 0
 		for {
 			select {
-			case <-r.Context().Done():
-				return
-			case <-ctx.Done(): // application shutdown: httphost's Shutdown does not end streams
+			case <-ctx.Done(): // the request ended or the server began to stop
 				return
 			case <-beat.C:
 				n++
@@ -105,9 +109,8 @@ func g5Setup(t *testing.T) *g5 {
 		_ = json.Unmarshal(out, &m)
 		return m
 	}
-	// Test only: the owner is made through first-run setup on a throwaway data directory. The
-	// product plan has no setup over HTTP (the offline identity bootstrap is the framework's).
-	do("POST", "/api/setup", map[string]any{"display_name": "Owner", "username": "owner", "password": "a long test passphrase"})
+	// `started` made the owner offline; the session is an ordinary sign-in.
+	do("POST", "/api/login", map[string]any{"username": "owner", "password": testOwnerPassword})
 	k := do("POST", "/api/identity/keys", map[string]any{"name": "ws-test", "scopes": []string{"tangent.test"}})
 	key, _ := k["key"].(string)
 	if key == "" {

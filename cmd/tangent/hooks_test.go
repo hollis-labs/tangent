@@ -11,6 +11,7 @@ import (
 
 	"github.com/hollis-labs/substrate/boot"
 	"github.com/hollis-labs/substrate/modules/database"
+	"github.com/hollis-labs/substrate/modules/identity"
 
 	"github.com/hollis-labs/tangent/internal/persistence"
 )
@@ -31,6 +32,10 @@ func bootWith(ctx context.Context, getenv func(string) string, mutate func(map[s
 	return boot.StartWith(ctx, substrateApp, substrateModules, string(raw), bootOptions(getenv, true, substrateModules))
 }
 
+// testOwnerPassword is the passphrase of the owner every started stack has. #nosec G101 -- a
+// throwaway passphrase for an owner that exists only in a test's temporary data directory.
+const testOwnerPassword = "a long test passphrase"
+
 // started boots the real stack on a temp data directory and serves the full handler chain, plus
 // mounts, on a free loopback port. It returns the base URL and the app. serve's ctx is
 // cancelled and joined on cleanup.
@@ -50,6 +55,14 @@ func started(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mount
 	if err != nil {
 		cancel()
 		t.Fatal(err)
+	}
+	// The owner is made the way production makes it: offline, on the host, before the server
+	// serves (identity.Service.SetupOwner is what `tangent identity setup` calls). POST /api/setup
+	// is always refused.
+	if _, err = identity.From(run.App).SetupOwner(ctx, identity.OwnerInput{Username: "owner", DisplayName: "Owner", Password: testOwnerPassword}); err != nil {
+		cancel()
+		_ = run.Stop(context.Background())
+		t.Fatalf("create the owner: %v", err)
 	}
 	addr := make(chan net.Addr, 1)
 	tg := &tangent{app: run.App, ready: func(a net.Addr) { addr <- a }}
