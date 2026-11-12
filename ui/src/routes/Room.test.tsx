@@ -525,6 +525,27 @@ describe("<Room> submissions the server refuses", () => {
     );
   });
 
+  it("asks who is signed in when the server refuses a frame as not_authorized", async () => {
+    const handlers = mockConnectOnce();
+    register("tangent.form-collect", FormCollectAdapter);
+    mockFetchForRoom();
+
+    renderAt("/r/room-a");
+    await waitFor(() => expect(handlers.onEnvelope).not.toBeNull());
+    await act(async () => {
+      handlers.onServerError?.({
+        code: "not_authorized",
+        message: "not allowed",
+        lease: null,
+      });
+    });
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/identity/profile", expect.anything());
+    expect(screen.getByTestId("connection-error")).toHaveTextContent(
+      "Not submitted: this sign-in is not allowed to answer here. Sign in as the owner, then try again.",
+    );
+  });
+
   it("keeps the answers through a take-over after a refusal", async () => {
     const handlers = mockConnectOnce();
     register("tangent.form-collect", FormCollectAdapter);
