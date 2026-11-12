@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { TangentExternalReviewEnvelope } from "@/generated/envelope-types";
 import { apiFetch } from "@/lib/api";
 import type { EnvelopeComponentProps } from "@/lib/envelope-registry";
+import { isPluginRoutePath } from "@/lib/plugin-route";
 
 interface ReviewState {
   status: string;
@@ -13,7 +14,6 @@ interface ReviewState {
   complete?: boolean;
   disabled_actions?: string[];
 }
-const pluginPath = /^\/api\/plugins\/[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._/-]*$/;
 
 // Only the plugin knows the application or what its actions do.
 export function ExternalReview({
@@ -32,7 +32,8 @@ export function ExternalReview({
   const [options, setOptions] = useState<Record<string, string>>({});
   const lock = useRef(false);
   const sequence = useRef(0);
-  const canCall = !!roomID && pluginPath.test(data.action_url) && pluginPath.test(data.state_url);
+  const canCall =
+    !!roomID && isPluginRoutePath(data.action_url) && isPluginRoutePath(data.state_url);
   const stateURL = data.state_url;
   const envelopeID = request.id;
   useEffect(() => {
