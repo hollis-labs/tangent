@@ -189,6 +189,17 @@ type inboundMessage struct {
 	DraftRevision int64           `json:"draftRevision,omitempty"`
 }
 
+// outboundAccepted tells the sender that its response or cancel was durably accepted. Without it the only
+// frame that follows a successful response is the connection state, which a client cannot tell from "still
+// waiting". Revision is the one the client sent, so it can match the frame to its own request. Clients that do
+// not know the type ignore it.
+type outboundAccepted struct {
+	Type       string `json:"type"`
+	EnvelopeID string `json:"envelopeId"`
+	Revision   int64  `json:"revision"`
+	Outcome    string `json:"outcome"`
+}
+
 // outboundError reports a rejected client action.
 type outboundError struct {
 	Type         string          `json:"type"`
@@ -392,6 +403,7 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 			h.handleDispositionConflict(ctx, rm, c, msg, err)
 			return
 		}
+		h.sendAccepted(ctx, c, msg, "resolved")
 		rm.BroadcastConnectionState(ctx)
 	case "cancel":
 		if msg.EnvelopeID == "" {
@@ -408,6 +420,7 @@ func (h *Handler) dispatch(ctx context.Context, rm *room.Room, c *room.Connectio
 			h.handleDispositionConflict(ctx, rm, c, msg, err)
 			return
 		}
+		h.sendAccepted(ctx, c, msg, "canceled")
 		rm.BroadcastConnectionState(ctx)
 	case "draft":
 		if msg.EnvelopeID == "" || len(msg.Draft) == 0 {
@@ -585,6 +598,13 @@ func (h *Handler) reportLeaseConflict(
 	h.logger.Info("ws: resolver lease conflict",
 		"room", rm.ID, "connection", c.ID(), "envelope", msg.EnvelopeID)
 	h.reportPresentationRefusal(ctx, rm, c, msg, errorCodeResolverLeaseHeld)
+}
+
+func (h *Handler) sendAccepted(ctx context.Context, c *room.Connection, msg inboundMessage, outcome string) {
+	frame := outboundAccepted{Type: "response.accepted", EnvelopeID: msg.EnvelopeID, Revision: msg.Revision, Outcome: outcome}
+	if err := c.WriteJSON(ctx, frame); err != nil {
+		h.logger.Debug("ws: accepted frame send failed", "connection", c.ID(), "err", err)
+	}
 }
 
 func (h *Handler) sendError(ctx context.Context, c *room.Connection, frame outboundError) {

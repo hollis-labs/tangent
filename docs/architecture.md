@@ -272,6 +272,11 @@ connections rather than one socket, each with a server-issued `connection_id`:
   the presentation revision still answers "is this client acting on the frame
   it was shown". Revisions are per connection, so a stale view is refused with
   `code:"stale_presentation"` and immediately re-presented.
+- **Acceptance is acknowledged.** Once a `response` or `cancel` is durably accepted, the sender gets
+  `{"type":"response.accepted","envelopeId":…,"revision":<the one it sent>,"outcome":"resolved"|"canceled"}` before the
+  connection-state broadcast. Before it existed, a client could not tell an accepted answer from one still waiting (the
+  only frame that followed was the connection state). A refused one gets its `error` frame and no acknowledgement.
+  Clients that do not know the type ignore it.
 - **Durable synchronization.** On attach — and on a client-requested `resync` —
   the server sends a `sync` frame built by reading the canonical interaction and
   surface revisions behind each live presentation, not the room's in-memory

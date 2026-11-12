@@ -608,7 +608,7 @@ func getRoomEnvelopeID(t *testing.T, mgr *room.Manager, roomID string) string {
 
 // readFrame reads the next presentation frame and unmarshals it.
 //
-// Connection-lifecycle frames ("connection", "sync") interleave with
+// Connection-lifecycle frames ("connection", "sync") and the "response.accepted" acknowledgement interleave with
 // presentations by design — a client is told who else is attached and which
 // durable revisions it holds independently of any envelope — so they are
 // skipped here.
@@ -629,7 +629,7 @@ func readFrame(t *testing.T, c *websocket.Conn, timeout time.Duration) map[strin
 			t.Fatalf("unmarshal: %v", err)
 		}
 		switch m["type"] {
-		case "connection", "sync":
+		case "connection", "sync", "response.accepted":
 			continue
 		default:
 			return m
