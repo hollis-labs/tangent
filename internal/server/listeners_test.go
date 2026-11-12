@@ -21,7 +21,7 @@ func TestProxiedHTTPAddressValidation(t *testing.T) {
 			t.Errorf("valid address %q: %v", addr, err)
 		}
 	}
-	for _, addr := range []string{":7844", "0.0.0.0:7844", "100.112.71.40:7844", "localhost:7844", "[::]:7844", "127.0.0.1", "127.0.0.1:http", "127.0.0.1:-1", "127.0.0.1:65536"} {
+	for _, addr := range []string{":7844", "0.0.0.0:7844", "192.0.2.10:7844", "localhost:7844", "[::]:7844", "127.0.0.1", "127.0.0.1:http", "127.0.0.1:-1", "127.0.0.1:65536"} {
 		if _, err := New(Config{ProxiedHTTPAddr: addr}); err == nil || !strings.Contains(err.Error(), EnvProxiedHTTPAddr) {
 			t.Errorf("invalid address %q: %v", addr, err)
 		}

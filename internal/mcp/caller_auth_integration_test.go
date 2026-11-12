@@ -441,9 +441,9 @@ func TestCallerAuthRefusesCaddyForwardingWithoutMarker(t *testing.T) {
 			request.RemoteAddr = "127.0.0.1:1234"
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Accept", "application/json, text/event-stream")
-			request.Header.Set("X-Forwarded-For", "100.74.49.44")
+			request.Header.Set("X-Forwarded-For", "198.51.100.20")
 			request.Header.Set("X-Forwarded-Proto", "https")
-			request.Header.Set("X-Forwarded-Host", "tangent.hub.nanite.cloud")
+			request.Header.Set("X-Forwarded-Host", "hub.tangent.example.test")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") == "" {

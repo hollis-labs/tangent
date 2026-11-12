@@ -9,7 +9,7 @@
 
 The owner wants messages from Tether in one Tangent inbox, with a short summary
 above the original and an explicit reply reaching the sender. DEC-051 scopes
-the MVP to the owner's own agent-os setup: Tether and Tangent only. Every
+the MVP to the owner's own agent-host setup: Tether and Tangent only. Every
 message presented to this consumer is processed; the MVP filters nothing and
 makes no attention decision. Nanite and Torque consumers, automatic replies,
 JEV, filtering, batching, and the right-hand assistant are outside this slice.

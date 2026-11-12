@@ -1212,7 +1212,7 @@ share HTTP deadlines and graceful shutdown.
 
 The pilot's hub-only TCP ingress at
 `~/.local/share/tangent-pilot/ingress/hub-only-proxy.py` listens on
-`100.112.71.40:7853` and admits only hub source IP `100.74.49.44`. The hub Caddy
+`192.0.2.10:7853` and admits only hub source IP `198.51.100.20`. The hub Caddy
 uses it for MCP/SSE and browser/inbox/WS, so keep the forwarder running and
 retarget its `TARGET_PORT` from `7843` to `7844` after enabling the proxied
 listener. Forwarding to the main port lets direct header-free hub requests
@@ -1236,7 +1236,7 @@ Deploy in this order:
    ingress user-unit configuration, set `TARGET_PORT=7844`, and restart the
    forwarder. Preserve its source-IP allowlist and current Caddy Host/Origin
    rewrites. From the hub, require 401 for tokenless and invalid-token MCP/SSE
-   requests directly to `100.112.71.40:7853`, including requests without proxy
+   requests directly to `192.0.2.10:7853`, including requests without proxy
    headers. Verify the configured gateway still works.
 4. Where Caddy still targets the main listener, its operator can back up the
    configuration and add the
@@ -1247,9 +1247,9 @@ Deploy in this order:
    even if the explicit marker is absent. This repository change does not edit
    `/etc/caddy/Caddyfile` or reload Caddy.
 5. From worker-1, send credential-free `initialize` and `tools/list` POSTs to
-   `https://tangent.nanite.cloud/mcp`; both must return 401. Repeat with
+   `https://tangent.example.test/mcp`; both must return 401. Repeat with
    `Authorization: Bearer intentionally-invalid` and require 401. A tokenless
-   GET of `https://tangent.nanite.cloud/sse` must also return 401.
+   GET of `https://tangent.example.test/sse` must also return 401.
 6. Using two separately provisioned producer secret references, enqueue a HITL
    item as producer A. Get that item as producer B while declaring A in the
    caller arguments: require the tool's `not_found` error, matching an unknown
