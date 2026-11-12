@@ -19,6 +19,18 @@ const envelope = {
     ],
   },
 };
+const refusedPaths = [
+  "/api/plugins/x/a/../../../inbox/items/abc/archive",
+  "/api/plugins/x/%2e%2e/%2e%2e/inbox/items/abc/archive",
+  "/api/plugins/x/a%2f..%2f..%2finbox",
+  "/api/plugins/x/./a",
+  "/api/plugins/x//a",
+  "/api/plugins/x/a?to=/api/inbox",
+  "/api/plugins/x/a#frag",
+  "/api/hitl/items/1/resolve",
+  "//evil.test/api/plugins/x/a",
+  "https://evil.test/api/plugins/x/a",
+];
 const reply = (value: unknown, ok = true) => ({ ok, json: async () => value });
 afterEach(() => vi.unstubAllGlobals());
 describe("external review", () => {
@@ -97,5 +109,32 @@ describe("external review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Merge" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The commit changed");
     expect(submit).not.toHaveBeenCalled();
+  });
+  it("makes no request and offers no action when either URL is a refused path", async () => {
+    for (const bad of refusedPaths) {
+      for (const field of ["state_url", "action_url"] as const) {
+        const fetch = vi.fn();
+        vi.stubGlobal("fetch", fetch);
+        const { unmount } = render(
+          <ExternalReview
+            envelope={{ ...envelope, data: { ...envelope.data, [field]: bad } }}
+            roomID="room-1"
+            onSubmit={vi.fn()}
+            onCancel={vi.fn()}
+          />,
+        );
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "The review plugin route is unavailable.",
+        );
+        for (const name of ["Approve", "Merge"]) {
+          const button = screen.getByRole("button", { name }) as HTMLButtonElement;
+          expect(button.disabled, `${field} ${bad}`).toBe(true);
+          fireEvent.click(button);
+        }
+        await Promise.resolve();
+        expect(fetch, `${field} ${bad}`).not.toHaveBeenCalled();
+        unmount();
+      }
+    }
   });
 });
