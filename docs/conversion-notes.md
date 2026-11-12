@@ -150,9 +150,10 @@ how the host admits it, not to Tangent's scopes.
 **The browser participant** is the signed-in user: `Ref user:<id>`, authority `tangent-identity`, assurance
 `identity-session` (rank 3 in `interaction.AssuranceRank`, so it supersedes the presenter a lower assurance opened, as
 the operator session did). API-key callers are recorded as `standalone-local:<key name>` / `key-verified`, gateway
-producers as `gateway:<name>` / `adapter-verified`; `identity-session` and `key-verified` map to the event stream's
-`actor.verified: "token"` (a credential the host verified, which `operator-token` was) and are accepted in the payload's
-assurance vocabulary (`internal/events/approval.go`). Existing `participant_sessions` rows (1 282 in the rehearsal copy)
+producers as `gateway:<name>` / `adapter-verified`; `identity-session` maps to the event stream's `actor.verified: "token"` (a person proved themselves, which `operator-token`
+was) and `key-verified` to `"claimed"`: an agent's key is not a person, so the two are not collapsed (ruling 2; the
+proposed vocabulary is in the driver's mail). Both are accepted, distinct, in the payload's assurance vocabulary
+(`internal/events/approval.go`). Existing `participant_sessions` rows (1 282 in the rehearsal copy)
 are migrated history the new code never reads. Cross-origin protection: `Sec-Fetch-Site`/`Origin` on every route
 (`sameOriginGuard`), and identity requires the SPA to send `X-Requested-With` on every unsafe request (for gui-tangent).
 

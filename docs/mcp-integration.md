@@ -194,7 +194,7 @@ your checkout.
 ```bash
 cerberus resource status tangent-dev    # what the supervisor believes
 cerberus resource deploy tangent-dev    # rebuild and restart — the way to restart
-cerberus resource doctor  tangent-dev   # reads /readyz, not just supervisor state
+cerberus resource doctor  tangent-dev   # reads /api/health/ready (needs a tangent.view key), not just supervisor state
 ```
 
 Do not run `./tangent` by hand while a supervisor owns the same port: you get
@@ -251,7 +251,7 @@ runtime is singular before debugging anything else:
 ```bash
 curl -fsS http://127.0.0.1:7842/healthz          # -> {"status":"ok","probe":"liveness"}
 lsof -nP -iTCP:7842 -sTCP:LISTEN                 # -> exactly one PID
-curl -fsS http://127.0.0.1:7842/readyz | jq .    # -> "status":"ok" and five passing checks
+curl -fsS -H "Authorization: Bearer $KEY" http://127.0.0.1:7842/api/health/ready | jq .    # -> "status":"ok" and five passing checks
 ```
 
 If `lsof` shows more than one listener, or `healthz` answers but your
@@ -261,11 +261,11 @@ authorities. Stop the unmanaged copy, not the supervised one.
 `/healthz` proves only that the process is responding — it deliberately
 touches no dependency, because the supervisor restarts on it and a probe
 that failed on a slow query would restart a repairable process in a loop.
-**A 200 from `/healthz` is not evidence that Tangent can serve.** `/readyz`
-is: it checks the database, the schema version against the version the
+**A 200 from `/healthz` is not evidence that Tangent can serve.** `/api/health/ready`
+(a key holding `tangent.view`) is: it checks the database, the schema version against the version the
 running binary embeds, the definition registry, the renderer host, and the
 delivery worker, and returns 503 with a per-check `operator_action` when any
-of them fails. Per-kind answers are at `/healthz/capability/{kind}`, and the
+of them fails. Per-kind answers are at `/api/health/capability/{kind}`, and the
 same three reports are available over MCP as `tangent_health_get` for a
 client that has no HTTP path to the host. The MCP report additionally carries
 the plugin inventory — which plugins loaded, which refused and why — so that is
@@ -273,7 +273,7 @@ read rather than inferred from a tool list, which cannot see a plugin that
 contributes a kind and no tool.
 
 A common real finding here is a schema behind the binary: `/healthz` answers,
-`/readyz` reports `migrations: fail`, and the fix is `tangent --migrate-only`
+`/api/health/ready` reports `migrations: fail`, and the fix is a redeploy (the database module migrates at start)
 followed by a redeploy — not a restart loop.
 
 **A supervisor's `status: running` is not a live probe.** It reports what the

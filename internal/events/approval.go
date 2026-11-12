@@ -62,16 +62,18 @@ type Principal struct {
 }
 
 // Verified maps a recorded assurance to actor.verified, whose vocabulary is
-// token, claimed or none (architect ruling on tangent#126). "token" is a
-// credential the host verified: the operator token (CW-20261016-0174) while it
-// existed, and now the identity module's signed-in session and API key, which
-// replace it. Any other caller-asserted assurance is "claimed"; the assurance itself rides in the
-// payload (resolver.assurance, requester_assurance). No recorded assurance is
-// "none". Approvals are not a security boundary yet: nothing may gate on these
-// events.
+// token, claimed or none (architect ruling on tangent#126). "token" has always meant a person
+// proved themselves to the host: the operator token (CW-20261016-0174) while it existed, and now
+// the identity module's signed-in session, its direct successor. An agent's API key is a
+// credential the host verified too, but it is not a person, so it is NOT folded into "token":
+// it reports "claimed" (what every non-person caller reported before) until the vocabulary gains
+// a value for a verified machine credential. The distinction is not lost: the assurance itself
+// rides in the payload (resolver.assurance, requester_assurance) as identity-session or
+// key-verified. No recorded assurance is "none". Approvals are not a security boundary yet:
+// nothing may gate on these events.
 func Verified(assurance string) string {
 	switch assurance {
-	case "operator-token", "identity-session", "key-verified":
+	case "operator-token", "identity-session":
 		return "token"
 	case "":
 		return "none"
