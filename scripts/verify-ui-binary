@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Prove that a built tangent binary serves the real SPA and not an empty embed.
+#   usage: scripts/verify-ui-binary PATH/TO/tangent
+# Starts the binary on a free loopback port with HOME and every XDG directory in a temp
+# directory (it never touches a real data directory), then requires: /healthz answers, / returns
+# the SPA's index page, and the script bundle that page names is served and not empty.
+# An unbuilt frontend embeds only dist/.gitkeep, which compiles and serves nothing; this fails then.
+set -euo pipefail
+
+bin=${1:?usage: scripts/verify-ui-binary PATH/TO/tangent}
+[ -x "$bin" ] || { echo "verify-ui-binary: $bin is not an executable file" >&2; exit 2; }
+bin=$(cd "$(dirname "$bin")" && pwd)/$(basename "$bin")
+
+tmp=$(mktemp -d)
+pid=
+cleanup() { [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null; chmod -R u+w "$tmp" 2>/dev/null; rm -rf "$tmp"; }
+trap cleanup EXIT
+
+port=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
+printf 'httphost:\n  addr: "127.0.0.1:%s"\n' "$port" > "$tmp/config.yaml"
+base=http://127.0.0.1:$port
+
+(cd "$tmp" && unset TANGENT_DATA_DIR TANGENT_DB_PATH TANGENT_PLUGIN_DIR && HOME="$tmp" XDG_DATA_HOME="$tmp/data" XDG_STATE_HOME="$tmp/state" XDG_CACHE_HOME="$tmp/cache" \
+  XDG_CONFIG_HOME="$tmp/config" SUBSTRATE_CONFIG="$tmp/config.yaml" exec "$bin" serve) >"$tmp/log" 2>&1 &
+pid=$!
+
+for _ in $(seq 1 60); do
+  curl -fsS "$base/healthz" >/dev/null 2>&1 && break
+  kill -0 "$pid" 2>/dev/null || { echo "verify-ui-binary: the binary exited:" >&2; cat "$tmp/log" >&2; exit 1; }
+  sleep 0.5
+done
+curl -fsS "$base/healthz" >/dev/null || { echo "verify-ui-binary: /healthz never answered" >&2; cat "$tmp/log" >&2; exit 1; }
+
+code=$(curl -sS -o "$tmp/index.html" -w '%{http_code}' "$base/")
+[ "$code" = 200 ] || { echo "verify-ui-binary: GET / = $code (an empty embed serves nothing)" >&2; exit 1; }
+grep -q '<title>Tangent</title>' "$tmp/index.html" || { echo "verify-ui-binary: / is not the SPA index page" >&2; exit 1; }
+asset=$(grep -o 'src="/assets/[^"]*\.js"' "$tmp/index.html" | head -1 | sed 's/^src="//; s/"$//')
+[ -n "$asset" ] || { echo "verify-ui-binary: the index page names no /assets/*.js bundle" >&2; exit 1; }
+size=$(curl -fsS "$base$asset" | wc -c)
+[ "$size" -gt 1000 ] || { echo "verify-ui-binary: $asset is $size bytes" >&2; exit 1; }
+echo "verify-ui-binary: ok ($asset, $size bytes)"

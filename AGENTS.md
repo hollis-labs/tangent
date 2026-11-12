@@ -25,8 +25,8 @@ something new.
   Tangent's own binary takes no application dependency, not which direction a
   write travels. `0006` is superseded by `0007`; read `0007` instead.
 - `cmd/tangent/main.go` — server entry point, flags and signal handling.
-- `internal/server/static.go` — the `//go:embed all:ui_dist` directive. Vite
-  writes to `internal/server/ui_dist/` so the embed resolves relative to the
+- `internal/webui/embed.go` — the `//go:embed all:dist` directive. Vite
+  writes to `internal/webui/dist/` so the embed resolves relative to the
   package.
 - `internal/envelope/extensions/register_all.go` — the single table binding
   every envelope wire name; authored manifests live beside it under

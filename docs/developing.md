@@ -26,7 +26,7 @@ make install-hooks      # lefthook install — sets up pre-commit/pre-push
 ```
 
 A `go install …/cmd/tangent@<version>` builds a binary with no web UI —
-`internal/server/ui_dist/` holds only a placeholder in git, and the SPA is
+`internal/webui/dist/` holds only a placeholder in git, and the SPA is
 embedded by `make build` — so it is not an install path.
 
 ## Dev loop
