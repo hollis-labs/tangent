@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 	"unicode"
-
-	driver "github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-host"
 )
 
 func TestDiagnosticRedactionExpandedFormats(t *testing.T) {
@@ -83,14 +81,20 @@ func TestFailedRestartIsVisibleAndLoggedOnce(t *testing.T) {
 	if err := killCurrent(child); err != nil {
 		t.Fatal(err)
 	}
+	// Wait for what the operator is shown, not for a proxy of it. The lifecycle sets RetryAttempts when an
+	// attempt starts but leaves the previous attempt's Failed state in place until the load begins, and the
+	// state and the counter are two separate reads, so "Failed and Restarts > 0" is also true in that window,
+	// while the plugin is still recovering and reports no runtime error yet. Polling the inventory is also
+	// the sampling that logs the diagnostic, so the once-only assertion below covers every poll.
 	deadline := time.Now().Add(10 * time.Second)
-	for child.lifecycle.Status().State != driver.StateFailed || child.Restarts() == 0 {
+	record := host.Inventory(context.Background()).Plugins[0]
+	for !record.FailedAfterLoad {
 		if time.Now().After(deadline) {
-			t.Fatal("failed restart did not terminate")
+			t.Fatalf("failed restart did not become visible: %+v", record)
 		}
 		time.Sleep(10 * time.Millisecond)
+		record = host.Inventory(context.Background()).Plugins[0]
 	}
-	record := host.Inventory(context.Background()).Plugins[0]
 	if !record.Loaded || !record.FailedAfterLoad || record.Error != "" || !strings.Contains(record.RuntimeError, "no such file or directory") {
 		t.Fatalf("failed restart invisible or called refused: %+v", record)
 	}
