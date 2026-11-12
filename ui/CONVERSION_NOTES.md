@@ -39,9 +39,17 @@ real Chrome: the owner signs in (`POST /api/login` 200 with `X-Requested-With`),
 returns 204 and the sign-in form; a form interaction and a structured interaction are decided over the room socket and
 read "resolved" in History afterwards (pending 183 to 181); the dotted external-review room shows "The review plugin
 route is unavailable." and sends no plugin or archive request (the throwaway interaction stays staged). This is the
-frontend precondition for the cutover. Two things seen there and not caused by the port, tracked as follow-ups: the
-host answers the SPA's `view.active` frame with `ui_command_rejected` and the header shows "host refused channel"; and
-a room keeps saying "Sending your response…" after a successful structured submit until it is reloaded.
+frontend precondition for the cutover. Two things seen there were not caused by the port (the old build did the same,
+measured on the old binary) and are fixed since: the page no longer sends `view.active` while the host has no
+UI-command channel (#166; `UI_COMMAND_CHANNEL_ENABLED` in `ui/src/lib/ui-command-channel.ts`, one line to restore for
+CW-20261112-0128), and a room shows "Response sent." / "Cancelled." on the host's `response.accepted` frame (host #167,
+page #168; keyed on the envelope id and revision the tab sent). The clean review room for a plugin that is not
+installed now says "The review plugin is unavailable." (#165).
+
+The same checks were repeated by hand on the build of main `c01fbf0` (workflow `build` run 43300354697, artifact
+`tangent-c01fbf00b05d`): sign-in, a decision shown as sent without a reload, no refused-channel notice, the
+review-plugin-unavailable message, inbox archive and sign-out. Accepted by the driver as the frontend precondition for
+that build.
 
 ## Waits on kit work (not started)
 
