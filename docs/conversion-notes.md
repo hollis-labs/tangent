@@ -14,8 +14,9 @@ Each says what was seen, and what was done meanwhile.
 2. **G2: plugin configuration secrets.** The plugin host keeps declared secret values only in the OS keychain
    (`internal/pluginconfig/keychain.go`, service `hollis-labs.tangent.plugin-config`, no file fallback; Secret Service
    over DBus on Linux) and their references in `<plugin root>/.state/config/config.sqlite`. The live instance holds
-   two such values. Decision taken: they move to the `secrets` module by a command run on the host, never printed;
-   a dry mode moves references only. Open until slice (d).
+   two such values. **Closed in slice (d):** plugin secrets now live in the `secrets` module's managed file store
+   (`pluginconfig.Managed`, `file://tangent-plugin-config/<account>`; 0600 files in a 0700 directory, no keychain at
+   run time). `tangent migrate-secrets --to <data dir> [--dry-run]` moves the two existing values (below).
 3. **G5: WebSocket and streams through httphost: no gap found.** `cmd/tangent/g5_test.go` drives a real socket and a
    real stream through the whole chain (host guard, identity middleware, auth guard, `apierr.Normalize`, handler):
    cookie and bearer upgrades work, no credential and a foreign Origin and an unknown Host are refused, a stream is
@@ -125,8 +126,31 @@ text and cannot see a seed row, so a new database could not enqueue an approval 
 by `TestMigrateLegacy`; a new one gets a random generation, `TestANewDatabaseSeedsTheEventOutboxCounter`). The other
 inserts in the old migrations were backfills of rows that are copied as data.
 
-Not yet covered: artifact bodies on disk (`artifacts/`), the plugin directory and its `config.sqlite`, the keychain
-values (G2), the plugin binaries.
+## Files and secrets: the one-way copy (slice d)
+
+Run in this order, on the host, with the old Tangent stopped. The old data directory is only ever read.
+
+1. `tangent migrate-data --from <old tangent.db copy> --to <data dir>/tangent.db`
+2. `tangent migrate-files --from <old data dir> --to <data dir>` copies `artifacts/` and `plugins/` (the installed
+   plugins, `.state/` and `config.sqlite`). Each tree is built under `<name>.migrating`, compared with its source
+   (every path, size, mode and sha256), and every `artifact_revisions` row's sha256 is checked against the copied body;
+   only then is it renamed into place. A non-empty target, a symlink or device in the source, or any mismatch stops the
+   run with nothing installed. Without a database at the target the artifact check is reported as NOT CHECKED.
+3. `tangent migrate-secrets --to <data dir> --dry-run`, then without `--dry-run`. References come from
+   `plugin_config_override.secret_ref`; each value is read from the keychain (service
+   `hollis-labs.tangent.plugin-config`), written to `<data dir>/secrets/tangent-plugin-config/<account>`, read back and
+   compared by length and a keyed digest (a random per-run key). Values are never printed or put on a command line; only
+   plugin, setting name, byte length and status are. A store entry with a different value is never overwritten. The
+   keychain entries stay as the rollback. The secrets module trims surrounding whitespace, so a value is stored trimmed.
+4. Optional: `tangent.tether_token_ref: file://tangent/tether-send-only` in the config block names the reply-mail token in
+   the same store (`TANGENT_TETHER_TOKEN` still works when no reference is set; an unresolvable reference stops the
+   start).
+
+The plugin directory moved: it is `<data dir>/plugins` unless `TANGENT_PLUGIN_DIR` is set (was `~/.tangent/plugins`).
+Plugin binaries are copied as files; reinstall them (`make install-plugins`) if a plugin pin has moved.
+
+Not yet covered: nothing on the data side. The old `~/.tangent` directories are neither read nor written unless named
+by `--from`.
 
 ## Environment and paths (so far)
 

@@ -7,7 +7,8 @@
 //	  trusted_forwarders: []   # the producers among them trusted to attest the session they forward for
 //	  reply_to_optional: false # rollout switch: accept room workflows with no completion.reply_to
 //	  tether_url: ""           # Tether base URL operator answers are mailed to (with tether_sender)
-//	  tether_sender: ""        # the sender URN on that mail; the send-only token is a secret, not config
+//	  tether_sender: ""        # the sender URN on that mail
+//	  tether_token_ref: ""     # secrets-module reference to the send-only token (file://tangent/tether-send-only); never the token
 //
 // An unknown key or a bad value is refused at start with a message that names the key.
 package settings
@@ -31,6 +32,7 @@ type Settings struct {
 	ReplyToOptional   bool
 	TetherURL         string
 	TetherSender      string
+	TetherTokenRef    string
 }
 
 // Parse reads the block (nil for a missing one).
@@ -46,7 +48,7 @@ func Parse(raw any) (Settings, error) {
 	var unknown []string
 	for k := range block {
 		switch k {
-		case "allowed_hosts", "gateway_producers", "trusted_forwarders", "reply_to_optional", "tether_url", "tether_sender":
+		case "allowed_hosts", "gateway_producers", "trusted_forwarders", "reply_to_optional", "tether_url", "tether_sender", "tether_token_ref":
 		default:
 			unknown = append(unknown, k)
 		}
@@ -83,7 +85,7 @@ func Parse(raw any) (Settings, error) {
 	default:
 		return s, fmt.Errorf("tangent.reply_to_optional must be true or false")
 	}
-	for key, dst := range map[string]*string{"tether_url": &s.TetherURL, "tether_sender": &s.TetherSender} {
+	for key, dst := range map[string]*string{"tether_url": &s.TetherURL, "tether_sender": &s.TetherSender, "tether_token_ref": &s.TetherTokenRef} {
 		switch v := block[key].(type) {
 		case nil:
 		case string:

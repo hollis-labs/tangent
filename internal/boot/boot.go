@@ -118,7 +118,8 @@ type Config struct {
 	// default client scope is local; browser/plugin requests cannot add scopes.
 	ConfigScopes []pluginconfig.Scope
 	// ConfigSecrets allows an embedder to supply its genuine keychain service.
-	// Tests use synthetic owned backends; production defaults to OSKeychain.
+	// Production passes the secrets module's store (pluginconfig.Managed); a boot without one
+	// falls back to the OS keychain, which only tests and the migration still use.
 	ConfigSecrets pluginconfig.Secrets
 
 	// DisablePluginHealthGate turns off the health gate: normally, a

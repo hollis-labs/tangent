@@ -18,9 +18,10 @@ replacing history or other scopes.
 Non-secret values and opaque secret references are kept in the private SQLite
 `<plugin-root>/.state/config/config.sqlite` settings database. Normal boot selects
 client scope `local`; embedders can provide an explicit `boot.Config.ConfigScopes`
-chain. Environment/project scopes are not guessed from a plugin or browser input. Declared secret values are kept in the OS keychain: macOS
-Keychain, Windows Credential Manager or Linux Secret Service. There is no
-plaintext file or environment fallback. The browser receives presence only,
+chain. Environment/project scopes are not guessed from a plugin or browser input. Declared secret values are kept in the secrets module's managed file store
+(`file://tangent-plugin-config/<account>`: owner-only files in an owner-only
+directory, written atomically); the OS keychain is read only by
+`tangent migrate-secrets`. There is no environment fallback. The browser receives presence only,
 never a saved secret. A replacement secret exists temporarily in the submitted
 browser draft and host request; neither side writes it to logs or browser
 storage. Drafts belong to a keyed plugin/scope view and are discarded when that

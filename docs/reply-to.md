@@ -29,7 +29,7 @@ Tether's notify endpoint:
 
 ```
 POST {tangent.tether_url}/messages/notify
-Authorization: Bearer {token}      (send-only service credential; TANGENT_TETHER_TOKEN in the environment until the secrets step)
+Authorization: Bearer {token}      (send-only service credential; the secrets-store reference tangent.tether_token_ref, else TANGENT_TETHER_TOKEN in the environment)
 Idempotency-Key: tangent:resolution:<interaction id>:<revision>
 {"from": tangent.tether_sender, "to": reply_to, "kind": "response", "payload": {...}}
 ```

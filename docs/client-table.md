@@ -28,7 +28,7 @@ Scopes: `tangent.mcp` (reach `/mcp` at all), `tangent.view`, `tangent.draft`, `t
 
 | Caller | Today | After | Who changes configuration at cutover |
 |---|---|---|---|
-| **Tangent's reply-mail worker** mailing an operator's answer to the agent in `completion.reply_to` | `TANGENT_TETHER_URL`, `TANGENT_TETHER_SENDER` and a send-only Tether service token `TANGENT_TETHER_TOKEN` in a root-only env file. Unconfigured, answers stay queued. `TANGENT_REPLY_TO_OPTIONAL=1` is the rollout switch. | `tangent.tether_url`, `tangent.tether_sender` and `tangent.reply_to_optional` in the config block (no secret there). The token stays a host-supplied secret: `TANGENT_TETHER_TOKEN` in the environment until slice (d) moves it to the secrets module. | Whoever holds Tangent's service environment: move the three values, keep the token where it is until slice (d). |
+| **Tangent's reply-mail worker** mailing an operator's answer to the agent in `completion.reply_to` | `TANGENT_TETHER_URL`, `TANGENT_TETHER_SENDER` and a send-only Tether service token `TANGENT_TETHER_TOKEN` in a root-only env file. Unconfigured, answers stay queued. `TANGENT_REPLY_TO_OPTIONAL=1` is the rollout switch. | `tangent.tether_url`, `tangent.tether_sender` and `tangent.reply_to_optional` in the config block (no secret there). The token is a secret, never config: `tangent.tether_token_ref` names it in the secrets store (`file://tangent/tether-send-only`); `TANGENT_TETHER_TOKEN` in the environment still works when no reference is set. | Whoever holds Tangent's service environment: move the three values; store the token with the secrets module and set the reference. |
 
 ## Health probes: who calls what
 

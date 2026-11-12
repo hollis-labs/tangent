@@ -13,6 +13,7 @@ require (
 	github.com/hollis-labs/libs/mcp/plugin-mcp v0.6.0
 	github.com/hollis-labs/libs/mesh/core v0.6.0
 	github.com/hollis-labs/libs/security/auth v0.3.0
+	github.com/hollis-labs/libs/security/secrets v0.1.0
 	github.com/hollis-labs/libs/ui/ui-go v0.1.0
 	github.com/hollis-labs/substrate v0.1.1-0.20261112162132-d453ac897397
 	github.com/modelcontextprotocol/go-sdk v1.8.0
@@ -41,7 +42,6 @@ require (
 	github.com/hollis-labs/libs/app/app-host v0.1.0 // indirect
 	github.com/hollis-labs/libs/core/panics v0.1.0 // indirect
 	github.com/hollis-labs/libs/security/redact v0.2.0 // indirect
-	github.com/hollis-labs/libs/security/secrets v0.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

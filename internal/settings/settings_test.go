@@ -30,8 +30,8 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseReplyMailKeys(t *testing.T) {
-	s, err := Parse(map[string]any{"reply_to_optional": true, "tether_url": " https://tether.example.test ", "tether_sender": "msg://agent/x/y"})
-	if err != nil || !s.ReplyToOptional || s.TetherURL != "https://tether.example.test" || s.TetherSender != "msg://agent/x/y" {
+	s, err := Parse(map[string]any{"reply_to_optional": true, "tether_url": " https://tether.example.test ", "tether_sender": "msg://agent/x/y", "tether_token_ref": "file://tangent/tether-send-only"}) // #nosec G101 -- a reference, not a credential.
+	if err != nil || s.TetherTokenRef != "file://tangent/tether-send-only" || !s.ReplyToOptional || s.TetherURL != "https://tether.example.test" || s.TetherSender != "msg://agent/x/y" {
 		t.Fatalf("got %+v, %v", s, err)
 	}
 	if _, err = Parse(map[string]any{"reply_to_optional": "yes"}); err == nil {
