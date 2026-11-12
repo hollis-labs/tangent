@@ -90,7 +90,8 @@ Each says what was seen, and what was done meanwhile.
    `tangent-runner`, `tangent-tesseract` and `tangent-torque` (the three whose `main.go` imports `pkg/plugin/hostclient`)
    bump the `github.com/hollis-labs/tangent` requirement from `v0.20.0` to the first Tangent release that carries this
    `hostclient`, refresh `go.sum`, and cut a release of the three plugins; then move `tangent-plugins.version` and
-   `tangent-plugins.smoke-ref` here to it. At the cutover the installed plugin binaries must be reinstalled
+   `tangent-plugins.smoke-ref` here to it. Done: Tangent v0.21.0, plugins `tangent-<name>/v0.2.0` at `a5132c3`, and both
+   pin files name that commit. At the cutover the installed plugin binaries must be reinstalled
    (`make install-plugins`): a binary built with the old `hostclient` presents no key and is refused.
 8. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
    `libs/ui/ui-go` (0.4.0 to 0.1.0) and `libs/harness/core` (0.13.0 to 0.16.0) to the BOM versions and the existing
