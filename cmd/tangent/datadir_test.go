@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -176,5 +177,35 @@ func TestPlanForTheIdentityCommands(t *testing.T) {
 				t.Errorf("%v starts %s, which serves", args, m)
 			}
 		}
+	}
+}
+
+// An unknown subcommand fails, starts no server and creates nothing, so a typo cannot touch the
+// live data directory.
+func TestAnUnknownSubcommandFailsWithoutStartingAnythingOrCreatingFiles(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "tangent")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil { //nolint:gosec // builds this package
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	cmd := testenv.Command(t, bin, "no-such-command")
+	before := entries(t, cmd.Dir)
+	done := make(chan error, 1)
+	var out []byte
+	go func() {
+		var err error
+		out, err = cmd.CombinedOutput()
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("an unknown subcommand succeeded:\n%s", out)
+		}
+	case <-time.After(30 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("an unknown subcommand did not exit: it started a server")
+	}
+	if got := entries(t, cmd.Dir); !slices.Equal(got, before) {
+		t.Errorf("an unknown subcommand created %v", slices.DeleteFunc(got, func(p string) bool { return slices.Contains(before, p) }))
 	}
 }

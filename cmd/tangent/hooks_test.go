@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -54,7 +55,15 @@ func startedWith(t *testing.T, mounts func(ctx context.Context, tg *tangent) []m
 // startedFull also sets the app's own "tangent" config block (gateway producers, allowed hosts).
 func startedFull(t *testing.T, mounts func(ctx context.Context, tg *tangent) []mountSpec, assets fs.FS, block map[string]any) (string, *tangent) {
 	t.Helper()
-	dir := filepath.Join(t.TempDir(), "data")
+	base, tg, _ := startedOn(t, filepath.Join(t.TempDir(), "data"), true, mounts, assets, block)
+	return base, tg
+}
+
+// startedOn is startedFull on a given data directory. newOwner creates the owner (a first start);
+// a restart on the same directory has one already. The returned stop ends the server and the
+// modules, so a test can start another on the same directory; cleanup runs it too.
+func startedOn(t *testing.T, dir string, newOwner bool, mounts func(ctx context.Context, tg *tangent) []mountSpec, assets fs.FS, block map[string]any) (string, *tangent, func()) {
+	t.Helper()
 	env := map[string]string{"TANGENT_DATA_DIR": dir}
 	override := filepath.Join(t.TempDir(), "override.yaml")
 	if err := os.WriteFile(override, []byte("identity:\n  bcrypt_cost: 4\n"), 0o600); err != nil {
@@ -75,10 +84,12 @@ func startedFull(t *testing.T, mounts func(ctx context.Context, tg *tangent) []m
 	// The owner is made the way production makes it: offline, on the host, before the server
 	// serves (identity.Service.SetupOwner is what `tangent identity setup` calls). POST /api/setup
 	// is always refused.
-	if _, err = identity.From(run.App).SetupOwner(ctx, identity.OwnerInput{Username: "owner", DisplayName: "Owner", Password: testOwnerPassword}); err != nil {
-		cancel()
-		_ = run.Stop(context.Background())
-		t.Fatalf("create the owner: %v", err)
+	if newOwner {
+		if _, err = identity.From(run.App).SetupOwner(ctx, identity.OwnerInput{Username: "owner", DisplayName: "Owner", Password: testOwnerPassword}); err != nil {
+			cancel()
+			_ = run.Stop(context.Background())
+			t.Fatalf("create the owner: %v", err)
+		}
 	}
 	addr := make(chan net.Addr, 1)
 	tg := &tangent{app: run.App, assets: assets, ready: func(a net.Addr) { addr <- a }}
@@ -88,25 +99,29 @@ func startedFull(t *testing.T, mounts func(ctx context.Context, tg *tangent) []m
 	}
 	done := make(chan error, 1)
 	go func() { done <- tg.serveWith(ctx, extra) }()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("serve ended with %v", err)
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("serve ended with %v", err)
+				}
+			case <-time.After(20 * time.Second):
+				t.Error("serve did not stop on cancel")
 			}
-		case <-time.After(20 * time.Second):
-			t.Error("serve did not stop on cancel")
-		}
-		_ = run.Stop(context.Background())
-	})
+			_ = run.Stop(context.Background())
+		})
+	}
+	t.Cleanup(stop)
 	select {
 	case a := <-addr:
-		return "http://" + a.String(), tg
+		return "http://" + a.String(), tg, stop
 	case err := <-done:
 		t.Fatalf("serve returned before listening: %v", err)
 	case <-time.After(15 * time.Second):
 		t.Fatal("serve never listened")
 	}
-	return "", nil
+	return "", nil, stop
 }

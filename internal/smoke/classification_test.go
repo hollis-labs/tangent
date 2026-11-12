@@ -90,10 +90,10 @@ func TestMissingCatalogEntryIsUpstreamAbsent(t *testing.T) {
 	}
 }
 
-// TestCatalogEntryPointingElsewhereIsCatalogStale covers the entry that exists
+// TestCatalogEntryPointingElsewhereIsCatalogStale covers (a path that is not /mcp) the entry that exists
 // and is wrong — a different incident from the entry that does not exist.
 func TestCatalogEntryPointingElsewhereIsCatalogStale(t *testing.T) {
-	root := writeCatalogEntry(t, "id: tangent\ntransport: sse\nurl: http://127.0.0.1:9999/sse\nenabled: true\n")
+	root := writeCatalogEntry(t, "id: tangent\ntransport: http\nurl: http://127.0.0.1:9999/sse\nenabled: true\n")
 	entry, err := smoke.ReadCatalogEntry(root, "tangent")
 	if err != nil {
 		t.Fatalf("ReadCatalogEntry: %v", err)
@@ -107,7 +107,7 @@ func TestCatalogEntryPointingElsewhereIsCatalogStale(t *testing.T) {
 // TestDisabledCatalogEntryIsUpstreamAbsent — present but switched off is still
 // "not among what the gateway serves".
 func TestDisabledCatalogEntryIsUpstreamAbsent(t *testing.T) {
-	root := writeCatalogEntry(t, "id: tangent\ntransport: sse\nurl: http://127.0.0.1:7842/sse\nenabled: false\n")
+	root := writeCatalogEntry(t, "id: tangent\ntransport: http\nurl: http://127.0.0.1:7842/mcp\nenabled: false\n")
 	entry, err := smoke.ReadCatalogEntry(root, "tangent")
 	if err != nil {
 		t.Fatalf("ReadCatalogEntry: %v", err)
@@ -118,10 +118,10 @@ func TestDisabledCatalogEntryIsUpstreamAbsent(t *testing.T) {
 	}
 }
 
-// TestMatchingCatalogEntryProducesNoFinding pins the pass case, including the
-// `/sse` suffix a correct entry carries.
+// TestMatchingCatalogEntryProducesNoFinding pins the pass case: transport http and a
+// URL ending in /mcp, at whatever host the proxy publishes.
 func TestMatchingCatalogEntryProducesNoFinding(t *testing.T) {
-	root := writeCatalogEntry(t, "id: tangent\ntransport: sse\nurl: http://127.0.0.1:7842/sse\nenabled: true\n")
+	root := writeCatalogEntry(t, "id: tangent\ntransport: http\nurl: https://tangent.pilot.example.test/mcp\nenabled: true\n")
 	entry, err := smoke.ReadCatalogEntry(root, "tangent")
 	if err != nil {
 		t.Fatalf("ReadCatalogEntry: %v", err)
@@ -296,4 +296,18 @@ func writeCatalogEntry(t *testing.T, body string) string {
 		t.Fatalf("write catalog entry: %v", err)
 	}
 	return root
+}
+
+// TestAnSSECatalogEntryIsCatalogStale: the entry the gateway had before the port (transport sse at
+// /sse) no longer reaches anything; the report says to move it to http at /mcp.
+func TestAnSSECatalogEntryIsCatalogStale(t *testing.T) {
+	root := writeCatalogEntry(t, "id: tangent\ntransport: sse\nurl: http://127.0.0.1:7842/sse\nenabled: true\n")
+	entry, err := smoke.ReadCatalogEntry(root, "tangent")
+	if err != nil {
+		t.Fatalf("ReadCatalogEntry: %v", err)
+	}
+	finding := smoke.ClassifyCatalogEntry(entry, "http://127.0.0.1:7842")
+	if finding == nil || finding.Mode != smoke.ModeCatalogStale || !strings.Contains(finding.String(), "transport: http") {
+		t.Fatalf("an sse entry classified as %v", finding)
+	}
 }

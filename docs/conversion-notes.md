@@ -336,6 +336,44 @@ narrowed local list ({view}) and requires every other tool to be refused, which 
 trust; it was break-checked by widening the list.
 
 
+## Deleted tests: what covers each behaviour
+
+The branch deletes these test files outside the removed desktop packages (`cmd/tangent-app`, `internal/appshell`,
+`launchagent`, `installer`, `packagecheck`). The suite goes from 1151 to 1094 tests; the deleted ones belonged to
+participant sessions, the operator token, the 7844 listener and the old `internal/db`-coupled harness. "Gone" means the
+behaviour no longer exists, with the reason.
+
+| Deleted file | Now |
+|---|---|
+| `cmd/tangent/help_test.go` | `TestReadOnlyCommandsCreateNothing` (help and version touch nothing); `TestAnUnknownSubcommandFailsWithoutStartingAnythingOrCreatingFiles` (cmd/tangent/datadir_test.go). |
+| `cmd/tangent/session_test.go` | Gone: `tangent session` revoked participant sessions, which no longer exist (operator commands section). |
+| `cmd/tangent/shutdown_test.go` | `TestAFailedShutdownStillExitsNonZero` (cmd/tangent/shutdown_test.go, real binary); `TestG5ShutdownWithOpenConnections`. |
+| `internal/boot/caller_auth_test.go` | Caller configuration is the `tangent` config block: `TestParse`, `TestParseReplyMailKeys` (internal/settings) and `TestCallerConfigurationIsValidatedWhenTheServerIsBuilt` (a forwarder that is not a producer, duplicates, bad names, the plugin-child prefix). The elevation TTL test is gone with elevation. |
+| `internal/boot/listeners_e2e_test.go` | `TestProxiedGatewayKeepsItsForwardedSessionHeaders`, `TestProxyBoundary` (internal/hostguard). The 7844 listener is gone; proxied admission is the Host check on the one listener. |
+| `internal/mcp/caller_auth_test.go` | `TestCallersProducerIsolationOverBothTransports`, `TestCallersRefusesRelayAndPluginOverBothTransports`, `TestCallersRoomInteractionAndInboxOwnership`, `TestAKeySeesAndCallsOnlyWhatItsScopesAllow`. Token-hash admission (`TANGENT_MCP_TOKENS`) is gone: a producer is an identity key. |
+| `internal/mcp/forwarded_caller_integration_test.go`, `forwarded_caller_test.go` | `TestProxiedGatewayKeepsItsForwardedSessionHeaders` (attestation read through the proxy path, an inconsistent one refused), `TestVerifiedGatewayCallerScopeIsIdenticalOnBothBackends`, `TestGatewayMetadata*`. The SSE transport variants are gone with `/sse`. |
+| `internal/mcp/tether_hitl_gateway_smoke_test.go`, `tether_room_workflow_smoke_test.go` | These were build-tagged (`tether_smoke`) and drove the old `sse` catalog entry. Gone with `/sse`; replaced by `TestGoMCPClientOverStreamableHTTP` (the client Tether uses), `TestRoomWorkflowCompletionOverStreamableHTTP`, `TestAnAgentKeyAsksAndTheOwnerAnswers`, and `internal/smoke`'s catalog check, which now expects `transport: http` at `<base>/mcp` (`TestAnSSECatalogEntryIsCatalogStale`). |
+| `internal/participant/*` (`elevation_policy_test`, `elevation_ttl_test`, `operator_test`, `store_test`) | Gone: participant sessions, the operator token and elevation are replaced by the identity module's sign-in, which has its own tests in the framework. What decides is covered by `TestOnlyASignedInUserWithTheScopeMayResolve` (internal/access), `TestEveryAgentCredentialIsRefusedOnEveryDecidingRoute`, `TestTheOwnerSessionReachesTheDecidingRoutes`. |
+| `internal/server/channels_participant_test.go` | `TestChannelSendWorksForTheSignedInOwner` (cmd/tangent/channels_participant_test.go). |
+| `internal/server/hitl_inbox_e2e_test.go` | `TestHITLInboxJoinsPublicMCPBrowserProjectionAndRestart` (cmd/tangent/hitl_inbox_e2e_test.go: /mcp with a key, the owner's browser projection, stop and restart on the same data directory). |
+| `internal/server/listeners_test.go` | Gone with the 7844 listener. |
+| `internal/server/mcp_deadline_test.go` | `TestAnMCPCallThatWaitsLongIsNotCutByAServerDeadline`, `TestAnOrdinaryRouteKeepsTheHeaderReadDeadline` (cmd/tangent/mcp_deadline_test.go), `TestG5StreamOutlivesTimeouts`. httphost sets only a header-read and an idle timeout, so the old per-route deadline clearing is gone. |
+| `internal/server/operator_deelevate_test.go`, `operator_elevation_limiter_test.go`, `operator_token_test.go`, `operator_ws_test.go` | Gone with elevation and the operator token. Their live claims are covered by: a deciding action needs the owner's session (`TestEveryResolveRouteIsUserOnly`, `TestNoAgentCredentialMayResolve`, `TestTheOwnerSessionGetsPastTheResolveGate`), a requester cannot answer its own approval and the recorded assurance (`TestVerifiedFollowsRecordedAssurance`, internal/events), and sockets (`TestG5WebSocketThroughTheChain`, `TestHandler_ParticipantResolverGatesTheUpgrade`). |
+| `internal/server/participant_capability_test.go` | `TestEveryRoutesScopeIsOneTheOwnerSessionHolds`, `TestAKeyHoldingOnlyARoutesScopeIsAdmittedByTheScopeGuard` (cmd/tangent/participant_capability_test.go), `TestEveryRouteHasAScope`. |
+| `internal/server/participant_session_test.go` | Gone: minting a session by opening a URL. Kept in new form: security headers on every response (`TestAHostRefusalCarriesTheSecurityHeaders`, `TestTheDocumentPolicyIsOnTheSPAResponses`), cross-site requests refused (`TestACrossOriginEffectRequestIsRefused`, `TestPluginRouteIsOriginGuarded`, `TestHITLBrowserRoutesRequireJSONAndSameOrigin`). |
+| `internal/server/plugin_config_http_test.go` | `TestPluginConfigHTTPGuardsCASSecretPresenceAndApply` (internal/server; guards, stale-revision 409, secret presence only, apply). |
+| `internal/server/plugin_lifecycle_test.go` | `TestRuntimePluginRoutesAndManagementKeepTheirGuards` (internal/server). |
+| `internal/server/plugin_routes_test.go` | `TestPluginRouteWorksForTheSignedInOwner`, `TestPluginRouteIsRefusedWithoutASessionAndForAnAgentKey`, `TestPluginRouteIsOriginGuarded`, `TestPluginRouteAppearsInTheRouteTableWithItsScope`, `TestPluginRouteFailureRendersARefusal`, `TestPluginRouteCannotSetACookie`, `TestPluginRouteBodyIsCapped`, `TestServerRefusesAPluginRouteNoCallerCouldReach`, `TestServerRefusesPluginRoutesWithNoUserGate` (internal/server), and `TestPluginRoutesAndManagementAreGuardedByTheRealHost` (cmd/tangent, the real 401 and CSRF half). |
+| `internal/server/sse_longevity_test.go` | `TestG5StreamOutlivesTimeouts`, `TestAnMCPCallThatWaitsLongIsNotCutByAServerDeadline`. |
+| `internal/server/static_cache_test.go` | `TestTheSPAIsCachedAsTheFrameworkDecidesThroughTheRealChain` (cmd/tangent/static_cache_test.go: hashed assets immutable, documents `no-cache`, a missing asset 404 and not immutable). **ETag and 304 revalidation are gone**: the framework's webui sends no `ETag` or `Last-Modified` (probed on the real host), so `TestStaticETagRevalidates` and `TestStaticETagIsPerHandler` have nothing left to test. A behaviour change for the SPA, not a loss of data. |
+
+The one `t.Skip` the branch adds: `no SPA build embedded; make build-ui populates internal/webui/dist`, in `internal/server/csp_test.go` (the sandbox-frame shim must match the SPA), which needs a built SPA and skips when the embedded directory holds only its placeholder (CI runs `npm run build`
+first, so it runs there).
+
+Found while writing these, not changed: an owner `POST /api/rooms/<unknown id>/close` answers 500 (`insert legacy room
+surface: constraint failed: FOREIGN KEY`) where 404 would be expected. `internal/mcp/browser_rooms.go` and
+`internal/interaction/legacy_room.go` are unchanged from main, so it predates the branch.
+
 ## Operator commands: ported, dropped, not available
 
 The old binary's maintenance flags and `tangent session` (from `../tangent-previous/cmd/tangent/maintenance.go`,
@@ -401,8 +439,13 @@ What the backend now requires of the SPA, in one place; keep it current.
    (`tangent identity key create`); put the keys in the clients' own configuration.
 4. Config block: `tangent.allowed_hosts` (the public name), `gateway_producers` and `trusted_forwarders` (the Tether
    gateway's key name), `reply_to_optional`, `tether_url`, `tether_sender`, `tether_token_ref`.
-5. The Tether catalog entry is already transport `http` at the public name plus `/mcp`; only its credential changes (an
-   identity key for the producer instead of the proxy service token). After cutover refresh the catalog and compare the
+5. The Tether catalog entry for Tangent: read it first (the driver's two reads disagree: `http` at the public name plus
+   `/mcp`, or `sse` at `<base>/sse`). Either way it must end as transport `http` at `<base>/mcp` with an identity key for
+   the producer as its credential (instead of the proxy service token). **A gateway entry change takes effect only at a
+   Tether hub reload, which restarts every gateway child**; so make the entry change, then reload the hub, in the cutover
+   window and after Tangent is up with the key minted and the producer listed in `tangent.gateway_producers` and
+   `trusted_forwarders`. `internal/smoke`'s catalog check reports `CATALOG_STALE` for an `sse` entry or a URL not ending in
+   `/mcp`. After cutover refresh the catalog and compare the
    tool list with the 73 names (the gateway does not refresh http upstreams on notifications, so plugin tools registered
    after start appear on a refresh).
 6. **An old plugin binary must fail loudly.** A plugin not reinstalled still presents no key: `/mcp` answers it `401`
