@@ -43,7 +43,7 @@ that tag, then cut over with the plugins reinstalled.
 | Data | `~/.local/share/tangent-pilot`: `tangent.db` (WAL; schema at the old migrator's version 24, which equals the port's baseline), `artifacts/` (about 800 KB, 42 directories), `plugins/` (about 284 MB, with `.state/config/config.sqlite`), `backups/`, `ingress/`, `releases/`, `stderr.log` |
 | Keyring | the user's Secret Service holds two entries for service `hollis-labs.tangent.plugin-config` (the plugin configuration secrets) |
 | A plugin child | one running (the Tesseract plugin) |
-| The proxy in front | two routes for Tangent's names: `/mcp` and `/sse` go to `7844` with `Host` rewritten to that loopback address; everything else goes to `7843`, tailnet members only, with `Host` rewritten to the loopback address and `Origin` rewritten from the public origin to the loopback origin |
+| The proxy in front | two routes for Tangent's names: `/mcp` and `/sse` go to `7844` with `Host` rewritten to that loopback address; everything else goes to `7843`, tailnet members only, with `Host` rewritten to the loopback address and `Origin` rewritten from the public origin to the loopback origin. The `/mcp` and `/sse` route only forwards: it does no token check of its own and carries no tailnet-member rule (the browser route does); the only limit on it is that the proxy listens on the tailnet address alone. After the change `/mcp` is protected by Tangent's own key check |
 | The Tether gateway | its catalog entry for Tangent is transport `http` at the public name plus `/mcp`, with one credential line (a proxy service token file); it forwards sessions with `X-Tether-*` headers |
 | A Cerberus definition | the host has a project definition for Tangent with two resources: the service (the user unit, command the bare binary, port `7843`, an env file of its own listing the old variables) and an ingress helper (a small proxy script from the old data directory, port `7853`, not running). An apply of it could rewrite the unit with the bare command and the old variables: see section 13 |
 | Producers seen in the data | the distinct `caller_scope` values and counts: `sqlite3 -readonly <db> "select caller_scope, count(*) from interactions group by 1 order by 2 desc"`. Only a `gateway:<name>` scope needed a credential before (it was written only with that name's token in `TANGENT_MCP_TOKENS`). A `standalone-local:<app>` scope is an application id a direct loopback caller declared, or the gateway forwarded: no credential stood behind it, so it needs no key now either; its rows stay visible to the owner and to whoever reads them under that id |
@@ -96,7 +96,15 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
 5. Prepare, without applying: the config file (section 6, step 7), the key list from the producers query (section 2),
    the proxy edit (section 9) and the Tether catalog plan (step 12). Announce to the agents that use the Tangent tools
    that they will be unavailable for the window (section 13).
-6. Read `docs/client-table.md` against the producer list: each producer gets a key, or is retired.
+6. **A dry run of the installer**, run by the driver against the *published* artifact (not a local build):
+   `fleet-install deploy tangent --commit <sha12> --dry-run`. It must show the plain binary at `~/.local/bin/tangent`
+   being kept (as `tangent.pre-fleet-install`) and the drop-in path `20-fleet-exec.conf`. Nothing proceeds until it does.
+7. **Precondition: the frontend.** A signed-in owner must be able to decide an inbox item in a real browser against the
+   release build: gui-tangent's slices S2 to S4 (sign-in, embedded build) and the ExternalReview path fix. Pull requests:
+   #155 (sign-in), #151 (Node 24 and dev proxy), #159 (ExternalReview path check), #154 (the release build that embeds
+   the SPA); S2 and S4 numbers to be added when they exist. The cutover does not start until each is merged and the check
+   has been done by hand on the release artifact.
+8. Read `docs/client-table.md` against the producer list: each producer gets a key, or is retired.
 
 ## 6. The window (host-run, in this order)
 
@@ -261,14 +269,15 @@ boundary, as it is today.
 before:  route "/mcp" and "/sse"  -> upstream 127.0.0.1:7844, Host rewritten to 127.0.0.1:7844
          route everything else    -> upstream 127.0.0.1:7843, tailnet members only,
                                      Host rewritten to 127.0.0.1:7843, Origin <public origin> -> http://127.0.0.1:7843
-after:   route "/mcp"             -> upstream 127.0.0.1:7843, Host rewritten to 127.0.0.1:7843   (same access rule as today)
+after:   route "/mcp"             -> upstream 127.0.0.1:7843, Host rewritten to 127.0.0.1:7843   (forwards only, as today)
          route "/sse"             -> removed (the transport is gone; it answers 404)
          route everything else    -> unchanged
 ```
 
 Port `7844` no longer exists after the cutover; a proxy still pointing there loses Tangent for every gateway client.
-Whether the proxy itself checks the service token on `/mcp` (rather than only passing it on) is not known from the
-repository; if it does, it must pass the identity key through instead.
+The proxy's `/mcp` route does not check a token itself (read from its configuration), so after this change the identity
+key check inside Tangent is the only protection on `/mcp` beyond the tailnet address the proxy listens on: every client
+needs its key before the route is switched (step 8 before step 11), and check 7 proves a request without one is 401.
 
 ## 10. Rollback
 
@@ -381,7 +390,12 @@ The full table is `docs/client-table.md`; at the cutover:
 | The Cerberus definition for Tangent (the service and the ingress helper) | **no apply, deploy or reload of its Tangent resources during or after the window until it is updated**: the command becomes `tangent serve`, the env file drops the variables with no reader (section 14) and carries the new ones, and the ingress helper is retired or repointed; an apply of the old definition could rewrite the unit with the bare command and the old variables | the Cerberus owner (what an apply does to the unit has been asked of Cerberus; not yet answered) |
 | Cerberus (resource health, `cerberus resource doctor`) | `/healthz` is unchanged and open; readiness is `/api/health/ready` and needs a `tangent.view` key | whoever owns the Cerberus definition |
 | `make smoke` | `TANGENT_SMOKE_KEY` | the operator running it |
-| Fleet monitors that poll `/readyz` or `/healthz/capability` | repoint to `/healthz` (open) or hold a `tangent.view` key and the `/api/health/...` path | the owner knows which exist; **cannot be enumerated from the repository** |
+| Fleet monitors that poll `/readyz` or `/healthz/capability` | repoint to `/healthz` (open) or hold a `tangent.view` key and the `/api/health/...` path | the owner knows which exist; **cannot be enumerated from the repository**: see the placeholder below |
+
+> **PLACEHOLDER, to be filled before this goes to the owner (Agent Ops is asked for it): the list of callers and
+> monitors.** Who holds each of today's MCP tokens; which machines have their own gateway producer; what polls `/readyz`
+> or `/healthz/capability`. Without this list the clients table above is not complete and the cutover item does not
+> proceed.
 | Plugin children | none by hand: the host mints their keys; they are reinstalled (step 13) | the driver |
 
 **Agents lose the Tangent tools** from the stop in step 1 until step 12 completes (the gateway cannot reach Tangent through
@@ -393,6 +407,9 @@ configuration (not through the gateway) lose it until each gets its key.
 - `mcp-tokens.env` and `operator.env`, and `TANGENT_ELEVATION_TTL`, `TANGENT_PROXIED_HTTP_ADDR`, `TANGENT_DB_PATH`,
   `TANGENT_HTTP_PORT` and `TANGENT_REPLY_TO_OPTIONAL` in the unit: no reader any more.
 - `TANGENT_TETHER_TOKEN` in `tether.env`, once the secrets-store file is verified (section 7).
+- Plugin children inherit the host's whole environment, including `TANGENT_TESSERACT_TOKEN`, so a third-party plugin
+  would receive it too. Unchanged from today, so it does not block; follow-up: a per-plugin environment allowlist
+  (CW-20261112-0127).
 - The two keyring entries (rollback until the owner is satisfied) and the old tree.
 - The older install, `~/.tangent` on two machines, and the old `plugins/` binaries: CW-20261112-0115.
 
