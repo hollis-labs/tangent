@@ -15,12 +15,6 @@ coverage.html
 /ui/.vite/
 /ui/*.tsbuildinfo
 
-# Vite build output is written here for go:embed; ignore everything
-# except the .gitkeep placeholder so the embed directive resolves on a
-# clean checkout.
-/internal/server/ui_dist/*
-!/internal/server/ui_dist/.gitkeep
-
 # Logs
 *.log
 
@@ -46,5 +40,7 @@ coverage.html
 # Built plugin directories; also the shared app-build workflow writes dist/build-info.json into the
 # checkout, and an untracked file there makes Go stamp the build as modified (+dirty)
 /dist/
+# Vite build output is written to internal/webui/dist for go:embed; ignore everything
+# except the .gitkeep placeholder so the embed directive resolves on a clean checkout.
 /internal/webui/dist/*
 !/internal/webui/dist/.gitkeep

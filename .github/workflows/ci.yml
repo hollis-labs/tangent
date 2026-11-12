@@ -70,7 +70,7 @@ jobs:
 
       - name: gofmt check
         run: |
-          unformatted=$(gofmt -l . | grep -v '^internal/server/ui_dist/' || true)
+          unformatted=$(gofmt -l . | grep -v '^internal/webui/dist/' || true)
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt: unformatted files:"
             echo "$unformatted"
