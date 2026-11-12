@@ -11,6 +11,7 @@
  */
 
 import { createPluginRegistry } from "@hollis-labs/plugin-registry";
+import { apiFetch } from "@/lib/api";
 
 // The registry instance, created once at module load.
 const pluginRegistry = createPluginRegistry({
@@ -32,7 +33,7 @@ const pluginRegistry = createPluginRegistry({
  */
 export async function syncPlugins(): Promise<void> {
   try {
-    const response = await fetch("/api/plugins/registry");
+    const response = await apiFetch("/api/plugins/registry");
     if (!response.ok) {
       console.error(`[plugin-loader] registry fetch failed: ${response.status}`);
       return;

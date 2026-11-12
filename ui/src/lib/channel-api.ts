@@ -5,6 +5,7 @@
 // by hand together, the same way ui/src/lib/rooms-api.ts tracks
 // internal/room's browser-facing shapes.
 
+import { apiFetch } from "@/lib/api";
 export type ChannelMessageDirection = "operator" | "agent";
 
 // Exactly three values, by design (internal/channelpane.MessageView's own
@@ -99,7 +100,7 @@ export async function markChannelRead(channelID: string): Promise<number> {
 }
 
 async function channelRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     ...init,
     headers: { Accept: "application/json", ...init.headers },
   });

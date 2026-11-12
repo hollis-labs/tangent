@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export type InboxCategory = "approval" | "document" | "artifact" | "turn" | "workflow";
@@ -85,7 +86,7 @@ export interface InboxCache {
 export async function fetchInbox(signal?: AbortSignal, cache?: InboxCache): Promise<InboxEntry[]> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (cache?.etag && cache.items) headers["If-None-Match"] = cache.etag;
-  const response = await fetch("/api/inbox?view=summary", {
+  const response = await apiFetch("/api/inbox?view=summary", {
     signal,
     credentials: "same-origin",
     headers,
@@ -105,7 +106,7 @@ export async function fetchInbox(signal?: AbortSignal, cache?: InboxCache): Prom
 
 /** The full entry (complete request snapshot and resolution) for one interaction. */
 export async function fetchInboxItem(id: string, signal?: AbortSignal): Promise<InboxEntry> {
-  const response = await fetch(`/api/inbox/items/${encodeURIComponent(id)}`, {
+  const response = await apiFetch(`/api/inbox/items/${encodeURIComponent(id)}`, {
     signal,
     credentials: "same-origin",
     headers: { Accept: "application/json" },
@@ -147,7 +148,7 @@ export function downloadInboxItem(entry: InboxEntry): void {
 
 /** Ids of interactions whose full request or reply text contains `query`. */
 export async function searchInbox(query: string, signal?: AbortSignal): Promise<string[]> {
-  const response = await fetch(`/api/inbox/search?q=${encodeURIComponent(query)}`, {
+  const response = await apiFetch(`/api/inbox/search?q=${encodeURIComponent(query)}`, {
     signal,
     credentials: "same-origin",
     headers: { Accept: "application/json" },

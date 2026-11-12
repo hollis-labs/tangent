@@ -3,6 +3,7 @@
  * Contract version 1.0 (ADR 0015, CW-20261024-0061).
  */
 
+import { apiFetch } from "@/lib/api";
 import { fetchWithElevation } from "@/lib/operator-elevation";
 
 export type ArtifactType =
@@ -200,7 +201,7 @@ export async function deleteArtifact(
 
 /** Reads one revision as text, for the types that are text. */
 export async function fetchArtifactText(itemID: string, revision: number): Promise<string> {
-  const response = await fetch(artifactContentURL(itemID, revision), {
+  const response = await apiFetch(artifactContentURL(itemID, revision), {
     credentials: "same-origin",
   });
   if (!response.ok) {

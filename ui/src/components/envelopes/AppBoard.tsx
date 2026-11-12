@@ -56,9 +56,9 @@
 // board respects that limitation instead of contesting it.
 
 import { useMemo, useState } from "react";
-
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
+import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export type BoardBadgeTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -509,7 +509,7 @@ export function AppBoard({ envelope, onSubmit, onCancel, onDraft, roomID }: AppB
       // path; a sync issued from a board with nothing staged is a plain
       // refresh, which is the other half of "both ways".
       publishDraft({});
-      const response = await fetch(syncEndpoint, {
+      const response = await apiFetch(syncEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ board_id: boardID, room_id: roomID ?? "" }),
