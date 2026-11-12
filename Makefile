@@ -1,19 +1,16 @@
-.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes db-migrate db-rollback
+.PHONY: help check-node verify-supported build build-ui build-go dev dev-go dev-ui test test-go test-frontend smoke lint lint-go lint-frontend clean scan-public install-hooks generate-envelopes check-envelopes dev-config db-check
 
 # The DEV instance (CW-20260907-0018). Stable keeps the daemon defaults
-# (port 7842, ~/.tangent/tangent.db) so nothing agent-facing rewires; every
-# dev-facing target below runs on DEV_PORT against a workspace-local database
-# (.tangent/ is gitignored and removed by `make clean`). A different database
-# path is a different `.owner` lock file, so dev and stable can never collide
-# on the single-writer flock or the port. `./tangent` with no environment
-# still means the stable defaults; only make targets are pointed at dev.
+# (port 7842, the XDG data directory) so nothing agent-facing rewires; every
+# dev-facing target below runs on DEV_PORT against a workspace-local data
+# directory (.tangent/ is gitignored and removed by `make clean`). The port is
+# set through a Substrate config override (.tangent/substrate.dev.yaml, written
+# by `make dev-config`), the data through TANGENT_DATA_DIR. The first run needs
+# an owner: `TANGENT_DATA_DIR=$(DEV_DATA_DIR) SUBSTRATE_CONFIG=$(DEV_CONFIG) go run ./cmd/tangent identity setup --username NAME`.
 DEV_PORT ?= 7843
-DEV_DB_PATH ?= $(CURDIR)/.tangent/dev.db
-DEV_ENV = TANGENT_HTTP_PORT=$(DEV_PORT) TANGENT_DB_PATH=$(DEV_DB_PATH)
-
-# Default port for the Vite dev server. The Go server (in dev mode)
-# reverse-proxies non-API requests to this URL.
-DEV_FRONTEND_URL ?= http://localhost:5173
+DEV_DATA_DIR ?= $(CURDIR)/.tangent/data
+DEV_CONFIG ?= $(CURDIR)/.tangent/substrate.dev.yaml
+DEV_ENV = TANGENT_DATA_DIR=$(DEV_DATA_DIR) SUBSTRATE_CONFIG=$(DEV_CONFIG)
 
 # Keep this exact pin aligned with mise.toml. The package engine range remains
 # authoritative for compatible direct Node invocations.
@@ -75,11 +72,12 @@ install-plugins: build-go ## Install the pinned first-party plugins (tangent-plu
 		./tangent plugin install "$$dir"; \
 	done
 
-db-migrate: ## Apply migrations to the DEV database (DEV_DB_PATH) and exit
-	$(DEV_ENV) go run ./cmd/tangent --migrate-only
+dev-config: ## Write the dev instance's port override (.tangent/substrate.dev.yaml)
+	@mkdir -p $(dir $(DEV_CONFIG))
+	@printf 'httphost:\n  addr: "127.0.0.1:$(DEV_PORT)"\n' > $(DEV_CONFIG)
 
-db-rollback: ## Roll back the most recent migration on the DEV database and exit
-	$(DEV_ENV) go run ./cmd/tangent --rollback-one
+db-check: dev-config ## Read-only integrity check of the DEV database
+	$(DEV_ENV) go run ./cmd/tangent database check
 
 # ── Codegen ────────────────────────────────────────────────────────────
 #
@@ -96,15 +94,13 @@ check-envelopes: check-node ## Fail if committed envelope types are stale
 
 # ── Dev ────────────────────────────────────────────────────────────────
 
-dev: check-node ## Run Go server (DEV_PORT, DEV_DB_PATH) + Vite dev server in parallel (Go proxies to Vite)
-	@echo "Starting Vite (port 5173) and the Tangent DEV server (port $(DEV_PORT), db $(DEV_DB_PATH), proxying to Vite)..."
-	@$(MAKE) -j 2 dev-ui dev-go
+dev: dev-go ## Run the Go DEV server (DEV_PORT, DEV_DATA_DIR); run `make dev-ui` beside it for Vite
 
 dev-ui: check-node
 	cd ui && npm run dev
 
-dev-go:
-	$(DEV_ENV) TANGENT_DEV_FRONTEND_URL=$(DEV_FRONTEND_URL) go run ./cmd/tangent
+dev-go: dev-config
+	$(DEV_ENV) go run ./cmd/tangent
 
 # ── Test ───────────────────────────────────────────────────────────────
 

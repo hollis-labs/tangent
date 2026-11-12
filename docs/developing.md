@@ -35,10 +35,11 @@ embedded by `make build` — so it is not an install path.
 make dev
 ```
 
-Runs Vite (`:5173`) and the Go **dev** server (`:7843`) in parallel. The Go
-server proxies non-API requests to Vite, so HMR works as if the SPA
-were standalone, and the same routes you'll hit in production are
-reachable on `:7843` during dev.
+Runs the Go **dev** server on `:7843` (`make dev-ui` runs Vite on `:5173` beside it). The
+Go server no longer proxies to Vite (the old `TANGENT_DEV_FRONTEND_URL` is gone), so the
+Vite dev server has to proxy `/api`, `/mcp` and `/ws` to `:7843` itself (a task for the
+GUI work). The first run needs an owner: `tangent identity setup --username NAME` with the
+same environment (see the top of the Makefile).
 
 ### Two instances: stable and dev
 
@@ -49,20 +50,19 @@ stable. Point an agent at dev explicitly (`http://127.0.0.1:7843/mcp`) rather
 than registering both under the same server name, since identical tool names
 from two servers collide in most MCP clients.
 
-Every dev-facing `make` target (`dev`, `dev-go`, `db-migrate`, `db-rollback`,
-and the environment-coupled arm of `smoke`) runs the **dev** instance instead,
-by exporting the two existing overrides:
+Every dev-facing `make` target (`dev`, `dev-go`, `db-check`, and the
+environment-coupled arm of `smoke`) runs the **dev** instance instead, by exporting:
 
 | Variable | Dev value | Set by |
 |---|---|---|
-| `TANGENT_HTTP_PORT` | `DEV_PORT`, default `7843` | `make` |
-| `TANGENT_DB_PATH` | `DEV_DB_PATH`, default `<repo>/.tangent/dev.db` | `make` |
+| `TANGENT_DATA_DIR` | `DEV_DATA_DIR`, default `<repo>/.tangent/data` | `make` |
+| `SUBSTRATE_CONFIG` | `DEV_CONFIG`, default `<repo>/.tangent/substrate.dev.yaml` (sets `httphost.addr` to `DEV_PORT`, default `7843`) | `make dev-config` |
 
 `.tangent/` is gitignored and removed by `make clean`. A different database
-path is a different `.owner` lock file, so dev and stable can never collide on
-the single-writer flock or on the port; two binaries at different migration
-levels never share a database, which is the failure this layout prevents
-(`bab0b89` exists because it happened once).
+path is a different data directory, so dev and stable can never collide on the
+database or on the port; two binaries at different migration levels never share a
+database, which is the failure this layout prevents (`bab0b89` exists because it
+happened once).
 
 `./tangent` with no environment still means the stable defaults. Do not run it
 by hand while a supervisor owns that instance; see
@@ -279,15 +279,14 @@ came to mislead its readers. What follows is the contributor-facing subset.
 ## Persistence layer
 
 Local state lives in SQLite. The stable install uses `~/.tangent/tangent.db`;
-the dev instance uses `<repo>/.tangent/dev.db` (`TANGENT_DB_PATH` selects;
-see "Two instances" above).
+the dev instance uses `<repo>/.tangent/data/tangent.db` (`TANGENT_DATA_DIR` selects;
+see "Two instances" above). The stable install's data directory is `$XDG_DATA_HOME/tangent`.
 
 Useful commands (all against the **dev** database):
 
 ```bash
-make db-migrate
-make db-rollback
-sqlite3 .tangent/dev.db
+make db-check                      # read-only integrity check
+sqlite3 .tangent/data/tangent.db
 ```
 
 When you add a migration, create matching files in

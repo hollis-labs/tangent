@@ -27,8 +27,8 @@ resources:
         - ./tangent
       dir: /path/to/tangent
       env:
-        TANGENT_HTTP_PORT: "7843"
-        TANGENT_DB_PATH: /path/to/tangent/.tangent/dev.db
+        TANGENT_DATA_DIR: /path/to/tangent/.tangent/data
+        SUBSTRATE_CONFIG: /path/to/tangent/.tangent/substrate.dev.yaml
         TANGENT_MANAGED_RESOURCE: tangent-dev
       health: http://127.0.0.1:7843/healthz
       mode: dev_session
