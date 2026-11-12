@@ -51,5 +51,16 @@ func TestChannelSendWorksForTheSignedInOwner(t *testing.T) {
 		!strings.Contains(detail.Messages[0].Body, "a real operator") {
 		t.Fatalf("the channel after the send = %d %s", code, raw)
 	}
+	// A body on a body-less owner route (what an envelope's cross-aimed POST carries) is refused for the owner too;
+	// without one the route works.
+	if code, raw := h.ownerRaw("POST", "/api/channels/"+opened.ChannelID+"/read", map[string]any{"room_id": "r", "envelope_id": "e"}); code != http.StatusBadRequest {
+		t.Errorf("channel read with a body = %d %s, want 400", code, raw)
+	}
 	h.ownerDo("POST", "/api/channels/"+opened.ChannelID+"/read", nil)
+	if code, raw := h.ownerRaw("POST", "/api/logout", map[string]any{"room_id": "r", "envelope_id": "e"}); code != http.StatusBadRequest {
+		t.Errorf("logout with a body = %d %s, want 400", code, raw)
+	}
+	if code, _ := h.ownerRaw("GET", "/api/channels/"+opened.ChannelID, nil); code != http.StatusOK {
+		t.Errorf("the session after a refused logout = %d, want it still signed in", code)
+	}
 }

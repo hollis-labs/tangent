@@ -152,7 +152,21 @@ func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []http
 		return nil, err
 	}
 	// Outermost: the security headers are on every response, including a refusal by the Host check.
-	return server.SecurityHeaders(hostguard.Handler(cfg.AllowedHosts, mcpLoopbackHost(id.Middleware(h)))), nil
+	return server.SecurityHeaders(hostguard.Handler(cfg.AllowedHosts, mcpLoopbackHost(refuseLogoutBody(id.Middleware(h))))), nil
+}
+
+// refuseLogoutBody keeps sign-out a body-less route like the owner routes the server table marks NoBody:
+// the identity module serves it, so the same refusal is applied here, outside the module. The page sends
+// no body; one means the request was aimed by something else.
+func refuseLogoutBody(next http.Handler) http.Handler {
+	refused := server.RefuseBody(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/logout" {
+			refused.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // mcpLoopbackHost shows /mcp the loopback name for a request the Host check has already accepted
