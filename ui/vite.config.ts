@@ -2,7 +2,7 @@ import { createReadStream, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin, type ProxyOptions } from "vite";
 
 // Tangent v0.1 keeps the Vite config deliberately boring:
 //   - React + Tailwind v4 plugins, nothing else.
@@ -13,8 +13,8 @@ import { defineConfig, type Plugin } from "vite";
 //     /ws to the Go dev server (TANGENT_DEV_BACKEND, default
 //     http://127.0.0.1:7843, the `make dev` instance). The Go server does not
 //     proxy to Vite. The proxy rewrites Origin to the backend's own, so the
-//     backend's same-origin checks see the request as it would be in the
-//     embedded build, and the session cookie it sets is host-only for the page.
+//     backend's same-origin checks see the request as they would in the
+//     embedded build.
 //
 // The Nanite-style importmap / shared-chunk pattern is intentionally
 // omitted: it exists to support runtime-loaded plugins, which Tangent
@@ -69,7 +69,22 @@ function excalidrawFonts(): Plugin {
 
 const BACKEND = process.env.TANGENT_DEV_BACKEND ?? "http://127.0.0.1:7843";
 
-const backendProxy = { target: BACKEND, changeOrigin: true };
+// The browser sends Origin: <the Vite page>, the backend sees Host: <itself>,
+// and identity answers 403 bad_origin to a write whose Origin is not its own
+// Host. So the proxy presents the backend's own origin, as the embedded build
+// (one origin) does. Cookies need nothing: they are host-only and the page and
+// the proxy share a host.
+function backendProxyOptions(ws: boolean): ProxyOptions {
+  return {
+    target: BACKEND,
+    changeOrigin: true,
+    ws,
+    configure: (proxy) => {
+      proxy.on("proxyReq", (req) => req.getHeader("origin") && req.setHeader("origin", BACKEND));
+      proxy.on("proxyReqWs", (req) => req.getHeader("origin") && req.setHeader("origin", BACKEND));
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), excalidrawFonts()],
@@ -82,9 +97,9 @@ export default defineConfig({
     port: Number(process.env.TANGENT_DEV_UI_PORT ?? 5173),
     strictPort: true,
     proxy: {
-      "/api": backendProxy,
-      "/mcp": backendProxy,
-      "/ws": { ...backendProxy, ws: true },
+      "/api": backendProxyOptions(false),
+      "/mcp": backendProxyOptions(false),
+      "/ws": backendProxyOptions(true),
     },
   },
   build: {
