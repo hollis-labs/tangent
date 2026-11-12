@@ -89,16 +89,22 @@ Every run of the new binary that boots the modules (`serve`, the `migrate-*` com
    `deploy.yaml`, built by `.github/workflows/build.yml` (frontend built first, and a check that the published binary
    serves the SPA). Nothing is tagged or installed by it. Record the commit; it is the `--commit` of the deploy.
 3. Keep the old binary aside, once: copy `~/.local/bin/tangent` to a dated name next to it. The first deploy keeps a
-   regular file at the target as `<name>.pre-fleet-install` (as for the other apps); the driver confirms the name with
-   `fleet-install deploy tangent --dry-run` before the real deploy. The first rollback is a file swap (section 10).
+   regular file at the target as `<name>.pre-fleet-install` (as for the other apps); the real deploy (not
+   its dry run, which does not print it) is where that is confirmed. This dated copy is the fallback if it is not.
+   The first rollback is a file swap (section 10).
 4. Rehearse on a fresh online-backup copy, in a scratch directory with `HOME` and every XDG variable pointed there
    (section 11). Counts must match, `integrity_check` ok, old tree checksum unchanged.
 5. Prepare, without applying: the config file (section 6, step 7), the key list from the producers query (section 2),
    the proxy edit (section 9) and the Tether catalog plan (step 12). Announce to the agents that use the Tangent tools
    that they will be unavailable for the window (section 13).
 6. **A dry run of the installer**, run by the driver against the *published* artifact (not a local build):
-   `fleet-install deploy tangent --commit <sha12> --dry-run`. It must show the plain binary at `~/.local/bin/tangent`
-   being kept (as `tangent.pre-fleet-install`) and the drop-in path `20-fleet-exec.conf`. Nothing proceeds until it does.
+   `fleet-install deploy tangent --commit <sha12> --dry-run`. Read against the published artifact on the
+   host (2026-11-12, run 43291537913): it checks the checksum, prints the version, skips the preflight while the migrated
+   database does not exist, and says it would place the release, flip `~/.local/bin/tangent` to it, write
+   `tangent-pilot.service.d/20-fleet-exec.conf`, restart the unit and poll `/healthz` on `7843`. It does **not** print that
+   the plain binary is kept as `tangent.pre-fleet-install`; that is confirmed at the real deploy (as it was for another
+   app), with the dated copy of step 3 as the fallback. Nothing proceeds until the dry run shows the link flip and the
+   drop-in path.
 7. **Precondition: the frontend.** A signed-in owner must be able to decide an inbox item in a real browser against the
    release build. The pull requests are merged: #151 (Node 24 and dev proxy), #152 and #153 (one request layer,
    operator elevation removed), #155 (sign-in), #159 (ExternalReview path check) and #154 (the release build that embeds
