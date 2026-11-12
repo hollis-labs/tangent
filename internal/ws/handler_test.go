@@ -132,6 +132,12 @@ func TestHandler_UpgradeAndPush(t *testing.T) {
 		},
 	})
 
+	// The sender is told its response was accepted, for the revision it sent.
+	accepted := readFrameOfType(t, clientConn, "response.accepted", 2*time.Second)
+	if accepted["envelopeId"] != "h-1" || accepted["outcome"] != "resolved" || accepted["revision"] != frame["revision"] {
+		t.Errorf("accepted frame = %+v, want envelope h-1, outcome resolved, revision %v", accepted, frame["revision"])
+	}
+
 	if err := <-pushDone; err != nil {
 		t.Fatalf("push: %v", err)
 	}
@@ -240,6 +246,11 @@ func TestHandler_Cancel(t *testing.T) {
 		"revision":   frame["revision"],
 	})
 
+	accepted := readFrameOfType(t, clientConn, "response.accepted", 2*time.Second)
+	if accepted["envelopeId"] != "h-c" || accepted["outcome"] != "canceled" || accepted["revision"] != frame["revision"] {
+		t.Errorf("accepted frame = %+v, want envelope h-c, outcome canceled, revision %v", accepted, frame["revision"])
+	}
+
 	select {
 	case err := <-pushDone:
 		if err == nil || !strings.Contains(err.Error(), "user cancelled") {
@@ -247,6 +258,50 @@ func TestHandler_Cancel(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Push did not honor cancel")
+	}
+}
+
+// A refused response is not acknowledged as accepted: the client gets the refusal and the room goes on waiting.
+func TestHandler_StaleResponseIsNotAcknowledged(t *testing.T) {
+	mgr, base, cleanup := newTestRig(t)
+	defer cleanup()
+
+	rm := mgr.Create(nil)
+	clientConn, _, err := websocket.Dial(context.Background(), wsURL(base, rm.ID), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer clientConn.Close(websocket.StatusNormalClosure, "test done")
+	waitForConn(t, rm, 1*time.Second)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() { _, _ = rm.Push(ctx, &envelopes.Envelope{V: 1, ID: "h-s", Type: "triage"}) }()
+
+	frame := readFrame(t, clientConn, 2*time.Second)
+	writeFrame(t, clientConn, map[string]any{
+		"type": "response", "envelopeId": "h-s", "revision": 999,
+		"response": map[string]any{"v": 1, "envelopeId": "h-s", "kind": "data", "status": "submitted", "payload": map[string]any{}},
+	})
+	readCtx, readCancel := context.WithTimeout(context.Background(), time.Second)
+	defer readCancel()
+	var sawStale bool
+	for readCtx.Err() == nil {
+		mt, payload, readErr := clientConn.Read(readCtx)
+		if readErr != nil || mt != websocket.MessageText {
+			break
+		}
+		var f map[string]any
+		_ = json.Unmarshal(payload, &f)
+		if f["type"] == "response.accepted" {
+			t.Fatalf("a stale response was acknowledged: %+v (presented revision %v)", f, frame["revision"])
+		}
+		if f["type"] == "error" && f["code"] == "stale_presentation" {
+			sawStale = true
+		}
+	}
+	if !sawStale {
+		t.Error("the stale response got no stale_presentation refusal")
 	}
 }
 
@@ -274,7 +329,7 @@ func readFrame(t *testing.T, c *websocket.Conn, timeout time.Duration) map[strin
 	for {
 		frame := readFrameCtx(ctx, t, c)
 		switch frame["type"] {
-		case "connection", "sync":
+		case "connection", "sync", "response.accepted":
 			continue
 		default:
 			return frame

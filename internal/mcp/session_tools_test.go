@@ -1379,7 +1379,7 @@ func awaitSingleRoom(t *testing.T, mgr *room.Manager, timeout time.Duration) *ro
 	return nil
 }
 
-// Connection-lifecycle frames ("connection", "sync") interleave with
+// Connection-lifecycle frames ("connection", "sync") and the "response.accepted" acknowledgement interleave with
 // presentations by design — a client is told who else is attached and which
 // durable revisions it holds independently of any envelope — so they are
 // skipped here.
@@ -1400,7 +1400,7 @@ func readWSFrame(t *testing.T, conn *websocket.Conn, timeout time.Duration) map[
 			t.Fatalf("unmarshal ws frame: %v", err)
 		}
 		switch frame["type"] {
-		case "connection", "sync":
+		case "connection", "sync", "response.accepted":
 			continue
 		default:
 			return frame
