@@ -5,24 +5,26 @@ import (
 	"io/fs"
 	"net/http"
 
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/health"
+	"github.com/hollis-labs/tangent/internal/webui"
 )
 
 // The three operability surfaces, mounted separately because they answer
 // different questions and have different consequences (see internal/health).
 //
-//	GET /healthz                    liveness   — touches nothing
-//	GET /readyz                     readiness  — database, migrations, registry,
-//	                                             renderer host, delivery worker
-//	GET /healthz/capability         capability — every interaction kind, bounded
-//	GET /healthz/capability/{kind}  capability — one requested kind
+//	GET /healthz                       liveness   — the host's; touches nothing
+//	GET /api/health/ready              readiness  — database, migrations, registry,
+//	                                                renderer host, delivery worker
+//	GET /api/health/capability         capability — every interaction kind, bounded
+//	GET /api/health/capability/{kind}  capability — one requested kind
 //
-// /healthz keeps its path and its body. The managed-runtime health probe in
-// ~/.cerberus/projects/tangent.cerberus.yaml points at it, and that probe feeds
-// a supervisor's restart decision: pointing it at readiness would make a slow
-// or degraded dependency cause a restart loop, which is exactly the failure
-// this task's design guidance rules out. Readiness is what an operator and
-// `cerberus resource doctor` read; liveness is what a supervisor reads.
+// /healthz is the Substrate health module's and keeps its path. The
+// managed-runtime health probe in ~/.cerberus/projects/tangent.cerberus.yaml
+// points at it, and that probe feeds a supervisor's restart decision: pointing
+// it at readiness would make a slow or degraded dependency cause a restart
+// loop. Readiness is what an operator and `cerberus resource doctor` read, with
+// tangent.view; liveness is what a supervisor reads, with nothing.
 
 const (
 	// maxHealthResponseBytes is a hard ceiling on any health response. The
@@ -33,22 +35,19 @@ const (
 	maxHealthResponseBytes = 64 * 1024
 )
 
-// registerHealthRoutes mounts the three probes. They are registered
+// registerHealthRoutes mounts the readiness and capability probes under
+// /api/health. Liveness is the host's /healthz, which the Substrate health
+// module serves; the host owns the /healthz prefix, so the richer probes moved
+// under /api and need tangent.view.
+//
+// It mounts them They are registered
 // unconditionally: a build that cannot report readiness must say so, because
 // "the reporter was never wired" and "the dependency is broken" are different
 // incidents and a probe that answers 404 to the first one hides it.
-func registerHealthRoutes(mux *http.ServeMux, reporter *health.Reporter) {
-	mux.HandleFunc("GET /healthz", handleLiveness)
-	mux.Handle("GET /readyz", &healthHandler{reporter: reporter, probe: probeReadiness})
-	mux.Handle("GET /healthz/capability", &healthHandler{reporter: reporter, probe: probeCapabilitySummary})
-	mux.Handle("GET /healthz/capability/{kind}", &healthHandler{reporter: reporter, probe: probeCapabilityKind})
-}
-
-// handleLiveness proves that this process is responding. It reads no
-// dependency, takes no lock, and allocates one fixed struct — because the
-// ability to return the response is the entire claim being made.
-func handleLiveness(w http.ResponseWriter, _ *http.Request) {
-	writeHealthJSON(w, http.StatusOK, health.Live())
+func registerHealthRoutes(rt *router, reporter *health.Reporter) {
+	rt.handle("GET /api/health/ready", access.View, false, &healthHandler{reporter: reporter, probe: probeReadiness})
+	rt.handle("GET /api/health/capability", access.View, false, &healthHandler{reporter: reporter, probe: probeCapabilitySummary})
+	rt.handle("GET /api/health/capability/{kind}", access.View, false, &healthHandler{reporter: reporter, probe: probeCapabilityKind})
 }
 
 type healthProbe int
@@ -131,7 +130,7 @@ func writeHealthJSON(w http.ResponseWriter, status int, payload any) {
 	if len(body) > maxHealthResponseBytes {
 		body = []byte(`{"status":"unavailable","probe":"readiness",` +
 			`"operator_action":"the health report exceeded its response ceiling and was withheld; ` +
-			`query one kind at a time at /healthz/capability/{kind}"}`)
+			`query one kind at a time at /api/health/capability/{kind}"}`)
 		status = http.StatusServiceUnavailable
 	}
 	header := w.Header()
@@ -153,15 +152,9 @@ func writeHealthJSON(w http.ResponseWriter, status int, payload any) {
 // and in dev-proxy mode it deliberately does not dial the Vite server, because
 // a readiness probe that makes an outbound request can be made to hang by the
 // thing it is reporting on.
-func RendererHostProbe(devFrontendURL string) func() health.RendererHost {
+func RendererHostProbe() func() health.RendererHost {
 	return func() health.RendererHost {
-		if devFrontendURL != "" {
-			return health.RendererHost{
-				Mode:   "dev-proxy",
-				Detail: "non-API requests are reverse-proxied to an external dev server",
-			}
-		}
-		sub, err := spaFileSystem()
+		sub, err := webui.Assets()
 		if err != nil {
 			return health.RendererHost{
 				Mode:   "embedded",

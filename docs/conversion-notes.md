@@ -29,17 +29,38 @@ Each says what was seen, and what was done meanwhile.
    `/mcp` has thousands of requests. Removed.
 5. **G6b: JSON responses.** The old server runs the MCP SDK `Stateless` and `JSONResponse`; libs go-mcp's handler
    (used by the `mcp` module) sets `Stateless` only, so a client sending `Accept: text/event-stream` gets an SSE-framed
-   reply where it got JSON.
+   reply where it got JSON. Taken to the Framework Agent by the driver. Recorded against the module as it is today
+   (`TestG6bWhatTheModuleAnswersToTheMainClientsPost`, real host, real identity): a POST with `Accept: application/json,
+   text/event-stream` (what Claude Code, Codex and the SDK clients send) is answered `200 text/event-stream`, one
+   event, `event: message` then `data: {json-rpc}`; `Accept: application/json` alone, or no `Accept`, is `400 Accept
+   must contain both 'application/json' and 'text/event-stream'`. The SDK's own client reads the framed reply (the
+   host tests use it); the in-tree probes (`internal/smoke`) and `docs/mcp-smoketest.md`'s curl recipes now unwrap it.
+   **Which client library the Tether gateway uses for Tangent's `/mcp`, and whether it accepts an SSE-framed reply to
+   a POST, cannot be told from Tangent's side.** Tangent's old gateway smoke tests (`-tags tether_smoke`) used an
+   `sse` catalog entry, so they say nothing about the Streamable HTTP client; they are deleted with `/sse`. The gateway
+   owner must confirm before cutover, and `internal/smoke`'s catalog classification still expects `transport: sse` and
+   `url: <base>/sse` for Tangent's entry: it must change with the catalog entry (a correctly migrated entry would read
+   `CATALOG_STALE` today).
 6. **G8: identity has no offline bootstrap and `/api/setup` is open on an empty database.** With the identity module
    selected, the first caller of `POST /api/setup` becomes the owner (`*`). There is no config key to close it and
    no programmatic way to create the owner or a key (`Service` has `User`, `Verify` and key rotation only). The plan
    forbids first-run setup over HTTP, so the product path waits for the framework's offline bootstrap. Tests create
    their owner through `/api/setup` on a throwaway data directory only, and so do hand checks of the built binary
    on a throwaway data directory (nothing real is behind it).
-7. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
+7. **Plugin children cannot call back (found in slice c; needs a decision).** A subprocess plugin reaches Tangent's tools
+   through `/mcp` at `TANGENT_MCP_URL` (`pkg/plugin/hostclient`) with no credential: it was a local caller. `/mcp` now
+   refuses a request without one, so the first-party `runner`, `tesseract` and `torque` plugins can no longer drive
+   Tangent (the runner's turn never reaches the inbox; `TestInstalledRunnerCarriesATurnThroughTheInbox` is skipped with
+   this reference, and was green on the old binary). Two designs (see `docs/client-table.md`): (A) the host mints a
+   per-child identity API key, hands it over in the child's environment, and `hostclient` presents it; this follows the
+   identity model but only works once the plugins repository is built against the new `hostclient`; (B) the host gives
+   each child its own URL with a per-child secret, served from a mount the host owns: works with the shipped plugin
+   binaries, but is a second door beside identity. Recommended: A, with B only as a bridge if the plugin release cannot
+   land with the cutover. Waiting for the driver/owner.
+8. **Pins.** `substrate pins check --app .` passes at `bac8c60`; `pins sync` moved `libs/mesh/core` (0.8.0 to 0.6.0),
    `libs/ui/ui-go` (0.4.0 to 0.1.0) and `libs/harness/core` (0.13.0 to 0.16.0) to the BOM versions and the existing
    packages still build and vet.
-8. **Hygiene.** `scripts/scan-public --tree` reports 86 findings in the inherited tree (test fixtures that look like
+9. **Hygiene.** `scripts/scan-public --tree` reports 86 findings in the inherited tree (test fixtures that look like
    secrets, redaction test data, macOS home paths, two private-network addresses and two internal host names in
    `docs/mcp-integration.md`, a personal home path in `tangent.cerberus.yaml`). Most sit in code the port deletes; the
    rest are fixed or, where provably not a secret, proposed to the driver for the allowlist. None has been
@@ -75,6 +96,13 @@ renames it into place only after every check passes; it refuses an existing targ
   and verified in about one second; an independent check with `sqlite3`/Python (per-table counts and `EXCEPT` both
   ways) found no difference; the copy was byte-identical afterwards and gained no `-shm`.
 
+A defect found and fixed in slice (c): the old binary's migration 0021 *seeded* the one row the event outbox counts on
+(`event_outbox_state`, id 1), and the baseline schema carried only the table. `TestSchemaEqualsLegacy` compares schema
+text and cannot see a seed row, so a new database could not enqueue an approval (`events: next sequence: sql: no rows`).
+`00002_guards.sql` now seeds it with `INSERT OR IGNORE` (a copied database keeps its own generation and sequence, proved
+by `TestMigrateLegacy`; a new one gets a random generation, `TestANewDatabaseSeedsTheEventOutboxCounter`). The other
+inserts in the old migrations were backfills of rows that are copied as data.
+
 Not yet covered: artifact bodies on disk (`artifacts/`), the plugin directory and its `config.sqlite`, the keychain
 values (G2), the plugin binaries.
 
@@ -86,10 +114,69 @@ values (G2), the plugin binaries.
 | (none) | `TANGENT_DATA_DIR`, else `$XDG_DATA_HOME/tangent` |
 | `TANGENT_HTTP_PORT` / `--port` (7842) | `httphost.addr` (default `127.0.0.1:7842`, must be loopback) |
 | `TANGENT_OPERATOR_TOKEN`, `TANGENT_ELEVATION_TTL` | removed with the operator-elevation model (see the auth slice) |
-| `TANGENT_MCP_TOKENS`, `TANGENT_MCP_TRUSTED_FORWARDERS`, `TANGENT_PROXIED_HTTP_ADDR` | removed: identity API keys replace them |
+| `TANGENT_MCP_TOKENS`, `TANGENT_MCP_TRUSTED_FORWARDERS`, `TANGENT_PROXIED_HTTP_ADDR` | removed: identity API keys replace them; the producers that count as gateways are `tangent.gateway_producers` and `tangent.trusted_forwarders` in the config |
+| `TANGENT_DEV_FRONTEND_URL`, the `/r/{roomID}` prevalidation, CSP headers, SPA serving | removed from the backend; the SPA is the host's `Assets` (slice e) |
+| `TANGENT_ARTIFACT_DIR`, `TANGENT_D2_BIN`, `TANGENT_MANAGED_RESOURCE`, `TANGENT_OTEL`, `TANGENT_PLUGIN_HEALTH_GATE_DISABLE`, `TANGENT_MCP_LEGACY_TOOL_NAMES`, `TANGENT_EVENTS_DISABLED`, `TANGENT_HITL_BACKEND`, `TANGENT_PLUGIN_DIR` | unchanged (read by `cmd/tangent/compose.go`; artifacts default to `<data dir>/artifacts`) |
+| `/readyz`, `/healthz/capability`, `/healthz/capability/{kind}` | `/api/health/ready`, `/api/health/capability`, `/api/health/capability/{kind}` (need `tangent.view`); liveness is the host's `/healthz` |
+| `/sse`, the 7844 listener | removed (G6a; one listener) |
 | (none) | `SUBSTRATE_CONFIG`: YAML file holding any override |
 
 The table grows as slices land.
+
+## Slice (c): routes, scopes, who may decide, the tools
+
+**Routes.** Every route is registered with a scope in one table (`internal/server/server.go`: `Route{Pattern, Scope,
+UserOnly, Handler}`); registering one without a scope, or twice, is an error at start (`TestEveryRouteHasAScope`, and
+`TestARouteWithoutAScopeCannotBeRegistered` which fails when the check is removed). `cmd/tangent` hands the host the
+`/api/` routes (httphost `Routes`) and the rest as mounts (`/ws`), and registers each route's scope on the auth scope
+table, so the guard (enforce mode) refuses a request that lacks it before the handler runs.
+
+**G7: deciding is a signed-in person's.** A route that resolves or elevates an approval is `UserOnly`: it needs a user
+session (`Kind "user"`, a session id) *and* `tangent.resolve`, which only the owner holds
+(`internal/access.MayResolve`). libauth treats `*` and `tangent.*` as holding every scope, so the scope alone would let a
+key with a wildcard decide; the session test is Tangent's own. Shown against the real host with the real identity
+module and real minted keys: no credential gets 401; a key holding `tangent.resolve` by name, `tangent.*`, `*`, or only
+view/draft/submit gets 403 on every deciding route (`TestEveryAgentCredentialIsRefusedOnEveryDecidingRoute`, which fails
+when the user-session test is weakened: checked), while the owner's session reaches them
+(`TestTheOwnerSessionReachesTheDecidingRoutes`). `TANGENT_OPERATOR_TOKEN` and `TANGENT_ELEVATION_TTL` are dropped, and
+with them the elevation endpoints and the participant cookie. **Legitimate agent resolve paths: none.** What agents may
+do instead: acknowledge delivery (`tangent.deliver`: `tangent_turns_ack`, `tangent_interaction_ack`,
+`tangent_relay_ack` and the turns ack route), and take back their own request (`tangent.withdraw`: `tangent_hitl_withdraw`,
+`tangent_artifact_withdraw`). Each agent class holds an API key now; letting a class use local trust later is a change to
+how the host admits it, not to Tangent's scopes.
+
+**The browser participant** is the signed-in user: `Ref user:<id>`, authority `tangent-identity`, assurance
+`identity-session` (rank 3 in `interaction.AssuranceRank`, so it supersedes the presenter a lower assurance opened, as
+the operator session did). API-key callers are recorded as `standalone-local:<key name>` / `key-verified`, gateway
+producers as `gateway:<name>` / `adapter-verified`; `identity-session` and `key-verified` map to the event stream's
+`actor.verified: "token"` (a credential the host verified, which `operator-token` was) and are accepted in the payload's
+assurance vocabulary (`internal/events/approval.go`). Existing `participant_sessions` rows (1 282 in the rehearsal copy)
+are migrated history the new code never reads. Cross-origin protection: `Sec-Fetch-Site`/`Origin` on every route
+(`sameOriginGuard`), and identity requires the SPA to send `X-Requested-With` on every unsafe request (for gui-tangent).
+
+**Tools.** They register on the `mcp` module's server (`mcp.WithServer`), each with exactly one scope
+(`internal/mcp/tool_scopes.go`), authorized per call by `access.AuthorizeTool` against the caller's principal, listed to
+a caller only if it holds the scope (`UseToolFilter`), and refused with a fixed `forbidden` result that names neither the
+scope nor whether the tool exists. A tool with no scope is unreachable, not open; a server built with no authorizer
+refuses everything. A plugin's tool gets `tangent.plugin` when it registers and loses it when withdrawn. Names are
+unchanged (73 tools, 67 deprecated aliases; recorded files, compared byte for byte against the real host). Caller
+identity comes from the credential only: `caller.scope`, `requester_scope` and `owner_scope` arguments are still
+accepted and ignored when there is a credential. The in-process loopback caller acts as `tangent:plugin-host` (no
+name, so the unlabeled caller partition it always had; scopes view/draft/submit/cancel/close/withdraw/deliver/plugin,
+never resolve).
+
+**Other changes in this slice.** Composition: `internal/boot` now takes the host's database handle, MCP server,
+authorizer and verifier and returns the route table (no flock, no golang-migrate, no listeners); `cmd/tangent/compose.go`
+wires it. `/mcp` needs the scope `tangent.mcp` (the mcp module's own). The health migration check reads goose's table
+(`persistence.Inspect`; its "dirty" case no longer exists) and tells the operator to restart rather than run a command
+that no longer exists. `tangent plugin install|enable|disable|remove|list|dir` are back (they touch no database).
+`internal/smoke` boots the built binary on a throwaway data directory with a first-run owner and a probe key.
+
+**Known open after this slice.** The desktop shell (`cmd/tangent-app`, `internal/appshell`) still imports the removed
+boot API and does not build (it needs Wails and GTK, which this host lacks; slice f, after the owner decides). The
+`tangent session` and maintenance commands (`--db-check`, `--db-backup`, restore, retention) are not ported and
+`internal/db` still carries the old golang-migrate helpers that ~36 test files use to build a test database
+(`internal/testdb` is the replacement; moving them is mechanical and not done). `ui/` is untouched (slice e).
 
 ## Read-only commands
 

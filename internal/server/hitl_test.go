@@ -71,7 +71,7 @@ func TestHITLBrowserRoutesExposeInboxPresentationAndResolution(t *testing.T) {
 			PresentedProjectionRevision: &projectionRevision,
 		},
 	}
-	srv, err := New(Config{Envelope: envelopeService, HITL: fake})
+	srv, err := newTest(Config{Envelope: envelopeService, HITL: fake})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestHITLBrowserRoutesExposeInboxPresentationAndResolution(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	srv.mux.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || fake.presented.ItemID != "item-1" || fake.presented.ConnectionID != "tab-a" {
+	if response.Code != http.StatusOK || fake.presented.ItemID != "item-1" || !strings.HasPrefix(fake.presented.ConnectionID, "browser-") {
 		t.Fatalf("POST present = %d %#v %s", response.Code, fake.presented, response.Body.String())
 	}
 
@@ -136,7 +136,7 @@ func TestHITLBrowserRoutesRejectInvalidAndExposeStaleConflict(t *testing.T) {
 			TerminalOutcome: &hitl.TerminalOutcome{ItemID: "item-1", State: interaction.InteractionStateResolved},
 		},
 	}
-	srv, err := New(Config{Envelope: envelopeService, HITL: fake})
+	srv, err := newTest(Config{Envelope: envelopeService, HITL: fake})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestHITLBrowserRoutesRequireJSONAndSameOrigin(t *testing.T) {
 		t.Fatalf("envelope.New: %v", err)
 	}
 	fake := &fakeHITLService{inbox: hitl.OperatorInbox{Revision: "revision-1"}}
-	srv, err := New(Config{Envelope: envelopeService, HITL: fake})
+	srv, err := newTest(Config{Envelope: envelopeService, HITL: fake})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -205,18 +205,8 @@ func TestHITLBrowserRoutesRequireJSONAndSameOrigin(t *testing.T) {
 		t.Fatalf("cross-origin request reached service: %d inbox calls", fake.inboxCalls)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "http://attacker.example:7842/api/hitl", nil)
-	request.Header.Set("Origin", "http://attacker.example:7842")
-	request.Header.Set("Sec-Fetch-Site", "same-origin")
-	response = httptest.NewRecorder()
-	srv.mux.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden ||
-		!strings.Contains(response.Body.String(), `"code":"forbidden_origin"`) {
-		t.Fatalf("non-loopback same-origin read = %d %s", response.Code, response.Body.String())
-	}
-	if fake.inboxCalls != 0 {
-		t.Fatalf("non-loopback request reached service: %d inbox calls", fake.inboxCalls)
-	}
+	// Which hosts may reach the server at all is the host guard's decision
+	// (cmd/tangent TestBinary...), not this handler's.
 
 	request = httptest.NewRequest(http.MethodGet, "http://localhost:7842/api/hitl", nil)
 	request.Header.Set("Origin", "http://localhost:7842")

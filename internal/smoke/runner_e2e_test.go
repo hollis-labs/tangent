@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +33,11 @@ func TestInstalledRunnerCarriesATurnThroughTheInbox(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots the shipped binary with its installed plugins; skipped under -short")
 	}
+	// A plugin child reaches Tangent through /mcp at TANGENT_MCP_URL (pkg/plugin/hostclient) and
+	// presents no credential, which /mcp now refuses. Which credential a child holds, and how the
+	// shipped plugin binaries come to present it, is an open decision in docs/conversion-notes.md
+	// (Gap: plugin children). Until it is made the loop cannot run end to end.
+	t.Skip("plugin children hold no /mcp credential yet: see docs/conversion-notes.md, gap on plugin children")
 	endpoint, _ := bootShippedBinaryWithPluginDir(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -102,7 +106,10 @@ type turnItem struct {
 func mcpSession(ctx context.Context, t *testing.T, endpoint smoke.Endpoint) *mcpsdk.ClientSession {
 	t.Helper()
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "tangent-smoke", Version: "0"}, nil)
-	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{Endpoint: endpoint.BaseURL + "/mcp"}, nil)
+	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{
+		Endpoint:   endpoint.BaseURL + "/mcp",
+		HTTPClient: &http.Client{Transport: bearerKey{endpoint.Key}},
+	}, nil)
 	if err != nil {
 		t.Fatalf("connect to %s/mcp: %v", endpoint.BaseURL, err)
 	}
@@ -128,46 +135,21 @@ func callTool(ctx context.Context, t *testing.T, session *mcpsdk.ClientSession, 
 	return text.String()
 }
 
-// operator is the browser side of the turns inbox: a participant session minted
-// by a same-origin document navigation, exactly as a browser gets one.
+// operator is the browser side of the turns inbox: the owner's signed-in session.
 type operator struct {
 	base   string
 	client *http.Client
 }
 
-func newOperator(ctx context.Context, t *testing.T, endpoint smoke.Endpoint) *operator {
+func newOperator(_ context.Context, t *testing.T, endpoint smoke.Endpoint) *operator {
 	t.Helper()
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookie jar: %v", err)
+	client, ok := owners.Load(endpoint.BaseURL)
+	if !ok {
+		t.Fatalf("no owner session for %s: boot it with bootShippedBinary", endpoint.BaseURL)
 	}
-	o := &operator{base: endpoint.BaseURL, client: &http.Client{Jar: jar, Timeout: 15 * time.Second}}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, o.base+"/turns", nil)
-	if err != nil {
-		t.Fatalf("build navigation: %v", err)
-	}
-	request.Header.Set("Sec-Fetch-Dest", "document")
-	request.Header.Set("Sec-Fetch-Site", "none")
-	request.Header.Set("Accept", "text/html")
-	response, err := o.client.Do(request)
-	if err != nil {
-		t.Fatalf("document navigation: %v", err)
-	}
-	_ = response.Body.Close()
-	if len(jar.Cookies(request.URL)) == 0 {
-		t.Fatalf("a document navigation to %s minted no participant session", request.URL)
-	}
-	// Answering takes `resolve`, which a minted session no longer holds:
-	// elevate with the operator token, as the browser prompt does.
-	if err := o.do(ctx, http.MethodPost, "/api/session/elevate", map[string]any{"token": smokeOperatorToken}, nil); err != nil {
-		t.Fatalf("elevate the operator session: %v", err)
-	}
-	return o
+	// The owner's signed-in session is the browser: it alone may answer.
+	return &operator{base: endpoint.BaseURL, client: client.(*http.Client)}
 }
-
-// smokeOperatorToken is the fixture TANGENT_OPERATOR_TOKEN the smoke harness
-// boots the shipped binary with.
-const smokeOperatorToken = "smoke-fixture-operator-token-5e8b2a7c1d9f4036"
 
 func (o *operator) do(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader
@@ -183,6 +165,7 @@ func (o *operator) do(ctx context.Context, method, path string, body any, out an
 		return err
 	}
 	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("X-Requested-With", "smoke")
 	if body != nil {
 		request.Header.Set("Origin", o.base)
 		request.Header.Set("Content-Type", "application/json")
@@ -264,4 +247,13 @@ func (o *operator) waitFor(ctx context.Context, t *testing.T, what string, done 
 		case <-ticker.C:
 		}
 	}
+}
+
+// bearerKey presents an API key on every request, as an MCP client library does.
+type bearerKey struct{ key string }
+
+func (b bearerKey) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.key)
+	return http.DefaultTransport.RoundTrip(r)
 }

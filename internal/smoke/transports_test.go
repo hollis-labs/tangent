@@ -2,28 +2,26 @@ package smoke_test
 
 import (
 	"context"
+	"io/fs"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/hollis-labs/tangent/internal/health"
 	"github.com/hollis-labs/tangent/internal/smoke"
+	"github.com/hollis-labs/tangent/internal/webui"
 )
 
-// TestShippedBuildServesBothTransports is the CI-safe half of the smoke check.
+// TestShippedBuildServesTheMCPSurface is the CI-safe half of the smoke check.
 //
 // It depends on nothing outside this repository: no Cerberus resource, no
 // Tether catalog, no running instance, no port anyone else owns. It builds the
 // binary, boots it against a database in a temp directory on a port it
 // reserved, and asks it the four questions a consumer asks — is it alive, is
-// it ready, what does each transport advertise, and does a read-only tool call
-// come back.
-//
-// The transport-parity assertion is the one that earns its keep. `/mcp` and
-// `/sse` are the same registry behind two handlers, so they cannot legitimately
-// differ; when they do, one of them is serving something else, and the Tether
-// gateway dials `/sse` — the one nobody probes by hand.
-func TestShippedBuildServesBothTransports(t *testing.T) {
+// it ready, what does /mcp advertise, and does a read-only tool call come
+// back. (The legacy /sse transport is gone with the port; /mcp is the one
+// transport, so there is no parity to check.)
+func TestShippedBuildServesTheMCPSurface(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots the shipped binary; skipped under -short")
 	}
@@ -35,7 +33,9 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 	findings.Add(endpoint.Liveness(ctx))
 
 	readiness, finding := endpoint.Readiness(ctx)
-	findings.Add(finding)
+	if !onlyUnbuiltRenderer(t, readiness) {
+		findings.Add(finding)
+	}
 	for _, degraded := range smoke.DegradedChecks(readiness) {
 		t.Logf("degraded: %s", degraded)
 	}
@@ -45,13 +45,6 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 
 	direct, finding := endpoint.StreamableSurface(ctx)
 	findings.Add(finding)
-
-	legacy, finding := endpoint.LegacySSESurface(ctx)
-	findings.Add(finding)
-
-	// Parity, not a count. The reference is whatever the binary just said, so
-	// there is no number here to go stale.
-	findings.Add(smoke.CompareSurface(direct, legacy, "legacy /sse"))
 
 	if len(findings) > 0 {
 		report, _ := endpoint.CallHealthReport(ctx)
@@ -63,8 +56,7 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 		t.Fatalf("shipped build smoke failed:\n%s", findings)
 	}
 
-	t.Logf("shipped build advertises %s over /mcp and %s over /sse",
-		direct.Describe(), legacy.Describe())
+	t.Logf("shipped build advertises %s over /mcp", direct.Describe())
 
 	// The surface has to actually contain the tools this check reasons about,
 	// or a future refactor could satisfy parity with an empty registry.
@@ -73,20 +65,18 @@ func TestShippedBuildServesBothTransports(t *testing.T) {
 			t.Errorf("shipped build does not advertise %s; the smoke check cannot probe what it cannot call", required)
 		}
 	}
-	if readiness.Status != health.SummaryOK {
+	if readiness.Status != health.SummaryOK && !onlyUnbuiltRenderer(t, readiness) {
 		t.Errorf("readiness on a fresh temp database = %q, want %q", readiness.Status, health.SummaryOK)
 	}
 }
 
-// TestReadOnlyToolCallAnswersOnBothTransports drives the one read-only tool
-// call over each transport.
+// TestReadOnlyToolCallAnswersOverMCP drives the one read-only tool call.
 //
 // It is `tangent_health_get` for the reason smoke.ReadOnlyProbeTool gives:
 // it is the only candidate whose answer distinguishes CAPABILITY_UNHEALTHY
-// from a transport that merely carried bytes. Calling it over `/sse` as well
-// as `/mcp` covers the path a gateway-fronted agent actually takes, which has
-// no HTTP client for /readyz.
-func TestReadOnlyToolCallAnswersOnBothTransports(t *testing.T) {
+// from a transport that merely carried bytes. It is also the path a
+// gateway-fronted agent takes, which has no HTTP client for /api/health/ready.
+func TestReadOnlyToolCallAnswersOverMCP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("boots the shipped binary; skipped under -short")
 	}
@@ -95,41 +85,27 @@ func TestReadOnlyToolCallAnswersOnBothTransports(t *testing.T) {
 	defer cancel()
 
 	httpReadiness, finding := endpoint.Readiness(ctx)
-	if finding != nil {
+	if finding != nil && !onlyUnbuiltRenderer(t, httpReadiness) {
 		t.Fatalf("readiness probe failed:\n%s", finding)
 	}
 
 	direct, finding := endpoint.CallHealthReport(ctx)
-	if finding != nil {
+	if finding != nil && !onlyUnbuiltRenderer(t, direct.Readiness) {
 		t.Fatalf("read-only tool call over /mcp failed:\n%s", finding)
 	}
-	legacy, finding := endpoint.CallHealthReportOverSSE(ctx)
-	if finding != nil {
-		t.Fatalf("read-only tool call over /sse failed:\n%s", finding)
-	}
 
-	// One health implementation, reported over three channels. Two answers
+	// One health implementation, reported over two channels. Two answers
 	// that can disagree is the defect internal/health closed; this keeps it
 	// closed across the transports as well as within the process.
 	if direct.Readiness.Status != httpReadiness.Status {
-		t.Errorf("%s over /mcp reports readiness %q, /readyz reports %q",
+		t.Errorf("%s over /mcp reports readiness %q, /api/health/ready reports %q",
 			smoke.ReadOnlyProbeTool, direct.Readiness.Status, httpReadiness.Status)
 	}
-	if legacy.Readiness.Status != httpReadiness.Status {
-		t.Errorf("%s over /sse reports readiness %q, /readyz reports %q",
-			smoke.ReadOnlyProbeTool, legacy.Readiness.Status, httpReadiness.Status)
+	if direct.HostVersion == "" {
+		t.Error("the host version over /mcp is empty")
 	}
-	if direct.HostVersion == "" || direct.HostVersion != legacy.HostVersion {
-		t.Errorf("host version over /mcp = %q, over /sse = %q; want one non-empty value",
-			direct.HostVersion, legacy.HostVersion)
-	}
-	if direct.CapabilitySummary == nil || legacy.CapabilitySummary == nil {
-		t.Fatalf("%s returned no capability summary (mcp=%v sse=%v)",
-			smoke.ReadOnlyProbeTool, direct.CapabilitySummary != nil, legacy.CapabilitySummary != nil)
-	}
-	if direct.CapabilitySummary.ManagedDefinitions != legacy.CapabilitySummary.ManagedDefinitions {
-		t.Errorf("managed definition count differs by transport: /mcp %d, /sse %d",
-			direct.CapabilitySummary.ManagedDefinitions, legacy.CapabilitySummary.ManagedDefinitions)
+	if direct.CapabilitySummary == nil {
+		t.Fatalf("%s returned no capability summary", smoke.ReadOnlyProbeTool)
 	}
 	// Plugin legibility, proved against the shipped binary (CW-20260910-0036).
 	// A tool list cannot answer this. A plugin may register no tool at all — a
@@ -143,10 +119,6 @@ func TestReadOnlyToolCallAnswersOnBothTransports(t *testing.T) {
 	if direct.Plugins.Refused != 0 {
 		t.Errorf("%s reports %d refused plugin(s): %+v",
 			smoke.ReadOnlyProbeTool, direct.Plugins.Refused, direct.Plugins.Plugins)
-	}
-	if direct.Plugins.Loaded != legacy.Plugins.Loaded {
-		t.Errorf("loaded plugin count differs by transport: /mcp %d, /sse %d",
-			direct.Plugins.Loaded, legacy.Plugins.Loaded)
 	}
 	if direct.Plugins.Attribution == "" {
 		t.Error("the plugin inventory does not say its contributed lists are host-wide")
@@ -180,11 +152,9 @@ func TestProcessDownIsDistinguishableFromEverythingElse(t *testing.T) {
 	findings.Add(endpoint.Liveness(ctx))
 	_, finding := endpoint.StreamableSurface(ctx)
 	findings.Add(finding)
-	_, finding = endpoint.LegacySSESurface(ctx)
-	findings.Add(finding)
 
-	if len(findings) != 3 {
-		t.Fatalf("expected liveness, /mcp and /sse to each report a finding, got:\n%s", findings)
+	if len(findings) != 2 {
+		t.Fatalf("expected liveness and /mcp to each report a finding, got:\n%s", findings)
 	}
 	for _, found := range findings {
 		if found.Mode != smoke.ModeProcessDown {
@@ -201,4 +171,31 @@ func contains(names []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// onlyUnbuiltRenderer reports that the one thing failing is the renderer host, in a build whose
+// frontend was never embedded. The SPA is built by the frontend repository and embedded into
+// internal/webui/dist for a release; a backend-only build has none, and that is expected here.
+func onlyUnbuiltRenderer(t *testing.T, report health.ReadinessReport) bool {
+	t.Helper()
+	sub, err := webui.Assets()
+	if err != nil {
+		return false
+	}
+	if _, err = fs.Stat(sub, "index.html"); err == nil {
+		return false
+	}
+	failed := 0
+	for _, check := range report.Checks {
+		if check.Status == health.StatusFail {
+			failed++
+			if check.Name != health.CheckRendererHost {
+				return false
+			}
+		}
+	}
+	if failed > 0 {
+		t.Log("the renderer host check fails: this build embeds no frontend (expected for a backend-only build)")
+	}
+	return failed > 0
 }

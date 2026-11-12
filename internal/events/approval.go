@@ -62,15 +62,16 @@ type Principal struct {
 }
 
 // Verified maps a recorded assurance to actor.verified, whose vocabulary is
-// token, claimed or none (architect ruling on tangent#126). Only operator-token
-// (CW-20261016-0174) earns "token". A loopback operator session and any other
-// caller-asserted assurance is "claimed"; the assurance itself rides in the
+// token, claimed or none (architect ruling on tangent#126). "token" is a
+// credential the host verified: the operator token (CW-20261016-0174) while it
+// existed, and now the identity module's signed-in session and API key, which
+// replace it. Any other caller-asserted assurance is "claimed"; the assurance itself rides in the
 // payload (resolver.assurance, requester_assurance). No recorded assurance is
 // "none". Approvals are not a security boundary yet: nothing may gate on these
 // events.
 func Verified(assurance string) string {
 	switch assurance {
-	case "operator-token":
+	case "operator-token", "identity-session", "key-verified":
 		return "token"
 	case "":
 		return "none"
@@ -307,7 +308,7 @@ const (
 var (
 	classVocab     = map[string]bool{"approval": true}
 	outcomeVocab   = map[string]bool{OutcomeApproved: true, OutcomeDenied: true, OutcomeWithdrawn: true, OutcomeExpired: true}
-	assuranceVocab = map[string]bool{"asserted": true, "loopback-unverified": true, "operator-token": true, "other": true}
+	assuranceVocab = map[string]bool{"asserted": true, "loopback-unverified": true, "operator-token": true, "identity-session": true, "key-verified": true, "other": true}
 	principalKind  = map[string]bool{"operator": true, "agent": true, "service": true}
 )
 

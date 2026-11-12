@@ -246,6 +246,7 @@ func TestGatewayMetadataKeySetIsTinyAndDefinedOnce(t *testing.T) {
 // while serving a forwarded call.
 func registerUpstreamProbe(t *testing.T, server *tangentmcp.Server, recorder *telemetry.Recorder) {
 	t.Helper()
+	server.ScopeToolForTest("probe.upstream")
 	mcpsdk.AddTool(server.MCP(), &mcpsdk.Tool{Name: "probe.upstream", Description: "test probe"},
 		func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ map[string]any) (*mcpsdk.CallToolResult, any, error) {
 			recorder.Emit(ctx, telemetry.Event{

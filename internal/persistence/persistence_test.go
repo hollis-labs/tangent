@@ -101,6 +101,8 @@ func makeLegacy(t *testing.T, path string) {
 		`CREATE TABLE schema_migrations (version uint64, dirty bool)`,
 		`CREATE UNIQUE INDEX version_unique ON schema_migrations (version)`,
 		`INSERT INTO schema_migrations (version, dirty) VALUES (24, 0)`,
+		// The event outbox's counter row, which the old binary's migration seeded.
+		`INSERT INTO event_outbox_state (id, generation, last_sequence) VALUES (1, 42, 7)`,
 		`INSERT INTO surfaces (id, owner_scope, lifecycle_state, created_at, updated_at) VALUES ('s1','operator:local','active','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')`,
 		// The arrival trigger writes inbox_order for each interaction: a copy that ran with the
 		// triggers in place would write the row a second time.
@@ -111,6 +113,15 @@ func makeLegacy(t *testing.T, path string) {
 		if _, err := db.Exec(s); err != nil {
 			t.Fatalf("%v\n%s", err, s)
 		}
+	}
+}
+
+// A new database gets the outbox counter row the events depend on.
+func TestANewDatabaseSeedsTheEventOutboxCounter(t *testing.T) {
+	st := openNew(t, filepath.Join(t.TempDir(), "new.db"))
+	var n, generation int
+	if err := st.DB().QueryRow(`SELECT COUNT(*), COALESCE(MAX(generation), 0) FROM event_outbox_state`).Scan(&n, &generation); err != nil || n != 1 || generation <= 0 {
+		t.Fatalf("event_outbox_state rows = %d, generation %d, %v", n, generation, err)
 	}
 }
 
@@ -144,6 +155,11 @@ func TestMigrateLegacy(t *testing.T) {
 	var seq int
 	if err := st.DB().QueryRow(`SELECT seq FROM sqlite_sequence WHERE name = 'inbox_order'`).Scan(&seq); err != nil || seq != 2 {
 		t.Fatalf("inbox_order sequence = %d, %v", seq, err)
+	}
+	// The outbox counter is the copied one (its generation and sequence), not a fresh seed.
+	var generation, last int
+	if err := st.DB().QueryRow(`SELECT generation, last_sequence FROM event_outbox_state WHERE id = 1`).Scan(&generation, &last); err != nil || generation != 42 || last != 7 {
+		t.Fatalf("event_outbox_state = %d, %d, %v; want the copied 42, 7", generation, last, err)
 	}
 	// The triggers are live in the new file.
 	if _, err := st.DB().Exec(`UPDATE interactions SET revision = 5 WHERE id = 'i1'`); err == nil {

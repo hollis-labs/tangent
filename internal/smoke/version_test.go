@@ -127,18 +127,3 @@ func TestBundleTemplateDerivesTheVersion(t *testing.T) {
 		t.Fatalf("scripts/build-macos-app.sh must read the version from %s", versionSource)
 	}
 }
-
-// TestNoOtherFileClaimsToBeTheVersionSource: the two files that historically
-// carried their own version (README status, CHANGELOG) are covered above; this
-// guards the one Go string that reads like a release version. The HTML
-// placeholder served when ui_dist is missing is a build-time message, not a
-// release claim, and says so.
-func TestNoOtherFileClaimsToBeTheVersionSource(t *testing.T) {
-	raw, err := os.ReadFile(repoPath("internal", "server", "static.go")) // #nosec G304 -- constant path inside the repository.
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "v0.1.0-dev") {
-		t.Fatal("internal/server/static.go still carries a literal v0.1.0-dev; the placeholder page must not look like a release version")
-	}
-}

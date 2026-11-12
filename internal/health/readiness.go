@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
+	"github.com/hollis-labs/tangent/internal/persistence"
 )
 
 // Readiness answers "can this process serve traffic right now".
@@ -116,35 +116,26 @@ func (r *Reporter) checkMigrations(ctx context.Context, databaseDown bool) Check
 			Action: "Fix the database check first; the schema version cannot be read until it passes.",
 		}
 	}
-	status, err := tangentdb.InspectMigrations(ctx, r.db)
+	status, err := persistence.Inspect(ctx, r.db)
 	if err != nil {
 		return Check{
 			Name:   CheckMigrations,
 			Status: StatusFail,
 			Detail: "the schema version could not be read",
 			Action: "The database answered but its migration bookkeeping is unreadable. " +
-				"Take a copy of the database file before doing anything else, then run " +
-				"`tangent --migrate-only` and read its output." + r.redeployHint(),
+				"Take a copy of the database file before doing anything else, then restart " +
+				"tangent and read its start-up log." + r.redeployHint(),
 		}
 	}
 	expected := strconv.FormatInt(status.Expected, 10)
 	switch {
-	case status.Dirty:
-		return Check{
-			Name:   CheckMigrations,
-			Status: StatusFail,
-			Detail: "schema is marked dirty at version " + strconv.FormatInt(status.Applied, 10) +
-				"; a migration failed part-way",
-			Action: "Do not serve traffic. Roll the half-applied migration back with " +
-				"`tangent --rollback-one`, then re-apply with `tangent --migrate-only`.",
-		}
-	case !status.Initialized:
+	case !status.Initialized():
 		return Check{
 			Name:   CheckMigrations,
 			Status: StatusFail,
 			Detail: "the database has never been migrated; this binary expects version " + expected,
-			Action: "Apply the schema before serving: run `tangent --migrate-only`, then restart." +
-				r.redeployHint(),
+			Action: "The database module applies the schema when the process starts: restart tangent and " +
+				"read its start-up log if it still fails." + r.redeployHint(),
 		}
 	case status.Applied < status.Expected:
 		return Check{
@@ -152,8 +143,8 @@ func (r *Reporter) checkMigrations(ctx context.Context, databaseDown bool) Check
 			Status: StatusFail,
 			Detail: "schema is behind: applied version " + strconv.FormatInt(status.Applied, 10) +
 				", this binary expects " + expected,
-			Action: "Run `tangent --migrate-only` to bring the schema up to this binary's " +
-				"version, then restart." + r.redeployHint(),
+			Action: "Restart tangent: the database module applies the pending migrations at start." +
+				r.redeployHint(),
 		}
 	case status.Applied > status.Expected:
 		return Check{
@@ -210,7 +201,7 @@ func (r *Reporter) checkDefinitionRegistry() Check {
 			Status: StatusFail,
 			Detail: "all " + total + " materialized definitions are unservable",
 			Action: "No interaction kind can be served. Read per-kind detail at " +
-				"/healthz/capability to see whether they are incompatible, quarantined, or " +
+				"/api/health/capability to see whether they are incompatible, quarantined, or " +
 				"disabled; the three need different fixes.",
 		}
 	case unservable > 0:
@@ -218,7 +209,7 @@ func (r *Reporter) checkDefinitionRegistry() Check {
 			Name:   CheckDefinitionRegistry,
 			Status: StatusWarn,
 			Detail: strconv.Itoa(unservable) + " of " + total + " definitions are unservable",
-			Action: "Some interaction kinds will be refused. Read /healthz/capability for the " +
+			Action: "Some interaction kinds will be refused. Read /api/health/capability for the " +
 				"per-kind state and reason before a caller discovers it as a failed workflow.",
 		}
 	}

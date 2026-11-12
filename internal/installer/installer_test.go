@@ -34,7 +34,7 @@ func (d *fakeDaemon) set(serving bool, version string, migrationsPass bool) {
 
 func (d *fakeDaemon) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/health/ready", func(w http.ResponseWriter, _ *http.Request) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if !d.serving {
@@ -374,7 +374,7 @@ func TestInstallFailsNonZeroWhenReadyzNeverComes(t *testing.T) {
 	installer := f.installer(false)
 	installer.ReadyTimeout = 600 * time.Millisecond
 	_, err := installer.Install(context.Background(), f.artifacts)
-	if err == nil || !strings.Contains(err.Error(), "nothing answered /readyz") || !strings.Contains(err.Error(), "tangent.log") {
+	if err == nil || !strings.Contains(err.Error(), "nothing answered /api/health/ready") || !strings.Contains(err.Error(), "tangent.log") {
 		t.Fatalf("want a readiness timeout naming the log, got %v", err)
 	}
 }

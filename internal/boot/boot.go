@@ -1,25 +1,11 @@
-// Package boot assembles a Tangent server process: the single-writer
-// ownership claim, the database, migrations, every constructed service, and
-// the HTTP/MCP/WebSocket mux. It is the one entry point that can boot a
-// Tangent, extracted out of cmd/tangent/main.go so a second binary
-// (cmd/tangent-app, the desktop shell) can boot the same graph without
-// reimplementing it, and so the smoke harness exercises the real
-// construction instead of a bespoke subset.
+// Package boot assembles Tangent's service graph: every constructed service,
+// the MCP tools on the host's server, and the route table the host serves.
 //
-// Boot covers "acquire ownership" through "build the mux" — everything
-// cmd/tangent/main.go used to do inline before it could call Listen/Serve.
-// It deliberately does not listen, serve, or handle signals: those stay
-// CLI-transport concerns owned by whichever binary calls Boot, since a
-// desktop app's shutdown path (hide the window, or quit) is not a CLI's
-// (a signal channel and a graceful-shutdown timeout).
-//
-// Boot is also never the path for the operator maintenance one-shots
-// (--db-check, --db-backup, --migrate-only, and siblings in
-// cmd/tangent/maintenance.go). Those deliberately do not run migrations
-// first — an operator reaching for restore/check/repair when the schema is
-// the problem must not have it silently migrated — which is the opposite of
-// what Boot does. They keep their own small ownership-acquire-and-open
-// preamble in cmd/tangent rather than sharing this one.
+// The database, the HTTP host, identity and the MCP transport belong to the
+// Substrate modules; Boot takes the database handle and the MCP server from
+// them and builds what is Tangent's own on top. It does not listen, serve, own
+// the database file, or read the environment: the caller resolves those and
+// passes the result.
 package boot
 
 import (
@@ -34,10 +20,13 @@ import (
 	"path/filepath"
 	"time"
 
+	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
+	libauth "github.com/hollis-labs/libs/security/auth"
+
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/artifacts"
 	"github.com/hollis-labs/tangent/internal/channel"
 	"github.com/hollis-labs/tangent/internal/channelpane"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/docs"
 	"github.com/hollis-labs/tangent/internal/effect"
@@ -71,8 +60,11 @@ import (
 // passes the result, so cmd/tangent-app can supply its own values without
 // route through cmd/tangent's flag set.
 type Config struct {
-	// DBPath is the database file path. Empty means the package default
-	// (see internal/db).
+	// DB is the host's database handle (the database module's single writer).
+	// Boot never closes it.
+	DB *sql.DB
+
+	// DBPath is the database file's path, which the retention reporter names.
 	DBPath string
 
 	// ArtifactDir is where artifact revision files live (ADR 0015). Empty
@@ -83,45 +75,30 @@ type Config struct {
 	// PATH; if there is none, D2 artifacts are stored and shown as source.
 	D2Bin string
 
-	// OperatorToken is the value of TANGENT_OPERATOR_TOKEN
-	// (participant.EnvOperatorToken), which elevates a browser session to
-	// operator assurance so it may resolve approvals (CW-20261016-0174).
-	// Empty or shorter than participant.MinOperatorTokenBytes fails closed:
-	// nothing can be resolved from a browser, and Boot logs one warning
-	// naming the variable. Only a digest is retained.
-	OperatorToken string
+	// MCPServer is the SDK server the mcp module publishes; the tools register
+	// on it. Required.
+	MCPServer *gmcpserver.Server
 
-	// ElevationTTL is the value of TANGENT_ELEVATION_TTL
-	// (participant.EnvElevationTTL): how long an operator elevation lasts.
-	// "always" (the default when empty) lasts until the operator revokes it
-	// or the 30 day browser session ends; "never" lasts one minute; "<N>d"
-	// lasts N days. Any other value fails Boot, naming the variable.
-	ElevationTTL string
+	// Authorizer decides, per tool call, whether the caller holds the tool's
+	// scope. Required: with none every call is refused.
+	Authorizer mcp.Authorizer
 
-	// MCPCallerTokens contains producer=SHA256(token) entries from TANGENT_MCP_TOKENS.
-	MCPCallerTokens string
+	// Callers names which keys are gateway producers and which of those may
+	// attest the session they forward for.
+	Callers mcp.Callers
+
+	// Verifier re-checks a bearer token (identity's Verify). Browser sessions
+	// are revalidated through it for as long as a room stays open. Required.
+	Verifier participant.Verifier
 
 	// HITLBackend is the value of TANGENT_HITL_BACKEND (gohitl.EnvBackend):
 	// "gohitl" runs the go-hitl Service over Tangent's tables behind the
 	// tangent_hitl_* tools (CW-20261016-0153); empty or "native" keeps
 	// Tangent's own service. Off by default; an unknown value fails Boot.
 	HITLBackend string
-	// MCPTrustedForwarders names configured producers trusted to assert sessions.
-	MCPTrustedForwarders string
 
-	// ProxiedHTTPAddr is the optional always-proxied loopback listener address.
-	ProxiedHTTPAddr string
-
-	// Port is the TCP port the constructed server will bind when Listen is
-	// called. Boot does not listen; it only threads Port into the
-	// constructed server.Config and the room URL base the MCP tool surface
-	// logs and hands back to callers.
-	Port int
-
-	// DevFrontendURL, when non-empty, makes the server reverse-proxy
-	// non-API requests to a Vite dev server instead of serving the embedded
-	// SPA. Empty in every production build.
-	DevFrontendURL string
+	// RoomURLBase is the origin the room URLs the tools hand back are built on.
+	RoomURLBase string
 
 	// ManagedResource names the managed-runtime resource that owns this
 	// process's lifecycle, when one does. Health reports use it to
@@ -132,15 +109,6 @@ type Config struct {
 	// internal/telemetry/otel.go for why this is off by default.
 	OTel bool
 
-	// OwnerLabel is the "command" recorded in the single-writer lock's
-	// advisory metadata, and what a refusal quotes back to whatever else is
-	// trying to acquire ownership. Boot always acquires as
-	// tangentdb.RoleServer — Role selection is not a caller decision here,
-	// because Boot is never used for a maintenance one-shot — but the label
-	// is, so a refusal names the actual binary and mode holding the
-	// database ("tangent serve" vs. a future "tangent-app") rather than a
-	// generic string. Empty falls back to "tangent serve".
-	OwnerLabel string
 	// PluginDir is the installed-plugin root. Empty resolves through
 	// pluginpkg.DefaultRoot, which honors TANGENT_PLUGIN_DIR and otherwise
 	// uses ~/.tangent/plugins. It is a field so a test can point a boot at a
@@ -220,13 +188,8 @@ type Services struct {
 	RoomURLBase     string
 }
 
-// ownedCloser releases the database handle and the single-writer ownership
-// claim, in that order. The order matters: releasing the lock before the
-// handle is closed would let a second process open the database while this
-// one might still flush a write.
+// ownedCloser stops what Boot started, before the host closes the database.
 type ownedCloser struct {
-	db        *sql.DB
-	ownership *tangentdb.Ownership
 	// plugins is torn down before the configuration/keychain reference store.
 	// Unload fences owners, withdraws registrations and joins subprocess work.
 	//
@@ -277,66 +240,27 @@ func (c *ownedCloser) Close() error {
 			errs = append(errs, fmt.Errorf("close plugin tool caller: %w", err))
 		}
 	}
-	if err := tangentdb.Close(c.db); err != nil {
-		errs = append(errs, fmt.Errorf("close db: %w", err))
-	}
-	if err := c.ownership.Release(); err != nil {
-		errs = append(errs, fmt.Errorf("release database ownership: %w", err))
-	}
 	return errors.Join(errs...)
 }
 
-// Boot acquires single-writer ownership, opens and migrates the database,
-// constructs every service, and returns a server ready for the caller to
-// Listen and Serve.
+// Boot constructs every service over cfg.DB, registers the tools on
+// cfg.MCPServer, and returns the route table for the host to serve.
 //
-// On error, Boot has already released anything it acquired — the returned
-// io.Closer is nil in that case, not partially valid. A caller that gets
-// back a *tangentdb.OwnershipConflict (via errors.As) knows another Tangent
-// already holds this database; that is the fact cmd/tangent-app's
-// adopt-or-boot decision is built on.
-func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
-	callerAuth, err := mcp.ParseCallerAuth(cfg.MCPCallerTokens, cfg.MCPTrustedForwarders)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	// Validated before the database is touched, like the caller auth above: a
-	// typo in the elevation lifetime must stop startup, not pick a lifetime.
-	elevationPolicy, err := participant.ParseElevationTTL(cfg.ElevationTTL)
-	if err != nil {
-		return nil, nil, nil, err
+// On error, Boot has already stopped anything it started; the returned
+// io.Closer is nil in that case, not partially valid.
+func Boot(cfg Config) (*Services, *server.Table, io.Closer, error) {
+	if cfg.DB == nil || cfg.MCPServer == nil || cfg.Verifier == nil {
+		return nil, nil, nil, errors.New("boot: DB, MCPServer and Verifier are required")
 	}
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	ownerLabel := cfg.OwnerLabel
-	if ownerLabel == "" {
-		ownerLabel = "tangent serve"
-	}
-
-	ownership, err := tangentdb.AcquireOwnership(cfg.DBPath, tangentdb.RoleServer, ownerLabel)
-	if err != nil {
-		// *tangentdb.OwnershipConflict flows through unwrapped: it is
-		// already the typed, errors.As-able signal a caller needs to tell
-		// "something else holds this database" apart from every other way
-		// Boot can fail.
-		return nil, nil, nil, err
-	}
-
-	sqlDB, err := tangentdb.Open(cfg.DBPath)
-	if err != nil {
-		_ = ownership.Release()
-		return nil, nil, nil, fmt.Errorf("open db: %w", err)
-	}
-	closer := &ownedCloser{db: sqlDB, ownership: ownership}
-	release := func(err error) (*Services, *server.Server, io.Closer, error) {
+	sqlDB := cfg.DB
+	closer := &ownedCloser{}
+	release := func(err error) (*Services, *server.Table, io.Closer, error) {
 		_ = closer.Close()
 		return nil, nil, nil, err
-	}
-
-	if migrateErr := tangentdb.RunMigrations(sqlDB); migrateErr != nil {
-		return release(fmt.Errorf("migrate db: %w", migrateErr))
 	}
 
 	// Correlation telemetry (CW-20260825-0078). It is constructed before
@@ -573,34 +497,12 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	wsHandler := tangentws.New(roomMgr, logger)
 	wsHandler.SetTelemetry(recorder)
 
-	// The authenticated browser participant session (ADR 0004 §4). It is
-	// what moves room authority off a URL that the product deliberately
-	// publishes — returned by session_create, logged when a workflow opens
-	// a room, pasted into agent transcripts — and onto a cookie that a
-	// link cannot carry.
-	participantStore, err := participant.NewStore(sqlDB)
-	if err != nil {
-		return release(fmt.Errorf("build participant session store: %w", err))
-	}
-	if applyErr := participantStore.ApplyElevationPolicy(context.Background(), elevationPolicy); applyErr != nil {
-		return release(fmt.Errorf("apply operator elevation lifetime: %w", applyErr))
-	}
-	logger.Info("operator elevation lifetime", "ttl", elevationPolicy.String(), "env", participant.EnvElevationTTL)
-	if elevationPolicy.ExceedsSessionCap() {
-		logger.Warn("operator elevation lifetime is longer than a browser session; the session's own expiry ends it",
-			"ttl", elevationPolicy.String(), "session_cap_days", int(participant.MaximumLifetime/(24*time.Hour)), "env", participant.EnvElevationTTL)
-	}
-	participantGate, err := participant.NewGate(participantStore)
-	if err != nil {
-		return release(fmt.Errorf("build participant session gate: %w", err))
-	}
-	// The /ws upgrade requires a session immediately, with no grace
-	// period: this is the single change that stops a room UUID from being
-	// an answer credential. The resolver runs before the upgrade, so a
-	// refusal is an ordinary 403 rather than a socket that closes without
-	// explanation.
+	// The browser participant is the signed-in user (ADR 0004 §4, now
+	// identity's): a room's authority rides on the user session, and a link
+	// carries none. The /ws upgrade resolves it before the upgrade, so a
+	// refusal is an ordinary 403.
+	participantGate := participant.NewGate(cfg.Verifier)
 	wsHandler.SetParticipantResolver(participantGate.ResolveBinding)
-	participantGate.ConfigureOperatorToken(cfg.OperatorToken, logger)
 
 	// The host-mediated effect broker (ADR 0003 §2.5). It shares the same
 	// database handle as everything else: a receipt whose interaction
@@ -623,7 +525,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	healthReporter := health.NewReporter(
 		health.WithDatabase(sqlDB),
 		health.WithDefinitionRegistry(envSvc),
-		health.WithRendererHost(server.RendererHostProbe(cfg.DevFrontendURL)),
+		health.WithRendererHost(server.RendererHostProbe()),
 		// The delivery worker is a policy, not a goroutine: what readiness
 		// asks is whether the installed DeliveryWorkerPolicy admits the
 		// in-process caller-pull adapter. A build where it does not still
@@ -657,7 +559,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// Use 127.0.0.1 to match the listener's actual bind so the URL hint we
 	// log when triage creates a room resolves correctly even on
 	// IPv6-preferring systems where "localhost" lands on ::1.
-	roomURLBase := fmt.Sprintf("http://127.0.0.1:%d", cfg.Port)
+	roomURLBase := cfg.RoomURLBase
 	// The publisher-owned interaction packages this build hosts.
 	// Registration is separate from the definition registration above
 	// because the two answer different questions: extensions.RegisterAll
@@ -699,7 +601,9 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	}
 
 	mcpOptions := []mcp.Option{
-		mcp.WithCallerAuth(callerAuth),
+		mcp.WithServer(cfg.MCPServer),
+		mcp.WithAuthorizer(cfg.Authorizer),
+		mcp.WithCallers(cfg.Callers),
 		mcp.WithInteractionService(interactionService),
 		mcp.WithHITLService(hitlService),
 		mcp.WithDocsService(docsService),
@@ -752,7 +656,11 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 	// It is attached here, after mcp.New, because that is the first moment the
 	// tool surface exists; a plugin resolves it at dispatch time, so a plugin
 	// that loaded earlier is not holding a nil.
-	loopback, err := mcpSrv.NewLoopbackCaller(context.Background())
+	//
+	// It acts as the plugin host: a service principal with no name (so the
+	// unlabeled caller partition it always had) and the scopes a plugin may
+	// use, which exclude the decision scope.
+	loopback, err := mcpSrv.NewLoopbackCaller(libauth.WithPrincipal(context.Background(), access.PluginHostPrincipal()))
 	if err != nil {
 		return release(fmt.Errorf("build plugin tool caller: %w", err))
 	}
@@ -805,15 +713,10 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		"undefinable", restored.Undefinable,
 	)
 
-	srv, err := server.New(server.Config{
-		Port:               cfg.Port,
-		ProxiedHTTPAddr:    cfg.ProxiedHTTPAddr,
-		DevFrontendURL:     cfg.DevFrontendURL,
+	table, err := server.New(server.Config{
 		Logger:             logger,
 		Envelope:           envSvc,
-		MCP:                mcpSrv,
 		WSHandler:          wsHandler,
-		RoomManager:        roomMgr,
 		HITL:               hitlService,
 		Turns:              turnsService,
 		Docs:               docsService,
@@ -856,7 +759,7 @@ func Boot(cfg Config) (*Services, *server.Server, io.Closer, error) {
 		HostAuthority:   hostAuthority,
 		RoomURLBase:     roomURLBase,
 	}
-	return services, srv, closer, nil
+	return services, table, closer, nil
 }
 
 // pluginInventory adapts the plugin host's inventory into the health

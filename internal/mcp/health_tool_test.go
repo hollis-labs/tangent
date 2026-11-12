@@ -20,7 +20,7 @@ import (
 
 // tangent_health_get is how a Tether-connected agent asks the operability
 // questions. It reaches Tangent over MCP and has no reason to hold an HTTP
-// client, so a readiness answer that only exists on /readyz is an answer that
+// client, so a readiness answer that only exists on /api/health/ready is an answer that
 // consumer never sees — and "the database is gone" becomes "the workflow is
 // flaky".
 

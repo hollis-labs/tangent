@@ -11,6 +11,7 @@ import (
 
 	"github.com/hollis-labs/libs/mcp/plugin-mcp/plugin-sdk/subprocess"
 
+	"github.com/hollis-labs/tangent/internal/access"
 	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/pluginhost"
 )
@@ -76,31 +77,19 @@ var pluginResponseHeaders = []string{"Content-Type", "Cache-Control", "Content-L
 // registration; this is the second check, at the layer that actually mounts
 // them, because a route reaching a mux with a capability no participant holds
 // would be a route that answers 403 forever and looks like a plugin bug.
-func registerPluginRoutes(
-	mux *http.ServeMux,
-	routes *[]ParticipantRoute,
-	cfg Config,
-	logger *slog.Logger,
-) error {
-	if cfg.Participants == nil && len(cfg.PluginRoutes) > 0 {
-		return fmt.Errorf(
-			"server: %d plugin route(s) configured with no participant gate; the gate is what "+
-				"authorizes them, and mounting them without one would publish them unguarded",
-			len(cfg.PluginRoutes))
-	}
+func registerPluginRoutes(rt *router, logger *slog.Logger) error {
+	cfg := rt.cfg
 	if cfg.PluginHost != nil {
-		if cfg.Participants == nil {
-			return fmt.Errorf("server: live plugin host requires participant gate")
-		}
-		mux.Handle(pluginhost.RoutePrefix, hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			route, ok := cfg.PluginHost.HTTPRoute(r.Method, r.URL.Path)
-			if !ok {
-				http.NotFound(w, r)
-				return
-			}
-			requireParticipant(cfg.Participants, cfg.Telemetry, route.Capability, pluginRouteHandler(route, logger)).ServeHTTP(w, r)
-		})))
-		registerPluginManagement(mux, routes, cfg)
+		// Plugins can register routes after the host started, so this one
+		// prefix is mapped at tangent.view and the route found at dispatch
+		// names its own capability, which the participant gate then checks
+		// against the signed-in user's scopes. A plugin route no user holds the
+		// scope for is refused; one with no scope at all is never found.
+		rt.handle("GET "+pluginhost.RoutePrefix+"{rest...}", access.View, false, pluginDispatch(cfg, logger))
+		rt.handle("POST "+pluginhost.RoutePrefix+"{rest...}", access.View, false, pluginDispatch(cfg, logger))
+		rt.handle("PUT "+pluginhost.RoutePrefix+"{rest...}", access.View, false, pluginDispatch(cfg, logger))
+		rt.handle("DELETE "+pluginhost.RoutePrefix+"{rest...}", access.View, false, pluginDispatch(cfg, logger))
+		registerPluginManagement(rt)
 	}
 	for _, route := range cfg.PluginRoutes {
 		if !authz.Grants(authz.KindParticipant, route.Capability) {
@@ -114,10 +103,22 @@ func registerPluginRoutes(
 				"server: plugin route %s is outside the reserved %s prefix",
 				route.Pattern(), pluginhost.RoutePrefix)
 		}
-		registerParticipantRoute(mux, routes, cfg, route.Pattern(), route.Capability,
-			pluginRouteHandler(route, logger))
+		rt.participant(route.Pattern(), route.Capability, pluginRouteHandler(route, logger))
 	}
-	return nil
+	return rt.err
+}
+
+// pluginDispatch finds the plugin route a request names and runs it behind the
+// participant gate with the capability that route declared.
+func pluginDispatch(cfg Config, logger *slog.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route, ok := cfg.PluginHost.HTTPRoute(r.Method, r.URL.Path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		requireParticipant(cfg.Participants, cfg.Telemetry, route.Capability, pluginRouteHandler(route, logger)).ServeHTTP(w, r)
+	})
 }
 
 // pluginRouteHandler adapts one plugin's SDK dispatch interface to net/http.

@@ -491,3 +491,9 @@ BEGIN
     INSERT INTO inbox_order (interaction_id) VALUES (NEW.id);
 END;
 -- +goose StatementEnd
+
+-- The one row the event outbox counts on. A copied database already has its own (the copy keeps
+-- the generation and the last sequence); a new one gets a random generation, as the original did.
+-- +goose StatementBegin
+INSERT OR IGNORE INTO event_outbox_state (id, generation) VALUES (1, (random() & 9007199254740991) + 1);
+-- +goose StatementEnd

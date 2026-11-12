@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/spf13/cobra"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/hollis-labs/substrate/modules/identity"
 
 	"github.com/hollis-labs/tangent/internal/hostguard"
+	"github.com/hollis-labs/tangent/internal/server"
 	"github.com/hollis-labs/tangent/internal/settings"
 	"github.com/hollis-labs/tangent/internal/webui"
 )
@@ -24,8 +26,12 @@ import (
 // tangent is what the commands share: the started framework app. ready, when set, learns the
 // bound address (tests listen on port 0).
 type tangent struct {
-	app   *module.App
-	ready func(net.Addr)
+	app    *module.App
+	ready  func(net.Addr)
+	getenv func(string) string // os.Getenv when nil
+
+	// table is the route table of the running server (set once composed).
+	table atomic.Pointer[server.Table]
 }
 
 func (t *tangent) serveCmd(ctx context.Context) *cobra.Command {
@@ -56,14 +62,33 @@ func (t *tangent) serveWith(ctx context.Context, extra []mountSpec) error {
 	if err = requireLoopback(app); err != nil {
 		return err
 	}
+	_, table, closer, err := t.compose(cfg)
+	if err != nil {
+		return err
+	}
+	t.table.Store(table)
+	// Stopped before the database module closes the handle (the caller's Stop).
+	defer func() {
+		if cerr := closer.Close(); cerr != nil {
+			slog.Warn("stopping the services", "error", cerr)
+		}
+	}()
+	// Every route has a scope, and the guard reads it from the scope table.
+	scopes := auth.ScopeTable(app)
+	for _, route := range table.Routes() {
+		scopes.Route(route.Method(), route.ScopePattern(), route.Scope)
+	}
 	mounts := make([]httphost.Mount, 0, len(extra))
+	for _, route := range table.Outside() {
+		mounts = append(mounts, httphost.Mount{Pattern: route.Pattern, Handler: untilShutdown(ctx, route.Handler)})
+	}
 	for _, m := range extra {
 		if !m.Open {
-			auth.ScopeTable(app).Route(m.Method, scopePath(m.Pattern), m.Scope)
+			scopes.Route(m.Method, scopePath(m.Pattern), m.Scope)
 		}
 		mounts = append(mounts, m.Mount)
 	}
-	handler, err := t.handler(cfg, mounts)
+	handler, err := t.handler(cfg, untilShutdown(ctx, table.API()), mounts)
 	if err != nil {
 		return err
 	}
@@ -87,7 +112,7 @@ func scopePath(pattern string) string {
 
 // handler assembles the chain every request passes. Outermost first: the Host check, then the
 // session cookie becomes the bearer the guard verifies, then the host (guard, routes, SPA).
-func (t *tangent) handler(cfg settings.Settings, mounts []httphost.Mount) (http.Handler, error) {
+func (t *tangent) handler(cfg settings.Settings, api http.Handler, mounts []httphost.Mount) (http.Handler, error) {
 	id := identity.From(t.app)
 	if id == nil {
 		return nil, errors.New("the identity module must be started")
@@ -96,7 +121,12 @@ func (t *tangent) handler(cfg settings.Settings, mounts []httphost.Mount) (http.
 	if err != nil {
 		return nil, err
 	}
-	h, err := httphost.Handler(t.app, httphost.Options{Assets: assets, Mounts: mounts})
+	mux, _ := api.(*http.ServeMux)
+	if mux == nil {
+		mux = http.NewServeMux()
+		mux.Handle("/", api)
+	}
+	h, err := httphost.Handler(t.app, httphost.Options{Assets: assets, Routes: mux, Mounts: mounts})
 	if err != nil {
 		return nil, err
 	}

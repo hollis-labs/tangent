@@ -103,7 +103,7 @@ func TestBuildStampIgnoresPayloadKeysAndFailsClosedEnvelope(t *testing.T) {
 func TestVerifiedFollowsRecordedAssurance(t *testing.T) {
 	for assurance, want := range map[string]string{
 		"": "none", "loopback-unverified": "claimed",
-		"operator-token": "token", "asserted": "claimed", "anything-else": "claimed",
+		"operator-token": "token", "identity-session": "token", "key-verified": "token", "asserted": "claimed", "anything-else": "claimed",
 	} {
 		if got := Verified(assurance); got != want {
 			t.Errorf("Verified(%q) = %q, want %q", assurance, got, want)
@@ -183,7 +183,7 @@ func TestMappingFailureIsSkippedNotFatal(t *testing.T) {
 
 func TestAssuranceDetailUsesClosedVocabulary(t *testing.T) {
 	ctx := context.Background()
-	for in, want := range map[string]string{"asserted": "asserted", "operator-token": "operator-token", "future-thing": "other"} {
+	for in, want := range map[string]string{"asserted": "asserted", "operator-token": "operator-token", "identity-session": "identity-session", "key-verified": "key-verified", "future-thing": "other"} {
 		db := openOutbox(t)
 		tx, err := db.Begin()
 		if err != nil {

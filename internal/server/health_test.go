@@ -11,10 +11,10 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/hollis-labs/tangent/internal/buildinfo"
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/health"
+	"github.com/hollis-labs/tangent/internal/testdb"
+	"github.com/hollis-labs/tangent/internal/webui"
 )
 
 // The HTTP half of CW-20260825-0066. What matters at this layer is the
@@ -92,13 +92,13 @@ func healthTestPolicy() definition.HostPolicy {
 
 // probeMux mounts only the health routes, so a failure names the probe rather
 // than something else in the route table.
-func probeMux(reporter *health.Reporter) *http.ServeMux {
-	mux := http.NewServeMux()
-	registerHealthRoutes(mux, reporter)
-	return mux
+func probeMux(reporter *health.Reporter) http.Handler {
+	rt := &router{seen: map[string]bool{}}
+	registerHealthRoutes(rt, reporter)
+	return (&Table{routes: rt.routes}).Handler()
 }
 
-func get(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+func get(t *testing.T, mux http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
@@ -114,82 +114,9 @@ func decode(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
 	return body
 }
 
-func TestLivenessReportsBuildProvenance(t *testing.T) {
-	commit, dirty := buildinfo.Commit, buildinfo.Dirty
-	t.Cleanup(func() { buildinfo.Commit, buildinfo.Dirty = commit, dirty })
-	for _, test := range []struct {
-		name, commit, dirty string
-	}{
-		{name: "unstamped"},
-		{name: "clean", commit: "1234567890abcdef1234567890abcdef12345678", dirty: "false"},
-		{name: "modified", commit: "1234567890abcdef1234567890abcdef12345678", dirty: "true"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			buildinfo.Commit, buildinfo.Dirty = test.commit, test.dirty
-			response := get(t, probeMux(nil), "/healthz")
-			if response.Code != http.StatusOK {
-				t.Fatalf("GET /healthz = %d, want 200", response.Code)
-			}
-			body := decode(t, response)
-			if value, present := body["commit"]; !present || value != test.commit {
-				t.Fatalf("commit = %v (present %t), want %q", value, present, test.commit)
-			}
-			value, present := body["dirty"]
-			if test.dirty == "" {
-				if present {
-					t.Fatalf("unstamped build claims dirty = %v", value)
-				}
-			} else if !present || value != (test.dirty == "true") {
-				t.Fatalf("dirty = %v (present %t), want %s", value, present, test.dirty)
-			}
-		})
-	}
-}
-
-// TestLivenessKeepsAnsweringWhenEverythingUnderItHasFailed is the separation
-// stated as a test. A supervisor reads /healthz; if it started failing because
-// the database went away, a degraded process would be restarted in a loop
-// instead of being repaired.
-func TestLivenessKeepsAnsweringWhenEverythingUnderItHasFailed(t *testing.T) {
-	t.Parallel()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "liveness.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close db: %v", err)
-	}
-	mux := probeMux(health.NewReporter(health.WithDatabase(db)))
-
-	recorder := get(t, mux, "/healthz")
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("GET /healthz = %d, want 200 while the process is responding", recorder.Code)
-	}
-	// The frozen body: the managed-runtime health check in
-	// ~/.cerberus/projects/tangent.cerberus.yaml points at this path.
-	if !strings.Contains(recorder.Body.String(), `"status":"ok"`) {
-		t.Fatalf("liveness body = %s, want the frozen status token", recorder.Body.String())
-	}
-	if body := decode(t, recorder); body["probe"] != health.ProbeLiveness {
-		t.Fatalf("liveness probe field = %v, want %q", body["probe"], health.ProbeLiveness)
-	}
-
-	// And the same process, asked the readiness question, says no.
-	if code := get(t, mux, "/readyz").Code; code != http.StatusServiceUnavailable {
-		t.Fatalf("GET /readyz = %d, want 503 with the database closed", code)
-	}
-}
-
 func TestReadinessAnswers200WhenEveryDependencyIsPresent(t *testing.T) {
 	t.Parallel()
-	db, err := tangentdb.Open(filepath.Join(t.TempDir(), "ready.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err := tangentdb.RunMigrations(db); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
+	db := testdb.Open(t, filepath.Join(t.TempDir(), "ready.db"))
 	available := materializeForHealthTest(t, healthFixtureManifest, healthTestPolicy())
 
 	mux := probeMux(health.NewReporter(
@@ -214,9 +141,9 @@ func TestReadinessAnswers200WhenEveryDependencyIsPresent(t *testing.T) {
 		}),
 	))
 
-	recorder := get(t, mux, "/readyz")
+	recorder := get(t, mux, "/api/health/ready")
 	if recorder.Code != http.StatusOK {
-		t.Fatalf("GET /readyz = %d (%s), want 200", recorder.Code, recorder.Body.String())
+		t.Fatalf("GET /api/health/ready = %d (%s), want 200", recorder.Code, recorder.Body.String())
 	}
 	if body := decode(t, recorder); body["status"] != string(health.SummaryOK) {
 		t.Fatalf("readiness status = %v, want ok", body["status"])
@@ -250,10 +177,10 @@ func TestCapabilityRoutesCarryDistinctStatusCodes(t *testing.T) {
 	})))
 
 	for path, want := range map[string]int{
-		"/healthz/capability/tangent.fixture":     http.StatusOK,
-		"/healthz/capability/tangent.legacy":      http.StatusOK,
-		"/healthz/capability/tangent.quarantined": http.StatusServiceUnavailable,
-		"/healthz/capability/tangent.nonsense":    http.StatusNotFound,
+		"/api/health/capability/tangent.fixture":     http.StatusOK,
+		"/api/health/capability/tangent.legacy":      http.StatusOK,
+		"/api/health/capability/tangent.quarantined": http.StatusServiceUnavailable,
+		"/api/health/capability/tangent.nonsense":    http.StatusNotFound,
 	} {
 		recorder := get(t, mux, path)
 		if recorder.Code != want {
@@ -269,9 +196,9 @@ func TestCapabilityRoutesCarryDistinctStatusCodes(t *testing.T) {
 	}
 
 	// The summary answers degraded rather than failing: one kind is servable.
-	summary := get(t, mux, "/healthz/capability")
+	summary := get(t, mux, "/api/health/capability")
 	if summary.Code != http.StatusOK {
-		t.Fatalf("GET /healthz/capability = %d, want 200 while one kind is servable", summary.Code)
+		t.Fatalf("GET /api/health/capability = %d, want 200 while one kind is servable", summary.Code)
 	}
 }
 
@@ -282,10 +209,7 @@ func TestProbesWithoutAReporterSaySoRatherThanNotFound(t *testing.T) {
 	t.Parallel()
 	mux := probeMux(nil)
 
-	if code := get(t, mux, "/healthz").Code; code != http.StatusOK {
-		t.Fatalf("GET /healthz = %d, want 200: liveness needs no reporter", code)
-	}
-	for _, path := range []string{"/readyz", "/healthz/capability", "/healthz/capability/tangent.fixture"} {
+	for _, path := range []string{"/api/health/ready", "/api/health/capability", "/api/health/capability/tangent.fixture"} {
 		recorder := get(t, mux, path)
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Errorf("GET %s = %d, want 503", path, recorder.Code)
@@ -349,36 +273,20 @@ func TestInspectRendererHostCountsRealAssets(t *testing.T) {
 	}
 }
 
-// TestRendererHostProbeDoesNotDialTheDevServer: in dev-proxy mode the renderer
-// host is a separate process. A readiness probe that made an outbound request
-// could be made to hang by the thing it reports on.
-func TestRendererHostProbeDoesNotDialTheDevServer(t *testing.T) {
-	t.Parallel()
-	// A port nothing is listening on. If the probe dialed, this would block or
-	// error rather than return promptly.
-	host := RendererHostProbe("http://127.0.0.1:1")()
-	if host.Mode != "dev-proxy" {
-		t.Fatalf("renderer host mode = %q, want dev-proxy", host.Mode)
-	}
-	if host.Present {
-		t.Error("dev-proxy mode claimed to serve a renderer host it does not own")
-	}
-}
-
 // TestRendererHostProbeReadsTheRealEmbed keeps the probe honest against the
 // actual build output. It skips rather than fails on a checkout that has not
 // run `make build-ui`, because that is a real and supported state — and the
 // skip message is what tells a reader which one they are in.
 func TestRendererHostProbeReadsTheRealEmbed(t *testing.T) {
 	t.Parallel()
-	sub, err := spaFileSystem()
+	sub, err := webui.Assets()
 	if err != nil {
 		t.Fatalf("open embedded renderer host: %v", err)
 	}
 	if _, err := fs.ReadFile(sub, "index.html"); err != nil {
 		t.Skip("no SPA bundle is embedded in this build; run `make build-ui` to exercise this path")
 	}
-	host := RendererHostProbe("")()
+	host := RendererHostProbe()()
 	if !host.Present || host.Mode != "embedded" {
 		t.Fatalf("renderer host = %+v, want an embedded, present host", host)
 	}
@@ -407,7 +315,7 @@ func TestHealthResponsesAreBounded(t *testing.T) {
 	if !json.Valid(recorder.Body.Bytes()) {
 		t.Fatalf("withheld response is not valid JSON: %s", recorder.Body.String())
 	}
-	if !strings.Contains(recorder.Body.String(), "/healthz/capability/{kind}") {
+	if !strings.Contains(recorder.Body.String(), "/api/health/capability/{kind}") {
 		t.Errorf("withheld response = %s, want it to name the narrower query", recorder.Body.String())
 	}
 }

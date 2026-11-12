@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -282,63 +281,14 @@ func decodeHITLCommand(w http.ResponseWriter, r *http.Request, target any) error
 	return nil
 }
 
-// hitlSameOrigin protects the privileged loopback operator API from browser
-// cross-site requests. Non-browser local clients omit these headers and remain
-// usable for smoke testing; browser requests that supply either signal must be
-// explicitly same-origin.
-func hitlSameOrigin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !requestHostIsLoopback(r.Host) {
-			writeHITLJSON(w, http.StatusForbidden, map[string]any{
-				"contract_version": hitl.ContractVersion,
-				"code":             "forbidden_origin",
-				"message":          "HITL operator API is available on loopback hosts only",
-			})
-			return
-		}
-		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
-			writeHITLJSON(w, http.StatusForbidden, map[string]any{
-				"contract_version": hitl.ContractVersion,
-				"code":             "forbidden_origin",
-				"message":          "HITL operator API accepts same-origin browser requests only",
-			})
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" && !requestOriginMatches(r, origin) {
-			writeHITLJSON(w, http.StatusForbidden, map[string]any{
-				"contract_version": hitl.ContractVersion,
-				"code":             "forbidden_origin",
-				"message":          "HITL operator API accepts same-origin browser requests only",
-			})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func requestHostIsLoopback(requestHost string) bool {
-	host := requestHost
-	if parsedHost, _, err := net.SplitHostPort(requestHost); err == nil {
-		host = parsedHost
-	}
-	host = strings.TrimSuffix(strings.Trim(host, "[]"), ".")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}
-
 func requestOriginMatches(r *http.Request, origin string) bool {
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
-	expectedScheme := "http"
-	if r.TLS != nil {
-		expectedScheme = "https"
-	}
-	return strings.EqualFold(parsed.Scheme, expectedScheme) && strings.EqualFold(parsed.Host, r.Host)
+	// Host only, as the identity module compares: behind a proxy that ends TLS
+	// the request is plain http while the browser's Origin is https.
+	return strings.EqualFold(parsed.Host, r.Host)
 }
 
 func writeHITLJSON(w http.ResponseWriter, status int, value any) {

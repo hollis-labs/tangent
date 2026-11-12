@@ -1,26 +1,29 @@
 # MCP smoke test
 
 One command checks that Tangent's MCP surface is reachable and correct over
-every hop a consumer uses: direct `/mcp`, legacy `/sse`, the Tether gateway
-that fronts them, and the Cerberus resource that owns the process.
+every hop a consumer uses: direct `/mcp`, the Tether gateway that fronts it,
+and the Cerberus resource that owns the process. (The legacy `/sse` transport
+no longer exists: the Substrate `mcp` module serves Streamable HTTP only.)
 
 ```bash
 make smoke
 ```
 
 That is the whole recipe for the CI-safe layer. It builds `./cmd/tangent`,
-boots it on a port it reserved against a database in a temp directory, and
-checks:
+boots it on a port it reserved with a data directory in a temp directory
+(`TANGENT_DATA_DIR`; the port and a cheap password cost come from a
+`SUBSTRATE_CONFIG` override file), makes a throwaway owner and an API key for
+the probes (first-run setup on a throwaway directory only), and checks:
 
-- `/healthz` liveness, `/readyz` readiness, `/healthz/capability` per-kind health;
-- direct `/mcp` `tools/list`;
-- legacy `/sse` `tools/list` through a real MCP client session;
-- that the two transports advertise **the same surface** — they are one
-  registry behind two handlers, so a difference means one of them is serving
-  something else, and `/sse` is the one the gateway dials and nobody probes by
-  hand;
-- one read-only tool call, `tangent_health_get`, over both transports, whose
-  readiness must agree with `/readyz`.
+- `/healthz` liveness (open), `/api/health/ready` readiness and
+  `/api/health/capability` per-kind health (both need `tangent.view`);
+- direct `/mcp` `tools/list`, which lists the tools the probe key's scopes allow;
+- one read-only tool call, `tangent_health_get`, whose readiness must agree
+  with `/api/health/ready`.
+
+A build with no frontend embedded fails the renderer-host readiness check by
+design (the SPA is built and embedded for a release); the check tolerates
+exactly that and nothing else.
 
 It touches no live instance, no Cerberus resource, and no Tether catalog, so it
 is safe in CI — and because the package carries no build tag, `go test ./...`
@@ -38,7 +41,6 @@ To see the current count, ask the build:
 ```bash
 make smoke 2>&1 | grep 'shipped build advertises'
 # shipped build advertises N tools (digest <short-sha256>) over /mcp
-#   and N tools (digest <short-sha256>) over /sse
 ```
 
 The output above is deliberately written with placeholders. A worked example
@@ -48,7 +50,9 @@ exists to prevent.
 
 The digest is a short sha256 over the sorted tool names. Two hops with the same
 digest are serving the same surface; that is the only comparison the check
-makes.
+makes. (The published names themselves are recorded in
+`internal/mcp/testdata/tool_names.txt` and compared byte for byte by
+`cmd/tangent/host_test.go`; see [`mcp-tool-names.md`](./mcp-tool-names.md).)
 
 ## The four failure modes
 
@@ -72,8 +76,8 @@ FAIL [CATALOG_STALE] deployed /mcp tool surface: shipped build advertises N tool
   (digest <a>), deployed /mcp advertises M tools (digest <b>);
   absent there: tangent_retention_get, tangent_telemetry_query
   operator action: Redeploy Tangent so the serving process is the build on disk
-  (`tangent --migrate-only` first when the schema moved), then refresh the
-  gateway's catalog so it re-lists tools.
+  then refresh the gateway's catalog so it re-lists tools. (The database
+  module applies a schema change when the process starts.)
 2 finding(s); modes: CATALOG_STALE
 ```
 
@@ -110,7 +114,7 @@ That adds two checks to the same command:
 
 1. **`TestDeployedTangentMatchesShippedBuild`** — supervisor status vs. an
    actual listener, liveness/readiness/capability on the live instance, its
-   `/mcp` and `/sse` surfaces compared against the build this checkout
+   `/mcp` surface compared against the build this checkout
    produces, one read-only `tangent_health_get` call, and the Tether catalog
    entry checked against the address that is actually serving.
 2. **`TestTetherGatewayStillPublishesTangent`** — runs the real `mux` gateway
@@ -125,6 +129,7 @@ Knobs, all optional:
 |---|---|---|
 | `TANGENT_SMOKE_ENV` | unset | `1` enables the environment-coupled checks. |
 | `TANGENT_SMOKE_URL` | `http://127.0.0.1:7842` | The deployment to probe. |
+| `TANGENT_SMOKE_KEY` | unset | An API key for the deployment holding `tangent.mcp` and `tangent.view`. Without it the probes are refused with 401. |
 | `TANGENT_SMOKE_RESOURCE` | `tangent-dev` | The Cerberus resource id. |
 | `TANGENT_SMOKE_CATALOG` | `~/.tether/catalog` | The Tether catalog root to read. |
 | `TANGENT_SMOKE_GATEWAY` | `mux` | The gateway binary to drive. |
@@ -139,8 +144,8 @@ measures is a check nobody runs during an incident:
 - It never writes to `~/.tether`. The gateway arm copies the operator's own
   catalog entry into a temp directory and points the gateway at that, so the
   process under test is the real one while the state it touches is disposable.
-- It never touches `~/.tangent/tangent.db`. The reference build always boots
-  with `TANGENT_DB_PATH` inside the test's temp directory, on a port it
+- It never touches the live data directory. The reference build always boots
+  with `TANGENT_DATA_DIR` inside the test's temp directory, on a port it
   reserved — the harness refuses to boot on 7842.
 - It signals only pids it started.
 
@@ -160,95 +165,100 @@ uptime: a restart that re-launched the same stale artifact looks identical from
 the outside and identical to the gateway, right up until a caller asks for a
 tool that is not there.
 
-When the schema moved as well as the surface, `tangent --migrate-only` comes
-first, and a drained backup comes before that.
+When the schema moved as well as the surface, a backup comes first; the new
+process migrates the database as it starts.
 
 ## Manual curl probes
 
 The gated command covers all of this; these remain for a machine with no Go
 toolchain, or for probing something the harness cannot reach.
 
+`/mcp` is served by the Substrate `mcp` module and needs a credential: an API
+key that holds `tangent.mcp` plus the scope of each tool you call. The owner
+mints one in the identity API (`POST /api/identity/keys`, body
+`{"name": "...", "scopes": [...]}`, signed in) and it is shown once. Put it in
+a variable without echoing it, and pass it in a header file rather than in the
+command line, so it never reaches the process list or shell history:
+
 ```bash
-# Boot (unmanaged) — or just point at the running instance.
-./tangent &
+read -rs TANGENT_KEY                                  # paste the key, press enter
+printf 'Authorization: Bearer %s\n' "$TANGENT_KEY" > /tmp/tangent.hdr && chmod 600 /tmp/tangent.hdr
 ```
 
-The MCP surface is mounted on the same port as the SPA:
+The MCP surface is mounted on the same port as the SPA, Streamable HTTP only:
+`http://127.0.0.1:7842/mcp`.
 
-- Streamable HTTP: `http://127.0.0.1:7842/mcp` (modern clients).
-- SSE legacy: `http://127.0.0.1:7842/sse` (older Claude Code; long-lived event
-  stream, and the transport the Tether gateway dials).
+**The reply is SSE-framed.** The module's handler answers a POST that accepts
+`text/event-stream` (which is what MCP clients send: `Accept: application/json,
+text/event-stream`) with one server-sent event, `event: message` then
+`data: {json-rpc}`, not a bare JSON body; a POST that does not accept
+`text/event-stream` is refused with 400. Unwrap it with `sed`, as below
+(`TestG6bWhatTheModuleAnswersToTheMainClientsPost` records the behavior
+against the real host, so a framework change shows up there).
 
-The streamable handler is **stateless + JSONResponse**, which is why one-shot
-curl probes succeed without an `initialize` first. `/sse` is not like that: it
-hands back an `endpoint` event naming a session-scoped POST URL, so probing it
-by hand needs a real client — `make smoke` drives one.
+The handler needs no `initialize` for a single call, so one-shot probes work.
 
 ### Probe 1 — tool catalog
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:7842/mcp \
-  -H 'Content-Type: application/json' \
+curl -fsS -X POST http://127.0.0.1:7842/mcp -H @/tmp/tangent.hdr \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | jq '.result.tools | length'
+  | sed -n 's/^data: //p' | jq '.result.tools | length'
 ```
 
-Compare the answer with what the build on disk advertises rather than with a
-number from a document:
-
-```bash
-TANGENT_DB_PATH=$(mktemp -d)/t.db TANGENT_HTTP_PORT=17842 ./tangent &
-curl -fsS -X POST http://localhost:17842/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | jq -r '.result.tools[].name' | sort
-```
+It lists the tools your key may call, not every tool: a key with only
+`tangent.view` sees the reads. To see all of them, use a key that holds every
+tool scope (see [`mcp-tool-names.md`](./mcp-tool-names.md)). Compare the answer
+with what the build on disk advertises rather than with a number from a
+document: boot a throwaway copy (`TANGENT_DATA_DIR=$(mktemp -d)` and a
+`SUBSTRATE_CONFIG` file with `httphost: {addr: "127.0.0.1:17842"}`), make its
+owner and a key, and list its tools the same way.
 
 A difference between the two is `CATALOG_STALE`: the deployment is behind the
-artifact. The name list groups into room/workflow and session compatibility
-tools, generic durable surface/interaction tools, the 4 HITL inbox operations,
-the definition-registry diagnostics, and the operability probes
-(`tangent_health_get`, `tangent_telemetry_query`, `tangent_retention_get`).
+artifact.
 
 ### Probe 2 — the read-only tool call
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:7842/mcp \
-  -H 'Content-Type: application/json' \
+curl -fsS -X POST http://127.0.0.1:7842/mcp -H @/tmp/tangent.hdr \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tangent_health_get","arguments":{}}}' \
-  | jq '.result.structuredContent.readiness.status'
+  | sed -n 's/^data: //p' | jq '.result.structuredContent.readiness.status'
 ```
 
 `tangent_health_get` is the smoke check's one read-only call, and the choice
 is deliberate: every candidate proves the transport carried a call, and only
 this one also answers whether the host can do the work. It writes nothing,
-creates no room, and returns the same pass/warn/fail vocabulary `/readyz` and
-`cerberus resource doctor` print. It is also the only one of the three health
-probes an agent behind the gateway can reach — it speaks JSON-RPC and holds no
-HTTP client for `/readyz`.
+creates no room, and returns the same pass/warn/fail vocabulary
+`/api/health/ready` and `cerberus resource doctor` print. It is also the only
+one of the three health probes an agent behind the gateway can reach — it
+speaks JSON-RPC and holds no HTTP client for `/api/health/ready`.
 
 ### Probe 3 — strict schema rejection
 
 ```bash
-curl -fsS -X POST http://127.0.0.1:7842/mcp \
-  -H 'Content-Type: application/json' \
+curl -fsS -X POST http://127.0.0.1:7842/mcp -H @/tmp/tangent.hdr \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tangent_triage","arguments":{"envelope":{"v":1,"id":"smoke-1","type":"triage","data":{}}}}}' \
-  | jq '.result'
+  | sed -n 's/^data: //p' | jq '.result'
 ```
 
-Expected: `isError: true`, with the error identifying the invalid `type` before
-any room is created. The valid tool pins `type: "tangent.triage"`.
+Expected with a key that holds `tangent.submit`: `isError: true`, with the
+error identifying the invalid `type` before any room is created. The valid tool
+pins `type: "tangent.triage"`. With a key that does not hold it the answer is
+`isError: true` with `forbidden`: the call is refused before the tool runs.
 
-These probes send no browser headers, so the same-origin guard on `/mcp` and
-`/sse` passes them through unchanged. A probe that attaches to `/ws` needs a
-participant session; see
+These probes send no browser headers. A probe that attaches to `/ws` needs a
+signed-in session; see
 [`mcp-integration.md`](./mcp-integration.md#room-access-and-caller-scope).
 
 ### Optional — MCP Inspector
 
 ```bash
 npx @modelcontextprotocol/inspector
-# Transport=Streamable HTTP, URL=http://127.0.0.1:7842/mcp.
+# Transport=Streamable HTTP, URL=http://127.0.0.1:7842/mcp,
+# header Authorization: Bearer <the key>.
 ```
 
 ### Shutdown
@@ -263,10 +273,9 @@ machine.
 
 ## Related
 
-- Cross-repository gateway contract smokes, opt-in and separate from this one:
-  `go test -tags tether_smoke ./internal/mcp -run '^TestTetherNativeFlat'`.
-  They build a sibling Tether checkout and drive the HITL and room-workflow
-  contracts through it against a purpose-built upstream. This document's gated
-  layer instead points the *installed* gateway at the *live* deployment.
+- The cross-repository gateway smokes (`-tags tether_smoke`) drove Tangent
+  through its SSE endpoint and are gone with it. A replacement belongs to the
+  Tether side once its catalog entry for Tangent is a Streamable HTTP entry with
+  a key (see `docs/client-table.md`).
 - [`mcp-integration.md`](./mcp-integration.md) — client configuration and the
   cold-start recipe.

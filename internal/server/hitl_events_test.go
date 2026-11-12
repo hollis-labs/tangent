@@ -269,11 +269,11 @@ func TestHITLTypedEventsRejectInvalidConfigurationAtStartup(t *testing.T) {
 		{Log: log, Epoch: "bad\nepoch", Stream: testEventStream},
 		{Log: log, Epoch: "bad\x00epoch", Stream: testEventStream},
 	} {
-		if _, err := New(Config{Envelope: envelopes, HITLEvents: source}); err == nil {
+		if _, err := newTest(Config{Envelope: envelopes, HITLEvents: source}); err == nil {
 			t.Fatalf("invalid typed config accepted: %+v", source)
 		}
 	}
-	if _, err := New(Config{Envelope: envelopes, HITLEvents: &HITLEventStream{}}); err != nil {
+	if _, err := newTest(Config{Envelope: envelopes, HITLEvents: &HITLEventStream{}}); err != nil {
 		t.Fatalf("nil log must leave typed stream disabled: %v", err)
 	}
 }
@@ -512,7 +512,7 @@ func TestHITLTypedEventsKeepOperatorGate(t *testing.T) {
 	log := streamhub.NewMemoryLog()
 	defer log.Close()
 	notify := &testEventNotifier{}
-	server, err := New(Config{Envelope: envelopes, HITL: &fakeHITLService{}, HITLEvents: &HITLEventStream{Log: log, Notify: notify, Epoch: testEventEpoch, Stream: testEventStream}})
+	server, err := newTest(Config{Envelope: envelopes, HITL: &fakeHITLService{}, HITLEvents: &HITLEventStream{Log: log, Notify: notify, Epoch: testEventEpoch, Stream: testEventStream}})
 	if err != nil {
 		t.Fatal(err)
 	}

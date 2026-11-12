@@ -6,20 +6,18 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	libauth "github.com/hollis-labs/libs/security/auth"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/effect"
 	"github.com/hollis-labs/tangent/internal/envelope"
-	"github.com/hollis-labs/tangent/internal/participant"
 	"github.com/hollis-labs/tangent/internal/server"
 )
 
@@ -35,7 +33,9 @@ import (
 // so it is admitted on exactly the evidence a resolution is.
 func TestAnEffectRequestNeedsAParticipantSession(t *testing.T) {
 	t.Parallel()
-	app := startEffectApp(t, effectContextStub{
+	key := ownerPrincipal()
+	key.ID, key.Kind, key.SessionID, key.TokenID = "key:k_1", "service", "", "k_1"
+	app := startEffectAppAs(t, key, effectContextStub{
 		binding: effect.Binding{
 			BindingDigest: "sha256:binding",
 			Required:      []effect.Capability{effect.FileReadScoped},
@@ -248,12 +248,22 @@ type effectApp struct {
 	database *sql.DB
 	broker   *effect.Broker
 	baseURL  string
-	listener net.Listener
-	done     chan error
 }
 
 func startEffectApp(
 	t *testing.T,
+	contexts server.EffectContextResolver,
+	authorities ...effect.Authority,
+) *effectApp {
+	t.Helper()
+	return startEffectAppAs(t, ownerPrincipal(), contexts, authorities...)
+}
+
+// startEffectAppAs serves the route as the given principal: the owner's user
+// session, or whatever credential a test wants refused.
+func startEffectAppAs(
+	t *testing.T,
+	principal libauth.Principal,
 	contexts server.EffectContextResolver,
 	authorities ...effect.Authority,
 ) *effectApp {
@@ -282,67 +292,22 @@ func startEffectApp(
 	if err != nil {
 		t.Fatalf("envelope.New: %v", err)
 	}
-	sessions, err := participant.NewStore(database)
-	if err != nil {
-		t.Fatalf("participant.NewStore: %v", err)
-	}
-	gate, err := participant.NewGate(sessions)
-	if err != nil {
-		t.Fatalf("participant.NewGate: %v", err)
-	}
-	httpServer, err := server.New(server.Config{
-		Port:          0,
+	baseURL := serveAs(t, server.Config{
 		Logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Envelope:      envelopeService,
-		Participants:  gate,
 		Effects:       broker,
 		EffectContext: contexts,
-	})
-	if err != nil {
-		t.Fatalf("server.New: %v", err)
-	}
-	listener, err := httpServer.Listen()
-	if err != nil {
-		t.Fatalf("server.Listen: %v", err)
-	}
-	app := &effectApp{
-		database: database, broker: broker, listener: listener,
-		baseURL: "http://" + listener.Addr().String(), done: make(chan error, 1),
-	}
-	go func() { app.done <- httpServer.Serve(listener) }()
-	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = httpServer.Shutdown(shutdownCtx)
-		<-app.done
-	})
+	}, principal)
+	app := &effectApp{database: database, broker: broker, baseURL: baseURL}
 	return app
 }
 
+// openDocument is what a browser did to get a session; the host's guard does
+// that now, so there is nothing to fetch and no cookie to hold.
 func (app *effectApp) openDocument(t *testing.T) *http.Cookie {
 	t.Helper()
-	request, err := http.NewRequest(http.MethodGet, app.baseURL+"/", nil)
-	if err != nil {
-		t.Fatalf("build navigation: %v", err)
-	}
-	request.Header.Set("Accept", "text/html")
-	request.Header.Set("Sec-Fetch-Dest", "document")
-	request.Header.Set("Sec-Fetch-Site", "none")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("navigate: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	_, _ = io.Copy(io.Discard, response.Body)
-	for _, cookie := range response.Cookies() {
-		if cookie.Name == participant.CookieName && cookie.Value != "" {
-			return cookie
-		}
-	}
-	t.Fatal("the navigation minted no participant session")
 	return nil
 }
-
 func (app *effectApp) buildEffect(t *testing.T, cookie *http.Cookie, body map[string]any) *http.Request {
 	t.Helper()
 	encoded, err := json.Marshal(body)

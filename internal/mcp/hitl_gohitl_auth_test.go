@@ -2,9 +2,7 @@ package mcp_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"fmt"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -50,12 +48,9 @@ func newHITLAuthServer(t *testing.T, goHITL bool) (*tangentmcp.Server, *sql.DB) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))), "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	options := []tangentmcp.Option{
-		tangentmcp.WithCallerAuth(auth), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService),
+		tangentmcp.WithCallers(tangentmcp.Callers{Gateway: []string{"alpha", "beta"}}),
+		tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService),
 	}
 	if goHITL {
 		options = append(options, tangentmcp.WithHITLWire(gohitl.New(database, catalog)))
@@ -77,7 +72,7 @@ func TestVerifiedGatewayCallerScopeIsIdenticalOnBothBackends(t *testing.T) {
 	for name, goHITL := range map[string]bool{"native": false, "gohitl": true} {
 		t.Run(name, func(t *testing.T) {
 			server, database := newHITLAuthServer(t, goHITL)
-			httpServer := httptest.NewServer(server.HTTPHandler())
+			httpServer := httptest.NewServer(server.HTTPHandlerWith(testKeys))
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			t.Cleanup(cancel)

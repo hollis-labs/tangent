@@ -44,6 +44,23 @@ The envelope **kinds** these surfaces carry (`tangent.app-board`,
 not tool names and did not change: an envelope's `type` is still
 `tangent.triage`, and the tool that carries it is `tangent_triage`.
 
+## Names are a contract, and so are scopes
+
+The names Tangent serves are recorded in `internal/mcp/testdata/tool_names.txt` (73 tools) and the deprecated
+aliases in `tool_aliases.txt` (67), both taken from the build that ran before the Substrate port.
+`cmd/tangent/host_test.go` (`TestTheHostPublishesExactlyTheRecordedToolNames`) lists the tools of the real host
+through the MCP client library and compares the result with the first file byte for byte. A name that changes,
+appears or disappears fails it; changing the contract on purpose means changing the file in the same commit.
+
+Every tool also has exactly one scope (`internal/mcp/tool_scopes.go`), checked on each call by the host's
+authorizer, and a tool with no scope cannot be called at all. `tools/list` shows a caller only the tools whose
+scope it holds. The scopes are `tangent.view` (reads), `tangent.draft`, `tangent.submit` (open, enqueue, create,
+send), `tangent.cancel`, `tangent.close`, `tangent.withdraw` (taking back one's own request), `tangent.deliver`
+(acknowledging that a reply arrived: `tangent_turns_ack`, `tangent_interaction_ack`, `tangent_relay_ack`) and
+`tangent.plugin` (every tool a plugin contributes). No tool needs `tangent.resolve`: deciding an approval is the
+signed-in owner's, through the browser API, and `TestNoToolNeedsTheDecisionScope` keeps it that way. A plugin
+tool gets its scope when it registers and loses it when it is withdrawn (`TestAPluginToolIsScopedWhen...`).
+
 ## Old to new
 
 | Old name (deprecated alias) | New name |

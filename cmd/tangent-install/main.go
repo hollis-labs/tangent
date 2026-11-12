@@ -9,7 +9,7 @@
 // Install and upgrade are the same command: it validates the artifact pair,
 // refuses a foreign or mid-migration daemon on the port, runs the artifact's
 // `--db-check` against the existing database, places the binary and the app,
-// boots the LaunchAgent out and back in, waits for /readyz, and prints the
+// boots the LaunchAgent out and back in, waits for /api/health/ready, and prints the
 // versions before and after. `--dry-run` runs every probe and prints every
 // action without changing anything. Off macOS only `--dry-run` is allowed.
 package main
@@ -107,7 +107,7 @@ func run(args []string, install bool) error {
 		layout.Env[key] = value
 		return nil
 	})
-	wait := flags.Int("wait", 30, "seconds to wait for /readyz after loading the agent")
+	wait := flags.Int("wait", 30, "seconds to wait for /api/health/ready after loading the agent")
 	dryRun := flags.Bool("dry-run", false, "probe and print every action without performing it")
 	if parseErr := flags.Parse(args); parseErr != nil {
 		return parseErr

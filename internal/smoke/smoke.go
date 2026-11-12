@@ -432,7 +432,7 @@ func ClassifyReadiness(report health.ReadinessReport, where string) *Finding {
 		}
 		action := check.Action
 		if action == "" {
-			action = "Read the full report at " + where + "/readyz."
+			action = "Read the full report at " + where + "/api/health/ready."
 		}
 		return &Finding{
 			Mode:   ModeCapabilityUnhealthy,
@@ -472,7 +472,7 @@ func ClassifyCapabilitySummary(report health.CapabilitySummaryReport, where stri
 	}
 	action := report.Action
 	if action == "" {
-		action = "Query the kind at " + where + "/healthz/capability/{kind} for its materialization state."
+		action = "Query the kind at " + where + "/api/health/capability/{kind} for its materialization state."
 	}
 	return &Finding{
 		Mode:  ModeCapabilityUnhealthy,

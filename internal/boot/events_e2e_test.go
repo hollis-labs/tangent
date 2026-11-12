@@ -5,107 +5,98 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/participant"
-	"github.com/hollis-labs/tangent/internal/server"
+	"github.com/hollis-labs/libs/core/store"
+	"github.com/hollis-labs/libs/core/store/migrate"
+	gmcpserver "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/server"
+	mcphttp "github.com/hollis-labs/libs/mcp/plugin-mcp/go-mcp/transport/http"
+	libauth "github.com/hollis-labs/libs/security/auth"
+
+	"github.com/hollis-labs/tangent/internal/access"
+	"github.com/hollis-labs/tangent/internal/persistence"
 )
 
-const e2eOperatorToken = "fixture-operator-token-7f3c9a1e5b2d4f60-a8e1c3b5d7f9"
-
+// The harness stands in for the host: a user session in front of the browser
+// routes and an API key in front of /mcp, each stamped the way the guard would,
+// over the same route table and tool server the real host serves.
 type e2eApp struct {
 	baseURL string
-	cookie  *http.Cookie
 	svc     *Services
+	closer  io.Closer
 }
 
 func startE2E(t *testing.T, mutate func(*Config)) *e2eApp {
 	t.Helper()
 	root := t.TempDir()
+	dbCfg := store.Config{Driver: store.DriverSQLite, SQLite: store.SQLiteConfig{Path: filepath.Join(root, "tangent.db"), CreateParentDir: true}}
+	st, err := store.Open(context.Background(), dbCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	fsys, migrations := persistence.Migrations()
+	if err = migrate.Ensure(context.Background(), dbCfg, st, migrate.Source{FS: fsys, Root: migrations}); err != nil {
+		t.Fatal(err)
+	}
+	owner := libauth.Principal{
+		Verified: true, ID: "user:usr_e2e", Kind: "user", SessionID: "ses_e2e",
+		Scopes: []string{"*"}, ExpiresAt: time.Now().Add(time.Hour),
+	}
+	tools := gmcpserver.NewServer("tangent", "test")
 	cfg := Config{
-		DBPath:          filepath.Join(root, "tangent.db"),
+		DB:              st.DB(),
+		DBPath:          dbCfg.SQLite.Path,
 		PluginDir:       filepath.Join(root, "plugins"),
-		OperatorToken:   e2eOperatorToken,
+		ConfigSecrets:   &memorySecrets{values: map[string]string{}},
+		MCPServer:       tools,
+		Authorizer:      access.AuthorizeTool,
+		Verifier:        func(context.Context, string) (libauth.Principal, error) { return owner, nil },
+		RoomURLBase:     "http://127.0.0.1",
 		Logger:          slog.New(slog.DiscardHandler),
 		eventsRelayTick: 25 * time.Millisecond,
 	}
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	svc, srv, closer, err := Boot(cfg)
+	svc, table, closer, err := Boot(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		_ = closer.Close()
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(ln) }()
+	agent := libauth.Principal{Verified: true, ID: "key:codex", Kind: "service", Display: "codex", Scopes: []string{access.Submit, access.View}}
+	mcpHandler := mcphttp.NewHandler(tools, mcphttp.HandlerOptions{})
+	browser := table.Handler()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/mcp" {
+			mcpHandler.ServeHTTP(w, r.WithContext(libauth.WithPrincipal(r.Context(), agent)))
+			return
+		}
+		browser.ServeHTTP(w, r.WithContext(libauth.WithPrincipal(r.Context(), owner)))
+	}))
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-		<-done
+		srv.CloseClientConnections()
+		srv.Close()
 		_ = closer.Close()
 	})
-	app := &e2eApp{baseURL: "http://" + ln.Addr().String(), svc: svc}
-	app.cookie = app.elevatedSession(t)
-	return app
+	return &e2eApp{baseURL: srv.URL, svc: svc, closer: closer}
 }
 
-// elevatedSession mints a participant session the way a browser navigation
-// does, then elevates it with the operator token so it may resolve approvals.
-func (a *e2eApp) elevatedSession(t *testing.T) *http.Cookie {
-	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, a.baseURL+"/", nil)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml")
-	req.Header.Set("Sec-Fetch-Dest", "document")
-	req.Header.Set("Sec-Fetch-Site", "none")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	var minted *http.Cookie
-	for _, c := range resp.Cookies() {
-		if c.Name == participant.CookieName && c.Value != "" {
-			minted = c
-		}
-	}
-	if minted == nil {
-		t.Fatal("no participant session minted")
-	}
-	_, _, resp = a.post(t, server.ElevatePath, minted, map[string]any{"token": e2eOperatorToken})
-	for _, c := range resp.Cookies() {
-		if c.Name == participant.CookieName && c.Value != "" {
-			return c
-		}
-	}
-	t.Fatalf("elevation issued no session (status %d)", resp.StatusCode)
-	return nil
-}
-
-func (a *e2eApp) post(t *testing.T, path string, cookie *http.Cookie, payload any) (int, map[string]any, *http.Response) {
+func (a *e2eApp) post(t *testing.T, path string, payload any) (int, map[string]any, *http.Response) {
 	t.Helper()
 	raw, _ := json.Marshal(payload)
 	req, _ := http.NewRequest(http.MethodPost, a.baseURL+path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", a.baseURL)
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
-	if cookie != nil {
-		req.AddCookie(cookie)
-	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -148,7 +139,12 @@ func (a *e2eApp) enqueue(t *testing.T, key string) string {
 			IsError bool `json:"isError"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal(body, &rpc); err != nil || resp.StatusCode != http.StatusOK ||
+	// The host answers a POST with Accept text/event-stream framed as one SSE message.
+	payload := body
+	if _, after, ok := bytes.Cut(body, []byte("data: ")); ok {
+		payload, _, _ = bytes.Cut(after, []byte("\n"))
+	}
+	if err := json.Unmarshal(payload, &rpc); err != nil || resp.StatusCode != http.StatusOK ||
 		rpc.Result.IsError || len(rpc.Result.Content) != 1 {
 		t.Fatalf("enqueue = %d %s (%v)", resp.StatusCode, body, err)
 	}
@@ -166,7 +162,6 @@ func (a *e2eApp) resolve(t *testing.T, itemID string) {
 	t.Helper()
 	probe := func() (rev, presented int64) {
 		req, _ := http.NewRequest(http.MethodGet, a.baseURL+"/api/hitl/items/"+itemID, nil)
-		req.AddCookie(a.cookie)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -182,13 +177,13 @@ func (a *e2eApp) resolve(t *testing.T, itemID string) {
 		return v.Revision, v.PresentedProjectionRevision
 	}
 	rev, _ := probe()
-	if status, body, _ := a.post(t, "/api/hitl/items/"+itemID+"/present", a.cookie, map[string]any{
+	if status, body, _ := a.post(t, "/api/hitl/items/"+itemID+"/present", map[string]any{
 		"expected_revision": rev, "presented_projection_revision": rev, "connection_id": "e2e",
 	}); status != http.StatusOK {
 		t.Fatalf("present = %d %v", status, body)
 	}
 	rev, presented := probe()
-	if status, body, _ := a.post(t, "/api/hitl/items/"+itemID+"/resolve", a.cookie, map[string]any{
+	if status, body, _ := a.post(t, "/api/hitl/items/"+itemID+"/resolve", map[string]any{
 		"expected_revision": rev, "presented_projection_revision": presented,
 		"response": map[string]any{"kind": "approval", "decision": "approved"},
 	}); status != http.StatusOK || body["state"] != "resolved" {
@@ -210,7 +205,6 @@ func (a *e2eApp) openStream(t *testing.T, lastEventID string) *sseStream {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.baseURL+"/api/hitl/events", nil)
-	req.AddCookie(a.cookie)
 	if lastEventID != "" {
 		req.Header.Set("Last-Event-ID", lastEventID)
 	}
@@ -381,4 +375,24 @@ func TestEventsDisabledKillSwitch(t *testing.T) {
 	if outbox != 2 || journal != 0 {
 		t.Fatalf("outbox rows = %d (want 2), journal rows = %d (want 0)", outbox, journal)
 	}
+}
+
+// memorySecrets is a synthetic keychain: no test here touches the real one.
+type memorySecrets struct{ values map[string]string }
+
+func (m *memorySecrets) Get(_ context.Context, key string) (string, error) {
+	if v, ok := m.values[key]; ok {
+		return v, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (m *memorySecrets) Set(_ context.Context, key, value string) error {
+	m.values[key] = value
+	return nil
+}
+
+func (m *memorySecrets) Delete(_ context.Context, key string) error {
+	delete(m.values, key)
+	return nil
 }

@@ -4,7 +4,7 @@ app: tangent
 variant: app-host
 profiles: [minimal]
 modules:
-  add: [secrets, auth, database, identity, cli]
+  add: [secrets, auth, database, identity, mcp, cli]
 config:
   logging: { level: info, format: text }
   httphost: { addr: "127.0.0.1:7842" }

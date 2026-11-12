@@ -15,7 +15,7 @@
 //   - the artifact daemon's `--db-check` must pass against the existing
 //     database, which is what refuses a downgrade (bab0b89: an older binary
 //     refuses a newer database rather than repairing it);
-//   - after the LaunchAgent is (re)loaded, /readyz must answer ok and the
+//   - after the LaunchAgent is (re)loaded, /api/health/ready must answer ok and the
 //     serving version must be the artifact's, or the install fails non-zero.
 //
 // Nothing here runs launchctl, executes a binary, or touches the filesystem
@@ -123,7 +123,7 @@ type Installer struct {
 	// DryRun performs read-only probes and prints every action instead of
 	// performing it.
 	DryRun bool
-	// ReadyTimeout bounds the wait for /readyz after (re)loading the agent.
+	// ReadyTimeout bounds the wait for /api/health/ready after (re)loading the agent.
 	// Zero means 30 seconds.
 	ReadyTimeout time.Duration
 	// probeBaseURL overrides Layout.BaseURL; tests point it at httptest.
@@ -214,7 +214,7 @@ func (i *Installer) Install(ctx context.Context, artifacts Artifacts) (Report, e
 	// 3. Refusals about the running daemon.
 	if serving.answering {
 		if !serving.migrationsPass {
-			return report, fmt.Errorf("install: the daemon on %s is not ready: %s. It may be mid-migration; wait for /readyz to pass, or stop it, then retry",
+			return report, fmt.Errorf("install: the daemon on %s is not ready: %s. It may be mid-migration; wait for /api/health/ready to pass, or stop it, then retry",
 				i.baseURL(), serving.detail)
 		}
 		if report.BeforeInstalled == "none" || serving.version != report.BeforeInstalled {
@@ -253,7 +253,7 @@ func (i *Installer) Install(ctx context.Context, artifacts Artifacts) (Report, e
 	config := launchagent.Config{Binary: i.InstalledBinary(), Port: i.Port, DBPath: i.DBPath, LogDir: i.LogDir, Env: i.Env}
 	if i.DryRun {
 		i.step(&report, "launch agent: would write %s and bootout/bootstrap gui/%d/%s", launchagent.PlistPath(i.Home), i.UID, launchagent.Label)
-		i.step(&report, "after: would wait for %s/readyz and confirm the serving version is %s", i.baseURL(), artifactVersion)
+		i.step(&report, "after: would wait for %s/api/health/ready and confirm the serving version is %s", i.baseURL(), artifactVersion)
 		report.AfterServing = "(dry-run)"
 		return report, nil
 	}
@@ -406,12 +406,12 @@ type servingState struct {
 	detail         string
 }
 
-// probe asks /readyz and then MCP initialize. It never fails the install by
+// probe asks /api/health/ready and then MCP initialize. It never fails the install by
 // itself: not answering is a valid state (fresh install, stopped daemon).
 func (i *Installer) probe(ctx context.Context) servingState {
 	var state servingState
 	client := i.client()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, i.baseURL()+"/readyz", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, i.baseURL()+"/api/health/ready", nil)
 	if err != nil {
 		return state
 	}
@@ -430,7 +430,7 @@ func (i *Installer) probe(ctx context.Context) servingState {
 		} `json:"checks"`
 	}
 	if decodeErr := json.NewDecoder(response.Body).Decode(&readiness); decodeErr != nil {
-		state.detail = "/readyz answered " + response.Status + " with an unreadable body"
+		state.detail = "/api/health/ready answered " + response.Status + " with an unreadable body"
 	} else {
 		state.migrationsPass = true
 		for _, check := range readiness.Checks {
@@ -440,7 +440,7 @@ func (i *Installer) probe(ctx context.Context) servingState {
 			}
 		}
 		if readiness.Status != "ok" && state.detail == "" {
-			state.detail = "/readyz status " + readiness.Status
+			state.detail = "/api/health/ready status " + readiness.Status
 		}
 	}
 	state.version = i.servingVersion(ctx)
@@ -475,7 +475,7 @@ func (i *Installer) servingVersion(ctx context.Context) string {
 	return initialized.Result.ServerInfo.Version
 }
 
-// waitReady polls until /readyz is ok and migrations pass, or the timeout.
+// waitReady polls until /api/health/ready is ok and migrations pass, or the timeout.
 func (i *Installer) waitReady(ctx context.Context) (servingState, error) {
 	timeout := i.ReadyTimeout
 	if timeout == 0 {
@@ -489,9 +489,9 @@ func (i *Installer) waitReady(ctx context.Context) (servingState, error) {
 			return last, nil
 		}
 		if time.Now().After(deadline) {
-			why := "nothing answered /readyz"
+			why := "nothing answered /api/health/ready"
 			if last.answering {
-				why = "/readyz never passed (" + last.detail + ")"
+				why = "/api/health/ready never passed (" + last.detail + ")"
 			}
 			return last, fmt.Errorf("%s within %s", why, timeout)
 		}

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hollis-labs/tangent/internal/authz"
 	"github.com/hollis-labs/tangent/internal/interaction"
 	"github.com/hollis-labs/tangent/internal/turns"
 )
@@ -360,27 +359,6 @@ func writeTurnsError(w http.ResponseWriter, err error) {
 		response["code"] = "conflict"
 	}
 	writeTurnsJSON(w, status, response)
-}
-
-func turnsLoopbackOrParticipantRoute(
-	mux *http.ServeMux,
-	routes *[]ParticipantRoute,
-	cfg Config,
-	pattern string,
-	capability authz.Capability,
-	handler http.HandlerFunc,
-) {
-	*routes = append(*routes, ParticipantRoute{Pattern: pattern, Capability: capability})
-	guarded := hitlSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Non-browser loopback callers (like Tether daemon or test clients) without Origin/Sec-Fetch headers
-		// do not carry a browser cookie, but are permitted as local daemons.
-		if requestHostIsLoopback(r.Host) && r.Header.Get("Sec-Fetch-Site") == "" && r.Header.Get("Origin") == "" {
-			handler(w, r)
-			return
-		}
-		requireParticipant(cfg.Participants, cfg.Telemetry, capability, handler).ServeHTTP(w, r)
-	}))
-	mux.Handle(pattern, guarded)
 }
 
 // withoutSyncTime returns the inbox with its read timestamp cleared, for ETag purposes only.

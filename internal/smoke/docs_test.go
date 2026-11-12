@@ -84,7 +84,12 @@ var nonToolMentions = map[string]bool{
 	"tangent_participant":     true,
 	"tangent_reference":       true,
 	"tangent.external-review": true,
-	"tangent.appboard":        true, // approved definition package id, not a tool
+	// Scopes and config keys (docs/client-table.md, docs/mcp-tool-names.md, docs/conversion-notes.md).
+	"tangent.mcp": true, "tangent.view": true, "tangent.draft": true, "tangent.submit": true,
+	"tangent.cancel": true, "tangent.close": true, "tangent.withdraw": true, "tangent.deliver": true,
+	"tangent.plugin": true, "tangent.admin": true, "tangent.resolve": true,
+	"tangent.gateway_producers": true, "tangent.trusted_forwarders": true, "tangent.allowed_hosts": true,
+	"tangent.appboard": true, // approved definition package id, not a tool
 	// Envelope kinds are hyphenated wire names, several of which collide
 	// with a tool name spelled the same way; the ones that do are real
 	// tools and stay out of this set.
@@ -260,7 +265,7 @@ func TestDocumentedWorkflowTableMatchesListWorkflows(t *testing.T) {
 	endpoint := bootShippedBinary(t)
 	ctx := context.Background()
 
-	kinds, err := listWorkflowKinds(ctx, endpoint.BaseURL)
+	kinds, err := listWorkflowKinds(ctx, endpoint.BaseURL, endpoint.Key)
 	if err != nil {
 		t.Fatalf("call tangent_workflow_list: %v", err)
 	}
@@ -349,7 +354,7 @@ func TestNoDocumentPinsTheToolCount(t *testing.T) {
 // It posts directly rather than reaching for a helper in the smoke package,
 // because a documentation gate must not require widening the production probe
 // surface to run.
-func listWorkflowKinds(ctx context.Context, baseURL string) ([]string, error) {
+func listWorkflowKinds(ctx context.Context, baseURL, key string) ([]string, error) {
 	payload := `{"jsonrpc":"2.0","id":1,"method":"tools/call",` +
 		`"params":{"name":"tangent_workflow_list","arguments":{}}}`
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -359,6 +364,7 @@ func listWorkflowKinds(ctx context.Context, baseURL string) ([]string, error) {
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json, text/event-stream")
+	request.Header.Set("Authorization", "Bearer "+key)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -369,6 +375,7 @@ func listWorkflowKinds(ctx context.Context, baseURL string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	raw = smoke.Unframe(raw)
 
 	var envelope struct {
 		Result struct {

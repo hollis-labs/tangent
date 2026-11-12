@@ -19,7 +19,7 @@ import (
 	"github.com/hollis-labs/substrate/modules/httphost"
 )
 
-// Gap G5: do WebSocket upgrades and long-lived streams survive the whole chain (Host check,
+// Gap G5 (answered: they do; the real /ws is Tangent's own mount, so these stand-ins sit under /g5): do WebSocket upgrades and long-lived streams survive the whole chain (Host check,
 // identity middleware, guard, apierr.Normalize, handler)? These mounts stand in for Tangent's
 // /ws and event streams: an echo socket and a stream with a heartbeat.
 func g5Mounts(ctx context.Context, _ *tangent) []mountSpec {
@@ -65,8 +65,8 @@ func g5Mounts(ctx context.Context, _ *tangent) []mountSpec {
 		}
 	})
 	return []mountSpec{
-		{Mount: httphost.Mount{Pattern: "GET /ws", Handler: ws}, Method: "GET", Scope: "tangent.test"},
-		{Mount: httphost.Mount{Pattern: "GET /stream", Handler: stream}, Method: "GET", Scope: "tangent.test"},
+		{Mount: httphost.Mount{Pattern: "GET /g5/ws", Handler: ws}, Method: "GET", Scope: "tangent.test"},
+		{Mount: httphost.Mount{Pattern: "GET /g5/stream", Handler: stream}, Method: "GET", Scope: "tangent.test"},
 	}
 }
 
@@ -116,7 +116,7 @@ func g5Setup(t *testing.T) *g5 {
 	return &g5{base: base, cookie: c, key: key}
 }
 
-func (g *g5) wsURL() string { return "ws" + strings.TrimPrefix(g.base, "http") + "/ws" }
+func (g *g5) wsURL() string { return "ws" + strings.TrimPrefix(g.base, "http") + "/g5/ws" }
 
 func echo(ctx context.Context, t *testing.T, c *websocket.Conn) {
 	t.Helper()
@@ -168,7 +168,7 @@ func TestG5WebSocketThroughTheChain(t *testing.T) {
 		t.Fatalf("foreign-origin upgrade: res=%v err=%v, want 403", res, err)
 	}
 	// An unknown Host (DNS rebinding): refused by the host guard.
-	req, _ := http.NewRequest("GET", g.base+"/ws", nil)
+	req, _ := http.NewRequest("GET", g.base+"/g5/ws", nil)
 	req.Host = "rebind.example.test"
 	req.Header.Set("Authorization", "Bearer "+g.key)
 	if r, err := http.DefaultClient.Do(req); err != nil || r.StatusCode != http.StatusForbidden {
@@ -186,7 +186,7 @@ func TestG5StreamOutlivesTimeouts(t *testing.T) {
 	}
 	streamBeat = 10 * time.Second
 	g := g5Setup(t)
-	req, _ := http.NewRequest("GET", g.base+"/stream", nil)
+	req, _ := http.NewRequest("GET", g.base+"/g5/stream", nil)
 	req.Header.Set("Authorization", "Bearer "+g.key)
 	res, err := (&http.Client{}).Do(req) // no client timeout
 	if err != nil || res.StatusCode != 200 {
@@ -220,7 +220,7 @@ func TestG5ShutdownWithOpenConnections(t *testing.T) {
 	}
 	defer func() { _ = c.CloseNow() }()
 	echo(ctx, t, c)
-	req, _ := http.NewRequest("GET", g.base+"/stream", nil)
+	req, _ := http.NewRequest("GET", g.base+"/g5/stream", nil)
 	req.Header.Set("Authorization", "Bearer "+g.key)
 	res, err := (&http.Client{}).Do(req)
 	if err != nil || res.StatusCode != 200 {

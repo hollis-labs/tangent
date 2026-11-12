@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	tangentdb "github.com/hollis-labs/tangent/internal/db"
 	"github.com/hollis-labs/tangent/internal/definition"
 	"github.com/hollis-labs/tangent/internal/effect"
+	"github.com/hollis-labs/tangent/internal/persistence"
+	"github.com/hollis-labs/tangent/internal/testdb"
 )
 
 // Every degraded state in this file is constructed, not described. A closed
@@ -122,15 +123,7 @@ const dbPathToken = "tangent-health-secret-path"
 func migratedDB(t *testing.T) *sql.DB {
 	t.Helper()
 	dir := t.TempDir()
-	db, err := tangentdb.Open(filepath.Join(dir, dbPathToken+".db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
-	if err := tangentdb.RunMigrations(db); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
-	return db
+	return testdb.Open(t, filepath.Join(dir, dbPathToken+".db"))
 }
 
 func healthyReporter(t *testing.T) *Reporter {
@@ -262,8 +255,8 @@ func TestReadinessFailsOnAClosedDatabase(t *testing.T) {
 func TestReadinessFailsWhenSchemaIsBehindExpected(t *testing.T) {
 	t.Parallel()
 	db := migratedDB(t)
-	if err := tangentdb.RollbackOne(db); err != nil {
-		t.Fatalf("roll back one migration: %v", err)
+	if _, err := db.Exec(`DELETE FROM goose_db_version WHERE version_id = (SELECT MAX(version_id) FROM goose_db_version);`); err != nil {
+		t.Fatalf("forget the newest migration: %v", err)
 	}
 	reporter := NewReporter(WithDatabase(db), WithDefinitionRegistry(availableRegistry(t)))
 
@@ -275,8 +268,8 @@ func TestReadinessFailsWhenSchemaIsBehindExpected(t *testing.T) {
 	if !strings.Contains(migrations.Detail, "behind") {
 		t.Errorf("migrations detail = %q, want it to say the schema is behind", migrations.Detail)
 	}
-	if !strings.Contains(migrations.Action, "--migrate-only") {
-		t.Errorf("migrations action = %q, want the command that fixes it", migrations.Action)
+	if !strings.Contains(migrations.Action, "Restart tangent") {
+		t.Errorf("migrations action = %q, want the step that fixes it", migrations.Action)
 	}
 	if report.Ready() {
 		t.Fatal("a process one migration behind its binary reported ready")
@@ -286,11 +279,7 @@ func TestReadinessFailsWhenSchemaIsBehindExpected(t *testing.T) {
 func TestReadinessFailsOnANeverMigratedDatabase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	db, err := tangentdb.Open(filepath.Join(dir, "fresh.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() { _ = tangentdb.Close(db) })
+	db := testdb.OpenUnmigrated(t, filepath.Join(dir, "fresh.db"))
 
 	report := NewReporter(WithDatabase(db)).Readiness(context.Background())
 	migrations := checkNamed(t, report, CheckMigrations)
@@ -303,38 +292,17 @@ func TestReadinessFailsOnANeverMigratedDatabase(t *testing.T) {
 	}
 }
 
-// TestReadinessFailsOnADirtySchema covers the state golang-migrate leaves
-// behind when a migration fails part-way: the tables match no migration, and
-// running the migration again is the wrong instruction.
-func TestReadinessFailsOnADirtySchema(t *testing.T) {
-	t.Parallel()
-	db := migratedDB(t)
-	if _, err := db.Exec(`UPDATE schema_migrations SET dirty = 1;`); err != nil {
-		t.Fatalf("mark schema dirty: %v", err)
-	}
-
-	report := NewReporter(WithDatabase(db)).Readiness(context.Background())
-	migrations := checkNamed(t, report, CheckMigrations)
-	if migrations.Status != StatusFail || !strings.Contains(migrations.Detail, "dirty") {
-		t.Fatalf("migrations check = %+v, want a dirty-schema failure", migrations)
-	}
-	if !strings.Contains(migrations.Action, "--rollback-one") {
-		t.Errorf("dirty-schema action = %q, want the rollback instruction rather than a re-run",
-			migrations.Action)
-	}
-}
-
 // TestReadinessFailsWhenSchemaIsAhead is the upgrade-rollback case: an older
 // binary against a newer schema. Migrating down is the wrong instruction and
 // the check must not give it.
 func TestReadinessFailsWhenSchemaIsAhead(t *testing.T) {
 	t.Parallel()
 	db := migratedDB(t)
-	expected, err := tangentdb.ExpectedMigrationVersion()
+	status, err := persistence.Inspect(context.Background(), db)
 	if err != nil {
 		t.Fatalf("expected migration version: %v", err)
 	}
-	if _, err := db.Exec(`UPDATE schema_migrations SET version = ?;`, expected+1); err != nil {
+	if _, err := db.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, 1);`, status.Expected+1); err != nil {
 		t.Fatalf("advance schema version: %v", err)
 	}
 

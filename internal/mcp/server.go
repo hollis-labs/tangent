@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
@@ -55,7 +54,11 @@ type Server struct {
 	// requireReplyTo makes completion.reply_to mandatory on every room-backed
 	// tool: in the input schema and at runtime. Production boot turns it on.
 	requireReplyTo bool
-	callerAuth     *CallerAuth
+	callers        *callerSet
+	scopes         *toolScopes
+	authorizer     Authorizer
+	authorizerSet  bool
+	external       *gmcpserver.Server
 	envSvc         *envelope.Service
 	dispatcher     *envelope.Dispatcher
 	manager        *room.Manager
@@ -342,7 +345,7 @@ func WithInteractionPackages(registry *interactionpkg.Registry) Option {
 }
 
 // New constructs a Server, registers the Tangent MCP tool surface, and returns
-// it ready to expose via HTTPHandler / SSEHandler.
+// it ready for the host to mount: the transport is the Substrate mcp module's.
 //
 // Both envSvc and dispatcher are required. dispatcher is the same instance
 // future PRs attach handlers to; passing it through here keeps the MCP layer
@@ -364,22 +367,15 @@ func New(
 		return nil, fmt.Errorf("mcp: room manager is required")
 	}
 
-	mcpServer := gmcpserver.NewServer(implementationName, implementationVersion)
 	s := &Server{
 		envSvc:      envSvc,
 		dispatcher:  dispatcher,
 		manager:     manager,
 		roomURLBase: roomURLBase,
-		mcp:         mcpServer,
+		scopes:      newToolScopes(),
 	}
-	// gatewayMetadataMiddleware must run before inputSchemaValidationMiddleware:
-	// it strips gateway-injected keys (`_traceparent`/`_tracestate`) that would
-	// otherwise fail an `additionalProperties: false` schema, and validation
-	// must see arguments with those keys already gone. A single
-	// AddReceivingMiddleware call executes its arguments left to right, so
-	// listing gatewayMetadataMiddleware first is what puts it first in
-	// execution order (see the official SDK's AddReceivingMiddleware doc).
-	mcpServer.SDKServer().AddReceivingMiddleware(gatewayMetadataMiddleware, s.inputSchemaValidationMiddleware, s.hideLegacyAliasesMiddleware)
+	// Options run before the SDK server is wired so WithServer can supply the
+	// host's own (the Substrate mcp module's), which carries its transport.
 	for _, option := range options {
 		if option == nil {
 			continue
@@ -388,6 +384,28 @@ func New(
 			return nil, err
 		}
 	}
+	if !s.authorizerSet {
+		s.authorizer = defaultAuthorizer
+	}
+	mcpServer := s.external
+	if mcpServer == nil {
+		mcpServer = gmcpserver.NewServer(implementationName, implementationVersion)
+	}
+	s.mcp = mcpServer
+	// gatewayMetadataMiddleware must run before inputSchemaValidationMiddleware:
+	// it strips gateway-injected keys (`_traceparent`/`_tracestate`) that would
+	// otherwise fail an `additionalProperties: false` schema, and validation
+	// must see arguments with those keys already gone. A single
+	// AddReceivingMiddleware call executes its arguments left to right, so
+	// listing gatewayMetadataMiddleware first is what puts it first in
+	// execution order (see the official SDK's AddReceivingMiddleware doc).
+	//
+	// The caller is derived first and the call authorized second, ahead of any
+	// work on the arguments: a caller refused for its scope learns nothing from
+	// how its arguments were judged.
+	mcpServer.SDKServer().AddReceivingMiddleware(
+		s.callerMiddleware, s.authorizeMiddleware,
+		gatewayMetadataMiddleware, s.inputSchemaValidationMiddleware, s.hideLegacyAliasesMiddleware)
 	if s.interactions != nil && s.roomflow == nil {
 		// Every named room workflow routes through the durable compatibility
 		// adapter whenever the substrate is present, so installing the
@@ -416,56 +434,6 @@ func New(
 // MCP returns the underlying official-SDK server, for tests that need to
 // connect via NewInMemoryTransports; not intended for production callers.
 func (s *Server) MCP() *mcpsdk.Server { return s.mcp.SDKServer() }
-
-// HTTPHandler returns the streamable-HTTP handler suitable for mounting
-// at /mcp. The SDK reuses the same *mcp.Server for every request via the
-// getServer factory closure.
-//
-// We run in Stateless + JSONResponse mode for v0.1:
-//   - Stateless lets clients invoke tools/list and tools/call without
-//     completing the MCP initialize handshake first. The integration
-//     workflow Tangent targets in v0.1 (and the curl smoke probe in
-//     docs/mcp-smoketest.md) sends one POST and expects one JSON reply;
-//     a session-bound mode would force every probe to do `initialize`
-//     first, which adds friction without protecting anything we care
-//     about (authentication is enforced independently before SDK dispatch).
-//   - JSONResponse forces application/json replies even when the client
-//     advertises text/event-stream Accept. SSE-style streaming is used
-//     by the dedicated /sse mount; mixing both on /mcp would surprise
-//     callers that just want a single JSON-RPC round trip.
-//
-// PR 4+ may revisit the trade-off when the WebSocket bridge introduces
-// long-running, stateful workflows. For PR 3 the surface is request/
-// response only.
-// Built directly against the official SDK server rather than go-mcp's
-// transport/http wrapper: that wrapper does not expose JSONResponse, and
-// forcing it is the whole point of the trade-off documented above — go-mcp
-// deliberately leaves prompts, resources, and every transport not common to
-// every consumer for a caller to drive directly against SDKServer().
-func (s *Server) HTTPHandler() http.Handler {
-	handler := mcpsdk.NewStreamableHTTPHandler(
-		func(*http.Request) *mcpsdk.Server { return s.mcp.SDKServer() },
-		&mcpsdk.StreamableHTTPOptions{
-			Stateless:    true,
-			JSONResponse: true,
-		},
-	)
-	return s.callerAuth.wrap(func(w http.ResponseWriter, r *http.Request, _ string) {
-		handler.ServeHTTP(w, r)
-	})
-}
-
-// SSEHandler returns the SSE-fallback handler suitable for mounting at
-// /sse. Older Claude Code clients (and other MCP clients that pre-date
-// streamable-HTTP) connect here; the SDK manages the long-lived event
-// stream.
-func (s *Server) SSEHandler() http.Handler {
-	return scopedSSEHandler(s.callerAuth, func() http.Handler {
-		return mcpsdk.NewSSEHandler(func(*http.Request) *mcpsdk.Server {
-			return s.mcp.SDKServer()
-		}, nil)
-	})
-}
 
 // registerTools wires the Tangent MCP tool surface. Called once during
 // construction; the SDK's tool registry is mutex-protected so future

@@ -2,7 +2,9 @@
 // modules read theirs; this block holds what only Tangent has.
 //
 //	tangent:
-//	  allowed_hosts: []   # extra Host values (besides loopback) served behind a local TLS proxy
+//	  allowed_hosts: []        # extra Host values (besides loopback) served behind a local TLS proxy
+//	  gateway_producers: []    # API key names that are gateway producers (tether-gateway, a machine's gateway)
+//	  trusted_forwarders: []   # the producers among them trusted to attest the session they forward for
 //
 // An unknown key or a bad value is refused at start with a message that names the key.
 package settings
@@ -10,6 +12,7 @@ package settings
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -19,7 +22,9 @@ const Key = "tangent"
 
 // Settings are the parsed block.
 type Settings struct {
-	AllowedHosts []string
+	AllowedHosts      []string
+	GatewayProducers  []string
+	TrustedForwarders []string
 }
 
 // Parse reads the block (nil for a missing one).
@@ -34,7 +39,7 @@ func Parse(raw any) (Settings, error) {
 	}
 	var unknown []string
 	for k := range block {
-		if k != "allowed_hosts" {
+		if k != "allowed_hosts" && k != "gateway_producers" && k != "trusted_forwarders" {
 			unknown = append(unknown, k)
 		}
 	}
@@ -62,5 +67,33 @@ func Parse(raw any) (Settings, error) {
 	default:
 		return s, fmt.Errorf("tangent.allowed_hosts must be a list of strings")
 	}
+	var err error
+	if s.GatewayProducers, err = names(block, "gateway_producers"); err != nil {
+		return s, err
+	}
+	if s.TrustedForwarders, err = names(block, "trusted_forwarders"); err != nil {
+		return s, err
+	}
 	return s, nil
 }
+
+// names reads a list of lowercase key names.
+func names(block map[string]any, key string) ([]string, error) {
+	var out []string
+	switch list := block[key].(type) {
+	case nil:
+	case []any:
+		for _, v := range list {
+			n, ok := v.(string)
+			if !ok || !keyName.MatchString(n) {
+				return nil, fmt.Errorf("tangent.%s: every entry must be a key name (lowercase letters, digits, - and _)", key)
+			}
+			out = append(out, n)
+		}
+	default:
+		return nil, fmt.Errorf("tangent.%s must be a list of strings", key)
+	}
+	return out, nil
+}
+
+var keyName = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)

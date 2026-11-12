@@ -1,13 +1,17 @@
 package smoke_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -79,8 +83,8 @@ func repoRoot() string {
 // check that ran against a developer's real installation once is a smoke check
 // nobody runs again:
 //
-//   - TANGENT_DB_PATH is always set and always inside t.TempDir(), so the
-//     process cannot fall back to ~/.tangent/tangent.db.
+//   - TANGENT_DATA_DIR is always set and always inside t.TempDir(), so the
+//     process cannot fall back to the operator's real data directory.
 //   - The port is reserved by this test, never the default 7842, so a running
 //     local instance is neither contacted nor displaced.
 //
@@ -101,13 +105,6 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 	binary := tangentBinary(t)
 
 	root := t.TempDir()
-	dbPath := filepath.Join(root, "smoke", "tangent.db")
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
-		t.Fatalf("create smoke database directory: %v", err)
-	}
-	if !strings.HasPrefix(dbPath, root) {
-		t.Fatalf("refusing to boot: database path %q escapes the test temp root", dbPath)
-	}
 	pluginDir := installFirstPartyPlugins(t, binary, root)
 	// Resolve/build/install can take long enough for the kernel to reuse a
 	// released ephemeral port. Choose it only after staging, just before spawn.
@@ -116,19 +113,18 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		t.Fatalf("refusing to boot: reserved the default port 7842, which a local instance may own")
 	}
 
+	// The host reads its address and the identity cost from the override file the
+	// SUBSTRATE_CONFIG variable names; everything else lives under the data directory.
+	override := filepath.Join(root, "substrate.local.yaml")
+	if err := os.WriteFile(override, []byte(fmt.Sprintf("httphost:\n  addr: \"127.0.0.1:%d\"\nidentity:\n  bcrypt_cost: 4\n", port)), 0o600); err != nil {
+		t.Fatalf("write config override: %v", err)
+	}
 	command := exec.Command(binary) // #nosec G204 -- the binary is the one this test just built.
 	command.Env = append(os.Environ(),
 		"HOME="+root,
-		"TANGENT_DB_PATH="+dbPath,
-		// The operator token lets the smoke operator elevate its browser
-		// session so it may answer (CW-20261016-0174). A fixture value,
-		// scoped to this throwaway process.
-		"TANGENT_OPERATOR_TOKEN="+smokeOperatorToken,
+		"TANGENT_DATA_DIR="+filepath.Join(root, "data"),
+		"SUBSTRATE_CONFIG="+override,
 		"TANGENT_PLUGIN_DIR="+pluginDir,
-		"TANGENT_HTTP_PORT="+strconv.Itoa(port),
-		// An unset dev frontend URL keeps the embedded bundle in play, which
-		// is what readiness reports on as the renderer host.
-		"TANGENT_DEV_FRONTEND_URL=",
 	)
 	var logs strings.Builder
 	command.Stdout = &logs
@@ -140,6 +136,11 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		if command.Process == nil {
 			return
 		}
+		defer func() {
+			if t.Failed() {
+				t.Logf("the booted binary's log:\n%s", logs.String())
+			}
+		}()
 		// Signal this pid only. Never a pattern-matched kill: a smoke check
 		// that can take down a process it did not start is a worse outage than
 		// the one it was written to find.
@@ -161,7 +162,7 @@ func bootShippedBinaryWithPluginDir(t *testing.T) (smoke.Endpoint, string) {
 		listening := endpoint.Listening(ctx)
 		cancel()
 		if listening {
-			return endpoint, pluginDir
+			return withOwnerAndKey(t, endpoint), pluginDir
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -325,4 +326,53 @@ func installFirstPartyPlugins(t *testing.T, tangentBinary, root string) string {
 		}
 	}
 	return pluginDir
+}
+
+// owners are the signed-in owner sessions of the booted binaries, by base URL.
+var owners sync.Map
+
+// withOwnerAndKey makes the booted binary's owner and a key for the probes. Test only: a
+// throwaway data directory has no owner until first-run setup makes one (the framework's
+// offline bootstrap is gap G8). The key holds every scope a tool needs except the decision, so the surface it lists is the whole
+// published one.
+func withOwnerAndKey(t *testing.T, endpoint smoke.Endpoint) smoke.Endpoint {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 15 * time.Second}
+	post := func(path string, body map[string]any) map[string]any {
+		encoded, _ := json.Marshal(body)
+		request, _ := http.NewRequest(http.MethodPost, endpoint.BaseURL+path, bytes.NewReader(encoded))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Requested-With", "smoke")
+		request.Header.Set("Origin", endpoint.BaseURL)
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		raw, _ := io.ReadAll(response.Body)
+		if response.StatusCode/100 != 2 {
+			t.Fatalf("POST %s: %s: %s", path, response.Status, raw)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(raw, &out)
+		return out
+	}
+	// #nosec G101 -- a throwaway passphrase for an owner that exists only in this test's data directory.
+	post("/api/setup", map[string]any{"display_name": "Owner", "username": "owner", "password": "a long smoke passphrase"})
+	key, _ := post("/api/identity/keys", map[string]any{"name": "smoke", "scopes": smokeKeyScopes})["key"].(string)
+	if key == "" {
+		t.Fatal("no smoke key was minted")
+	}
+	owners.Store(endpoint.BaseURL, client)
+	return endpoint.WithKey(key)
+}
+
+// smokeKeyScopes are the scopes of the smoke key: /mcp and every tool scope, never the decision.
+var smokeKeyScopes = []string{
+	"tangent.mcp", "tangent.view", "tangent.draft", "tangent.submit", "tangent.cancel",
+	"tangent.close", "tangent.withdraw", "tangent.deliver", "tangent.plugin",
 }

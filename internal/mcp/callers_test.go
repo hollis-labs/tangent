@@ -1,13 +1,9 @@
 package mcp_test
 
 import (
-	"bufio"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -33,6 +29,13 @@ import (
 
 const producerAToken = "test-only-producer-a-credential" // #nosec G101 -- synthetic test credential.
 const producerBToken = "test-only-producer-b-credential" // #nosec G101 -- synthetic test credential.
+const localToken = "test-only-local-credential"          // #nosec G101 -- synthetic test credential.
+
+// testKeys is what the host's identity module would hold: each credential's name.
+// alpha and beta are gateway producers; claude-code is an ordinary local key.
+var testKeys = tangentmcp.TestKeys{
+	producerAToken: "alpha", producerBToken: "beta", localToken: "claude-code",
+}
 
 type authSurfacePolicy struct{}
 
@@ -82,9 +85,9 @@ func newCallerAuthServerWithForwarders(t *testing.T, forwarders string) (*tangen
 	if err != nil {
 		t.Fatal(err)
 	}
-	auth, err := tangentmcp.ParseCallerAuth(fmt.Sprintf("alpha=%x,beta=%x", sha256.Sum256([]byte(producerAToken)), sha256.Sum256([]byte(producerBToken))), forwarders)
-	if err != nil {
-		t.Fatal(err)
+	callers := tangentmcp.Callers{Gateway: []string{"alpha", "beta"}}
+	if forwarders != "" {
+		callers.Forwarders = strings.Split(forwarders, ",")
 	}
 	channels, err := channel.NewStore(database)
 	if err != nil {
@@ -94,7 +97,7 @@ func newCallerAuthServerWithForwarders(t *testing.T, forwarders string) (*tangen
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := tangentmcp.New(env, envelope.NewDispatcher(env), room.NewManager(database), "", tangentmcp.WithRelay(channels, relayStore), tangentmcp.WithCallerAuth(auth), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService), tangentmcp.WithTurnsService(turnService), tangentmcp.WithDocsService(docService))
+	server, err := tangentmcp.New(env, envelope.NewDispatcher(env), room.NewManager(database), "", tangentmcp.WithRelay(channels, relayStore), tangentmcp.WithCallers(callers), tangentmcp.WithInteractionService(interactions), tangentmcp.WithHITLService(hitlService), tangentmcp.WithTurnsService(turnService), tangentmcp.WithDocsService(docService))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +110,6 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	clone := r.Clone(r.Context())
 	if b.token != "" {
 		clone.Header.Set("Authorization", "Bearer "+b.token)
-		clone.Header.Set("X-Tangent-Via", "caddy")
 	}
 	return http.DefaultTransport.RoundTrip(clone)
 }
@@ -117,9 +119,6 @@ func connectCallerAuthClient(ctx context.Context, t *testing.T, endpoint, transp
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "caller-auth-test", Version: "v0.0.0"}, nil)
 	httpClient := &http.Client{Transport: bearerTransport{token: token}}
 	var wire mcpsdk.Transport = &mcpsdk.StreamableClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
-	if transport == "sse" {
-		wire = &mcpsdk.SSEClientTransport{Endpoint: endpoint, HTTPClient: httpClient}
-	}
 	session, err := client.Connect(ctx, wire, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -140,21 +139,18 @@ func requireAuthNotFound(ctx context.Context, t *testing.T, client *mcpsdk.Clien
 	return extractText(t, result)
 }
 
-func TestCallerAuthProducerIsolationOverBothTransports(t *testing.T) {
-	for _, transport := range []string{"http", "sse"} {
+func TestCallersProducerIsolationOverBothTransports(t *testing.T) {
+	for _, transport := range []string{"http"} {
 		t.Run(transport, func(t *testing.T) {
 			server, turnService := newCallerAuthServer(t)
-			handler := server.HTTPHandler()
-			if transport == "sse" {
-				handler = server.SSEHandler()
-			}
+			handler := server.HTTPHandlerWith(testKeys)
 			httpServer := httptest.NewServer(handler)
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			t.Cleanup(cancel)
 			a := connectCallerAuthClient(ctx, t, httpServer.URL, transport, producerAToken)
 			b := connectCallerAuthClient(ctx, t, httpServer.URL, transport, producerBToken)
-			local := connectCallerAuthClient(ctx, t, httpServer.URL, transport, "")
+			local := connectCallerAuthClient(ctx, t, httpServer.URL, transport, localToken)
 			request := map[string]any{"contract_version": "1.0", "kind": "approval", "idempotency_key": "auth-test", "title": "Auth test", "summary": "Producer boundary", "request": "Approve test", "source": map[string]any{"application_id": "beta", "agent_id": "forged"}}
 			item := callInteractionTool[hitl.ItemHandle](t, a, "tangent_hitl_enqueue", request)
 			other := callInteractionTool[hitl.ItemHandle](t, b, "tangent_hitl_enqueue", request)
@@ -213,88 +209,10 @@ func TestCallerAuthProducerIsolationOverBothTransports(t *testing.T) {
 	}
 }
 
-func TestCallerAuthLegacySessionCannotBePostedByAnotherProducer(t *testing.T) {
-	server, _ := newCallerAuthServer(t)
-	httpServer := httptest.NewServer(server.SSEHandler())
-	defer httpServer.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, httpServer.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer "+producerAToken)
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	scanner := bufio.NewScanner(response.Body)
-	endpoint := ""
-	for scanner.Scan() {
-		if strings.HasPrefix(scanner.Text(), "data: ") {
-			endpoint = strings.TrimPrefix(scanner.Text(), "data: ")
-			break
-		}
-	}
-	if endpoint == "" {
-		t.Fatalf("missing SSE endpoint: %v", scanner.Err())
-	}
-	for _, token := range []string{producerBToken, "", producerAToken} {
-		post, err := http.NewRequestWithContext(ctx, http.MethodPost, httpServer.URL+endpoint, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`))
-		if err != nil {
-			t.Fatal(err)
-		}
-		post.Header.Set("Content-Type", "application/json")
-		if token != "" {
-			post.Header.Set("Authorization", "Bearer "+token)
-		}
-		result, err := http.DefaultClient.Do(post)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, _ = io.Copy(io.Discard, result.Body)
-		_ = result.Body.Close()
-		want := http.StatusNotFound
-		if token == producerAToken {
-			want = http.StatusAccepted
-		}
-		if result.StatusCode != want {
-			t.Fatalf("session POST status %d, want %d", result.StatusCode, want)
-		}
-	}
-}
-
-func TestCallerAuthRefusesProxyBeforeProtocolDispatch(t *testing.T) {
-	configured, _ := newCallerAuthServer(t)
-	unconfigured := newGatewayTestServer(t)
-	for _, server := range []*tangentmcp.Server{configured, unconfigured} {
-		for path, handler := range map[string]http.Handler{"/mcp": server.HTTPHandler(), "/sse": server.SSEHandler()} {
-			for _, method := range []string{http.MethodGet, http.MethodPost} {
-				for _, rpcMethod := range []string{"initialize", "tools/list"} {
-					for _, authorization := range []string{"", "Bearer invalid"} {
-						request := httptest.NewRequest(method, "http://127.0.0.1"+path, strings.NewReader(fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":%q}`, rpcMethod)))
-						request.RemoteAddr = "127.0.0.1:1234"
-						request.Header.Set("X-Tangent-Via", "caddy")
-						if authorization != "" {
-							request.Header.Set("Authorization", authorization)
-						}
-						response := httptest.NewRecorder()
-						handler.ServeHTTP(response, request)
-						if response.Code != http.StatusUnauthorized {
-							t.Fatalf("%s %s %s status = %d", method, path, rpcMethod, response.Code)
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
 // Adapters without an end-to-end producer binding must never dispatch on
 // behalf of authenticated callers, even when arguments name a valid local actor.
-func TestCallerAuthRefusesRelayAndPluginOverBothTransports(t *testing.T) {
-	for _, transport := range []string{"http", "sse"} {
+func TestCallersRefusesRelayAndPluginOverBothTransports(t *testing.T) {
+	for _, transport := range []string{"http"} {
 		t.Run(transport, func(t *testing.T) {
 			server, _ := newCallerAuthServer(t)
 			var dispatches atomic.Int32
@@ -304,15 +222,12 @@ func TestCallerAuthRefusesRelayAndPluginOverBothTransports(t *testing.T) {
 			})); err != nil {
 				t.Fatal(err)
 			}
-			handler := server.HTTPHandler()
-			if transport == "sse" {
-				handler = server.SSEHandler()
-			}
+			handler := server.HTTPHandlerWith(testKeys)
 			httpServer := httptest.NewServer(handler)
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			t.Cleanup(cancel)
-			local := connectCallerAuthClient(ctx, t, httpServer.URL, transport, "")
+			local := connectCallerAuthClient(ctx, t, httpServer.URL, transport, localToken)
 			opened := callInteractionTool[map[string]any](t, local, "tangent_relay_channel_open", map[string]any{"title": "local relay"})
 			channelID := opened["channel_id"]
 			alpha := map[string]any{"application_id": "alpha", "agent_id": "alpha-agent"}
@@ -361,14 +276,11 @@ func TestCallerAuthRefusesRelayAndPluginOverBothTransports(t *testing.T) {
 	}
 }
 
-func TestCallerAuthRoomInteractionAndInboxOwnership(t *testing.T) {
-	for _, transport := range []string{"http", "sse"} {
+func TestCallersRoomInteractionAndInboxOwnership(t *testing.T) {
+	for _, transport := range []string{"http"} {
 		t.Run(transport, func(t *testing.T) {
 			server, _ := newCallerAuthServer(t)
-			handler := server.HTTPHandler()
-			if transport == "sse" {
-				handler = server.SSEHandler()
-			}
+			handler := server.HTTPHandlerWith(testKeys)
 			httpServer := httptest.NewServer(handler)
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -433,22 +345,3 @@ func TestCallerAuthRoomInteractionAndInboxOwnership(t *testing.T) {
 
 // Caddy adds forwarding headers even before an explicit X-Tangent-Via marker
 // is deployed. Installing auth therefore requires provisioning clients first.
-func TestCallerAuthRefusesCaddyForwardingWithoutMarker(t *testing.T) {
-	server, _ := newCallerAuthServer(t)
-	for path, handler := range map[string]http.Handler{"/mcp": server.HTTPHandler(), "/sse": server.SSEHandler()} {
-		for _, method := range []string{http.MethodGet, http.MethodPost} {
-			request := httptest.NewRequest(method, "http://127.0.0.1"+path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
-			request.RemoteAddr = "127.0.0.1:1234"
-			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("Accept", "application/json, text/event-stream")
-			request.Header.Set("X-Forwarded-For", "198.51.100.20")
-			request.Header.Set("X-Forwarded-Proto", "https")
-			request.Header.Set("X-Forwarded-Host", "hub.tangent.example.test")
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
-			if response.Code != http.StatusUnauthorized || response.Header().Get("WWW-Authenticate") == "" {
-				t.Fatalf("unmarked Caddy %s %s = %d, challenge=%q", method, path, response.Code, response.Header().Get("WWW-Authenticate"))
-			}
-		}
-	}
-}

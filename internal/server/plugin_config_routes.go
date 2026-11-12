@@ -20,8 +20,9 @@ type pluginConfigRequest struct {
 
 // registerPluginConfig is mounted by composition only when a genuine scoped
 // store exists. Management auth stays in the host; no credentials cross a plugin.
-func registerPluginConfig(mux *http.ServeMux, routes *[]ParticipantRoute, cfg Config, store *pluginconfig.Store) {
-	registerParticipantRoute(mux, routes, cfg, "GET /api/plugin-management/config", authz.View, func(w http.ResponseWriter, r *http.Request) {
+func registerPluginConfig(rt *router, store *pluginconfig.Store) {
+	cfg := rt.cfg
+	rt.participant("GET /api/plugin-management/config", authz.View, func(w http.ResponseWriter, r *http.Request) {
 		ids, err := store.PluginIDs(r.Context())
 		if err != nil {
 			writePluginConfigError(w, err)
@@ -40,7 +41,7 @@ func registerPluginConfig(mux *http.ServeMux, routes *[]ParticipantRoute, cfg Co
 		}
 		writeHITLJSON(w, http.StatusOK, map[string]any{"groups": groups, "scopes": store.Scopes()})
 	})
-	registerParticipantRoute(mux, routes, cfg, "GET /api/plugin-management/{pluginID}/config", authz.View, func(w http.ResponseWriter, r *http.Request) {
+	rt.participant("GET /api/plugin-management/{pluginID}/config", authz.View, func(w http.ResponseWriter, r *http.Request) {
 		scope := pluginconfig.Scope{Kind: r.URL.Query().Get("scope_kind"), ID: r.URL.Query().Get("scope_id")}
 		snapshot, err := store.Read(r.Context(), r.PathValue("pluginID"), scope)
 		if err != nil {
@@ -50,7 +51,7 @@ func registerPluginConfig(mux *http.ServeMux, routes *[]ParticipantRoute, cfg Co
 		writeHITLJSON(w, http.StatusOK, snapshot)
 	})
 	for _, action := range []string{"validate", "save", "reset", "apply"} {
-		registerParticipantRoute(mux, routes, cfg, "POST /api/plugin-management/{pluginID}/config/"+action, authz.Resolve, func(w http.ResponseWriter, r *http.Request) {
+		rt.participant("POST /api/plugin-management/{pluginID}/config/"+action, authz.Resolve, func(w http.ResponseWriter, r *http.Request) {
 			input, err := decodePluginConfigRequest(w, r)
 			if err != nil {
 				writePluginError(w, http.StatusBadRequest, "PLUGIN_CONFIG_INVALID", "Invalid settings request.")
