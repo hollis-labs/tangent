@@ -173,7 +173,7 @@ by `--from`.
 | `TANGENT_HTTP_PORT` / `--port` (7842) | `httphost.addr` (default `127.0.0.1:7842`, must be loopback) |
 | `TANGENT_OPERATOR_TOKEN`, `TANGENT_ELEVATION_TTL` | removed with the operator-elevation model (see the auth slice) |
 | `TANGENT_MCP_TOKENS`, `TANGENT_MCP_TRUSTED_FORWARDERS`, `TANGENT_PROXIED_HTTP_ADDR` | removed: identity API keys replace them; the producers that count as gateways are `tangent.gateway_producers` and `tangent.trusted_forwarders` in the config |
-| `TANGENT_DEV_FRONTEND_URL`, the `/r/{roomID}` prevalidation, CSP headers, SPA serving | removed from the backend; the SPA is the host's `Assets` (slice e) |
+| `TANGENT_DEV_FRONTEND_URL`, the `/r/{roomID}` prevalidation, Tangent's own static file server | removed; the framework host serves the SPA (`Assets`, slice e); the CSP and other security headers are still sent on every response (`server.SecurityHeaders`, see below) |
 | `TANGENT_ARTIFACT_DIR`, `TANGENT_D2_BIN`, `TANGENT_MANAGED_RESOURCE`, `TANGENT_OTEL`, `TANGENT_PLUGIN_HEALTH_GATE_DISABLE`, `TANGENT_MCP_LEGACY_TOOL_NAMES`, `TANGENT_EVENTS_DISABLED`, `TANGENT_HITL_BACKEND`, `TANGENT_PLUGIN_DIR` | unchanged (read by `cmd/tangent/compose.go`; artifacts default to `<data dir>/artifacts`) |
 | `/readyz`, `/healthz/capability`, `/healthz/capability/{kind}` | `/api/health/ready`, `/api/health/capability`, `/api/health/capability/{kind}` (need `tangent.view`); liveness is the host's `/healthz` |
 | `/sse`, the 7844 listener | removed (G6a; one listener) |

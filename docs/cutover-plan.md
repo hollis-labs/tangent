@@ -9,7 +9,7 @@ the cutover is done; so is a rollback build.
 
 Related: `docs/conversion-notes.md` (what changed and why, the cutover notes this plan expands, the list of what is not
 available afterwards), `docs/client-table.md` (every client, its credential before and after), `deploy.yaml` (the
-installer descriptor), `.github/workflows/build.yml` (the release build).
+installer descriptor), `.github/workflows/build.yml` (the build workflow: artifacts from every build of `main`, no tag or release).
 
 ## 1. What this is and what the owner decides
 

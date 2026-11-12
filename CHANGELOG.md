@@ -27,8 +27,10 @@ Read **Changed** and **Removed** before upgrading.
   `tangent.reply_to_optional`, `tangent.tether_url`, `tangent.tether_sender` and `tangent.tether_token_ref`.
 - Health is served at `/api/health/ready` and `/api/health/capability[/{kind}]` (scope `tangent.view`); liveness is the
   host's `/healthz`.
-- A release build: tagged builds publish per-platform tarballs, and the linux/amd64 one carries `deploy.yaml`
-  (the service unit drop-in and descriptor for the fleet installer). The web UI builds on Node 24.
+- A build workflow (`.github/workflows/build.yml`): every build of `main` (and pull requests and manual dispatch) publishes
+  per-platform tarballs as workflow artifacts, which the fleet installer reads by commit or run; the linux/amd64 one carries
+  `deploy.yaml` (the service unit drop-in and descriptor). Nothing is tagged or released by it, and no workflow runs on a
+  tag. The web UI builds on Node 24.
 - A WebSocket `response.accepted` frame (`{type, envelopeId, revision, outcome: resolved|canceled}`) is sent to the
   sender once a response or cancel is durably accepted; a refused one gets none. The page shows the item as sent from it
   (`docs/architecture.md`).
@@ -71,15 +73,18 @@ Read **Changed** and **Removed** before upgrading.
   in the operator's browser Inbox (they read "This interaction is unavailable" before).
 - Design iteration: clicking a region only selects it; **Send selection** submits.
 - The single-page app is served without `ETag` or `Last-Modified`; assets are revalidated by content-hashed name.
-- Go 1.26.11 (GO-2026-6809, crypto/x509). The web UI needs Node 24.
+- Go 1.26.11, the floor for GO-2026-6859 (`net/http`: a `MaxBytesReader` limit race that can crash an HTTP/1 server; fixed
+  in 1.26.11 per the Go vulnerability database). Go 1.26.10 had already fixed GO-2026-6809 (`crypto/x509`, the denylist of
+  distrusted intermediate certificates). The web UI needs Node 24.
 
 ### Removed
 
 - The operator-token elevation: `TANGENT_OPERATOR_TOKEN`, `TANGENT_ELEVATION_TTL`, `POST /api/session/elevate` and
   `de-elevate`, the participant cookie and `tangent session list|revoke`.
 - The legacy `/sse` transport and the second listener on port 7844; there is one listener.
-- First-run setup over HTTP, the `/readyz` and `/healthz/capability` paths, and the backend's SPA serving, CSP headers
-  and `TANGENT_DEV_FRONTEND_URL`.
+- First-run setup over HTTP and the `/readyz` and `/healthz/capability` paths. Tangent's own static file server and the
+  reverse proxy to Vite (`TANGENT_DEV_FRONTEND_URL`) are gone: the framework host serves the embedded page, and the
+  document security policy is still sent on every response.
 - The Wails desktop app, the macOS LaunchAgent and its installer, and the Caddy snippet.
 - The `tangent.whiteboard` kind, the `tangent_whiteboard` tool and skill, the `tldraw` dependency and its CDN entry in
   the document CSP. Rooms that already hold whiteboard state keep the stored rows but no longer project them.
@@ -88,7 +93,11 @@ Read **Changed** and **Removed** before upgrading.
   `--erase-drafts`, `--purge-surface`, `--close-surface`, `--expire-capabilities`, `--external-deletion-report`
   (follow-up CW-20261112-0122); `--db-restore`, `--db-drain`, `--db-repair`; `--db-compact` is deferred.
 
-### Known behaviour
+### Known limitations
+
+- The v0.21.0 tag still carries `tangent-plugins.version` and `smoke-ref` pointing at plugins built against the old client,
+  which sends no key; `make install-plugins` from the bare tag installs plugins that get 401 on `/mcp`. Reinstall them from
+  the plugin release (`docs/cutover-plan.md`, section 1).
 
 - The UI-command channel (agents driving the open view) is not switched on, so `view.active` is refused. It was not
   in the old build either (CW-20261112-0128).
