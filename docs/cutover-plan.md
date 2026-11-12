@@ -38,13 +38,15 @@ that tag, then cut over with the plugins reinstalled.
 | The service | a user unit `tangent-pilot.service`; `ExecStart` is the bare binary at `~/.local/bin/tangent` (a regular file, not under the fleet installer); running since 2026-10-31 |
 | Ports | `7843` (the app) and `7844` (the proxied MCP listener); both loopback |
 | Unit environment (names) | `HOLLIS_OTEL_DISABLED`, `TANGENT_DB_PATH`, `TANGENT_HTTP_PORT=7843`, `TANGENT_REPLY_TO_OPTIONAL=1`, `TANGENT_PLUGIN_DIR` (the old tree), `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `PATH`, `TANGENT_ELEVATION_TTL`, `TANGENT_PROXIED_HTTP_ADDR=127.0.0.1:7844`, `TANGENT_TESSERACT_API_URL` |
+| Unit drop-ins (`~/.config/systemd/user/tangent-pilot.service.d/`) | four, none sets `ExecStart`: `elevation.conf` (`TANGENT_ELEVATION_TTL`), `mcp-auth.conf` (`EnvironmentFile` `mcp-tokens.env`, `TANGENT_PROXIED_HTTP_ADDR`), `operator.conf` (`EnvironmentFile` `operator.env`), `tesseract.conf` (`TANGENT_TESSERACT_API_URL`, `EnvironmentFile` `tesseract.env`). The new `20-fleet-exec.conf` sorts before all four (digits before letters), so theirs apply after it; none sets the three variables it sets (`SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR`, `TANGENT_PLUGIN_DIR`), so it works, and step 9 checks the effective values |
 | Environment files (`~/.config/tangent-pilot/`) | `tether.env` (`TANGENT_TETHER_URL`, `TANGENT_TETHER_TOKEN`, `TANGENT_TETHER_SENDER`), `mcp-tokens.env` (`TANGENT_MCP_TOKENS`), `operator.env` (`TANGENT_OPERATOR_TOKEN`), `tesseract.env` (`TANGENT_TESSERACT_TOKEN`) |
 | Data | `~/.local/share/tangent-pilot`: `tangent.db` (WAL; schema at the old migrator's version 24, which equals the port's baseline), `artifacts/` (about 800 KB, 42 directories), `plugins/` (about 284 MB, with `.state/config/config.sqlite`), `backups/`, `ingress/`, `releases/`, `stderr.log` |
 | Keyring | the user's Secret Service holds two entries for service `hollis-labs.tangent.plugin-config` (the plugin configuration secrets) |
 | A plugin child | one running (the Tesseract plugin) |
 | The proxy in front | two routes for Tangent's names: `/mcp` and `/sse` go to `7844` with `Host` rewritten to that loopback address; everything else goes to `7843`, tailnet members only, with `Host` rewritten to the loopback address and `Origin` rewritten from the public origin to the loopback origin |
 | The Tether gateway | its catalog entry for Tangent is transport `http` at the public name plus `/mcp`, with one credential line (a proxy service token file); it forwards sessions with `X-Tether-*` headers |
-| Producers seen in the data | the distinct `caller_scope` values and counts: `sqlite3 -readonly <db> "select caller_scope, count(*) from interactions group by 1 order by 2 desc"` (the key names in section 6, step 8, are these names without the `standalone-local:` or `gateway:` prefix) |
+| A Cerberus definition | the host has a project definition for Tangent with two resources: the service (the user unit, command the bare binary, port `7843`, an env file of its own listing the old variables) and an ingress helper (a small proxy script from the old data directory, port `7853`, not running). An apply of it could rewrite the unit with the bare command and the old variables: see section 13 |
+| Producers seen in the data | the distinct `caller_scope` values and counts: `sqlite3 -readonly <db> "select caller_scope, count(*) from interactions group by 1 order by 2 desc"`. Only a `gateway:<name>` scope needed a credential before (it was written only with that name's token in `TANGENT_MCP_TOKENS`). A `standalone-local:<app>` scope is an application id a direct loopback caller declared, or the gateway forwarded: no credential stood behind it, so it needs no key now either; its rows stay visible to the owner and to whoever reads them under that id |
 | An older install | `~/.local/share/tangent` exists on the host and holds an **older** Tangent (a database last written 2026-10-12, plugins, backups); no process has it open; it is not used by anything here and must stay untouched |
 
 ## 3. Principles
@@ -165,7 +167,7 @@ OLD=$HOME/.local/share/tangent-pilot
      stdin), never an argument or the environment. It refuses if an owner exists.
    - One key per client, each into a new `0600` file in a `0700` scratch directory that is removed once the client holds
      its key: `$NEWBIN identity key create --name <name> --scope tangent.mcp --scope ... --out <dir>/<name>.key`. The
-     **name** is the producer's application id without its prefix, so what it wrote before stays visible to it. Scopes are
+     **name** is the `gateway:<name>` producer's name without its prefix, so what it wrote before stays visible to it; only those producers need a key (section 2: the `standalone-local:` ids never held a credential). Scopes are
      `docs/client-table.md`'s; **the gateway key needs the full non-resolve set** (`tangent.mcp`, `tangent.view`,
      `tangent.draft`, `tangent.submit`, `tangent.cancel`, `tangent.close`, `tangent.withdraw`, `tangent.deliver`,
      `tangent.plugin`) to expose all 73 tools; with only `mcp` and `view` it sees 25 (rehearsed). Nothing gets
@@ -182,7 +184,11 @@ OLD=$HOME/.local/share/tangent-pilot
 9. **Deploy**: `fleet-install deploy tangent --commit <sha12>`. Its preflight backs up the **migrated** database; its
    drop-in (`20-fleet-exec.conf`) clears and sets `ExecStart`, sets `SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR`,
    `TANGENT_PLUGIN_DIR` and `TimeoutStopSec=30`; its restart starts the unit; its health poll reads
-   `http://127.0.0.1:7843/healthz`. Then confirm the installed binary is the one the migration used
+   `http://127.0.0.1:7843/healthz`. Then read the **effective** environment, names only: `systemctl --user show
+   tangent-pilot -p Environment -p EnvironmentFiles -p ExecStart` must show `SUBSTRATE_CONFIG`, `TANGENT_DATA_DIR` and
+   `TANGENT_PLUGIN_DIR` at the new values (the drop-ins that sort after `20-fleet-exec.conf` do not set them, but this is
+   what proves it) and `ExecStart` ending in `tangent serve`. **No Cerberus apply, deploy or reload of the Tangent
+   resources from this step until the definition is updated (section 13).** Then confirm the installed binary is the one the migration used
    (`sha256sum ~/.local/bin/tangent $NEWBIN`, same version string). The unit's other `Environment=` lines and its four
    environment files are left alone: the variables with no reader any more are ignored (section 14).
 10. **First checks before anything else is switched** (section 12, checks 1 to 6): `healthz`, setup closed, 401, unknown
@@ -372,6 +378,7 @@ The full table is `docs/client-table.md`; at the cutover:
 | The Tether gateway | the credential line in its catalog entry becomes the gateway producer's key (URL unchanged); catalog plan, then hub reload | the driver, Agent Ops |
 | A machine's own gateway producer | its own key, listed in `tangent.gateway_producers` | the owner mints; that machine's operator installs |
 | The browser | signs in with the owner's account; same origin | the owner |
+| The Cerberus definition for Tangent (the service and the ingress helper) | **no apply, deploy or reload of its Tangent resources during or after the window until it is updated**: the command becomes `tangent serve`, the env file drops the variables with no reader (section 14) and carries the new ones, and the ingress helper is retired or repointed; an apply of the old definition could rewrite the unit with the bare command and the old variables | the Cerberus owner (what an apply does to the unit has been asked of Cerberus; not yet answered) |
 | Cerberus (resource health, `cerberus resource doctor`) | `/healthz` is unchanged and open; readiness is `/api/health/ready` and needs a `tangent.view` key | whoever owns the Cerberus definition |
 | `make smoke` | `TANGENT_SMOKE_KEY` | the operator running it |
 | Fleet monitors that poll `/readyz` or `/healthz/capability` | repoint to `/healthz` (open) or hold a `tangent.view` key and the `/api/health/...` path | the owner knows which exist; **cannot be enumerated from the repository** |
