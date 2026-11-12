@@ -478,6 +478,33 @@ describe("<AppBoard> staging", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("makes no request and shows no sync control for any refused path", () => {
+    for (const bad of [
+      "/api/plugins/x/a/../../../inbox/items/abc/archive",
+      "/api/plugins/x/%2e%2e/%2e%2e/inbox/items/abc/archive",
+      "/api/plugins/x/a%2f..%2f..%2finbox",
+      "/api/plugins/x/./a",
+      "/api/plugins/x//a",
+      "/api/plugins/x/a?to=/api/inbox",
+      "/api/plugins/x/a#frag",
+      "/api/hitl/items/1/resolve",
+      "//evil.test/api/plugins/x/a",
+    ]) {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const { unmount } = render(
+        <AppBoard
+          envelope={envelope({ sync: { ...syncBlock, endpoint: bad } })}
+          onSubmit={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(screen.queryByTestId("app-board-sync"), bad).toBeNull();
+      expect(fetchMock, bad).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
   it("shows the caller's own scope sentence alongside the filter-bar one", () => {
     render(<AppBoard envelope={syncEnvelope()} onSubmit={vi.fn()} onCancel={vi.fn()} />);
     const scope = screen.getByTestId("app-board-scope");

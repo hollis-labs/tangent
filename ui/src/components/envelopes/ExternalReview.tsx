@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import type { TangentExternalReviewEnvelope } from "@/generated/envelope-types";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, readApiError } from "@/lib/api";
 import type { EnvelopeComponentProps } from "@/lib/envelope-registry";
 import { isPluginRoutePath } from "@/lib/plugin-route";
 
@@ -13,6 +13,23 @@ interface ReviewState {
   result?: Record<string, unknown>;
   complete?: boolean;
   disabled_actions?: string[];
+}
+
+const UNAVAILABLE = "The review plugin is unavailable.";
+
+// The plugin's answer. A non-OK answer carries the plugin's own flat error
+// message when it has one; a body that is not that shape (a 404 page, a proxy)
+// means the plugin is not there. A body that is not JSON is never parsed as one.
+async function readReviewState(response: Response, failure: string): Promise<ReviewState> {
+  if (!response.ok) {
+    const problem = await readApiError(response);
+    throw new Error(problem.code === "http_error" ? UNAVAILABLE : problem.message || failure);
+  }
+  try {
+    return (await response.json()) as ReviewState;
+  } catch {
+    throw new Error(UNAVAILABLE);
+  }
 }
 
 // Only the plugin knows the application or what its actions do.
@@ -49,8 +66,7 @@ export function ExternalReview({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ room_id: roomID, envelope_id: envelopeID }),
         });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.message || "Could not refresh the review.");
+        const result = await readReviewState(response, "Could not refresh the review.");
         if (current === sequence.current) {
           setState(result);
           setError("");
@@ -95,8 +111,7 @@ export function ExternalReview({
           ...(action ? { action, option } : {}),
         }),
       });
-      const next = (await response.json()) as ReviewState & { message: string };
-      if (!response.ok) throw new Error(next.message || "The action failed. Try again.");
+      const next = await readReviewState(response, "The action failed. Try again.");
       setState(next);
       if (next.complete && action) finish(next.result || { outcome: next.status });
     } catch (reason) {

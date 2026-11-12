@@ -34,6 +34,15 @@ the server wrote it); a session revoked while a room socket is open: the socket 
 `not_authorized`, the app returns to sign-in and the socket closes. The sandbox-frame shim hash tests pass against a
 built bundle (`TestSandboxFrameShimMatchesTheSPA`, `TestTheShippedBundleCarriesTheHashedShimVerbatim`).
 
+Then against the published release artifact `tangent-b48b81894b7c` (run 43291537913) on migrated rehearsal data, by hand in
+real Chrome: the owner signs in (`POST /api/login` 200 with `X-Requested-With`), reload keeps the session, sign-out
+returns 204 and the sign-in form; a form interaction and a structured interaction are decided over the room socket and
+read "resolved" in History afterwards (pending 183 to 181); the dotted external-review room shows "The review plugin
+route is unavailable." and sends no plugin or archive request (the throwaway interaction stays staged). This is the
+frontend precondition for the cutover. Two things seen there and not caused by the port, tracked as follow-ups: the
+host answers the SPA's `view.active` frame with `ui_command_rejected` and the header shows "host refused channel"; and
+a room keeps saying "Sending your response…" after a successful structured submit until it is reloaded.
+
 ## Waits on kit work (not started)
 
 - **App shell and BOM-pinned kits.** The SPA still uses its own Tailwind components and navigation (`TabStrip`), not
