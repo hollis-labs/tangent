@@ -348,7 +348,7 @@ export default function HITLInboxRoute() {
   }
 
   return (
-    <PageShell as="main" className="overflow-y-auto text-fg-secondary">
+    <PageShell className="overflow-y-auto text-fg-secondary">
       <header className="border-b border-border-subtle px-4 py-5 sm:px-6 lg:px-8">
         <div className="mx-auto flex max-w-[92rem] flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
@@ -356,7 +356,7 @@ export default function HITLInboxRoute() {
               <ShieldCheck className="size-3.5" aria-hidden="true" />
               Operator-owned surface
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-fg">Approvals</h1>
+            <h2 className="text-2xl font-semibold tracking-tight text-fg">Approvals</h2>
             <p className="mt-1 max-w-xl text-sm leading-6 text-fg-muted">
               Oldest requests stay first. Looking never changes their order; decisions commit one
               item at a time.
@@ -1238,10 +1238,7 @@ function MissingItem({ itemID, onBack }: { itemID: string; onBack: () => void })
 
 function InboxFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <PageShell
-      as="main"
-      className="flex items-center justify-center overflow-y-auto px-6 text-center text-fg-secondary"
-    >
+    <PageShell className="flex items-center justify-center overflow-y-auto px-6 text-center text-fg-secondary">
       <EmptyState
         variant="error"
         eyebrow="Inbox unavailable"

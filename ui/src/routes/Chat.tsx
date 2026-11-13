@@ -306,7 +306,7 @@ export default function Chat() {
   const handleInfo = useCallback((message: ChatMessage) => setInfo(message), []);
 
   return (
-    <PageShell as="main" className="flex">
+    <PageShell className="flex">
       <aside
         aria-label="Chat agents"
         className="flex w-56 shrink-0 flex-col border-r border-border bg-surface/40"
@@ -433,7 +433,7 @@ export default function Chat() {
         ) : (
           <>
             <header className="flex items-center border-b border-border px-4 py-2">
-              <h1 className="text-sm font-semibold">{active.name}</h1>
+              <h2 className="text-sm font-semibold">{active.name}</h2>
             </header>
             <div
               ref={scroller}

@@ -30,7 +30,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { fetchProfile } from "@/auth/auth-api";
+import { probeSession } from "@/lib/session-probe";
 import { ConnectionStatus } from "../components/ConnectionStatus";
 import { EnvelopeRouter } from "../components/envelopes/EnvelopeRouter";
 import { PageShell } from "../components/layout/PageShell";
@@ -147,7 +147,7 @@ export default function Room({
         // the socket stays open. Asking who is signed in settles which it is: a
         // 401 returns the whole app to sign-in (apiFetch's onUnauthorized), and
         // a 200 leaves the refusal copy, which is then about this person's scope.
-        if (refused.code === "not_authorized") void fetchProfile().catch(() => {});
+        if (refused.code === "not_authorized") void probeSession().catch(() => {});
         setPending((current) => current ?? restoredPending(lifecycleRef.current));
         setSubmitting(false);
         setStatus("submission refused");

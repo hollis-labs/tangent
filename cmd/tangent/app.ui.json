@@ -1,0 +1,134 @@
+{
+  "schema_version": 0,
+  "module": "tangent",
+  "contributions": [
+    {
+      "kind": "nav.item",
+      "key": "inbox",
+      "label": "Inbox",
+      "icon": "inbox",
+      "route": "/",
+      "priority": 1
+    },
+    {
+      "kind": "surface",
+      "key": "inbox",
+      "label": "Inbox",
+      "title": "Inbox",
+      "route": "/",
+      "layout": "list"
+    },
+    {
+      "kind": "nav.item",
+      "key": "chat",
+      "label": "Chat",
+      "icon": "message-square",
+      "route": "/chat",
+      "priority": 2
+    },
+    {
+      "kind": "surface",
+      "key": "chat",
+      "label": "Chat",
+      "title": "Chat",
+      "route": "/chat",
+      "layout": "detail"
+    },
+    {
+      "kind": "nav.item",
+      "key": "channels",
+      "label": "Channels",
+      "icon": "radio",
+      "route": "/channels",
+      "priority": 3
+    },
+    {
+      "kind": "surface",
+      "key": "channels",
+      "label": "Channels",
+      "title": "Channels",
+      "route": "/channels",
+      "layout": "detail"
+    },
+    {
+      "kind": "nav.item",
+      "key": "settings",
+      "label": "Settings",
+      "icon": "settings",
+      "route": "/settings",
+      "priority": 4
+    },
+    {
+      "kind": "surface",
+      "key": "settings",
+      "label": "Settings",
+      "title": "Settings",
+      "route": "/settings",
+      "layout": "settings"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-account",
+      "label": "Account security",
+      "icon": "shield",
+      "route": "/identity/account",
+      "region": "nav.footer"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-account",
+      "label": "Account security",
+      "title": "Account security",
+      "route": "/identity/account",
+      "layout": "form"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-keys",
+      "label": "Access keys",
+      "icon": "key-round",
+      "route": "/identity/keys",
+      "region": "nav.footer"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-keys",
+      "label": "Access keys",
+      "title": "Access keys",
+      "route": "/identity/keys",
+      "layout": "list"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-sessions",
+      "label": "Active sessions",
+      "icon": "monitor",
+      "route": "/identity/sessions",
+      "region": "nav.footer"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-sessions",
+      "label": "Active sessions",
+      "title": "Active sessions",
+      "route": "/identity/sessions",
+      "layout": "list"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-sign-out",
+      "label": "Sign out",
+      "icon": "log-out",
+      "route": "/identity/sign-out",
+      "region": "nav.footer"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-sign-out",
+      "label": "Sign out",
+      "title": "Sign out",
+      "route": "/identity/sign-out",
+      "layout": "form"
+    }
+  ]
+}

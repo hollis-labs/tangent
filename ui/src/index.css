@@ -13,6 +13,10 @@
  * here: imported from a component it is processed as a plain stylesheet, its
  * @source is never read, and it emits a 30-byte CSS chunk instead. */
 @import "@hollis-labs/kit-settings/source.css";
+@import "@hollis-labs/kit-account/source.css";
+@import "@hollis-labs/kit-identity/source.css";
+/* app-shell ships TypeScript source with Tailwind classes and no source.css of its own. */
+@source "../node_modules/@hollis-labs/app-shell/src";
 
 @source "./**/*.{ts,tsx}";
 

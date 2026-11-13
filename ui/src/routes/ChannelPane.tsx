@@ -193,7 +193,7 @@ export default function ChannelPaneRoute() {
   };
 
   return (
-    <PageShell as="main" className="flex overflow-y-auto">
+    <PageShell className="flex overflow-y-auto">
       <section
         className={cn(
           "w-full shrink-0 border-r border-zinc-800 sm:w-80",
@@ -202,7 +202,7 @@ export default function ChannelPaneRoute() {
         aria-label="Channels"
       >
         <header className="border-b border-zinc-800 px-4 py-3">
-          <h1 className="text-sm font-semibold tracking-wide text-zinc-100">Channels</h1>
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-100">Channels</h2>
           <UiControl control={control} />
           <p className="mt-1 text-xs leading-5 text-zinc-500">
             Opened by an agent, over the relay. Reading never consumes an agent's inbox.

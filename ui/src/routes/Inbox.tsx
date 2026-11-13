@@ -356,10 +356,10 @@ export default function Inbox() {
     setExpanded(false);
   }, [itemID, roomID]);
   return (
-    <PageShell as="main" className="flex flex-col overflow-hidden">
+    <PageShell className="flex flex-col overflow-hidden">
       <header className="shrink-0 border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-lg font-semibold">Inbox</h1>
+          <h2 className="text-lg font-semibold">Inbox</h2>
           <UiControl control={control} />
           <span className="text-xs text-fg-muted">{pendingCount} pending</span>
           <label className="sr-only" htmlFor="inbox-search">

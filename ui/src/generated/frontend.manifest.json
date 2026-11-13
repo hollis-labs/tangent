@@ -1,0 +1,574 @@
+{
+  "manifest_version": 0,
+  "app": "tangent",
+  "variant": "app-host",
+  "profiles": [
+    "minimal"
+  ],
+  "modules": [
+    "config",
+    "logging",
+    "health",
+    "secrets",
+    "auth",
+    "database",
+    "httphost",
+    "identity",
+    "mcp",
+    "cli"
+  ],
+  "contributions": [
+    {
+      "schema_version": 0,
+      "module": "auth",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/me",
+          "scope": "authenticated"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "module": "identity",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/setup",
+          "scope": "public"
+        },
+        {
+          "method": "POST",
+          "path": "/api/setup",
+          "scope": "public"
+        },
+        {
+          "method": "POST",
+          "path": "/api/login",
+          "scope": "public"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/jwks",
+          "scope": "public"
+        },
+        {
+          "method": "POST",
+          "path": "/api/pair",
+          "scope": "public"
+        },
+        {
+          "method": "POST",
+          "path": "/api/logout",
+          "scope": "authenticated"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/password",
+          "scope": "authenticated"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/profile",
+          "scope": "authenticated"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/identity/profile",
+          "scope": "authenticated"
+        },
+        {
+          "method": "POST",
+          "path": "/api/token",
+          "scope": "authenticated"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/sessions",
+          "scope": "authenticated"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/identity/sessions/",
+          "scope": "authenticated"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/users",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/identity/users",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/identity/users/",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/keys",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/identity/keys",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/identity/keys/",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/identity/pairing-codes",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "POST",
+          "path": "/api/identity/signing-key/rotate",
+          "scope": "{app}.admin"
+        },
+        {
+          "method": "GET",
+          "path": "/api/identity/signing-key",
+          "scope": "{app}.admin"
+        }
+      ]
+    },
+    {
+      "schema_version": 0,
+      "module": "tangent",
+      "contributions": [
+        {
+          "kind": "nav.item",
+          "key": "inbox",
+          "label": "Inbox",
+          "icon": "inbox",
+          "priority": 1,
+          "route": "/"
+        },
+        {
+          "kind": "surface",
+          "key": "inbox",
+          "label": "Inbox",
+          "route": "/",
+          "layout": "list",
+          "title": "Inbox"
+        },
+        {
+          "kind": "nav.item",
+          "key": "chat",
+          "label": "Chat",
+          "icon": "message-square",
+          "priority": 2,
+          "route": "/chat"
+        },
+        {
+          "kind": "surface",
+          "key": "chat",
+          "label": "Chat",
+          "route": "/chat",
+          "layout": "detail",
+          "title": "Chat"
+        },
+        {
+          "kind": "nav.item",
+          "key": "channels",
+          "label": "Channels",
+          "icon": "radio",
+          "priority": 3,
+          "route": "/channels"
+        },
+        {
+          "kind": "surface",
+          "key": "channels",
+          "label": "Channels",
+          "route": "/channels",
+          "layout": "detail",
+          "title": "Channels"
+        },
+        {
+          "kind": "nav.item",
+          "key": "settings",
+          "label": "Settings",
+          "icon": "settings",
+          "priority": 4,
+          "route": "/settings"
+        },
+        {
+          "kind": "surface",
+          "key": "settings",
+          "label": "Settings",
+          "route": "/settings",
+          "layout": "settings",
+          "title": "Settings"
+        },
+        {
+          "kind": "nav.item",
+          "key": "identity-account",
+          "label": "Account security",
+          "icon": "shield",
+          "region": "nav.footer",
+          "route": "/identity/account"
+        },
+        {
+          "kind": "surface",
+          "key": "identity-account",
+          "label": "Account security",
+          "route": "/identity/account",
+          "layout": "form",
+          "title": "Account security"
+        },
+        {
+          "kind": "nav.item",
+          "key": "identity-keys",
+          "label": "Access keys",
+          "icon": "key-round",
+          "region": "nav.footer",
+          "route": "/identity/keys"
+        },
+        {
+          "kind": "surface",
+          "key": "identity-keys",
+          "label": "Access keys",
+          "route": "/identity/keys",
+          "layout": "list",
+          "title": "Access keys"
+        },
+        {
+          "kind": "nav.item",
+          "key": "identity-sessions",
+          "label": "Active sessions",
+          "icon": "monitor",
+          "region": "nav.footer",
+          "route": "/identity/sessions"
+        },
+        {
+          "kind": "surface",
+          "key": "identity-sessions",
+          "label": "Active sessions",
+          "route": "/identity/sessions",
+          "layout": "list",
+          "title": "Active sessions"
+        },
+        {
+          "kind": "nav.item",
+          "key": "identity-sign-out",
+          "label": "Sign out",
+          "icon": "log-out",
+          "region": "nav.footer",
+          "route": "/identity/sign-out"
+        },
+        {
+          "kind": "surface",
+          "key": "identity-sign-out",
+          "label": "Sign out",
+          "route": "/identity/sign-out",
+          "layout": "form",
+          "title": "Sign out"
+        }
+      ]
+    }
+  ],
+  "items": [
+    {
+      "kind": "nav.item",
+      "key": "inbox",
+      "label": "Inbox",
+      "icon": "inbox",
+      "priority": 1,
+      "route": "/",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "chat",
+      "label": "Chat",
+      "icon": "message-square",
+      "priority": 2,
+      "route": "/chat",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "channels",
+      "label": "Channels",
+      "icon": "radio",
+      "priority": 3,
+      "route": "/channels",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "settings",
+      "label": "Settings",
+      "icon": "settings",
+      "priority": 4,
+      "route": "/settings",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "channels",
+      "label": "Channels",
+      "route": "/channels",
+      "layout": "detail",
+      "title": "Channels",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "chat",
+      "label": "Chat",
+      "route": "/chat",
+      "layout": "detail",
+      "title": "Chat",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-account",
+      "label": "Account security",
+      "icon": "shield",
+      "region": "nav.footer",
+      "route": "/identity/account",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-account",
+      "label": "Account security",
+      "route": "/identity/account",
+      "layout": "form",
+      "title": "Account security",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-keys",
+      "label": "Access keys",
+      "icon": "key-round",
+      "region": "nav.footer",
+      "route": "/identity/keys",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-keys",
+      "label": "Access keys",
+      "route": "/identity/keys",
+      "layout": "list",
+      "title": "Access keys",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-sessions",
+      "label": "Active sessions",
+      "icon": "monitor",
+      "region": "nav.footer",
+      "route": "/identity/sessions",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-sessions",
+      "label": "Active sessions",
+      "route": "/identity/sessions",
+      "layout": "list",
+      "title": "Active sessions",
+      "module": "tangent"
+    },
+    {
+      "kind": "nav.item",
+      "key": "identity-sign-out",
+      "label": "Sign out",
+      "icon": "log-out",
+      "region": "nav.footer",
+      "route": "/identity/sign-out",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "identity-sign-out",
+      "label": "Sign out",
+      "route": "/identity/sign-out",
+      "layout": "form",
+      "title": "Sign out",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "inbox",
+      "label": "Inbox",
+      "route": "/",
+      "layout": "list",
+      "title": "Inbox",
+      "module": "tangent"
+    },
+    {
+      "kind": "surface",
+      "key": "settings",
+      "label": "Settings",
+      "route": "/settings",
+      "layout": "settings",
+      "title": "Settings",
+      "module": "tangent"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/me",
+      "scope": "authenticated",
+      "module": "auth"
+    },
+    {
+      "method": "GET",
+      "path": "/api/setup",
+      "scope": "public",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/setup",
+      "scope": "public",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/login",
+      "scope": "public",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/jwks",
+      "scope": "public",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/pair",
+      "scope": "public",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/logout",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/password",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/profile",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/identity/profile",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/token",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/sessions",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/identity/sessions/",
+      "scope": "authenticated",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/users",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/identity/users",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/identity/users/",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/keys",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/identity/keys",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/identity/keys/",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/identity/pairing-codes",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "POST",
+      "path": "/api/identity/signing-key/rotate",
+      "scope": "{app}.admin",
+      "module": "identity"
+    },
+    {
+      "method": "GET",
+      "path": "/api/identity/signing-key",
+      "scope": "{app}.admin",
+      "module": "identity"
+    }
+  ],
+  "regions": [],
+  "kits": [
+    {
+      "name": "@hollis-labs/design-app-runtime",
+      "version": "0.5.0"
+    },
+    {
+      "name": "@hollis-labs/design-components",
+      "version": "0.5.1"
+    },
+    {
+      "name": "@hollis-labs/design-tokens",
+      "version": "0.5.0"
+    }
+  ],
+  "bindings": []
+}

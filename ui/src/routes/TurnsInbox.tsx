@@ -338,9 +338,9 @@ export default function TurnsInboxRoute() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-amber-400" />
-            <h1 className="text-sm font-semibold tracking-tight text-zinc-100">
+            <h2 className="text-sm font-semibold tracking-tight text-zinc-100">
               Agent turns FIFO inbox
-            </h1>
+            </h2>
           </div>
           <span className="rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 font-mono text-[11px] text-zinc-400">
             surface_turns_default

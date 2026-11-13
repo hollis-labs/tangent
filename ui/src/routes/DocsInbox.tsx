@@ -222,7 +222,7 @@ export default function DocsInboxRoute() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-amber-400" />
-            <h1 className="text-sm font-semibold tracking-tight text-zinc-100">Docs inbox</h1>
+            <h2 className="text-sm font-semibold tracking-tight text-zinc-100">Docs inbox</h2>
             <UiControl control={control} />
           </div>
           <div className="flex items-center gap-1.5 text-xs text-zinc-400">

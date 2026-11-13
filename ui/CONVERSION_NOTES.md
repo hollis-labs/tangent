@@ -14,7 +14,7 @@ What the move to the Substrate backend changed in `ui/`, what is verified, and w
    `fetch` in `src` goes through it. `readApiError` reads the flat `{code,message,details?}` body.
 3. **Elevation and the desktop shell removed.** `operator-elevation`, `OperatorTokenPrompt`, and the Wails shell's
    `?clientId`/`?clientKind` handling are gone (the stable id across an app relaunch went with the shell).
-4. **Sign-in** (`src/auth`). `SignInGate` wraps the app: profile probe, sign-in form, an offline-owner screen when
+4. **Sign-in** (interim, replaced by kit-identity in the app-shell port below). `SignInGate` wrapped the app: profile probe, sign-in form, an offline-owner screen when
    `setup_required` (no form, no request, whatever `setup_over_http` says; `403 setup_offline` is the same screen),
    "Your session ended" on a mid-use 401, who-is-signed-in and Sign out in the nav bar. A room socket refused
    `not_authorized` re-checks the session, so a revoked session returns to sign-in instead of showing a scope message.
@@ -51,14 +51,38 @@ The same checks were repeated by hand on the build of main `c01fbf0` (workflow `
 review-plugin-unavailable message, inbox archive and sign-out. Accepted by the driver as the frontend precondition for
 that build.
 
-## Waits on kit work (not started)
+## App-shell and the BOM-pinned kits (this port)
 
-- **App shell and BOM-pinned kits.** The SPA still uses its own Tailwind components and navigation (`TabStrip`), not
-  `app-shell` and the `design-components`/`design-tokens` the BOM pins. Waiting on responsive navigation in the shell.
-- **kit-identity.** The sign-in and offline-owner screens here are interim (the Basalisk pattern, Tangent's own
-  components). kit-identity is merged in `frontend-support` (#30) but not published, and its offline-owner behaviour is
-  CW-20261112-0118. Replace `src/auth` by it when it is in the BOM.
-- **User menu.** Who-is-signed-in and Sign out sit in the nav bar until the shell's user menu (CW-20261112-0107).
+`ui/` is a `ManifestShell` (`@hollis-labs/app-shell` 0.11.0) over a manifest `substrate frontend` generates.
+
+- **Manifest.** `cmd/tangent/app.ui.json` (named by `frontend.contributions` in `cmd/tangent/substrate.yaml`) declares
+  Inbox, Chat, Channels and Settings as primary nav, and Account security, Access keys, Active sessions and Sign out as
+  footer nav. `npm run manifest` writes `ui/src/generated/frontend.manifest.json`; regenerate it when the file changes.
+- **Pages** are the existing routes. The shell is given the destination's path (`src/shell/paths.ts`), and each page sits
+  under the route table its component reads params from, so `/inbox/items/:id`, `/r/:roomID` and `/chat/:agentID` work
+  as before. Page titles are `h2` under the shell's `h1`; pages are `div`s inside the shell's single `main`.
+- **Sign-in** is `@hollis-labs/kit-identity` 0.1.0 (`IdentityGate`): boot, sign-in, the offline-owner screen, password
+  change, access keys, sessions, sign out. A 401 on any request the kit did not make (`apiFetch`) asks the kit
+  `listSessions()`, whose 401 puts the gate on its "session ended" sign-in (`src/shell/SessionLossBridge.tsx`). A room
+  socket refused `not_authorized` still re-checks the session (`src/lib/session-probe.ts`). The interim gate, `auth-api`
+  and `TabStrip` are removed.
+- **Versions (exact, no ranges), against the BOM `kits:` block on Substrate main** (which is behind: it still pins
+  app-shell 0.1.0, kit-account 0.1.0, design-bindings 0.2.0, design-app-runtime 0.5.0 and has no kit-identity):
+  app-shell 0.11.0, design-app-runtime 0.6.0, design-bindings 0.3.0, design-components 0.5.1 (BOM 0.5.1),
+  design-tokens 0.5.0 (BOM 0.5.0), kit-account 0.3.0, kit-identity 0.1.0, kit-settings 0.2.0 (BOM), plugin-host-ui 0.3.0
+  (BOM), plugin-registry 0.2.0 (BOM). Bump the Substrate pin when the BOM moves.
+- **Theme.** The preference is applied at start by `ThemeBoot` (the tab strip used to do it). Tangent's theme file has
+  dark values only, so "light" sets the mode and changes nothing visible; that was already so.
+
+### Not done, and why
+
+- **User menu.** `app-shell` 0.11.0 has no `user.menu` region (CW-20261112-0107 is not in it): Sign out and the identity
+  pages are footer nav items, and the signed-in name is not shown in the chrome. Move them to the menu when the shell has it.
+- **Who-am-I after a reload.** kit-identity 0.1.0 reads the profile only after setup or sign-in, so after a reload the
+  Account security page's badge says "Identity unavailable". Tangent serves `GET /api/identity/profile`; the kit should read it.
+- **Pairing codes.** Not in the old app; the page is not contributed.
+- **The two-header look.** The shell's page frame draws the surface title above the page's own header (by design in
+  the shell; not worked around).
 
 ## Known, not changed here
 
