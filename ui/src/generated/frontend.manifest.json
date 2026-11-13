@@ -559,7 +559,7 @@
   "kits": [
     {
       "name": "@hollis-labs/design-app-runtime",
-      "version": "0.5.0"
+      "version": "0.6.0"
     },
     {
       "name": "@hollis-labs/design-components",

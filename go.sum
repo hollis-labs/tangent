@@ -57,6 +57,8 @@ github.com/hollis-labs/libs/ui/ui-go v0.1.0 h1:GFztthzyhlbrKemRItwyNlV+e83pZT+yF
 github.com/hollis-labs/libs/ui/ui-go v0.1.0/go.mod h1:MBO41Mrbgo6YfRbm8MI50qQXjDfwhkvA/WxRdtOiL38=
 github.com/hollis-labs/substrate v0.1.1-0.20261112164520-da9f59bb59b7 h1:gvTm2Kr5USjJwH5StawMDLUQ7cIDq5XTqgDEgFkAsgk=
 github.com/hollis-labs/substrate v0.1.1-0.20261112164520-da9f59bb59b7/go.mod h1:pnGYpIrVNQLalyvDH4+0C8dfy+MHoThzXY20NZKmn1U=
+github.com/hollis-labs/substrate v0.1.1-0.20261113184959-add408c4baa9 h1:RGrr4et65aN0vn0UxegjegYkGtdvNUfY/R29pOO3fls=
+github.com/hollis-labs/substrate v0.1.1-0.20261113184959-add408c4baa9/go.mod h1:pnGYpIrVNQLalyvDH4+0C8dfy+MHoThzXY20NZKmn1U=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

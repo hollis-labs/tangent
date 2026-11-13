@@ -66,11 +66,11 @@ that build.
   `listSessions()`, whose 401 puts the gate on its "session ended" sign-in (`src/shell/SessionLossBridge.tsx`). A room
   socket refused `not_authorized` still re-checks the session (`src/lib/session-probe.ts`). The interim gate, `auth-api`
   and `TabStrip` are removed.
-- **Versions (exact, no ranges), against the BOM `kits:` block on Substrate main** (which is behind: it still pins
-  app-shell 0.1.0, kit-account 0.1.0, design-bindings 0.2.0, design-app-runtime 0.5.0 and has no kit-identity):
-  app-shell 0.11.0, design-app-runtime 0.6.0, design-bindings 0.3.0, design-components 0.5.1 (BOM 0.5.1),
-  design-tokens 0.5.0 (BOM 0.5.0), kit-account 0.3.0, kit-identity 0.1.0, kit-settings 0.2.0 (BOM), plugin-host-ui 0.3.0
-  (BOM), plugin-registry 0.2.0 (BOM). Bump the Substrate pin when the BOM moves.
+- **Versions (exact, no ranges), equal to the `kits:` block of the BOM at Substrate `add408c4`:** app-shell 0.11.0,
+  design-app-runtime 0.6.0, design-bindings 0.3.0, design-components 0.5.1, design-tokens 0.5.0, kit-account 0.3.0,
+  kit-identity 0.1.0, kit-settings 0.2.0, plugin-host-ui 0.3.0, plugin-registry 0.2.0. The design-tokens and
+  design-components `overrides` stay. kit-chat and kit-cards are out of the BOM until they release against
+  design-bindings 0.3 (CW-20261113-0024); Tangent uses neither. Bump the Substrate pin and re-run `npm run manifest` when the BOM moves.
 - **Theme.** The preference is applied at start by `ThemeBoot` (the tab strip used to do it). Tangent's theme file has
   dark values only, so "light" sets the mode and changes nothing visible; that was already so.
 
