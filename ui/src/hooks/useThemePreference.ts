@@ -10,9 +10,9 @@ import {
 /**
  * Applies the persisted (or system-default) theme preference on mount, and
  * re-applies it whenever the OS preference changes while "system" is active.
- * Tangent has one instance of this in the tree (TabStrip, always mounted),
- * so there is one listener and one source of truth for the DOM attributes
- * design-tokens' setMode writes — not a store to synchronize.
+ * It backs the toggle on the Settings page; the app applies the stored
+ * preference at start in shell/ThemeBoot, so the theme does not depend on a
+ * page having been opened.
  */
 export function useThemePreference() {
   const [preference, setPreference] = useState<ThemePreference>(() => loadThemePreference());

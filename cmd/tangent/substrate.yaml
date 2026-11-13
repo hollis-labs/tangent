@@ -19,3 +19,6 @@ config:
   # The app's own block (internal/settings).
   tangent:
     allowed_hosts: []
+# The app's own pages: a ui.json-shaped file, validated and merged by `substrate frontend`.
+frontend:
+  contributions: app.ui.json
