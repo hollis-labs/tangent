@@ -15,7 +15,7 @@ require (
 	github.com/hollis-labs/libs/security/auth v0.3.1
 	github.com/hollis-labs/libs/security/secrets v0.1.0
 	github.com/hollis-labs/libs/ui/ui-go v0.1.0
-	github.com/hollis-labs/substrate v0.1.1-0.20261113184959-add408c4baa9
+	github.com/hollis-labs/substrate v0.1.1-0.20261113201120-628daf0f1412
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/spf13/cobra v1.10.2
