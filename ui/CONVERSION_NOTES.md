@@ -66,11 +66,11 @@ that build.
   `listSessions()`, whose 401 puts the gate on its "session ended" sign-in (`src/shell/SessionLossBridge.tsx`). A room
   socket refused `not_authorized` still re-checks the session (`src/lib/session-probe.ts`). The interim gate, `auth-api`
   and `TabStrip` are removed.
-- **Versions (exact, no ranges), equal to the `kits:` block of the BOM at Substrate `add408c4`:** app-shell 0.11.0,
+- **Versions (exact, no ranges), equal to the `kits:` block of the BOM at Substrate `628daf0f`:** app-shell 0.11.0,
   design-app-runtime 0.6.0, design-bindings 0.3.0, design-components 0.5.1, design-tokens 0.5.0, kit-account 0.3.0,
-  kit-identity 0.1.0, kit-settings 0.2.0, plugin-host-ui 0.3.0, plugin-registry 0.2.0. The design-tokens and
+  kit-identity 0.1.1 (reads the profile on boot, so the signed-in identity survives a reload), kit-settings 0.2.0, plugin-host-ui 0.3.0, plugin-registry 0.2.0. The design-tokens and
   design-components `overrides` stay. kit-chat and kit-cards are out of the BOM until they release against
-  design-bindings 0.3 (CW-20261113-0024); Tangent uses neither. Bump the Substrate pin and re-run `npm run manifest` when the BOM moves.
+  design-bindings 0.3 (CW-20261113-0024; the BOM now pins kit-chat 0.8.0 and kit-cards 0.3.0); Tangent uses neither. Bump the Substrate pin and re-run `npm run manifest` when the BOM moves.
 - **Theme.** The preference is applied at start by `ThemeBoot` (the tab strip used to do it). Tangent's theme file has
   dark values only, so "light" sets the mode and changes nothing visible; that was already so.
 
@@ -78,8 +78,6 @@ that build.
 
 - **User menu.** `app-shell` 0.11.0 has no `user.menu` region (CW-20261112-0107 is not in it): Sign out and the identity
   pages are footer nav items, and the signed-in name is not shown in the chrome. Move them to the menu when the shell has it.
-- **Who-am-I after a reload.** kit-identity 0.1.0 reads the profile only after setup or sign-in, so after a reload the
-  Account security page's badge says "Identity unavailable". Tangent serves `GET /api/identity/profile`; the kit should read it.
 - **Pairing codes.** Not in the old app; the page is not contributed.
 - **The two-header look.** The shell's page frame draws the surface title above the page's own header (by design in
   the shell; not worked around).
