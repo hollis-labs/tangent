@@ -29,7 +29,7 @@
     "@hollis-labs/design-components": "0.5.1",
     "@hollis-labs/design-tokens": "0.5.0",
     "@hollis-labs/kit-account": "0.3.0",
-    "@hollis-labs/kit-identity": "0.1.1",
+    "@hollis-labs/kit-identity": "0.1.4",
     "@hollis-labs/kit-settings": "0.2.0",
     "@hollis-labs/plugin-host-ui": "0.3.0",
     "@hollis-labs/plugin-registry": "0.2.0",
